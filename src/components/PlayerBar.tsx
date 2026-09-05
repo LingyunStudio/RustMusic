@@ -51,7 +51,7 @@ export default function PlayerBar() {
   const VolIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
   return (
-    <div className="px-4 pb-4 pt-1 shrink-0 relative z-30">
+    <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-1">
       {download && (
         <div className="absolute left-8 right-8 top-0 h-[3px] bg-white/[0.07] rounded-full overflow-hidden">
           <div

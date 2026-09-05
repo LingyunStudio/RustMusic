@@ -172,7 +172,7 @@ export default function App() {
     <div className="h-full relative overflow-hidden bg-[#0b0b10]">
       <DynamicBackdrop />
 
-      <div className="relative h-full flex flex-col">
+      <div className="relative h-full flex flex-col pb-[104px]">
         <Titlebar />
 
         <div className="relative flex flex-1 min-h-0">
