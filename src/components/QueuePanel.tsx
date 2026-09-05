@@ -15,6 +15,16 @@ function queueLabel(item: QueueItem): { title: string; artist: string; cover?: s
       };
     return { title: `曲目 #${item.id}`, artist: "" };
   }
+  if (item.kind === "netease") {
+    const t = s.neteaseCache[item.id];
+    if (t)
+      return {
+        title: t.name,
+        artist: t.ar.map((a) => a.name).join(" / ") || "网易云",
+        cover: t.al?.picUrl ?? undefined,
+      };
+    return { title: `网易云 #${item.id}`, artist: "在线曲库" };
+  }
   const src = s.sources.find((x) => x.id === item.id);
   return {
     title: src?.title || src?.url.split("/").pop() || "在线音源",

@@ -14,7 +14,11 @@ export default function CoverImg({ src, seed, className = "", iconSize = 18 }: C
   const [err, setErr] = useState(false);
   useEffect(() => setErr(false), [src]);
 
-  const url = src ? coverSrc(src) : "";
+  const url = src
+    ? src.startsWith("http://") || src.startsWith("https://")
+      ? src
+      : coverSrc(src)
+    : "";
   if (url && !err) {
     return (
       <img

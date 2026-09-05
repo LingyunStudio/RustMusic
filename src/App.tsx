@@ -11,6 +11,7 @@ import LibraryView from "./views/LibraryView";
 import PlaylistDetail from "./views/PlaylistDetail";
 import SourcesView from "./views/SourcesView";
 import SettingsView from "./views/SettingsView";
+import NeteaseView from "./views/NeteaseView";
 import { coverSrc } from "./api";
 import { extractColor } from "./utils";
 
@@ -178,6 +179,7 @@ export default function App() {
             {view === "recent" && <LibraryView mode="recent" />}
             {view === "playlist" && <PlaylistDetail id={viewParam} />}
             {view === "sources" && <SourcesView />}
+            {view === "netease" && <NeteaseView />}
             {view === "settings" && <SettingsView />}
           </main>
 

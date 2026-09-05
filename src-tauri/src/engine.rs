@@ -19,7 +19,7 @@ use crate::smtc::SmtcMsg;
 #[serde(rename_all = "camelCase")]
 pub struct TrackInfo {
     pub id: Option<i64>,
-    /// "track"（本地曲目）| "url"（在线音源）
+    /// "track"（本地曲目）| "url"（自定义在线音源）| "netease"（网易云在线曲库）
     pub kind: String,
     pub path: String,
     pub title: String,
@@ -27,6 +27,8 @@ pub struct TrackInfo {
     pub album: String,
     pub cover: String,
     pub duration_ms: u64,
+    #[serde(default)]
+    pub nid: Option<i64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -243,7 +245,7 @@ impl Engine {
     }
 
     /// 播放在线音源：有缓存直接播放，否则后台下载（带进度事件）完成后自动播放
-    pub fn play_url(self: &Arc<Self>, url: String, title_hint: String) -> Result<(), String> {
+    pub fn play_url(self: &Arc<Self>, url: String, info: TrackInfo) -> Result<(), String> {
         let url = url.trim().to_string();
         if !url.starts_with("http://") && !url.starts_with("https://") {
             return Err("音源地址必须以 http:// 或 https:// 开头".into());
@@ -253,16 +255,11 @@ impl Engine {
         }
         let cache = self.cache_path_for(&url);
         if cache.exists() && cache.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-            let info = TrackInfo {
-                id: None,
-                kind: "url".into(),
-                path: cache.to_string_lossy().into_owned(),
-                title: title_hint,
-                artist: "在线音源".into(),
-                album: String::new(),
-                cover: String::new(),
-                duration_ms: probe_duration(&cache),
-            };
+            let mut info = info;
+            info.path = cache.to_string_lossy().into_owned();
+            if info.duration_ms == 0 {
+                info.duration_ms = probe_duration(&cache);
+            }
             *self.want_url.write() = None;
             return self.play_file(info);
         }
@@ -279,16 +276,11 @@ impl Engine {
             }
             let still_wanted = engine.want_url.read().as_deref() == Some(url.as_str());
             if still_wanted {
-                let info = TrackInfo {
-                    id: None,
-                    kind: "url".into(),
-                    path: cache.to_string_lossy().into_owned(),
-                    title: title_hint,
-                    artist: "在线音源".into(),
-                    album: String::new(),
-                    cover: String::new(),
-                    duration_ms: probe_duration(&cache),
-                };
+                let mut info = info;
+                info.path = cache.to_string_lossy().into_owned();
+                if info.duration_ms == 0 {
+                    info.duration_ms = probe_duration(&cache);
+                }
                 let _ = engine.play_file(info);
             }
         });

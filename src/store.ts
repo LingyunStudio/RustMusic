@@ -5,6 +5,7 @@ import type {
   DownloadState,
   Folder,
   LyricsPayload,
+  NeteaseTrack,
   PlayState,
   Playlist,
   QueueItem,
@@ -49,6 +50,15 @@ interface Store {
   lyricsLoading: boolean;
   lyricsFor: number | null;
 
+  // 网易云在线曲库
+  neteaseResults: NeteaseTrack[];
+  neteaseTotal: number;
+  neteaseSearching: boolean;
+  neteaseSearched: boolean;
+  neteaseLoggedIn: boolean;
+  neteaseNickname: string;
+  neteaseCache: Record<number, NeteaseTrack>;
+
   init(): Promise<void>;
   toast(msg: string, type?: Toast["type"]): void;
   dismissToast(id: number): void;
@@ -64,6 +74,7 @@ interface Store {
 
   playTracks(tracks: TrackMeta[], idx: number): void;
   playSourceItem(s: SourceItem): void;
+  playNetease(list: NeteaseTrack[], idx: number): void;
   playQueueIndex(i: number): void;
   togglePlay(): void;
   next(auto?: boolean): void;
@@ -94,6 +105,11 @@ interface Store {
   deleteSource(id: number): Promise<void>;
   setEq(gains: number[], enabled: boolean): void;
   clearCache(): Promise<void>;
+
+  neteaseSearch(kw: string): Promise<void>;
+  neteaseRefreshStatus(): Promise<void>;
+  neteaseSetLogin(loggedIn: boolean, nickname: string): void;
+  neteaseLogout(): Promise<void>;
 
   loadLyrics(trackId: number): Promise<void>;
   applyMediaControl(action: string, value?: number): void;
@@ -135,6 +151,14 @@ export const useStore = create<Store>((set, get) => ({
   lyrics: null,
   lyricsLoading: false,
   lyricsFor: null,
+
+  neteaseResults: [],
+  neteaseTotal: 0,
+  neteaseSearching: false,
+  neteaseSearched: false,
+  neteaseLoggedIn: false,
+  neteaseNickname: "",
+  neteaseCache: {},
 
   // ---------- 初始化 ----------
 
@@ -220,12 +244,13 @@ export const useStore = create<Store>((set, get) => ({
     );
 
     try {
-      const [settings, tracks, folders, playlists, sources] = await Promise.all([
+      const [settings, tracks, folders, playlists, sources, neteaseStatus] = await Promise.all([
         api.getSettings(),
         api.listTracks(),
         api.listFolders(),
         api.listPlaylists(),
         api.listSources(),
+        api.neteaseStatus(),
       ]);
       set({
         volume: settings.volume,
@@ -236,6 +261,8 @@ export const useStore = create<Store>((set, get) => ({
         folders,
         playlists,
         sources,
+        neteaseLoggedIn: neteaseStatus.loggedIn,
+        neteaseNickname: neteaseStatus.nickname,
         ready: true,
       });
     } catch (e) {
@@ -314,6 +341,21 @@ export const useStore = create<Store>((set, get) => ({
     get().playQueueIndex(target);
   },
 
+  playNetease(list: NeteaseTrack[], idx: number) {
+    if (!list.length) return;
+    const cache = { ...get().neteaseCache };
+    for (const t of list) cache[t.id] = t;
+    const queue: QueueItem[] = list.map((t) => ({ kind: "netease", id: t.id }));
+    const target = Math.max(0, Math.min(idx, queue.length - 1));
+    set((s) => ({
+      neteaseCache: cache,
+      queue,
+      qIndex: target,
+      history: [...s.history.slice(-50), s.qIndex],
+    }));
+    get().playQueueIndex(target);
+  },
+
   playSourceItem(s) {
     const queue: QueueItem[] = [{ kind: "url", id: s.id }];
     set((st) => ({ queue, qIndex: 0, history: [...st.history.slice(-50), st.qIndex] }));
@@ -328,12 +370,26 @@ export const useStore = create<Store>((set, get) => ({
     if (!item) return;
     if (item.kind === "track") {
       api.playTrack(item.id).catch((e) => get().toast(`播放失败：${e}`, "error"));
+    } else if (item.kind === "netease") {
+      const t = get().neteaseCache[item.id];
+      if (!t) {
+        get().toast("该在线曲目信息已失效，请重新搜索", "error");
+        return;
+      }
+      api
+        .neteasePlay({
+          id: t.id,
+          title: t.name,
+          artist: t.ar.map((a) => a.name).join(" / "),
+          album: t.al?.name ?? "",
+          cover: t.al?.picUrl ?? "",
+          durationMs: t.dt,
+        })
+        .catch((e) => get().toast(`播放失败：${e}`, "error"));
     } else {
-      const s = get().sources.find((x) => x.id === item.id);
       api
         .playSource(item.id)
         .catch((e) => get().toast(`播放音源失败：${e}`, "error"));
-      if (s) set({ current: null });
     }
   },
 
@@ -592,6 +648,49 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const n = await api.clearCache();
       get().toast(`已清理 ${n} 个缓存文件`, "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  // ---------- 网易云 ----------
+
+  async neteaseSearch(kw) {
+    const keyword = kw.trim();
+    if (!keyword) return;
+    set({ neteaseSearching: true, neteaseSearched: true });
+    try {
+      const r = await api.neteaseSearch(keyword);
+      const cache = { ...get().neteaseCache };
+      for (const t of r.songs) cache[t.id] = t;
+      set({
+        neteaseResults: r.songs,
+        neteaseTotal: r.total,
+        neteaseSearching: false,
+        neteaseCache: cache,
+      });
+    } catch (e) {
+      set({ neteaseSearching: false });
+      get().toast(String(e), "error");
+    }
+  },
+
+  async neteaseRefreshStatus() {
+    try {
+      const s = await api.neteaseStatus();
+      set({ neteaseLoggedIn: s.loggedIn, neteaseNickname: s.nickname });
+    } catch {}
+  },
+
+  neteaseSetLogin(loggedIn, nickname) {
+    set({ neteaseLoggedIn: loggedIn, neteaseNickname: nickname });
+  },
+
+  async neteaseLogout() {
+    try {
+      await api.neteaseLogout();
+      set({ neteaseLoggedIn: false, neteaseNickname: "" });
+      get().toast("已退出网易云登录", "success");
     } catch (e) {
       get().toast(String(e), "error");
     }

@@ -19,10 +19,17 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 walkdir = "2"
 rayon = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
-ureq = "2"
+ureq = { version = "2", features = ["json"] }
 percent-encoding = "2"
 souvlaki = "0.8"
 parking_lot = "0.12"
+base64 = "0.22"
+aes = "0.8"
+md-5 = "0.10"
+hex = "0.4"
+num-bigint = "0.4"
+rand = "0.8"
+qrcode = { version = "0.14", default-features = false, features = ["image"] }
 
 [profile.release]
 lto = true

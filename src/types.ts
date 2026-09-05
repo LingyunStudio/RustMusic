@@ -53,13 +53,23 @@ export interface LyricsPayload {
 
 export interface TrackInfo {
   id: number | null;
-  kind: "track" | "url";
+  kind: "track" | "url" | "netease";
   path: string;
   title: string;
   artist: string;
   album: string;
   cover: string;
   durationMs: number;
+  nid?: number | null;
+}
+
+export interface NeteaseTrack {
+  id: number;
+  name: string;
+  ar: { name: string }[];
+  al: { name: string; picUrl?: string | null };
+  dt: number;
+  fee: number;
 }
 
 export interface PlayState extends TrackInfo {
@@ -72,8 +82,10 @@ export interface CurrentTrack extends TrackInfo {
 
 export type RepeatMode = "off" | "all" | "one";
 
+export type QueueItemKind = "track" | "url" | "netease";
+
 export interface QueueItem {
-  kind: "track" | "url";
+  kind: QueueItemKind;
   id: number;
 }
 
@@ -82,6 +94,7 @@ export type ViewName =
   | "liked"
   | "recent"
   | "sources"
+  | "netease"
   | "settings"
   | "playlist";
 

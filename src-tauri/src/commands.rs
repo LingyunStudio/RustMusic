@@ -1,6 +1,6 @@
 use serde_json::json;
 use lofty::prelude::*;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 use crate::db;
 use crate::engine::TrackInfo;
@@ -260,6 +260,7 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
         album: meta.album,
         cover: meta.cover,
         duration_ms: (meta.duration * 1000.0) as u64,
+        nid: None,
     };
     engine_clone(&state).play_file(info)
 }
@@ -270,7 +271,125 @@ pub async fn play_source(state: State<'_, AppState>, id: i64) -> Result<(), Stri
         let conn = state.db.lock();
         db::get_source(&conn, id).ok_or("音源不存在")?
     };
-    engine_clone(&state).play_url(item.url, item.title)
+    let info = TrackInfo {
+        id: None,
+        kind: "url".into(),
+        path: String::new(),
+        title: if item.title.is_empty() {
+            item.url.split('/').next_back().unwrap_or("在线音源").to_string()
+        } else {
+            item.title.clone()
+        },
+        artist: "在线音源".into(),
+        album: String::new(),
+        cover: String::new(),
+        duration_ms: 0,
+        nid: None,
+    };
+    engine_clone(&state).play_url(item.url, info)
+}
+
+// ---------- 网易云在线曲库 ----------
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeteasePlayReq {
+    pub id: i64,
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub cover: String,
+    #[serde(default)]
+    pub duration_ms: u64,
+}
+
+fn netease_cookie(state: &State<AppState>) -> Option<String> {
+    let conn = state.db.lock();
+    db::get_setting(&conn, "netease_music_u").filter(|s| !s.is_empty())
+}
+
+#[tauri::command]
+pub async fn netease_search(
+    state: State<'_, AppState>,
+    keyword: String,
+) -> Result<crate::netease::NetSearchResult, String> {
+    let music_u = netease_cookie(&state);
+    crate::netease::search(&keyword, 30, music_u.as_deref())
+}
+
+#[tauri::command]
+pub async fn netease_play(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    track: NeteasePlayReq,
+) -> Result<(), String> {
+    let music_u = netease_cookie(&state);
+    let (url, _br) = crate::netease::song_url(track.id, music_u.as_deref())?
+        .ok_or_else(|| {
+            "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string()
+        })?;
+    let info = TrackInfo {
+        id: None,
+        kind: "netease".into(),
+        path: String::new(),
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        cover: track.cover,
+        duration_ms: track.duration_ms,
+        nid: Some(track.id),
+    };
+    let _ = app; // 事件由引擎发出
+    engine_clone(&state).play_url(url, info)
+}
+
+#[tauri::command]
+pub async fn netease_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let conn = state.db.lock();
+    let music_u = db::get_setting(&conn, "netease_music_u").unwrap_or_default();
+    let nickname = db::get_setting(&conn, "netease_nickname").unwrap_or_default();
+    Ok(json!({
+        "loggedIn": !music_u.is_empty(),
+        "nickname": nickname,
+    }))
+}
+
+#[tauri::command]
+pub async fn netease_qr_create() -> Result<serde_json::Value, String> {
+    let (key, qr) = crate::netease::qr_create()?;
+    Ok(json!({ "key": key, "qr": qr }))
+}
+
+#[tauri::command]
+pub async fn netease_qr_check(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<serde_json::Value, String> {
+    let r = crate::netease::qr_check(&key)?;
+    if r.status == "success" {
+        if let Some(music_u) = &r.music_u {
+            let conn = state.db.lock();
+            db::set_setting(&conn, "netease_music_u", music_u);
+            if let Some(nick) = &r.nickname {
+                db::set_setting(&conn, "netease_nickname", nick);
+            }
+        }
+    }
+    Ok(json!({
+        "status": r.status,
+        "nickname": r.nickname,
+    }))
+}
+
+#[tauri::command]
+pub async fn netease_logout(state: State<'_, AppState>) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::set_setting(&conn, "netease_music_u", "");
+    db::set_setting(&conn, "netease_nickname", "");
+    Ok(())
 }
 
 #[tauri::command]

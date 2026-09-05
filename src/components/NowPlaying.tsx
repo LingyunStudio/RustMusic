@@ -154,9 +154,9 @@ export default function NowPlaying() {
                   {current.album || "未知专辑"}
                 </span>
               )}
-              {current.kind === "url" && (
+              {current.kind === "netease" && (
                 <span className="text-[11.5px] text-[var(--accent)] px-3.5 py-1.5 rounded-full bg-[rgba(240,162,74,0.12)]">
-                  在线音源
+                  网易云 · 在线曲库
                 </span>
               )}
             </div>

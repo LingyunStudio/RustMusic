@@ -7,6 +7,7 @@ mod eq;
 mod library;
 mod lyrics;
 mod models;
+mod netease;
 mod smtc;
 
 use std::sync::atomic::Ordering;
@@ -188,6 +189,12 @@ fn main() {
             commands::delete_source,
             commands::play_track,
             commands::play_source,
+            commands::netease_search,
+            commands::netease_play,
+            commands::netease_status,
+            commands::netease_qr_create,
+            commands::netease_qr_check,
+            commands::netease_logout,
             commands::play_pause,
             commands::pause,
             commands::resume,

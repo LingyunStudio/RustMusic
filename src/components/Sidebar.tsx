@@ -1,5 +1,6 @@
 import {
   Clock3,
+  Cloud,
   Disc3,
   Heart,
   Library,
@@ -18,6 +19,7 @@ const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
   { key: "library", label: "资料库", icon: Library },
   { key: "liked", label: "我喜欢", icon: Heart },
   { key: "recent", label: "最近播放", icon: Clock3 },
+  { key: "netease", label: "网易云", icon: Cloud },
   { key: "sources", label: "在线音源", icon: Radio },
 ];
 

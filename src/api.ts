@@ -2,6 +2,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   Folder,
   LyricsPayload,
+  NeteaseTrack,
   Playlist,
   PlayState,
   ScanState,
@@ -33,6 +34,21 @@ export const api = {
   addSource: (url: string, title?: string) =>
     invoke<number>("add_source", { url, title: title ?? "" }),
   deleteSource: (id: number) => invoke<void>("delete_source", { id }),
+  neteaseSearch: (keyword: string) =>
+    invoke<{ total: number; songs: NeteaseTrack[] }>("netease_search", { keyword }),
+  neteasePlay: (track: {
+    id: number;
+    title: string;
+    artist: string;
+    album: string;
+    cover: string;
+    durationMs: number;
+  }) => invoke<void>("netease_play", { track }),
+  neteaseStatus: () => invoke<{ loggedIn: boolean; nickname: string }>("netease_status"),
+  neteaseQrCreate: () => invoke<{ key: string; qr: string }>("netease_qr_create"),
+  neteaseQrCheck: (key: string) =>
+    invoke<{ status: string; nickname?: string }>("netease_qr_check", { key }),
+  neteaseLogout: () => invoke<void>("netease_logout"),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),
   playPause: () => invoke<void>("play_pause"),
