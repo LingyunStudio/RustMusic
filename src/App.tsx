@@ -17,7 +17,12 @@ import { extractColor } from "./utils";
 
 function DynamicBackdrop() {
   const cover = useStore((s) => s.current?.cover);
-  const url = cover ? coverSrc(cover) : "";
+  // http 封面直接用原始 URL，本地路径才走 asset 协议
+  const url = cover
+    ? cover.startsWith("http://") || cover.startsWith("https://")
+      ? cover
+      : coverSrc(cover)
+    : "";
 
   useEffect(() => {
     if (!url) {

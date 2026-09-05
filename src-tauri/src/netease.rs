@@ -260,7 +260,7 @@ pub fn search(keyword: &str, limit: i64, music_u: Option<&str>) -> Result<NetSea
         .pointer("/result/songCount")
         .and_then(|c| c.as_i64())
         .unwrap_or(songs_json.len() as i64);
-    let songs: Vec<NetSong> = songs_json
+    let mut songs: Vec<NetSong> = songs_json
         .into_iter()
         .filter_map(|s| serde_json::from_value(s).ok())
         .map(|mut s: NetSong| {
@@ -290,7 +290,48 @@ pub fn search(keyword: &str, limit: i64, music_u: Option<&str>) -> Result<NetSea
             s
         })
         .collect();
+    // 搜索接口的专辑对象常常缺少封面，批量补一次歌曲详情
+    enrich_covers(&mut songs, music_u);
     Ok(NetSearchResult { total, songs })
+}
+
+/// 批量拉取歌曲详情，补齐缺失的专辑封面 picUrl
+fn enrich_covers(songs: &mut [NetSong], music_u: Option<&str>) {
+    let missing: Vec<i64> = songs
+        .iter()
+        .filter(|s| s.al.pic_url.is_none() && s.al_legacy.get("picUrl").is_none())
+        .map(|s| s.id)
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    let ids_json = serde_json::to_string(&missing).unwrap_or_default();
+    let c_json = serde_json::to_string(
+        &missing
+            .iter()
+            .map(|id| serde_json::json!({ "id": id }))
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_default();
+    let payload = serde_json::json!({ "c": c_json, "ids": ids_json, "csrf_token": "" }).to_string();
+    if let Ok(resp) = weapi_post("/weapi/v3/song/detail", &payload, music_u) {
+        if let Some(details) = resp.get("songs").and_then(|s| s.as_array()) {
+            for d in details {
+                let id = d.get("id").and_then(|v| v.as_i64());
+                let pic = d
+                    .pointer("/al/picUrl")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                if let (Some(id), Some(pic)) = (id, pic) {
+                    if let Some(s) = songs.iter_mut().find(|s| s.id == id) {
+                        if s.al.pic_url.is_none() {
+                            s.al.pic_url = Some(pic);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// 获取播放直链（weapi，需登录 cookie；按账号权益返回）
@@ -329,6 +370,27 @@ pub fn song_url(id: i64, music_u: Option<&str>) -> Result<Option<(String, i64)>,
             Err(hint.to_string())
         }
     }
+}
+
+/// 获取歌词（LRC 文本，含逐行时间标签）
+pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
+    let music_u = music_u.filter(|s| !s.is_empty());
+    let payload = serde_json::json!({
+        "id": id.to_string(), "tv": "-1", "lv": "-1",
+        "rv": "-1", "kv": "-1", "csrf_token": ""
+    })
+    .to_string();
+    let resp = weapi_post("/weapi/song/lyric", &payload, music_u)?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(format!("获取歌词失败（code {code}）"));
+    }
+    let lrc = resp
+        .pointer("/lrc/lyric")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty());
+    Ok(lrc)
 }
 
 /// 创建扫码登录二维码，返回 (unikey, qr_png_base64)
@@ -438,5 +500,27 @@ mod tests {
             );
         }
         assert!(!r.songs.is_empty(), "search returned no songs");
+    }
+}
+
+#[cfg(test)]
+mod cover_lyric_tests {
+    use super::*;
+
+    #[test]
+    fn test_covers_and_lyric() {
+        let r = search("晴天", 5, None).expect("search failed");
+        for s in &r.songs {
+            println!("  [{}] {} pic={:?}", s.id, s.name, s.al.pic_url.as_deref().map(|u| &u[..u.len().min(48)]));
+        }
+        assert!(r.songs.iter().any(|s| s.al.pic_url.is_some()), "no covers resolved");
+
+        // 用有封面核对的第一首验证歌词（匿名即可拿大部分歌词）
+        let any_id = r.songs[0].id;
+        let lrc = lyric(any_id, None).expect("lyric failed");
+        match &lrc {
+            Some(t) => println!("lyric[{}] first 80 chars: {}", any_id, &t.chars().take(80).collect::<String>()),
+            None => println!("lyric[{}]: none", any_id),
+        }
     }
 }

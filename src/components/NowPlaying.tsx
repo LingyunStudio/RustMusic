@@ -12,21 +12,27 @@ export default function NowPlaying() {
   const toggleLike = useStore((s) => s.toggleLike);
   const lyrics = useStore((s) => s.lyrics);
   const lyricsLoading = useStore((s) => s.lyricsLoading);
-  const loadLyrics = useStore((s) => s.loadLyrics);
+  const loadLyricsByKey = useStore((s) => s.loadLyricsByKey);
   const seek = useStore((s) => s.seek);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const trackId = current?.kind === "track" ? current.id : null;
+  // 歌词键：本地曲目 / 网易云在线曲目
+  const lyricsKey =
+    current?.kind === "track" && current.id != null
+      ? `track-${current.id}`
+      : current?.kind === "netease" && current.nid != null
+        ? `net-${current.nid}`
+        : null;
 
   useEffect(() => {
-    if (trackId != null) {
-      loadLyrics(trackId);
+    if (lyricsKey) {
+      loadLyricsByKey(lyricsKey);
     } else {
       useStore.setState({ lyrics: null, lyricsFor: null, lyricsLoading: false });
     }
-  }, [trackId, loadLyrics]);
+  }, [lyricsKey, loadLyricsByKey]);
 
   const syncedLines = useMemo(
     () =>

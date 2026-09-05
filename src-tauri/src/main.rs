@@ -194,6 +194,7 @@ fn main() {
             commands::netease_status,
             commands::netease_qr_create,
             commands::netease_qr_check,
+            commands::netease_lyric,
             commands::netease_logout,
             commands::play_pause,
             commands::pause,

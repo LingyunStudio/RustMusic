@@ -48,7 +48,7 @@ interface Store {
   toasts: Toast[];
   lyrics: LyricsPayload | null;
   lyricsLoading: boolean;
-  lyricsFor: number | null;
+  lyricsFor: string | null;
 
   // 网易云在线曲库
   neteaseResults: NeteaseTrack[];
@@ -111,6 +111,7 @@ interface Store {
   neteaseSetLogin(loggedIn: boolean, nickname: string): void;
   neteaseLogout(): Promise<void>;
 
+  loadLyricsByKey(key: string): Promise<void>;
   loadLyrics(trackId: number): Promise<void>;
   applyMediaControl(action: string, value?: number): void;
 }
@@ -181,6 +182,7 @@ export const useStore = create<Store>((set, get) => ({
             album: p.album,
             cover: p.cover,
             durationMs: p.durationMs,
+            nid: p.nid ?? null,
             liked,
           },
           playing: p.playing,
@@ -698,17 +700,24 @@ export const useStore = create<Store>((set, get) => ({
 
   // ---------- 歌词 ----------
 
-  async loadLyrics(trackId) {
-    if (get().lyricsFor === trackId) return;
-    set({ lyricsLoading: true, lyricsFor: trackId, lyrics: null });
+  async loadLyricsByKey(key) {
+    if (get().lyricsFor === key) return;
+    set({ lyricsLoading: true, lyricsFor: key, lyrics: null });
+    const [kind, idStr] = key.split("-");
+    const id = Number(idStr);
     try {
-      const payload = await api.getLyrics(trackId);
-      if (get().lyricsFor === trackId) {
+      const payload =
+        kind === "net" ? await api.neteaseLyric(id) : await api.getLyrics(id);
+      if (get().lyricsFor === key) {
         set({ lyrics: payload, lyricsLoading: false });
       }
     } catch {
-      if (get().lyricsFor === trackId) set({ lyricsLoading: false });
+      if (get().lyricsFor === key) set({ lyricsLoading: false });
     }
+  },
+
+  async loadLyrics(trackId) {
+    get().loadLyricsByKey(`track-${trackId}`);
   },
 
   applyMediaControl(action, value) {

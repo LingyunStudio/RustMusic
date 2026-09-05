@@ -385,6 +385,21 @@ pub async fn netease_qr_check(
 }
 
 #[tauri::command]
+pub async fn netease_lyric(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<LyricsPayload, String> {
+    let music_u = netease_cookie(&state);
+    let lrc = crate::netease::lyric(id, music_u.as_deref())?;
+    let text = lrc.unwrap_or_default();
+    if text.is_empty() {
+        return Ok(LyricsPayload { synced: false, lines: vec![] });
+    }
+    let p = lyrics::parse(&text);
+    Ok(LyricsPayload { synced: p.synced, lines: p.lines })
+}
+
+#[tauri::command]
 pub async fn netease_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
     db::set_setting(&conn, "netease_music_u", "");
