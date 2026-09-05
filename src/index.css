@@ -1,0 +1,292 @@
+@import "tailwindcss";
+
+@theme {
+  --color-accent: #818cf8;
+  --color-accent2: #22d3ee;
+  --font-sans:
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui,
+    -apple-system, sans-serif;
+}
+
+:root {
+  --dyn: #818cf8;
+  --bg: #0b0b10;
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: #e4e4e7;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+::selection {
+  background: rgba(129, 140, 248, 0.35);
+}
+
+/* ---------- 滚动条 ---------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ---------- 面板与玻璃 ---------- */
+
+.glass {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-strong {
+  background: rgba(24, 24, 32, 0.82);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hairline {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------- 动画 ---------- */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes npIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes eqBar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.anim-fade {
+  animation: fadeIn 0.25s ease both;
+}
+.anim-rise {
+  animation: riseIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-np {
+  animation: npIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-toast {
+  animation: toastIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-menu {
+  animation: menuIn 0.13s ease both;
+}
+
+/* 播放中的曲目小动效 */
+.eq-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 13px;
+}
+.eq-bars i {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: var(--dyn);
+  transform-origin: bottom;
+  animation: eqBar 0.9s ease-in-out infinite;
+}
+.eq-bars i:nth-child(1) {
+  height: 100%;
+  animation-delay: -0.3s;
+}
+.eq-bars i:nth-child(2) {
+  height: 100%;
+  animation-delay: -0.6s;
+}
+.eq-bars i:nth-child(3) {
+  height: 100%;
+  animation-delay: -0.15s;
+}
+.paused .eq-bars i {
+  animation-play-state: paused;
+  transform: scaleY(0.35);
+}
+
+/* ---------- 歌词滚动淡出 ---------- */
+
+.lyrics-mask {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 12%,
+    black 82%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 12%,
+    black 82%,
+    transparent 100%
+  );
+}
+
+/* ---------- 表单 ---------- */
+
+input[type="text"],
+input[type="url"] {
+  outline: none;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  color: #a1a1aa;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.35);
+  transition:
+    filter 0.15s,
+    transform 0.1s;
+}
+.btn-primary:hover {
+  filter: brightness(1.12);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: 500;
+  font-size: 13px;
+  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* 隐藏原生 number/range 控件痕迹 */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
