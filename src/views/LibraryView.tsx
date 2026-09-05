@@ -156,7 +156,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {filtered.length > 0 && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_96px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
+            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
               <span className="text-center">序号</span>
               <span>歌曲</span>
               <span>专辑</span>

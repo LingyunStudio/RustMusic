@@ -446,22 +446,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   prev() {
-    const { queue, qIndex, history, pos } = get();
+    const { queue, qIndex } = get();
     if (!queue.length) return;
-    if (pos > 3000) {
-      get().seek(0);
-      return;
-    }
-    if (history.length) {
-      const idx = history[history.length - 1];
-      set({ history: history.slice(0, -1), qIndex: Math.min(idx, queue.length - 1) });
-      get().playQueueIndex(get().qIndex);
-    } else if (qIndex > 0) {
-      set({ qIndex: qIndex - 1 });
-      get().playQueueIndex(qIndex - 1);
-    } else {
-      get().seek(0);
-    }
+    // 直接切到上一曲（到列表头则回绕到最后一首）
+    const idx = qIndex > 0 ? qIndex - 1 : queue.length - 1;
+    set((s) => ({ qIndex: idx, history: [...s.history.slice(-50), s.qIndex] }));
+    get().playQueueIndex(idx);
   },
 
   seek(ms) {
