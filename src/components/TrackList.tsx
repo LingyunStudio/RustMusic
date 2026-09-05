@@ -172,10 +172,7 @@ export default function TrackList({
               {t.album || "未知专辑"}
             </div>
 
-            {/* 弹性空白 */}
-            <div />
-
-            {/* 格式 / 时长（分列排布，间距固定） */}
+            {/* 格式 / 时长（与表头同列，右对齐） */}
             <div className="flex items-center justify-end gap-3">
               <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-white/[0.07] text-[var(--ink-2)] font-semibold tracking-wider">
                 {t.format || "AUDIO"}
@@ -184,6 +181,9 @@ export default function TrackList({
                 {fmtTime(t.duration * 1000)}
               </span>
             </div>
+
+            {/* 弹性空白 */}
+            <div />
 
             {/* 操作 */}
             <div className="flex items-center justify-end gap-1 pr-1">

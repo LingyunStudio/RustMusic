@@ -277,12 +277,12 @@ export default function NeteaseView() {
                     {t.al?.name || "未知专辑"}
                   </div>
 
-                  {/* 弹性空白 */}
-                  <div />
-
                   <div className="text-right text-[12.5px] text-[var(--ink-2)] tabular-nums">
                     {fmtTime(t.dt)}
                   </div>
+
+                  {/* 弹性空白 */}
+                  <div />
 
                   <div className="flex items-center justify-end gap-1 pr-1">
                     <button
