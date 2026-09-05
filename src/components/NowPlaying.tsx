@@ -14,6 +14,8 @@ export default function NowPlaying() {
   const lyricsLoading = useStore((s) => s.lyricsLoading);
   const loadLyricsByKey = useStore((s) => s.loadLyricsByKey);
   const seek = useStore((s) => s.seek);
+  const neteaseLiked = useStore((s) => s.neteaseLiked);
+  const neteaseToggleLike = useStore((s) => s.neteaseToggleLike);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -119,7 +121,7 @@ export default function NowPlaying() {
       {/* 主体 */}
       <div className="relative flex gap-14 px-14 pb-8 items-stretch h-[calc(100%-64px)]">
         {/* 左：封面 */}
-        <div className="w-[40%] max-w-[440px] flex flex-col items-center justify-center gap-8">
+        <div className="w-[40%] max-w-[440px] flex flex-col items-center justify-center gap-5">
           <div className="relative">
             <div
               className="absolute -inset-10 rounded-[48px] opacity-40 blur-3xl transition-colors duration-1000"
@@ -132,37 +134,55 @@ export default function NowPlaying() {
             <CoverImg
               src={current.cover}
               seed={current.title}
-              className="w-[min(38vh,350px)] h-[min(38vh,350px)] rounded-[28px] shadow-[0_36px_90px_rgba(0,0,0,0.7)] relative"
+              className="w-[min(36vh,340px)] h-[min(36vh,340px)] rounded-[28px] shadow-[0_36px_90px_rgba(0,0,0,0.7)] relative"
               iconSize={56}
             />
           </div>
           <div className="text-center max-w-full">
-            <div className="text-[23px] font-bold text-[var(--ink)] truncate">
+            <div className="text-[22px] font-bold text-[var(--ink)] truncate">
               {current.title}
             </div>
-            <div className="text-[14px] text-[var(--ink-2)] mt-2 truncate">{current.artist}</div>
-            <div className="flex items-center justify-center gap-3 mt-5">
+            <div className="text-[13.5px] text-[var(--ink-2)] mt-1.5 truncate">
+              {current.artist}
+            </div>
+            <div className="flex items-center justify-center gap-3 mt-3.5">
               {current.kind === "track" && current.id != null && (
                 <button
-                  className="btn-ghost w-10 h-10 !rounded-full glass"
+                  className="btn-ghost w-9 h-9 !rounded-full glass"
                   onClick={() => toggleLike(current.id!)}
                 >
                   <Heart
-                    size={17}
+                    size={16}
                     className={
                       current.liked ? "fill-[#e0533f] text-[#e0533f]" : ""
                     }
                   />
                 </button>
               )}
+              {current.kind === "netease" && current.nid != null && (
+                <button
+                  className="btn-ghost w-9 h-9 !rounded-full glass"
+                  onClick={() => neteaseToggleLike(current.nid!)}
+                  title={neteaseLiked[current.nid] ? "取消收藏" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      neteaseLiked[current.nid]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
+              )}
               {current.kind === "track" && (
-                <span className="text-[11.5px] text-[var(--ink-2)] px-3.5 py-1.5 rounded-full bg-white/[0.06]">
+                <span className="text-[11.5px] text-[var(--ink-2)] px-3 py-1 rounded-full bg-white/[0.06]">
                   {current.album || "未知专辑"}
                 </span>
               )}
               {current.kind === "netease" && (
-                <span className="text-[11.5px] text-[var(--accent)] px-3.5 py-1.5 rounded-full bg-[rgba(240,162,74,0.12)]">
-                  网易云 · 在线曲库
+                <span className="text-[11.5px] text-[var(--accent)] px-3 py-1 rounded-full bg-[rgba(240,162,74,0.12)]">
+                  网易云 · {current.album || "在线曲库"}
                 </span>
               )}
             </div>

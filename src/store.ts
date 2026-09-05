@@ -58,6 +58,7 @@ interface Store {
   neteaseLoggedIn: boolean;
   neteaseNickname: string;
   neteaseCache: Record<number, NeteaseTrack>;
+  neteaseLiked: Record<number, boolean>;
 
   init(): Promise<void>;
   toast(msg: string, type?: Toast["type"]): void;
@@ -109,6 +110,8 @@ interface Store {
   neteaseSearch(kw: string): Promise<void>;
   neteaseRefreshStatus(): Promise<void>;
   neteaseSetLogin(loggedIn: boolean, nickname: string): void;
+  neteaseSyncLikes(): Promise<void>;
+  neteaseToggleLike(id: number): void;
   neteaseLogout(): Promise<void>;
 
   loadLyricsByKey(key: string): Promise<void>;
@@ -160,6 +163,7 @@ export const useStore = create<Store>((set, get) => ({
   neteaseLoggedIn: false,
   neteaseNickname: "",
   neteaseCache: {},
+  neteaseLiked: {},
 
   // ---------- 初始化 ----------
 
@@ -267,6 +271,7 @@ export const useStore = create<Store>((set, get) => ({
         neteaseNickname: neteaseStatus.nickname,
         ready: true,
       });
+      if (neteaseStatus.loggedIn) get().neteaseSyncLikes();
     } catch (e) {
       set({ ready: true });
       get().toast(`初始化失败：${e}`, "error");
@@ -686,6 +691,37 @@ export const useStore = create<Store>((set, get) => ({
 
   neteaseSetLogin(loggedIn, nickname) {
     set({ neteaseLoggedIn: loggedIn, neteaseNickname: nickname });
+  },
+
+  async neteaseSyncLikes() {
+    if (!get().neteaseLoggedIn) return;
+    try {
+      const ids = await api.neteaseLikeList();
+      const liked: Record<number, boolean> = {};
+      for (const id of ids) liked[id] = true;
+      set({ neteaseLiked: liked });
+    } catch {
+      /* 静默：下次启动再同步 */
+    }
+  },
+
+  neteaseToggleLike(id) {
+    const likedState = get().neteaseLiked;
+    const next = !likedState[id];
+    set({ neteaseLiked: { ...likedState, [id]: next } });
+    api
+      .neteaseLike(id, next)
+      .then(() =>
+        get().toast(next ? "已收藏到账号的“我喜欢”" : "已取消收藏", "success")
+      )
+      .catch((e) => {
+        // 回滚
+        const cur = { ...get().neteaseLiked };
+        if (next) delete cur[id];
+        else cur[id] = true;
+        set({ neteaseLiked: cur });
+        get().toast(String(e), "error");
+      });
   },
 
   async neteaseLogout() {

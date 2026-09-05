@@ -32,6 +32,9 @@ export default function PlayerBar() {
   const download = useStore((s) => s.download);
   const queue = useStore((s) => s.queue);
   const queueOpen = useStore((s) => s.queueOpen);
+  const nowPlayingOpen = useStore((s) => s.nowPlayingOpen);
+  const neteaseLiked = useStore((s) => s.neteaseLiked);
+  const neteaseToggleLike = useStore((s) => s.neteaseToggleLike);
   const togglePlay = useStore((s) => s.togglePlay);
   const next = useStore((s) => s.next);
   const prev = useStore((s) => s.prev);
@@ -68,8 +71,8 @@ export default function PlayerBar() {
             <>
               <button
                 className="group relative shrink-0"
-                onClick={() => setNowPlayingOpen(true)}
-                title="展开播放页"
+                onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
+                title={nowPlayingOpen ? "收起播放页" : "展开播放页"}
               >
                 <CoverImg
                   src={current.cover}
@@ -78,13 +81,16 @@ export default function PlayerBar() {
                   iconSize={20}
                 />
                 <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <ChevronUp size={18} className="text-white" />
+                  <ChevronUp
+                    size={18}
+                    className={`text-white transition-transform ${nowPlayingOpen ? "rotate-180" : ""}`}
+                  />
                 </div>
               </button>
               <div className="min-w-0">
                 <div
                   className="text-[13.5px] font-semibold text-[var(--ink)] truncate cursor-pointer hover:text-[var(--accent-strong)] transition-colors"
-                  onClick={() => setNowPlayingOpen(true)}
+                  onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
                 >
                   {current.title}
                 </div>
@@ -105,6 +111,22 @@ export default function PlayerBar() {
                     size={16}
                     className={
                       current.liked ? "fill-[#e0533f] text-[#e0533f]" : ""
+                    }
+                  />
+                </button>
+              )}
+              {current.kind === "netease" && current.nid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 shrink-0"
+                  onClick={() => neteaseToggleLike(current.nid!)}
+                  title={neteaseLiked[current.nid] ? "取消收藏" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      neteaseLiked[current.nid]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
                     }
                   />
                 </button>

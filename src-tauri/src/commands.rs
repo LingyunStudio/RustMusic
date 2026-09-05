@@ -376,12 +376,41 @@ pub async fn netease_qr_check(
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "netease_nickname", nick);
             }
+            if let Some(uid) = &r.user_id {
+                db::set_setting(&conn, "netease_uid", &uid.to_string());
+            }
         }
     }
     Ok(json!({
         "status": r.status,
         "nickname": r.nickname,
     }))
+}
+
+#[tauri::command]
+pub async fn netease_like_list(state: State<'_, AppState>) -> Result<Vec<i64>, String> {
+    let (uid, music_u) = {
+        let conn = state.db.lock();
+        (
+            db::get_setting(&conn, "netease_uid").unwrap_or_default(),
+            db::get_setting(&conn, "netease_music_u").unwrap_or_default(),
+        )
+    };
+    if uid.is_empty() || music_u.is_empty() {
+        return Ok(vec![]);
+    }
+    let uid: i64 = uid.parse().map_err(|_| "账号 ID 无效".to_string())?;
+    crate::netease::like_list(uid, &music_u)
+}
+
+#[tauri::command]
+pub async fn netease_like(
+    state: State<'_, AppState>,
+    id: i64,
+    like: bool,
+) -> Result<(), String> {
+    let music_u = netease_cookie(&state).ok_or("未登录网易云账号")?;
+    crate::netease::like(id, like, &music_u)
 }
 
 #[tauri::command]

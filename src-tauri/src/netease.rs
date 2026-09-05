@@ -432,6 +432,7 @@ pub struct QrCheckResult {
     pub status: String,
     pub nickname: Option<String>,
     pub music_u: Option<String>,
+    pub user_id: Option<i64>,
 }
 
 /// 轮询扫码状态；成功时从 Set-Cookie 提取 MUSIC_U
@@ -466,7 +467,7 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
         _ => "waiting",
     };
     if status != "success" {
-        return Ok(QrCheckResult { status: status.into(), nickname: None, music_u: None });
+        return Ok(QrCheckResult { status: status.into(), nickname: None, music_u: None, user_id: None });
     }
     let music_u = set_cookies
         .iter()
@@ -479,10 +480,46 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
         .pointer("/profile/nickname")
         .and_then(|n| n.as_str())
         .map(|s| s.to_string());
+    let user_id = json.pointer("/profile/userId").and_then(|n| n.as_i64());
     if music_u.is_none() {
         return Err("登录成功但未取到登录凭证，请重试".into());
     }
-    Ok(QrCheckResult { status: "success".into(), nickname, music_u })
+    Ok(QrCheckResult { status: "success".into(), nickname, music_u, user_id })
+}
+
+/// 获取账号“我喜欢”列表的歌曲 ID
+pub fn like_list(uid: i64, music_u: &str) -> Result<Vec<i64>, String> {
+    let payload = serde_json::json!({ "uid": uid.to_string(), "csrf_token": "" }).to_string();
+    let resp = weapi_post("/weapi/song/likelist/get", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(format!("获取喜欢列表失败（code {code}）"));
+    }
+    Ok(resp
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_i64()).collect())
+        .unwrap_or_default())
+}
+
+/// 收藏 / 取消收藏（写入账号的“我喜欢”）
+pub fn like(id: i64, like: bool, music_u: &str) -> Result<(), String> {
+    let payload = serde_json::json!({
+        "trackId": id.to_string(),
+        "like": if like { "true" } else { "false" },
+        "time": "3", "csrf_token": ""
+    })
+    .to_string();
+    let resp = weapi_post("/weapi/song/like?alg=RT&time=25", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        let msg = resp
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("未知错误");
+        return Err(format!("收藏失败（code {code}）: {msg}"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

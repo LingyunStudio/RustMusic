@@ -49,6 +49,9 @@ export const api = {
   neteaseQrCheck: (key: string) =>
     invoke<{ status: string; nickname?: string }>("netease_qr_check", { key }),
   neteaseLyric: (id: number) => invoke<LyricsPayload>("netease_lyric", { id }),
+  neteaseLikeList: () => invoke<number[]>("netease_like_list"),
+  neteaseLike: (id: number, like: boolean) =>
+    invoke<void>("netease_like", { id, like }),
   neteaseLogout: () => invoke<void>("netease_logout"),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),

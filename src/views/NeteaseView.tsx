@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useRef, useState } from "react";
 import {
   Cloud,
+  Heart,
   LogOut,
   MoreHorizontal,
   Play,
@@ -22,6 +23,8 @@ export default function NeteaseView() {
   const loggedIn = useStore((s) => s.neteaseLoggedIn);
   const nickname = useStore((s) => s.neteaseNickname);
   const current = useStore((s) => s.current);
+  const neteaseLiked = useStore((s) => s.neteaseLiked);
+  const neteaseToggleLike = useStore((s) => s.neteaseToggleLike);
   const playNetease = useStore((s) => s.playNetease);
   const playNext = useStore((s) => s.playNext);
   const addToQueue = useStore((s) => s.addToQueue);
@@ -272,6 +275,23 @@ export default function NeteaseView() {
                       className="btn-ghost w-8 h-8"
                       onClick={(e) => {
                         e.stopPropagation();
+                        neteaseToggleLike(t.id);
+                      }}
+                      title={neteaseLiked[t.id] ? "取消收藏" : "收藏到“我喜欢”"}
+                    >
+                      <Heart
+                        size={15}
+                        className={
+                          neteaseLiked[t.id]
+                            ? "fill-[#e0533f] text-[#e0533f]"
+                            : "opacity-0 group-hover:opacity-100"
+                        }
+                      />
+                    </button>
+                    <button
+                      className="btn-ghost w-8 h-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         playNext({ kind: "netease", id: t.id });
                       }}
                       title="下一首播放"
@@ -381,6 +401,7 @@ function QrLoginModal({ open, onClose }: { open: boolean; onClose: () => void })
             stopPolling();
             neteaseSetLogin(true, c.nickname ?? "");
             toast(`网易云登录成功：${c.nickname ?? ""}`, "success");
+            useStore.getState().neteaseSyncLikes();
             onClose();
           }
         } catch (e) {
