@@ -94,7 +94,7 @@ export default function TrackList({
         return (
           <div
             key={t.id}
-            className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_minmax(40px,1fr)_96px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
+            className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_96px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
               active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
             }`}
             onDoubleClick={() => playTracks(tracks, i)}
@@ -182,8 +182,6 @@ export default function TrackList({
               </span>
             </div>
 
-            {/* 弹性空白 */}
-            <div />
 
             {/* 操作 */}
             <div className="flex items-center justify-end gap-1 pr-1">

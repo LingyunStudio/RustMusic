@@ -143,12 +143,11 @@ export default function NeteaseView() {
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {rows.length > 0 && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_minmax(40px,1fr)_96px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
+            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_96px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
               <span className="text-center">序号</span>
               <span>歌曲</span>
               <span>专辑</span>
               <span className="text-right">时长</span>
-              <span />{/* 弹性空白 */}
               <span className="text-right">操作</span>
             </div>
           )}
@@ -201,7 +200,7 @@ export default function NeteaseView() {
               return (
                 <div
                   key={t.id}
-                  className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_minmax(40px,1fr)_96px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
+                  className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_96px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
                     active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
                   }`}
                   onDoubleClick={() => playNetease(rows, i)}
@@ -281,8 +280,6 @@ export default function NeteaseView() {
                     {fmtTime(t.dt)}
                   </div>
 
-                  {/* 弹性空白 */}
-                  <div />
 
                   <div className="flex items-center justify-end gap-1 pr-1">
                     <button
