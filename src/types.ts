@@ -53,7 +53,7 @@ export interface LyricsPayload {
 
 export interface TrackInfo {
   id: number | null;
-  kind: "track" | "url" | "netease";
+  kind: "track" | "url" | "netease" | "qq";
   path: string;
   title: string;
   artist: string;
@@ -61,6 +61,17 @@ export interface TrackInfo {
   cover: string;
   durationMs: number;
   nid?: number | null;
+  qid?: string | null;
+}
+
+export interface QqSong {
+  id: string;
+  name: string;
+  singer: string;
+  album: string;
+  albumMid: string;
+  durationMs: number;
+  vip: boolean;
 }
 
 export interface NeteaseTrack {
@@ -82,12 +93,11 @@ export interface CurrentTrack extends TrackInfo {
 
 export type RepeatMode = "off" | "all" | "one";
 
-export type QueueItemKind = "track" | "url" | "netease";
+export type QueueItemKind = "track" | "url" | "netease" | "qq";
 
-export interface QueueItem {
-  kind: QueueItemKind;
-  id: number;
-}
+export type QueueItem =
+  | { kind: "track" | "netease" | "url"; id: number }
+  | { kind: "qq"; id: string };
 
 export type ViewName =
   | "library"
@@ -95,6 +105,7 @@ export type ViewName =
   | "recent"
   | "sources"
   | "netease"
+  | "qq"
   | "settings"
   | "playlist";
 

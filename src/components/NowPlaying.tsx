@@ -26,7 +26,9 @@ export default function NowPlaying() {
       ? `track-${current.id}`
       : current?.kind === "netease" && current.nid != null
         ? `net-${current.nid}`
-        : null;
+        : current?.kind === "qq" && current.qid != null
+          ? `qq-${current.qid}`
+          : null;
 
   useEffect(() => {
     if (lyricsKey) {
@@ -175,6 +177,11 @@ export default function NowPlaying() {
                   />
                 </button>
               )}
+              {current.kind === "qq" && (
+                <span className="text-[11px] text-[var(--ink-3)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
+                  QQ音乐
+                </span>
+              )}
               {current.kind === "track" && (
                 <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
                   {current.album || "未知专辑"}
@@ -183,6 +190,11 @@ export default function NowPlaying() {
               {current.kind === "netease" && (
                 <span className="text-[11px] text-[var(--accent)] px-2.5 py-0.5 rounded-full bg-[rgba(240,162,74,0.12)]">
                   网易云 · {current.album || "在线曲库"}
+                </span>
+              )}
+              {current.kind === "qq" && current.album && (
+                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
+                  {current.album}
                 </span>
               )}
             </div>

@@ -4,6 +4,7 @@ import type {
   LyricsPayload,
   NeteaseTrack,
   Playlist,
+  QqSong,
   PlayState,
   ScanState,
   SettingsPayload,
@@ -49,6 +50,22 @@ export const api = {
   neteaseQrCheck: (key: string) =>
     invoke<{ status: string; nickname?: string }>("netease_qr_check", { key }),
   neteaseLyric: (id: number) => invoke<LyricsPayload>("netease_lyric", { id }),
+  qqSearch: (keyword: string) =>
+    invoke<QqSong[]>("qq_search", { keyword }),
+  qqPlay: (track: {
+    songmid: string;
+    title: string;
+    artist: string;
+    album: string;
+    albumMid: string;
+    durationMs: number;
+  }) => invoke<void>("qq_play", { track }),
+  qqLyric: (songmid: string) => invoke<LyricsPayload>("qq_lyric", { songmid }),
+  qqQrCreate: () => invoke<{ qrsig: string; qr: string }>("qq_qr_create"),
+  qqQrCheck: (qrsig: string) =>
+    invoke<{ status: string; nickname?: string }>("qq_qr_check", { qrsig }),
+  qqStatus: () => invoke<{ loggedIn: boolean; nickname: string }>("qq_status"),
+  qqLogout: () => invoke<void>("qq_logout"),
   neteaseLikeList: () => invoke<number[]>("netease_like_list"),
   neteaseLike: (id: number, like: boolean) =>
     invoke<void>("netease_like", { id, like }),

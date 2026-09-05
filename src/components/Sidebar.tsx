@@ -9,6 +9,7 @@ import {
   Plus,
   Radio,
   Settings,
+  DiscAlbum,
 } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "../store";
@@ -20,6 +21,7 @@ const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
   { key: "liked", label: "我喜欢", icon: Heart },
   { key: "recent", label: "最近播放", icon: Clock3 },
   { key: "netease", label: "网易云", icon: Cloud },
+  { key: "qq", label: "QQ音乐", icon: DiscAlbum },
   { key: "sources", label: "在线音源", icon: Radio },
 ];
 

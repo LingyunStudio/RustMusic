@@ -1,0 +1,14 @@
+HTTP/1.1 200 Connection established
+
+HTTP/1.1 200 OK
+Date: Sat, 05 Sep 2026 22:19:14 GMT
+Content-Length: 434
+Connection: keep-alive
+Cache-Control: no-cache, no-store, must-revalidate
+Expires: -1
+P3P: CP=CAO PSA OUR
+Pragma: no-cache
+Strict-Transport-Security: max-age=31536000
+Set-Cookie: qrsig=1863cf7bdd9aa15fd9feafa1b30b1717a48194b66ca5e8227aae571e2c12f4416ddd5047dd36823658890c6338359a5a1bac9432eb67f3a6;Path=/;Domain=ptlogin2.qq.com;Secure;SameSite=None;
+Server: TAPISIX/2.2.2
+

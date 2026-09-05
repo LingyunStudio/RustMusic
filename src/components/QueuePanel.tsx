@@ -25,6 +25,18 @@ function queueLabel(item: QueueItem): { title: string; artist: string; cover?: s
       };
     return { title: `网易云 #${item.id}`, artist: "在线曲库" };
   }
+  if (item.kind === "qq") {
+    const t = s.qqCache[item.id];
+    if (t)
+      return {
+        title: t.name,
+        artist: t.singer || "QQ音乐",
+        cover: t.albumMid
+          ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${t.albumMid}.jpg`
+          : undefined,
+      };
+    return { title: `QQ音乐 #${item.id}`, artist: "在线曲库" };
+  }
   const src = s.sources.find((x) => x.id === item.id);
   return {
     title: src?.title || src?.url.split("/").pop() || "在线音源",

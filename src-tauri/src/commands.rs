@@ -261,6 +261,7 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
         cover: meta.cover,
         duration_ms: (meta.duration * 1000.0) as u64,
         nid: None,
+        qid: None,
     };
     engine_clone(&state).play_file(info)
 }
@@ -285,6 +286,7 @@ pub async fn play_source(state: State<'_, AppState>, id: i64) -> Result<(), Stri
         cover: String::new(),
         duration_ms: 0,
         nid: None,
+        qid: None,
     };
     engine_clone(&state).play_url(item.url, info)
 }
@@ -341,6 +343,7 @@ pub async fn netease_play(
         cover: track.cover,
         duration_ms: track.duration_ms,
         nid: Some(track.id),
+        qid: None,
     };
     let _ = app; // 事件由引擎发出
     engine_clone(&state).play_url(url, info)
@@ -433,6 +436,119 @@ pub async fn netease_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
     db::set_setting(&conn, "netease_music_u", "");
     db::set_setting(&conn, "netease_nickname", "");
+    Ok(())
+}
+
+// ---------- QQ 音乐在线曲库 ----------
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QqPlayReq {
+    pub songmid: String,
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub album_mid: String,
+    #[serde(default)]
+    pub duration_ms: u64,
+}
+
+fn qq_credential(state: &State<AppState>) -> Result<(String, String), String> {
+    let (musicid, musickey) = {
+        let conn = state.db.lock();
+        (
+            db::get_setting(&conn, "qq_musicid").unwrap_or_default(),
+            db::get_setting(&conn, "qq_musickey").unwrap_or_default(),
+        )
+    };
+    if musicid.is_empty() || musickey.is_empty() {
+        return Err("未登录 QQ 音乐账号，无法获取播放链接，请先扫码登录".into());
+    }
+    Ok((musicid, musickey))
+}
+
+#[tauri::command]
+pub async fn qq_search(keyword: String) -> Result<Vec<crate::qq::QqSong>, String> {
+    crate::qq::search(&keyword, 30)
+}
+
+#[tauri::command]
+pub async fn qq_play(
+    state: State<'_, AppState>,
+    track: QqPlayReq,
+) -> Result<(), String> {
+    let (musicid, musickey) = qq_credential(&state)?;
+    let url = crate::qq::song_url(&track.songmid, &musicid, &musickey)?;
+    let info = TrackInfo {
+        id: None,
+        kind: "qq".into(),
+        path: String::new(),
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        cover: format!(
+            "https://y.gtimg.cn/music/photo_new/T002R300x300M000{}.jpg",
+            track.album_mid
+        ),
+        duration_ms: track.duration_ms,
+        nid: None,
+        qid: Some(track.songmid),
+    };
+    engine_clone(&state).play_url(url, info)
+}
+
+#[tauri::command]
+pub async fn qq_lyric(songmid: String) -> Result<LyricsPayload, String> {
+    let text = crate::qq::lyric(&songmid)?.unwrap_or_default();
+    if text.is_empty() {
+        return Ok(LyricsPayload { synced: false, lines: vec![] });
+    }
+    let p = lyrics::parse(&text);
+    Ok(LyricsPayload { synced: p.synced, lines: p.lines })
+}
+
+#[tauri::command]
+pub async fn qq_qr_create() -> Result<serde_json::Value, String> {
+    let (qrsig, qr) = crate::qq::qr_create()?;
+    Ok(json!({ "qrsig": qrsig, "qr": qr }))
+}
+
+#[tauri::command]
+pub async fn qq_qr_check(
+    state: State<'_, AppState>,
+    qrsig: String,
+) -> Result<serde_json::Value, String> {
+    let r = crate::qq::qr_check(&qrsig)?;
+    if r.status == "success" {
+        if let (Some(musicid), Some(musickey)) = (&r.musicid, &r.musickey) {
+            let conn = state.db.lock();
+            db::set_setting(&conn, "qq_musicid", musicid);
+            db::set_setting(&conn, "qq_musickey", musickey);
+            if let Some(nick) = &r.nickname {
+                db::set_setting(&conn, "qq_nickname", nick);
+            }
+        }
+    }
+    Ok(json!({ "status": r.status, "nickname": r.nickname }))
+}
+
+#[tauri::command]
+pub async fn qq_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let conn = state.db.lock();
+    let musicid = db::get_setting(&conn, "qq_musicid").unwrap_or_default();
+    let nickname = db::get_setting(&conn, "qq_nickname").unwrap_or_default();
+    Ok(json!({ "loggedIn": !musicid.is_empty(), "nickname": nickname }))
+}
+
+#[tauri::command]
+pub async fn qq_logout(state: State<'_, AppState>) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::set_setting(&conn, "qq_musicid", "");
+    db::set_setting(&conn, "qq_musickey", "");
+    db::set_setting(&conn, "qq_nickname", "");
     Ok(())
 }
 

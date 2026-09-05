@@ -29,6 +29,8 @@ pub struct TrackInfo {
     pub duration_ms: u64,
     #[serde(default)]
     pub nid: Option<i64>,
+    #[serde(default)]
+    pub qid: Option<String>,
 }
 
 #[derive(Clone, Serialize)]

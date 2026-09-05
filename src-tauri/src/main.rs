@@ -8,6 +8,7 @@ mod library;
 mod lyrics;
 mod models;
 mod netease;
+mod qq;
 mod smtc;
 
 use std::sync::atomic::Ordering;
@@ -211,6 +212,13 @@ fn main() {
             commands::netease_like_list,
             commands::netease_like,
             commands::netease_logout,
+            commands::qq_search,
+            commands::qq_play,
+            commands::qq_lyric,
+            commands::qq_qr_create,
+            commands::qq_qr_check,
+            commands::qq_status,
+            commands::qq_logout,
             commands::play_pause,
             commands::pause,
             commands::resume,
