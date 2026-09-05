@@ -38,6 +38,7 @@ export default function TrackList({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [pickerFor, setPickerFor] = useState<TrackMeta | null>(null);
   const current = useStore((s) => s.current);
+  const playing = useStore((s) => s.playing);
   const playTracks = useStore((s) => s.playTracks);
   const toggleLike = useStore((s) => s.toggleLike);
   const addToQueue = useStore((s) => s.addToQueue);
@@ -105,7 +106,7 @@ export default function TrackList({
                 />
                 {active ? (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className={`eq-bars ${useStore.getState().playing ? "" : "paused"}`}>
+                    <div className={`eq-bars ${playing ? "" : "paused"}`}>
                       <i />
                       <i />
                       <i />

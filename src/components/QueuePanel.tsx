@@ -26,6 +26,8 @@ export default function QueuePanel() {
   const queue = useStore((s) => s.queue);
   const qIndex = useStore((s) => s.qIndex);
   const playing = useStore((s) => s.playing);
+  const pos = useStore((s) => s.pos);
+  const dur = useStore((s) => s.dur);
   const jumpTo = useStore((s) => s.jumpTo);
   const removeQueueItem = useStore((s) => s.removeQueueItem);
   const clearQueue = useStore((s) => s.clearQueue);
@@ -110,7 +112,7 @@ export default function QueuePanel() {
             {upcoming.length > 0 ? `接下来 ${upcoming.length} 首` : "播放到列表末尾"}
           </span>
           <span className="tabular-nums">
-            {fmtTime(useStore.getState().pos)} / {fmtTime(useStore.getState().dur)}
+            {fmtTime(pos)} / {fmtTime(dur)}
           </span>
         </div>
       )}

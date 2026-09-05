@@ -1,0 +1,2 @@
+fix: 交互与渲染打磨
+feat: RustMusic v0.1.0 — Tauri 2 + React 音乐播放器
