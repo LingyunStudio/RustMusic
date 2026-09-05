@@ -106,6 +106,9 @@ impl Engine {
         S: Source<Item = f32> + Send + 'static,
     {
         let wrapped = EqSource::new(src, self.eq.clone(), self.pos_ms.clone());
+        let diag_sr = wrapped.sample_rate();
+        let diag_ch = wrapped.channels();
+        let diag_dur = wrapped.total_duration();
         self.pos_ms.store(0, Ordering::Relaxed);
         self.dur_ms
             .store(info.duration_ms, Ordering::Relaxed);
@@ -118,6 +121,11 @@ impl Engine {
         self.sink.play();
         self.user_paused.store(false, Ordering::Relaxed);
         self.stopped.store(false, Ordering::Relaxed);
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[engine] started: kind={} path={} total_duration={:?} sr={} ch={}",
+            info.kind, info.path, diag_dur, diag_sr, diag_ch,
+        );
         *self.current.write() = Some(info.clone());
         self.notify_smtc();
         let _ = self.app.emit(

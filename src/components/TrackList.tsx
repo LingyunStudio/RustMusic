@@ -94,7 +94,7 @@ export default function TrackList({
         return (
           <div
             key={t.id}
-            className={`group grid grid-cols-[64px_minmax(0,1fr)_minmax(0,0.5fr)_120px_104px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
+            className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_minmax(40px,1fr)_96px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
               active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
             }`}
             onDoubleClick={() => playTracks(tracks, i)}
@@ -143,12 +143,23 @@ export default function TrackList({
                 iconSize={16}
               />
               <div className="min-w-0">
-                <div
-                  className={`text-[13.5px] truncate ${
-                    active ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
-                  }`}
-                >
-                  {trackTitle(t)}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className={`text-[13.5px] truncate ${
+                      active ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
+                    }`}
+                  >
+                    {trackTitle(t)}
+                  </span>
+                  {active && (
+                    <span className="shrink-0 inline-flex">
+                      <span className={`eq-bars ${playing ? "" : "paused"}`}>
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    </span>
+                  )}
                 </div>
                 <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
                   {trackArtist(t)}
@@ -160,6 +171,9 @@ export default function TrackList({
             <div className="text-[12.5px] text-[var(--ink-3)] truncate">
               {t.album || "未知专辑"}
             </div>
+
+            {/* 弹性空白 */}
+            <div />
 
             {/* 格式 / 时长（分列排布，间距固定） */}
             <div className="flex items-center justify-end gap-3">

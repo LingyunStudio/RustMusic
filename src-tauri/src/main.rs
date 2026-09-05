@@ -85,10 +85,23 @@ fn monitor(app: AppHandle) {
     let mut was_active = false;
     let mut last_pos_emit = std::time::Instant::now() - std::time::Duration::from_secs(1);
 
+    let mut diag = 0u32;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(120));
         let active = eng.is_active();
         let paused = eng.user_paused.load(Ordering::Relaxed);
+
+        diag += 1;
+        if cfg!(debug_assertions) && diag % 40 == 0 {
+            eprintln!(
+                "[monitor] active={} paused={} stopped={} pos={} dur={}",
+                active,
+                paused,
+                eng.stopped.load(Ordering::Relaxed),
+                eng.pos_ms.load(Ordering::Relaxed),
+                eng.dur_ms.load(Ordering::Relaxed),
+            );
+        }
 
         if active && !paused && last_pos_emit.elapsed() >= std::time::Duration::from_millis(250) {
             last_pos_emit = std::time::Instant::now();
