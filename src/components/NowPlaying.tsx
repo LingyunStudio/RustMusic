@@ -142,13 +142,13 @@ export default function NowPlaying() {
             <div className="text-[22px] font-bold text-[var(--ink)] truncate">
               {current.title}
             </div>
-            <div className="text-[13.5px] text-[var(--ink-2)] mt-1.5 truncate">
+            <div className="text-[13px] text-[var(--ink-2)] mt-1 truncate">
               {current.artist}
             </div>
-            <div className="flex items-center justify-center gap-3 mt-3.5">
+            <div className="flex items-center justify-center gap-2.5 mt-2.5">
               {current.kind === "track" && current.id != null && (
                 <button
-                  className="btn-ghost w-9 h-9 !rounded-full glass"
+                  className="btn-ghost w-8 h-8 !rounded-full glass"
                   onClick={() => toggleLike(current.id!)}
                 >
                   <Heart
@@ -161,7 +161,7 @@ export default function NowPlaying() {
               )}
               {current.kind === "netease" && current.nid != null && (
                 <button
-                  className="btn-ghost w-9 h-9 !rounded-full glass"
+                  className="btn-ghost w-8 h-8 !rounded-full glass"
                   onClick={() => neteaseToggleLike(current.nid!)}
                   title={neteaseLiked[current.nid] ? "取消收藏" : "收藏到“我喜欢”"}
                 >
@@ -176,12 +176,12 @@ export default function NowPlaying() {
                 </button>
               )}
               {current.kind === "track" && (
-                <span className="text-[11.5px] text-[var(--ink-2)] px-3 py-1 rounded-full bg-white/[0.06]">
+                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
                   {current.album || "未知专辑"}
                 </span>
               )}
               {current.kind === "netease" && (
-                <span className="text-[11.5px] text-[var(--accent)] px-3 py-1 rounded-full bg-[rgba(240,162,74,0.12)]">
+                <span className="text-[11px] text-[var(--accent)] px-2.5 py-0.5 rounded-full bg-[rgba(240,162,74,0.12)]">
                   网易云 · {current.album || "在线曲库"}
                 </span>
               )}
