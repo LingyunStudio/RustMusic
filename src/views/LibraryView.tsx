@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Clock3, Heart, Library, ListMusic, Play, Shuffle } from "lucide-react";
+import { Clock3, Heart, Library, Play, Shuffle } from "lucide-react";
 import { useStore } from "../store";
 import TrackList, { type SortKey } from "../components/TrackList";
 import { matchSearch } from "../utils";
@@ -16,10 +16,10 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: "plays", label: "播放次数" },
 ];
 
-const META: Record<Mode, { title: string; icon: typeof Library }> = {
-  library: { title: "资料库", icon: Library },
-  liked: { title: "我喜欢", icon: Heart },
-  recent: { title: "最近播放", icon: Clock3 },
+const META: Record<Mode, { title: string; sub: string; icon: typeof Library }> = {
+  library: { title: "资料库", sub: "你的全部音乐", icon: Library },
+  liked: { title: "我喜欢", sub: "收藏的心动之歌", icon: Heart },
+  recent: { title: "最近播放", sub: "刚刚听过的旋律", icon: Clock3 },
 };
 
 export default function LibraryView({ mode }: { mode: Mode }) {
@@ -35,8 +35,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const filtered = useMemo(() => {
     let list: TrackMeta[];
     if (mode === "liked") list = tracks.filter((t) => t.liked);
-    else if (mode === "recent")
-      list = tracks.filter((t) => t.lastPlayed > 0);
+    else if (mode === "recent") list = tracks.filter((t) => t.lastPlayed > 0);
     else list = tracks;
     list = list.filter((t) => matchSearch(t, search));
 
@@ -53,9 +52,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             a.trackNo - b.trackNo
           );
         case "album":
-          return (
-            a.album.localeCompare(b.album, "zh") || a.trackNo - b.trackNo
-          );
+          return a.album.localeCompare(b.album, "zh") || a.trackNo - b.trackNo;
         case "duration":
           return a.duration - b.duration;
         case "plays":
@@ -65,7 +62,12 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     return [...list].sort((a, b) => dir * cmp(a, b));
   }, [tracks, mode, search, sortKey, dir]);
 
-  const { title, icon: Icon } = META[mode];
+  const { title, sub, icon: Icon } = META[mode];
+  const totalSecs = Math.floor(filtered.reduce((a, t) => a + t.duration, 0));
+  const totalDesc =
+    totalSecs >= 3600
+      ? `${Math.floor(totalSecs / 3600)} 小时 ${Math.floor((totalSecs % 3600) / 60)} 分钟`
+      : `${Math.floor(totalSecs / 60)} 分钟`;
 
   const onSort = (k: SortKey) => {
     if (k === sortKey) setDir((d) => (d === 1 ? -1 : 1));
@@ -77,90 +79,131 @@ export default function LibraryView({ mode }: { mode: Mode }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <header className="pt-5 pb-3 px-5">
-        <div className="flex items-end justify-between">
-          <div>
-            <h1 className="text-[22px] font-bold flex items-center gap-2.5">
-              <Icon size={20} className="text-[var(--dyn)]" />
+      {/* 头部 */}
+      <header className="px-8 pt-7 pb-5">
+        <div className="flex items-end justify-between gap-6">
+          <div className="min-w-0 anim-rise">
+            <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
+              <Icon size={13} />
+              {sub}
+              {mode === "library" && scan.active && (
+                <span className="text-[var(--accent)] tracking-normal flex items-center gap-1.5">
+                  · <LoaderSpin /> 扫描中 {scan.total ? `${scan.done}/${scan.total}` : ""}
+                </span>
+              )}
+            </div>
+            <h1 className="text-[30px] font-extrabold leading-none tracking-tight text-[var(--ink)]">
               {title}
-              <span className="text-[13px] font-normal text-zinc-500 mb-0.5">
-                {filtered.length} 首
-              </span>
             </h1>
-            {mode === "library" && !folders.length && (
-              <p className="text-[12.5px] text-zinc-500 mt-1">
+            <div className="flex items-center gap-3 mt-3 text-[12.5px] text-[var(--ink-2)]">
+              <span className="tabular-nums">{filtered.length} 首</span>
+              {totalSecs > 0 && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-[var(--ink-3)]" />
+                  <span className="tabular-nums">{totalDesc}</span>
+                </>
+              )}
+            </div>
+            {mode === "library" && !folders.length && !scan.active && (
+              <p className="text-[12.5px] text-[var(--ink-3)] mt-3">
                 添加音乐文件夹，或直接把文件 / 文件夹拖进窗口
               </p>
             )}
           </div>
+
           {filtered.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3 shrink-0 anim-rise">
               <button
                 className="btn-secondary"
-                onClick={() => playTracks(filtered, Math.floor(Math.random() * filtered.length))}
+                onClick={() =>
+                  playTracks(filtered, Math.floor(Math.random() * filtered.length))
+                }
               >
-                <Shuffle size={13} />
+                <Shuffle size={14} />
                 随机播放
               </button>
               <button className="btn-primary" onClick={() => playTracks(filtered, 0)}>
-                <Play size={13} className="fill-current" />
+                <Play size={14} className="fill-current" />
                 播放全部
               </button>
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-1 mt-3.5">
-          <span className="text-[11px] text-zinc-600 mr-1">排序</span>
+        {/* 排序 */}
+        <div className="flex items-center gap-2 mt-5">
+          <span className="text-[11.5px] text-[var(--ink-3)] mr-1">排序</span>
           {SORTS.map((s) => (
             <button
               key={s.key}
               onClick={() => onSort(s.key)}
-              className={`h-6.5 px-2.5 py-1 rounded-full text-[11.5px] transition-colors ${
+              className={`chip ${
                 sortKey === s.key
-                  ? "bg-white/[0.1] text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]"
+                  ? "bg-[rgba(240,162,74,0.14)] text-[var(--accent-strong)] font-medium"
+                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:bg-white/[0.05]"
               }`}
             >
               {s.label}
               {sortKey === s.key && (
-                <span className="ml-1">{dir === 1 ? "↑" : "↓"}</span>
+                <span className="ml-0.5">{dir === 1 ? "↑" : "↓"}</span>
               )}
             </button>
           ))}
-          {mode === "library" && scan.active && (
-            <span className="ml-2 text-[11.5px] text-[var(--dyn)]">
-              扫描中… {scan.total ? `${scan.done}/${scan.total}` : ""}
-            </span>
-          )}
         </div>
       </header>
 
-      <TrackList
-        tracks={filtered}
-        emptyHint={
-          mode === "library"
-            ? "资料库还是空的"
-            : mode === "liked"
-              ? "还没有喜欢的音乐"
-              : "还没有播放记录"
-        }
-        emptyAction={
-          mode === "library"
-            ? { label: "添加音乐文件夹", onClick: addFolderByDialog }
-            : mode === "liked"
-              ? {
-                  label: "去资料库逛逛",
-                  onClick: () => useStore.getState().setView("library"),
-                }
-              : undefined
-        }
-      />
-      {mode === "library" && !tracks.length && !scan.active && folders.length > 0 && (
-        <div className="px-5 pb-4 text-[12px] text-zinc-600">
-          已有 {folders.length} 个音乐文件夹但未找到音频，点击设置里重新扫描试试
+      {/* 曲目卡片 */}
+      <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
+        <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+          {filtered.length > 0 && (
+            <div className="grid grid-cols-[64px_minmax(0,1fr)_minmax(0,0.5fr)_120px_104px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
+              <span className="text-center">序号</span>
+              <span>歌曲</span>
+              <span>专辑</span>
+              <span className="text-right">格式 / 时长</span>
+              <span className="text-right">操作</span>
+            </div>
+          )}
+          <TrackList
+            tracks={filtered}
+            inCard
+            emptyHint={
+              mode === "library"
+                ? "资料库还是空的"
+                : mode === "liked"
+                  ? "还没有喜欢的音乐"
+                  : "还没有播放记录"
+            }
+            emptyAction={
+              mode === "library"
+                ? { label: "添加音乐文件夹", onClick: addFolderByDialog }
+                : mode === "liked"
+                  ? {
+                      label: "去资料库逛逛",
+                      onClick: () => useStore.getState().setView("library"),
+                    }
+                  : undefined
+            }
+          />
         </div>
-      )}
+      </div>
     </div>
+  );
+}
+
+function LoaderSpin() {
+  return (
+    <svg
+      className="animate-spin"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    >
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
   );
 }

@@ -67,20 +67,20 @@ export default function Slider({
       }}
     >
       <div
-        className="relative w-full rounded-full bg-white/10 overflow-hidden transition-all"
+        className="relative w-full rounded-full bg-white/[0.12] overflow-hidden transition-all"
         style={{ height: thick + (dragging ? 2 : 0) }}
       >
         <div
           className="absolute left-0 top-0 h-full rounded-full"
           style={{
             width: `${pct * 100}%`,
-            background: "linear-gradient(90deg, var(--dyn), #a5b4fc)",
+            background: "linear-gradient(90deg, #e8823f, var(--accent-strong))",
           }}
         />
       </div>
       {showThumb !== "never" && (
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_rgba(0,0,0,0.5)] transition-all"
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full bg-[var(--accent-strong)] shadow-[0_0_8px_rgba(0,0,0,0.5)] transition-all"
           style={{
             left: `${pct * 100}%`,
             width: dragging ? 13 : 11,

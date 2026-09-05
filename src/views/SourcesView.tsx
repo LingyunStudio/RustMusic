@@ -18,7 +18,7 @@ export default function SourcesView() {
     <div className="flex-1 min-h-0 flex flex-col">
       <header className="pt-5 pb-3 px-5">
         <h1 className="text-[22px] font-bold flex items-center gap-2.5">
-          <Radio size={20} className="text-[var(--dyn)]" />
+          <Radio size={20} className="text-[var(--accent)]" />
           在线音源
           <span className="text-[13px] font-normal text-zinc-500 mb-0.5">{sources.length} 个</span>
         </h1>
@@ -104,7 +104,7 @@ export default function SourcesView() {
                 >
                   <button
                     className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
-                    style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+                    style={{ background: "linear-gradient(135deg, #ffc470, #e8823f)" }}
                     onClick={() => playSourceItem(s)}
                   >
                     <Play size={14} className="fill-current text-white ml-px" />

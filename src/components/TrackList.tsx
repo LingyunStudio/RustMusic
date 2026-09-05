@@ -1,12 +1,10 @@
 import { Heart, MoreHorizontal, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import type { TrackMeta } from "../types";
 import { fmtTime, trackArtist, trackTitle } from "../utils";
 import CoverImg from "./CoverImg";
 import Modal from "./Modal";
-
-// ---------- 曲目行右键菜单 ----------
 
 interface MenuState {
   x: number;
@@ -16,21 +14,17 @@ interface MenuState {
 
 interface TrackListProps {
   tracks: TrackMeta[];
+  inCard?: boolean;
   emptyHint?: string;
   emptyAction?: { label: string; onClick: () => void };
-  /** 播放列表视图：提供该回调时显示“从列表移除” */
   onRemoveFromPlaylist?: (tid: number) => void;
-  sort?: {
-    key: SortKey;
-    dir: 1 | -1;
-    onSort: (k: SortKey) => void;
-  };
 }
 
 export type SortKey = "title" | "artist" | "album" | "duration" | "added" | "plays";
 
 export default function TrackList({
   tracks,
+  inCard,
   emptyHint,
   emptyAction,
   onRemoveFromPlaylist,
@@ -58,19 +52,32 @@ export default function TrackList({
     };
   }, [menu]);
 
-  const menuX = Math.min(menu?.x ?? 0, window.innerWidth - 220);
-  const menuY = Math.min(menu?.y ?? 0, window.innerHeight - 340);
+  const menuX = Math.min(menu?.x ?? 0, window.innerWidth - 230);
+  const menuY = Math.min(menu?.y ?? 0, window.innerHeight - 350);
 
   if (!tracks.length) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-zinc-600 anim-fade">
-        <div
-          className="w-16 h-16 rounded-2xl flex items-center justify-center"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <Play size={26} className="text-zinc-600" />
+      <div className="flex-1 flex flex-col items-center justify-center gap-5 anim-fade">
+        <div className="relative">
+          <div
+            className="absolute -inset-8 rounded-full"
+            style={{
+              background: "radial-gradient(circle, var(--accent) 0%, transparent 65%)",
+              opacity: 0.14,
+            }}
+          />
+          <div
+            className="relative w-[76px] h-[76px] rounded-3xl flex items-center justify-center"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(243,233,216,0.1), rgba(243,233,216,0.03))",
+              border: "1px solid rgba(243,233,216,0.12)",
+            }}
+          >
+            <Play size={30} className="text-[var(--ink-2)] ml-1" />
+          </div>
         </div>
-        <div className="text-[13.5px]">{emptyHint ?? "这里空空如也"}</div>
+        <div className="text-[13.5px] text-[var(--ink-2)]">{emptyHint ?? "这里空空如也"}</div>
         {emptyAction && (
           <button className="btn-primary mt-1" onClick={emptyAction.onClick}>
             {emptyAction.label}
@@ -81,245 +88,118 @@ export default function TrackList({
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto pb-4">
-      <div className="px-5">
-        {tracks.map((t, i) => {
-          const active =
-            current?.kind === "track" && current.id === t.id;
-          return (
-            <div
-              key={t.id}
-              className="group grid grid-cols-[36px_minmax(0,1fr)_minmax(0,0.6fr)_84px_92px] items-center gap-3 h-[56px] px-3 rounded-xl hover:bg-white/[0.05] transition-colors cursor-default"
-              style={{ contentVisibility: "auto", containIntrinsicSize: "56px" }}
-              onDoubleClick={() => playTracks(tracks, i)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, track: t });
-              }}
-            >
-              <div className="relative w-9 h-9 shrink-0">
-                <CoverImg
-                  src={t.cover}
-                  seed={t.title}
-                  className={`w-9 h-9 rounded-lg shadow ${active ? "opacity-30" : "opacity-100 group-hover:opacity-0"} transition-opacity`}
-                  iconSize={14}
-                />
-                {active ? (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className={`eq-bars ${playing ? "" : "paused"}`}>
-                      <i />
-                      <i />
-                      <i />
-                    </div>
+    <div className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 py-2.5" : "px-5 pb-4"}`}>
+      {tracks.map((t, i) => {
+        const active = current?.kind === "track" && current.id === t.id;
+        return (
+          <div
+            key={t.id}
+            className={`group grid grid-cols-[64px_minmax(0,1fr)_minmax(0,0.5fr)_120px_104px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
+              active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
+            }`}
+            onDoubleClick={() => playTracks(tracks, i)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, track: t });
+            }}
+          >
+            {/* 序号 / 播放 */}
+            <div className="relative h-12 flex items-center justify-center">
+              <span
+                className={`text-[12.5px] tabular-nums transition-opacity ${
+                  active
+                    ? "text-[var(--accent)] font-bold opacity-100 group-hover:opacity-0"
+                    : "text-[var(--ink-3)] group-hover:opacity-0"
+                }`}
+              >
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              {active && (
+                <div className="absolute inset-0 flex items-center justify-center group-hover:opacity-0">
+                  <div className={`eq-bars ${playing ? "" : "paused"}`}>
+                    <i />
+                    <i />
+                    <i />
                   </div>
-                ) : (
-                  <button
-                    className="absolute inset-0 rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
-                    onClick={() => playTracks(tracks, i)}
-                  >
-                    <Play size={14} className="fill-current ml-px" />
-                  </button>
-                )}
-              </div>
+                </div>
+              )}
+              <button
+                className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
+                  active ? "text-[var(--accent)]" : "bg-[var(--ink)] text-[#241505]"
+                }`}
+                onClick={() => (active ? useStore.getState().togglePlay() : playTracks(tracks, i))}
+                title={active ? "播放 / 暂停" : "播放"}
+              >
+                <Play size={14} className="fill-current ml-px" />
+              </button>
+            </div>
 
+            {/* 封面 + 标题 */}
+            <div className="flex items-center gap-4 min-w-0">
+              <CoverImg
+                src={t.cover}
+                seed={t.title}
+                className="w-11 h-11 rounded-xl shadow-[0_4px_14px_rgba(0,0,0,0.45)] shrink-0"
+                iconSize={16}
+              />
               <div className="min-w-0">
                 <div
-                  className={`text-[13.5px] truncate ${active ? "text-[var(--dyn)] font-medium" : "text-zinc-100"}`}
+                  className={`text-[13.5px] truncate ${
+                    active ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
+                  }`}
                 >
                   {trackTitle(t)}
                 </div>
-                <div className="text-[12px] text-zinc-500 truncate">
+                <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
                   {trackArtist(t)}
-                  {t.sampleRate > 0 && (
-                    <span className="ml-1.5 text-[10.5px] text-zinc-600">
-                      {t.sampleRate / 1000}kHz
-                      {t.bitDepth > 0 ? `/${t.bitDepth}bit` : ""}
-                    </span>
-                  )}
                 </div>
               </div>
-
-              <div className="text-[12.5px] text-zinc-500 truncate">
-                {t.album || "-"}
-              </div>
-
-              <div className="text-[12px] text-zinc-500 tabular-nums text-right">
-                {t.format !== "" && (
-                  <span className="mr-2 text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400">
-                    {t.format}
-                  </span>
-                )}
-                {fmtTime(t.duration * 1000)}
-              </div>
-
-              <div className="flex items-center justify-end gap-0.5">
-                <button
-                  className="btn-ghost w-7 h-7 opacity-0 group-hover:opacity-100 data-[liked=true]:opacity-100"
-                  data-liked={t.liked}
-                  onClick={() => toggleLike(t.id)}
-                  title={t.liked ? "取消喜欢" : "喜欢"}
-                >
-                  <Heart
-                    size={14}
-                    className={t.liked ? "fill-rose-500 text-rose-500" : ""}
-                  />
-                </button>
-                <button
-                  className="btn-ghost w-7 h-7 opacity-0 group-hover:opacity-100"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setMenu({ x: r.left - 150, y: r.bottom + 4, track: t });
-                  }}
-                >
-                  <MoreHorizontal size={15} />
-                </button>
-              </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* 右键菜单 */}
-      {menu && (
-        <div
-          className="fixed z-[75] w-[200px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
-          style={{ left: menuX, top: menuY }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <MenuItem
-            icon={<Play size={13} />}
-            label="播放"
-            onClick={() => {
-              const idx = tracks.findIndex((t) => t.id === menu.track.id);
-              playTracks(tracks, Math.max(0, idx));
-              setMenu(null);
-            }}
-          />
-          <MenuItem
-            icon={<Play size={13} />}
-            label="下一首播放"
-            onClick={() => {
-              playNext({ kind: "track", id: menu.track.id });
-              setMenu(null);
-            }}
-          />
-          <MenuItem
-            icon={<Play size={13} />}
-            label="加入队列"
-            onClick={() => {
-              addToQueue({ kind: "track", id: menu.track.id });
-              setMenu(null);
-            }}
-          />
-          <MenuItem
-            icon={<Heart size={13} />}
-            label={menu.track.liked ? "取消喜欢" : "喜欢"}
-            onClick={() => {
-              toggleLike(menu.track.id);
-              setMenu(null);
-            }}
-          />
-          <div className="my-1 mx-2 border-t border-white/[0.07]" />
-          <MenuItem
-            icon={<Play size={13} />}
-            label="添加到播放列表…"
-            onClick={() => {
-              setPickerFor(menu.track);
-              setMenu(null);
-            }}
-          />
-          {onRemoveFromPlaylist && (
-            <MenuItem
-              icon={<Play size={13} />}
-              label="从此列表移除"
-              onClick={() => {
-                onRemoveFromPlaylist(menu.track.id);
-                setMenu(null);
-              }}
-            />
-          )}
-        </div>
-      )}
+            {/* 专辑 */}
+            <div className="text-[12.5px] text-[var(--ink-3)] truncate">
+              {t.album || "未知专辑"}
+            </div>
 
-      {/* 添加到播放列表弹窗 */}
-      <Modal
-        open={!!pickerFor}
-        onClose={() => setPickerFor(null)}
-        title="添加到播放列表"
-        width={380}
-      >
-        <div className="flex flex-col gap-1.5 max-h-[280px] overflow-y-auto">
-          {playlists.map((p) => (
-            <button
-              key={p.id}
-              className="h-10 px-3 rounded-lg text-left text-[13px] text-zinc-200 hover:bg-white/[0.07] flex items-center justify-between transition-colors"
-              onClick={async () => {
-                if (pickerFor) await useStore.getState().addToPlaylist(p.id, pickerFor.id);
-                setPickerFor(null);
-              }}
-            >
-              <span className="truncate">{p.name}</span>
-              <span className="text-[11px] text-zinc-500">{p.trackIds.length} 首</span>
-            </button>
-          ))}
-          {!playlists.length && (
-            <div className="text-[12.5px] text-zinc-500 py-2">还没有播放列表，创建一个吧</div>
-          )}
-        </div>
-        <div className="flex gap-2 mt-3">
-          <input
-            type="text"
-            value={newPlName}
-            onChange={(e) => setNewPlName(e.target.value)}
-            placeholder="新播放列表名称"
-            className="flex-1 h-9 rounded-lg bg-white/[0.06] border border-white/[0.09] px-3 text-[13px] focus:border-white/25"
-            onKeyDown={async (e) => {
-              if (e.key === "Enter" && newPlName.trim() && pickerFor) {
-                await createPlaylist(newPlName.trim());
-                const pls = useStore.getState().playlists;
-                const created = pls[pls.length - 1];
-                if (created) await useStore.getState().addToPlaylist(created.id, pickerFor.id);
-                setNewPlName("");
-                setPickerFor(null);
-              }
-            }}
-          />
-          <button
-            className="btn-secondary"
-            onClick={async () => {
-              if (!newPlName.trim() || !pickerFor) return;
-              await createPlaylist(newPlName.trim());
-              const pls = useStore.getState().playlists;
-              const created = pls[pls.length - 1];
-              if (created) await useStore.getState().addToPlaylist(created.id, pickerFor.id);
-              setNewPlName("");
-              setPickerFor(null);
-            }}
-          >
-            创建并添加
-          </button>
-        </div>
-      </Modal>
+            {/* 格式 / 时长（分列排布，间距固定） */}
+            <div className="flex items-center justify-end gap-3">
+              <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-white/[0.07] text-[var(--ink-2)] font-semibold tracking-wider">
+                {t.format || "AUDIO"}
+              </span>
+              <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right">
+                {fmtTime(t.duration * 1000)}
+              </span>
+            </div>
+
+            {/* 操作 */}
+            <div className="flex items-center justify-end gap-1 pr-1">
+              <button
+                className="btn-ghost w-8 h-8"
+                onClick={() => toggleLike(t.id)}
+                title={t.liked ? "取消喜欢" : "喜欢"}
+              >
+                <Heart
+                  size={15}
+                  className={
+                    t.liked
+                      ? "fill-[#e0533f] text-[#e0533f]"
+                      : "opacity-0 group-hover:opacity-100"
+                  }
+                />
+              </button>
+              <button
+                className="btn-ghost w-8 h-8"
+                onClick={(e) => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setMenu({ x: r.left - 180, y: r.bottom + 6, track: t });
+                }}
+              >
+                <MoreHorizontal size={16} className="opacity-0 group-hover:opacity-100" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
-  );
-}
-
-function MenuItem({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-300 hover:bg-white/[0.08] hover:text-white transition-colors text-left"
-      onClick={onClick}
-    >
-      <span className="text-zinc-500">{icon}</span>
-      {label}
-    </button>
   );
 }

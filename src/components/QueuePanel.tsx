@@ -36,26 +36,28 @@ export default function QueuePanel() {
   const upcoming = queue.slice(qIndex + 1);
 
   return (
-    <aside className="w-[300px] shrink-0 flex flex-col border-l border-white/[0.07] bg-black/20 relative z-20 anim-fade">
-      <div className="h-12 px-4 flex items-center justify-between shrink-0">
-        <span className="text-[13px] font-semibold flex items-center gap-2">
-          <ListMusic size={15} className="text-[var(--dyn)]" />
+    <aside className="w-[300px] shrink-0 flex flex-col border-l border-[var(--line)] bg-black/25 relative z-20 anim-fade">
+      <div className="h-14 px-5 flex items-center justify-between shrink-0">
+        <span className="text-[13.5px] font-semibold flex items-center gap-2.5 text-[var(--ink)]">
+          <ListMusic size={15} className="text-[var(--accent)]" />
           播放队列
-          <span className="text-[11px] text-zinc-500 font-normal">{queue.length} 首</span>
+          <span className="text-[11.5px] text-[var(--ink-3)] font-normal">
+            {queue.length} 首
+          </span>
         </span>
-        <div className="flex items-center gap-0.5">
-          <button className="btn-ghost w-7 h-7" onClick={clearQueue} title="清空队列">
+        <div className="flex items-center gap-1">
+          <button className="btn-ghost w-8 h-8" onClick={clearQueue} title="清空队列">
             <Trash2 size={14} />
           </button>
-          <button className="btn-ghost w-7 h-7" onClick={() => setQueueOpen(false)}>
-            <X size={14} />
+          <button className="btn-ghost w-8 h-8" onClick={() => setQueueOpen(false)}>
+            <X size={15} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className="flex-1 overflow-y-auto px-2.5 pb-3">
         {queue.length === 0 && (
-          <div className="text-[12.5px] text-zinc-600 text-center pt-10">队列是空的</div>
+          <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">队列是空的</div>
         )}
         {queue.map((item, i) => {
           const { title, artist, cover } = queueLabel(item);
@@ -63,12 +65,12 @@ export default function QueuePanel() {
           return (
             <div
               key={`${item.kind}-${item.id}-${i}`}
-              className={`group flex items-center gap-2.5 h-11 px-2 rounded-lg cursor-pointer transition-colors ${
-                active ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"
+              className={`group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer transition-colors ${
+                active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.05]"
               }`}
               onClick={() => jumpTo(i)}
             >
-              <div className="w-8 h-8 rounded-md bg-white/[0.06] flex items-center justify-center overflow-hidden shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center overflow-hidden shrink-0">
                 {active && playing ? (
                   <div className="eq-bars">
                     <i />
@@ -78,7 +80,7 @@ export default function QueuePanel() {
                 ) : (
                   <Play
                     size={11}
-                    className={`text-zinc-500 group-hover:text-zinc-200 ${
+                    className={`text-[var(--ink-3)] group-hover:text-[var(--ink)] ${
                       active ? "" : "opacity-0 group-hover:opacity-100"
                     }`}
                   />
@@ -86,20 +88,22 @@ export default function QueuePanel() {
               </div>
               <div className="min-w-0 flex-1">
                 <div
-                  className={`text-[12.5px] truncate ${active ? "text-[var(--dyn)]" : "text-zinc-200"}`}
+                  className={`text-[12.5px] truncate ${
+                    active ? "text-[var(--accent-strong)]" : "text-[var(--ink)]"
+                  }`}
                 >
                   {title}
                 </div>
-                <div className="text-[11px] text-zinc-500 truncate">{artist}</div>
+                <div className="text-[11px] text-[var(--ink-3)] truncate mt-0.5">{artist}</div>
               </div>
               <button
-                className="btn-ghost w-6 h-6 opacity-0 group-hover:opacity-100 shrink-0"
+                className="btn-ghost w-7 h-7 opacity-0 group-hover:opacity-100 shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
                   removeQueueItem(i);
                 }}
               >
-                <X size={12} />
+                <X size={13} />
               </button>
             </div>
           );
@@ -107,11 +111,9 @@ export default function QueuePanel() {
       </div>
 
       {queue.length > 0 && (
-        <div className="px-4 py-2.5 border-t border-white/[0.06] text-[11px] text-zinc-600 flex items-center justify-between shrink-0">
+        <div className="px-5 py-3 border-t border-[var(--line)] text-[11px] text-[var(--ink-3)] flex items-center justify-between shrink-0 tabular-nums">
+          <span>{upcoming.length > 0 ? `接下来 ${upcoming.length} 首` : "播放到列表末尾"}</span>
           <span>
-            {upcoming.length > 0 ? `接下来 ${upcoming.length} 首` : "播放到列表末尾"}
-          </span>
-          <span className="tabular-nums">
             {fmtTime(pos)} / {fmtTime(dur)}
           </span>
         </div>

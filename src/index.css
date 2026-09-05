@@ -1,22 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --color-accent: #818cf8;
-  --color-accent2: #22d3ee;
+  --color-accent: #f0a24a;
   --font-sans:
     "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui,
     -apple-system, sans-serif;
 }
 
 :root {
-  --dyn: #818cf8;
-  --bg: #0b0b10;
+  /* 暖色 Hi-Fi 主题 */
+  --accent: #f0a24a;
+  --accent-strong: #ffc470;
+  --accent-soft: rgba(240, 162, 74, 0.32);
+  --glow: #c2570f;
+  --bg: #0f0c09;
+  --ink: #f3ede3;
+  --ink-2: #b3a897;
+  --ink-3: #7d7365;
+  --line: rgba(243, 233, 216, 0.09);
   color-scheme: dark;
 }
 
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
@@ -27,15 +32,9 @@ body,
   overflow: hidden;
 }
 
-/* 强制 #root 成为独立合成层：规避 WebView2 在窗口 resize 后
-   局部区域不重绘而产生的残影（stale tiles） */
-#root {
-  transform: translateZ(0);
-}
-
 body {
   background: var(--bg);
-  color: #e4e4e7;
+  color: var(--ink);
   font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
@@ -49,7 +48,7 @@ textarea {
 }
 
 ::selection {
-  background: rgba(129, 140, 248, 0.35);
+  background: rgba(240, 162, 74, 0.35);
 }
 
 /* ---------- 滚动条 ---------- */
@@ -62,33 +61,29 @@ textarea {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(243, 233, 216, 0.16);
   border-radius: 5px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(243, 233, 216, 0.28);
   border: 3px solid transparent;
   background-clip: padding-box;
 }
 
-/* ---------- 面板与玻璃 ---------- */
+/* ---------- 面板 ---------- */
 
 .glass {
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 244, 228, 0.045);
+  border: 1px solid var(--line);
 }
 
 .glass-strong {
-  background: rgba(24, 24, 32, 0.82);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.hairline {
-  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(26, 21, 16, 0.72);
+  backdrop-filter: blur(32px) saturate(1.25);
+  -webkit-backdrop-filter: blur(32px) saturate(1.25);
+  border: 1px solid rgba(243, 233, 216, 0.1);
 }
 
 /* ---------- 动画 ---------- */
@@ -116,7 +111,7 @@ textarea {
 @keyframes npIn {
   from {
     opacity: 0;
-    transform: scale(0.97);
+    transform: scale(0.965);
   }
   to {
     opacity: 1;
@@ -149,7 +144,7 @@ textarea {
 @keyframes eqBar {
   0%,
   100% {
-    transform: scaleY(0.35);
+    transform: scaleY(0.3);
   }
   50% {
     transform: scaleY(1);
@@ -160,7 +155,7 @@ textarea {
   animation: fadeIn 0.25s ease both;
 }
 .anim-rise {
-  animation: riseIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: riseIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .anim-np {
   animation: npIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -172,18 +167,18 @@ textarea {
   animation: menuIn 0.13s ease both;
 }
 
-/* 播放中的曲目小动效 */
+/* 播放中的曲目动效 */
 .eq-bars {
   display: inline-flex;
   align-items: flex-end;
-  gap: 2px;
-  height: 13px;
+  gap: 3px;
+  height: 14px;
 }
 .eq-bars i {
   display: block;
   width: 3px;
-  border-radius: 1px;
-  background: var(--dyn);
+  border-radius: 1.5px;
+  background: var(--accent);
   transform-origin: bottom;
   animation: eqBar 0.9s ease-in-out infinite;
 }
@@ -201,7 +196,7 @@ textarea {
 }
 .paused .eq-bars i {
   animation-play-state: paused;
-  transform: scaleY(0.35);
+  transform: scaleY(0.3);
 }
 
 /* ---------- 歌词滚动淡出 ---------- */
@@ -210,20 +205,20 @@ textarea {
   mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    black 12%,
-    black 82%,
+    black 14%,
+    black 80%,
     transparent 100%
   );
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    black 12%,
-    black 82%,
+    black 14%,
+    black 80%,
     transparent 100%
   );
 }
 
-/* ---------- 表单 ---------- */
+/* ---------- 控件 ---------- */
 
 input[type="text"],
 input[type="url"] {
@@ -234,63 +229,81 @@ input[type="url"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   border-radius: 10px;
-  color: #a1a1aa;
+  color: var(--ink-2);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background 0.16s,
+    color 0.16s,
+    transform 0.12s;
 }
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #fff;
+  background: rgba(243, 233, 216, 0.09);
+  color: var(--ink);
+}
+.btn-ghost:active {
+  transform: scale(0.94);
 }
 
 .btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  border-radius: 10px;
-  padding: 8px 16px;
-  font-weight: 600;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 9px 20px;
+  font-weight: 700;
   font-size: 13px;
-  color: #fff;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.35);
+  color: #221607;
+  background: linear-gradient(120deg, #ffc470 0%, #f0a24a 55%, #e8823f 120%);
+  box-shadow:
+    0 6px 22px -6px rgba(240, 162, 74, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition:
-    filter 0.15s,
-    transform 0.1s;
+    filter 0.16s,
+    transform 0.12s;
 }
 .btn-primary:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.07);
 }
 .btn-primary:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  border-radius: 10px;
-  padding: 8px 14px;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 9px 16px;
   font-weight: 500;
   font-size: 13px;
-  color: #d4d4d8;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--ink);
+  background: rgba(243, 233, 216, 0.07);
+  border: 1px solid rgba(243, 233, 216, 0.12);
+  transition:
+    background 0.16s,
+    color 0.16s,
+    border-color 0.16s;
+}
+.btn-secondary:hover {
+  background: rgba(243, 233, 216, 0.13);
+  border-color: rgba(243, 233, 216, 0.2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
   transition:
     background 0.15s,
     color 0.15s;
 }
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
 
-/* 隐藏原生 number/range 控件痕迹 */
 input[type="range"] {
   appearance: none;
   -webkit-appearance: none;

@@ -18,7 +18,7 @@ export default function ToastContainer() {
           ) : t.type === "success" ? (
             <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
           ) : (
-            <Info size={15} className="text-sky-300 shrink-0" />
+            <Info size={15} className="text-[var(--accent)] shrink-0" />
           )}
           <span className="text-zinc-200 leading-snug">{t.msg}</span>
         </div>

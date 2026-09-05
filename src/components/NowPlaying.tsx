@@ -24,7 +24,6 @@ export default function NowPlaying() {
     if (trackId != null) {
       loadLyrics(trackId);
     } else {
-      // 在线音源等无歌词场景，清掉上一首的歌词
       useStore.setState({ lyrics: null, lyricsFor: null, lyricsLoading: false });
     }
   }, [trackId, loadLyrics]);
@@ -70,75 +69,93 @@ export default function NowPlaying() {
 
   return (
     <div className="absolute inset-0 z-40 anim-np overflow-hidden">
-      {/* 背景：封面模糊 + 渐变遮罩 */}
+      {/* 背景：近实心暖色底 + 封面微光 */}
       <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(180deg, #1a1309 0%, #120e09 52%, #0b0906 100%)",
+          }}
+        />
         {coverUrl && (
           <img
             src={coverUrl}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover scale-150 opacity-25"
-            style={{ filter: "blur(56px)" }}
+            className="absolute inset-0 w-full h-full object-cover scale-150 opacity-[0.12]"
+            style={{ filter: "blur(72px)" }}
             draggable={false}
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/70" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 90% 70% at 30% 40%, rgba(240,162,74,0.07) 0%, transparent 60%)",
+          }}
+        />
       </div>
 
       {/* 顶栏 */}
-      <div className="relative flex items-center justify-between px-6 h-14">
-        <span className="text-[12px] text-zinc-300/70 tracking-widest flex items-center gap-2">
+      <div className="relative flex items-center justify-between px-8 h-16">
+        <span className="text-[11px] text-[var(--ink-3)] tracking-[0.26em] flex items-center gap-2.5">
           <Music4 size={14} />
           正在播放
         </span>
-        <button className="btn-ghost w-9 h-9 !rounded-full" onClick={() => setNowPlayingOpen(false)}>
+        <button
+          className="btn-ghost w-10 h-10 !rounded-full"
+          onClick={() => setNowPlayingOpen(false)}
+        >
           <ChevronDown size={20} />
         </button>
       </div>
 
       {/* 主体 */}
-      <div className="relative flex gap-10 px-10 pb-6 items-stretch h-[calc(100%-56px)]">
+      <div className="relative flex gap-14 px-14 pb-8 items-stretch h-[calc(100%-64px)]">
         {/* 左：封面 */}
-        <div className="w-[42%] max-w-[440px] flex flex-col items-center justify-center gap-7">
-          <div className="relative group">
+        <div className="w-[40%] max-w-[440px] flex flex-col items-center justify-center gap-8">
+          <div className="relative">
             <div
-              className="absolute -inset-8 rounded-[40px] opacity-45 blur-3xl transition-opacity"
+              className="absolute -inset-10 rounded-[48px] opacity-40 blur-3xl transition-colors duration-1000"
               style={{
                 background: coverUrl
                   ? `url(${coverUrl}) center/cover`
-                  : "linear-gradient(135deg,#6366f1,#22d3ee)",
+                  : "linear-gradient(135deg,#f0a24a,#e0533f)",
               }}
             />
             <CoverImg
               src={current.cover}
               seed={current.title}
-              className="w-[min(38vh,360px)] h-[min(38vh,360px)] rounded-3xl shadow-[0_30px_80px_rgba(0,0,0,0.65)] relative"
+              className="w-[min(38vh,350px)] h-[min(38vh,350px)] rounded-[28px] shadow-[0_36px_90px_rgba(0,0,0,0.7)] relative"
               iconSize={56}
             />
           </div>
           <div className="text-center max-w-full">
-            <div className="text-[22px] font-bold text-white truncate">
+            <div className="text-[23px] font-bold text-[var(--ink)] truncate">
               {current.title}
             </div>
-            <div className="text-[14px] text-zinc-400 mt-1 truncate">{current.artist}</div>
-            <div className="flex items-center justify-center gap-2 mt-4">
+            <div className="text-[14px] text-[var(--ink-2)] mt-2 truncate">{current.artist}</div>
+            <div className="flex items-center justify-center gap-3 mt-5">
               {current.kind === "track" && current.id != null && (
                 <button
-                  className="btn-ghost w-9 h-9 !rounded-full bg-white/[0.06]"
+                  className="btn-ghost w-10 h-10 !rounded-full glass"
                   onClick={() => toggleLike(current.id!)}
                 >
                   <Heart
                     size={17}
-                    className={current.liked ? "fill-rose-500 text-rose-500" : ""}
+                    className={
+                      current.liked ? "fill-[#e0533f] text-[#e0533f]" : ""
+                    }
                   />
                 </button>
               )}
               {current.kind === "track" && (
-                <span className="text-[11px] text-zinc-500 px-2.5 py-1 rounded-full bg-white/[0.05]">
+                <span className="text-[11.5px] text-[var(--ink-2)] px-3.5 py-1.5 rounded-full bg-white/[0.06]">
                   {current.album || "未知专辑"}
                 </span>
               )}
               {current.kind === "url" && (
-                <span className="text-[11px] text-cyan-300/80 px-2.5 py-1 rounded-full bg-cyan-400/10">
+                <span className="text-[11.5px] text-[var(--accent)] px-3.5 py-1.5 rounded-full bg-[rgba(240,162,74,0.12)]">
                   在线音源
                 </span>
               )}
@@ -148,23 +165,25 @@ export default function NowPlaying() {
 
         {/* 右：歌词 */}
         <div className="flex-1 min-w-0 relative">
-          <div className="absolute inset-y-0 -left-6 w-6 bg-gradient-to-r from-transparent to-white/[0.02] pointer-events-none" />
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto py-[28%] lyrics-mask pr-2"
+            className="h-full overflow-y-auto py-[28%] lyrics-mask pr-3"
             style={{ scrollbarWidth: "none" }}
           >
             {lyricsLoading && (
-              <div className="text-zinc-500 text-[13px] text-center pt-20">
+              <div className="text-[var(--ink-3)] text-[13px] text-center pt-20">
                 正在加载歌词…
               </div>
             )}
             {!lyricsLoading && syncedLines.length === 0 && (
-              <div className="flex flex-col items-center gap-3 text-zinc-600 pt-[30%]">
-                <Mic2 size={26} />
+              <div className="flex flex-col items-center gap-4 text-[var(--ink-3)] pt-[30%]">
+                <Mic2 size={28} />
                 {lyrics && lyrics.lines.length
                   ? lyrics.lines.map((l, i) => (
-                      <p key={i} className="text-[15px] text-zinc-400 text-center leading-relaxed">
+                      <p
+                        key={i}
+                        className="text-[15px] text-[var(--ink-2)] text-center leading-relaxed"
+                      >
                         {l.text}
                       </p>
                     ))
@@ -178,10 +197,10 @@ export default function NowPlaying() {
                   lineRefs.current[i] = el;
                 }}
                 onClick={() => l.timeMs != null && seek(l.timeMs)}
-                className={`px-3 py-[9px] text-center cursor-pointer transition-all duration-300 rounded-lg ${
+                className={`px-4 py-[10px] text-center cursor-pointer transition-all duration-300 rounded-2xl ${
                   i === activeIdx
-                    ? "text-white text-[24px] font-bold scale-[1.02]"
-                    : "text-zinc-400/60 text-[19px] hover:text-zinc-200"
+                    ? "text-[var(--accent-strong)] text-[24px] font-bold scale-[1.02]"
+                    : "text-[rgba(243,233,216,0.4)] text-[19px] hover:text-[var(--ink-2)]"
                 }`}
                 style={{ transformOrigin: "center" }}
               >

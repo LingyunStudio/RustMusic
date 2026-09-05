@@ -31,10 +31,11 @@ export function hashStr(s: string): number {
   return Math.abs(h);
 }
 
-/** 根据字符串生成稳定的占位渐变 */
+/** 根据字符串生成稳定的占位渐变（暖色系：陶土 / 琥珀 / 赭石） */
 export function gradientFor(seed: string): string {
-  const h = hashStr(seed || "?") % 360;
-  return `linear-gradient(135deg, hsl(${h}, 55%, 42%), hsl(${(h + 50) % 360}, 65%, 28%))`;
+  const h = 15 + (hashStr(seed || "?") % 40);
+  const h2 = h + 18;
+  return `linear-gradient(135deg, hsl(${h}, 52%, 46%), hsl(${h2}, 58%, 32%))`;
 }
 
 /** 从封面提取主色，用于动态氛围光 */

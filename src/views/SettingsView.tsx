@@ -46,7 +46,7 @@ export default function SettingsView() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 pb-8">
       <h1 className="text-[22px] font-bold flex items-center gap-2.5 mb-5">
-        <SettingsIcon size={20} className="text-[var(--dyn)]" />
+        <SettingsIcon size={20} className="text-[var(--accent)]" />
         设置
       </h1>
 
@@ -57,7 +57,7 @@ export default function SettingsView() {
             <h2 className="text-[14.5px] font-semibold">音乐文件夹</h2>
             <div className="flex items-center gap-2">
               {scan.active && (
-                <span className="text-[12px] text-[var(--dyn)] flex items-center gap-1.5">
+                <span className="text-[12px] text-[var(--accent)] flex items-center gap-1.5">
                   <Loader2 size={12} className="animate-spin" />
                   {scan.total ? `${scan.done}/${scan.total}` : "扫描中…"}
                 </span>
@@ -125,7 +125,7 @@ export default function SettingsView() {
               ))}
               <button
                 className={`ml-2 relative w-10 h-[22px] rounded-full transition-colors ${
-                  eqEnabled ? "bg-[var(--dyn)]" : "bg-white/[0.12]"
+                  eqEnabled ? "bg-[var(--accent)]" : "bg-white/[0.12]"
                 }`}
                 onClick={() => setEq(eqGains, !eqEnabled)}
                 title={eqEnabled ? "关闭均衡器" : "启用均衡器"}
@@ -169,7 +169,7 @@ export default function SettingsView() {
               step={0.05}
               value={speed}
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="flex-1 accent-indigo-400"
+              className="flex-1 accent-amber-400"
             />
             <span className="text-[12px] text-zinc-300 tabular-nums w-10 text-right">
               {speed.toFixed(2)}x
@@ -240,8 +240,8 @@ function VSlider({
           height: Math.max(2, Math.abs(zero - y)),
           background:
             value >= 0
-              ? "linear-gradient(180deg, var(--dyn), #a5b4fc)"
-              : "linear-gradient(180deg, #67e8f9, #22d3ee)",
+              ? "linear-gradient(180deg, var(--accent-strong), var(--accent))"
+              : "linear-gradient(180deg, #d97706, #b45309)",
         }}
       />
       <div

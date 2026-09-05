@@ -52,11 +52,11 @@ for (let y = 0; y < S; y++) {
         const fx = x + 0.25 + sx * 0.5, fy = y + 0.25 + sy * 0.5;
         const dRect = sdRoundRect(fx, fy, S / 2, S / 2, S / 2 - 4, S / 2 - 4, R);
         const a = clamp(0.5 - dRect, 0, 1);
-        // 对角渐变：紫罗兰 -> 青蓝
+        // 对角渐变：琥珀 -> 陶红
         const t = clamp((fx + fy) / (2 * S), 0, 1);
-        let cr = lerp(0x8b, 0x06, t) / 255;
-        let cg = lerp(0x5c, 0xb6, t) / 255;
-        let cb = lerp(0xf6, 0xd4, t) / 255;
+        let cr = lerp(0xff, 0xd9, t) / 255;
+        let cg = lerp(0xc4, 0x69, t) / 255;
+        let cb = lerp(0x70, 0x30, t) / 255;
         // 左上高光
         const hl = clamp(1 - Math.hypot(fx - S * 0.18, fy - S * 0.14) / (S * 0.75), 0, 1) * 0.16;
         cr = lerp(cr, 1, hl); cg = lerp(cg, 1, hl); cb = lerp(cb, 1, hl);
