@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ListMusic, Play, Shuffle, Trash2 } from "lucide-react";
 import { useStore } from "../store";
 import TrackList from "../components/TrackList";
+import { ConfirmModal } from "../components/Dialogs";
 import { matchSearch } from "../utils";
 
 export default function PlaylistDetail({ id }: { id: number }) {
@@ -11,6 +12,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const playTracks = useStore((s) => s.playTracks);
   const removeFromPlaylist = useStore((s) => s.removeFromPlaylist);
   const deletePlaylist = useStore((s) => s.deletePlaylist);
+  const [confirmDel, setConfirmDel] = useState(false);
 
   const pl = playlists.find((p) => p.id === id);
 
@@ -61,9 +63,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
             </button>
             <button
               className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15"
-              onClick={() => {
-                if (window.confirm(`删除播放列表「${pl.name}」？`)) deletePlaylist(pl.id);
-              }}
+              onClick={() => setConfirmDel(true)}
             >
               <Trash2 size={13} />
               删除列表
@@ -71,6 +71,17 @@ export default function PlaylistDetail({ id }: { id: number }) {
           </div>
         </div>
       </header>
+
+      <ConfirmModal
+        open={confirmDel}
+        title="删除播放列表"
+        danger
+        confirmText="删除"
+        onClose={() => setConfirmDel(false)}
+        onConfirm={() => deletePlaylist(pl.id)}
+      >
+        确定删除播放列表「{pl.name}」？列表中的曲目不会被删除。
+      </ConfirmModal>
 
       <TrackList
         tracks={list}

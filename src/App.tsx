@@ -39,16 +39,25 @@ function DynamicBackdrop() {
           src={url}
           alt=""
           draggable={false}
-          className="absolute inset-0 w-full h-full object-cover scale-125 blur-[120px] opacity-[0.14]"
+          className="absolute inset-0 w-full h-full object-cover scale-150 opacity-[0.08]"
+          style={{ filter: "blur(48px)" }}
         />
       )}
       <div
-        className="absolute -top-48 left-[18%] w-[560px] h-[560px] rounded-full opacity-[0.13] blur-[130px] transition-colors duration-1000"
-        style={{ background: "var(--dyn)" }}
+        className="absolute -top-56 left-[8%] w-[720px] h-[620px] transition-colors duration-1000"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, var(--dyn) 0%, transparent 62%)",
+          opacity: 0.14,
+        }}
       />
       <div
-        className="absolute -bottom-40 -right-24 w-[520px] h-[520px] rounded-full opacity-[0.09] blur-[140px]"
-        style={{ background: "radial-gradient(circle, #22d3ee, transparent 70%)" }}
+        className="absolute -bottom-64 -right-40 w-[760px] h-[640px]"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, #22d3ee 0%, transparent 62%)",
+          opacity: 0.1,
+        }}
       />
     </div>
   );

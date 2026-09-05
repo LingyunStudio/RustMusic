@@ -5,3 +5,4 @@ src-tauri/gen/schemas/
 *.log
 .DS_Store
 Thumbs.db
+testdata/

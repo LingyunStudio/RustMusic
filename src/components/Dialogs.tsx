@@ -1,0 +1,95 @@
+import { useEffect, useState, type ReactNode } from "react";
+import Modal from "./Modal";
+
+interface InputModalProps {
+  open: boolean;
+  title: string;
+  placeholder?: string;
+  confirmText?: string;
+  onClose: () => void;
+  onConfirm: (value: string) => void;
+}
+
+export function InputModal({
+  open,
+  title,
+  placeholder,
+  confirmText = "确定",
+  onClose,
+  onConfirm,
+}: InputModalProps) {
+  const [value, setValue] = useState("");
+  useEffect(() => {
+    if (open) setValue("");
+  }, [open]);
+
+  const submit = () => {
+    const v = value.trim();
+    if (!v) return;
+    onConfirm(v);
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={title} width={380}>
+      <input
+        type="text"
+        autoFocus
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        className="w-full h-10 rounded-lg bg-white/[0.06] border border-white/[0.09] px-3.5 text-[13px] focus:border-white/25 outline-none"
+      />
+      <div className="flex justify-end gap-2 mt-4">
+        <button className="btn-secondary" onClick={onClose}>
+          取消
+        </button>
+        <button className="btn-primary" disabled={!value.trim()} onClick={submit} style={{ opacity: value.trim() ? 1 : 0.5 }}>
+          {confirmText}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+interface ConfirmModalProps {
+  open: boolean;
+  title: string;
+  children?: ReactNode;
+  confirmText?: string;
+  danger?: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+export function ConfirmModal({
+  open,
+  title,
+  children,
+  confirmText = "确定",
+  danger,
+  onClose,
+  onConfirm,
+}: ConfirmModalProps) {
+  return (
+    <Modal open={open} onClose={onClose} title={title} width={380}>
+      <div className="text-[13px] text-zinc-400 leading-relaxed">{children}</div>
+      <div className="flex justify-end gap-2 mt-5">
+        <button className="btn-secondary" onClick={onClose}>
+          取消
+        </button>
+        <button
+          className={`btn-primary ${danger ? "!bg-none" : ""}`}
+          style={danger ? { background: "linear-gradient(135deg,#e11d48,#be123c)" } : undefined}
+          onClick={() => {
+            onConfirm();
+            onClose();
+          }}
+        >
+          {confirmText}
+        </button>
+      </div>
+    </Modal>
+  );
+}

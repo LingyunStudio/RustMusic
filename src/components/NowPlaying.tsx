@@ -21,7 +21,12 @@ export default function NowPlaying() {
   const trackId = current?.kind === "track" ? current.id : null;
 
   useEffect(() => {
-    if (trackId != null) loadLyrics(trackId);
+    if (trackId != null) {
+      loadLyrics(trackId);
+    } else {
+      // 在线音源等无歌词场景，清掉上一首的歌词
+      useStore.setState({ lyrics: null, lyricsFor: null, lyricsLoading: false });
+    }
   }, [trackId, loadLyrics]);
 
   const syncedLines = useMemo(
@@ -71,7 +76,8 @@ export default function NowPlaying() {
           <img
             src={coverUrl}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover scale-125 blur-[100px] opacity-30"
+            className="absolute inset-0 w-full h-full object-cover scale-150 opacity-25"
+            style={{ filter: "blur(56px)" }}
             draggable={false}
           />
         )}

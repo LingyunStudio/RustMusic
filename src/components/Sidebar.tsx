@@ -9,7 +9,9 @@ import {
   Radio,
   Settings,
 } from "lucide-react";
+import { useState } from "react";
 import { useStore } from "../store";
+import { InputModal } from "./Dialogs";
 import type { ViewName } from "../types";
 
 const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
@@ -26,6 +28,7 @@ export default function Sidebar() {
   const playlists = useStore((s) => s.playlists);
   const scan = useStore((s) => s.scan);
   const tracks = useStore((s) => s.tracks);
+  const [plModalOpen, setPlModalOpen] = useState(false);
 
   const likedCount = tracks.filter((t) => t.liked).length;
 
@@ -63,10 +66,7 @@ export default function Sidebar() {
         <button
           className="btn-ghost w-6 h-6"
           title="新建播放列表"
-          onClick={() => {
-            const name = window.prompt("播放列表名称：");
-            if (name) useStore.getState().createPlaylist(name.trim());
-          }}
+          onClick={() => setPlModalOpen(true)}
         >
           <Plus size={14} />
         </button>
@@ -124,6 +124,15 @@ export default function Sidebar() {
           )}
         </div>
       </div>
+
+      <InputModal
+        open={plModalOpen}
+        title="新建播放列表"
+        placeholder="播放列表名称"
+        confirmText="创建"
+        onClose={() => setPlModalOpen(false)}
+        onConfirm={(name) => useStore.getState().createPlaylist(name)}
+      />
     </aside>
   );
 }

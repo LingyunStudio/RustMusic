@@ -191,13 +191,13 @@ export default function PlayerBar() {
           <Slider value={volume} max={1} onChange={setVolume} className="flex-1" thick={4} />
         </div>
         <button
-          className={`btn-ghost w-8 h-8 ${queueOpen ? "text-[var(--dyn)]" : ""}`}
+          className={`btn-ghost relative w-8 h-8 ${queueOpen ? "text-[var(--dyn)]" : ""}`}
           onClick={() => setQueueOpen(!queueOpen)}
           title="播放队列"
         >
           <ListMusic size={16} />
           {queue.length > 1 && (
-            <span className="absolute -mt-6 ml-4 text-[9px] bg-[var(--dyn)] text-white rounded-full px-1 leading-[13px] font-bold">
+            <span className="absolute -top-0.5 -right-0.5 text-[9px] bg-[var(--dyn)] text-white rounded-full min-w-[14px] leading-[14px] font-bold text-center">
               {queue.length}
             </span>
           )}

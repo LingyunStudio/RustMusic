@@ -27,6 +27,12 @@ body,
   overflow: hidden;
 }
 
+/* 强制 #root 成为独立合成层：规避 WebView2 在窗口 resize 后
+   局部区域不重绘而产生的残影（stale tiles） */
+#root {
+  transform: translateZ(0);
+}
+
 body {
   background: var(--bg);
   color: #e4e4e7;
