@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Folder,
   FolderPlus,
@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "../store";
+import { api } from "../api";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
@@ -42,7 +43,33 @@ export default function SettingsView() {
   const quality = useStore((s) => s.quality);
   const setQuality = useStore((s) => s.setQuality);
   const clearCache = useStore((s) => s.clearCache);
+  const [saveDir, setSaveDir] = useState("");
+  const [saveDirDefault, setSaveDirDefault] = useState("");
   const [preset, setPreset] = useState("平直");
+
+  useEffect(() => {
+    api.saveDirGet().then((d) => {
+      setSaveDir(d.dir);
+      setSaveDirDefault(d.default);
+    });
+  }, []);
+
+  const pickSaveDir = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "选择下载保存目录",
+      });
+      if (!selected || typeof selected !== "string") return;
+      await api.saveDirSet(selected);
+      setSaveDir(selected);
+      useStore.getState().toast("下载目录已更新", "success");
+    } catch (e) {
+      useStore.getState().toast(String(e), "error");
+    }
+  };
 
   const setBand = (i: number, v: number) => {
     const g = [...eqGains];
@@ -204,6 +231,23 @@ export default function SettingsView() {
           </div>
           <p className="text-[11.5px] text-zinc-600 mt-2">
             变速通过重采样实现，音调会随之变化；均衡器实时作用于所有播放。
+          </p>
+        </section>
+
+        {/* 下载目录 */}
+        <section className="glass rounded-2xl p-5">
+          <h2 className="text-[14.5px] font-semibold mb-3">下载保存目录</h2>
+          <div className="flex items-center gap-3">
+            <Folder size={14} className="text-zinc-500 shrink-0" />
+            <span className="text-[12.5px] text-zinc-300 truncate flex-1">
+              {saveDir || saveDirDefault}
+            </span>
+            <button className="btn-secondary !py-1.5 !px-3" onClick={pickSaveDir}>
+              更改目录
+            </button>
+          </div>
+          <p className="text-[11.5px] text-zinc-600 mt-2">
+            在线歌曲“下载到本地”将保存到此目录，并自动加入资料库（含标签与歌词）。
           </p>
         </section>
 

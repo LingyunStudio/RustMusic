@@ -3,7 +3,7 @@ import { Clock3, Heart, Library, Play, Shuffle } from "lucide-react";
 import { useStore } from "../store";
 import TrackList, { type SortKey } from "../components/TrackList";
 import { matchSearch } from "../utils";
-import type { TrackMeta } from "../types";
+import type { PlaylistEntryMeta, TrackMeta } from "../types";
 
 type Mode = "library" | "liked" | "recent";
 
@@ -29,8 +29,24 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const playTracks = useStore((s) => s.playTracks);
   const folders = useStore((s) => s.folders);
   const addFolderByDialog = useStore((s) => s.addFolderByDialog);
+  const likedOnline = useStore((s) => s.likedOnline);
+  const playEntries = useStore((s) => s.playEntries);
   const [sortKey, setSortKey] = useState<SortKey>(mode === "recent" ? "plays" : "added");
   const [dir, setDir] = useState<1 | -1>(-1);
+
+  // “我喜欢” = 本地喜欢 + 在线喜欢（轻量引用）
+  const onlineLikedEntries: PlaylistEntryMeta[] = useMemo(() => {
+    if (mode !== "liked") return [];
+    return likedOnline.filter((e) => {
+      if (!search) return true;
+      const s = search.toLowerCase();
+      return (
+        e.title.toLowerCase().includes(s) ||
+        e.artist.toLowerCase().includes(s) ||
+        e.album.toLowerCase().includes(s)
+      );
+    });
+  }, [mode, likedOnline, search]);
 
   const filtered = useMemo(() => {
     let list: TrackMeta[];
@@ -63,7 +79,10 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   }, [tracks, mode, search, sortKey, dir]);
 
   const { title, sub, icon: Icon } = META[mode];
-  const totalSecs = Math.floor(filtered.reduce((a, t) => a + t.duration, 0));
+  const totalSecs = Math.floor(
+    filtered.reduce((a, t) => a + t.duration, 0) +
+      onlineLikedEntries.reduce((a, e) => a + e.duration, 0)
+  );
   const totalDesc =
     totalSecs >= 3600
       ? `${Math.floor(totalSecs / 3600)} 小时 ${Math.floor((totalSecs % 3600) / 60)} 分钟`

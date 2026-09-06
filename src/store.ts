@@ -70,6 +70,7 @@ interface Store {
 
   quality: string;
   savedOnline: Record<string, boolean>;
+  likedOnline: import("./types").PlaylistEntryMeta[];
   loadMoreLock: boolean;
   neteaseLiked: Record<number, boolean>;
 
@@ -136,7 +137,18 @@ interface Store {
   playQq(list: QqSong[], idx: number): void;
 
   setQuality(q: string): void;
-  saveOnline(row: {
+  toggleLikeOnline(row: {
+    kind: string;
+    id: string | number;
+    name: string;
+    artist: string;
+    album: string;
+    cover: string;
+    durationMs: number;
+    mediaMid?: string;
+    vip?: boolean;
+  }): Promise<void>;
+  downloadOnline(row: {
     kind: string;
     id: string | number;
     name: string;
@@ -146,6 +158,7 @@ interface Store {
     durationMs: number;
     mediaMid?: string;
   }): Promise<void>;
+  refreshLikedOnline(): Promise<void>;
   addOnlineToPlaylist(
     pid: number,
     row: {
@@ -222,6 +235,7 @@ export const useStore = create<Store>((set, get) => ({
 
   quality: "high",
   savedOnline: {},
+  likedOnline: [],
   loadMoreLock: false,
   neteaseLiked: {},
 
@@ -348,6 +362,7 @@ export const useStore = create<Store>((set, get) => ({
         ready: true,
       });
       if (neteaseStatus.loggedIn) get().neteaseSyncLikes();
+      get().refreshLikedOnline();
     } catch (e) {
       set({ ready: true });
       get().toast(`初始化失败：${e}`, "error");
@@ -848,10 +863,36 @@ export const useStore = create<Store>((set, get) => ({
     api.setPlayQuality(q).catch((e) => get().toast(String(e), "error"));
   },
 
-  async saveOnline(row) {
+  async toggleLikeOnline(row) {
     const key = `${row.kind}-${row.id}`;
+    const next = !get().savedOnline[key];
+    // 乐观更新
+    set((s) => ({ savedOnline: { ...s.savedOnline, [key]: next } }));
     try {
-      const newId = await api.onlineSave({
+      await api.likeOnline({
+        kind: row.kind,
+        rid: String(row.id),
+        title: row.name,
+        artist: row.artist,
+        album: row.album,
+        cover: row.cover,
+        durationMs: row.durationMs,
+        mediaMid: row.mediaMid ?? "",
+        vip: row.vip ?? false,
+        like: next,
+      });
+      await get().refreshLikedOnline();
+    } catch (e) {
+      // 回滚
+      set((s) => ({ savedOnline: { ...s.savedOnline, [key]: !next } }));
+      get().toast(String(e), "error");
+    }
+  },
+
+  async downloadOnline(row) {
+    get().toast("开始下载…", "info");
+    try {
+      const name = await api.downloadOnline({
         kind: row.kind,
         id: String(row.id),
         title: row.name,
@@ -861,14 +902,22 @@ export const useStore = create<Store>((set, get) => ({
         durationMs: row.durationMs,
         mediaMid: row.mediaMid ?? "",
       });
-      set((s) => ({ savedOnline: { ...s.savedOnline, [key]: true } }));
       await get().refreshTracks();
-      const t = get().tracks.find((x) => x.id === newId);
-      if (t && !t.liked) get().toggleLike(newId);
-      get().toast(`已收藏到“我喜欢”（已下载到本地）`, "success");
+      get().toast(`已下载到资料库：${name}`, "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
+  },
+
+  async refreshLikedOnline() {
+    try {
+      const list = await api.likedOnlineList();
+      const saved: Record<string, boolean> = {};
+      for (const e of list) {
+        if (e.onlineId) saved[`${e.kind}-${e.onlineId}`] = true;
+      }
+      set({ likedOnline: list, savedOnline: { ...saved } });
+    } catch {}
   },
 
   async addOnlineToPlaylist(pid, row) {

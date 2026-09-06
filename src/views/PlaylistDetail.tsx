@@ -59,7 +59,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const removeFromPlaylist = useStore((s) => s.removeFromPlaylist);
   const removePlaylistEntryRow = useStore((s) => s.removePlaylistEntryRow);
   const toggleLike = useStore((s) => s.toggleLike);
-  const saveOnline = useStore((s) => s.saveOnline);
+  const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
+  const downloadOnline = useStore((s) => s.downloadOnline);
   const playNext = useStore((s) => s.playNext);
   const addToQueue = useStore((s) => s.addToQueue);
   const deletePlaylist = useStore((s) => s.deletePlaylist);
@@ -274,7 +275,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                           e.stopPropagation();
                           if (r.kind === "track") toggleLike(r.id);
                           else
-                            saveOnline({
+                            toggleLikeOnline({
                               kind: r.kind,
                               id: r.id,
                               name: r.name,
@@ -289,7 +290,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             ? r.liked
                               ? "取消喜欢"
                               : "喜欢"
-                            : "收藏到“我喜欢”（下载到本机）"
+                            : r.liked ? "取消喜欢" : "收藏到“我喜欢”"
                         }
                       >
                         <Heart
@@ -380,6 +381,27 @@ export default function PlaylistDetail({ id }: { id: number }) {
           >
             <Play size={13} /> 下一首播放
           </button>
+          {menu.e.kind !== "local" && (
+            <button
+              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+              onClick={() => {
+                const r = list.find((x) => x.entry.rowid === menu.e.rowid);
+                if (r)
+                  downloadOnline({
+                    kind: r.kind,
+                    id: r.id,
+                    name: r.name,
+                    artist: r.artist,
+                    album: r.album,
+                    cover: r.cover,
+                    durationMs: r.durationMs,
+                  });
+                setMenu(null);
+              }}
+            >
+              <Play size={13} /> 下载到本地
+            </button>
+          )}
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-rose-300 hover:bg-white/[0.08] text-left"
             onClick={() => {

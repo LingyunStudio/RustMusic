@@ -72,6 +72,14 @@ CREATE TABLE IF NOT EXISTS online_tracks (
   duration_ms INTEGER NOT NULL DEFAULT 0,
   media_mid TEXT NOT NULL DEFAULT '',
   vip INTEGER NOT NULL DEFAULT 0,
+  downloaded INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(kind, rid)
+);
+CREATE TABLE IF NOT EXISTS liked_online (
+  rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  rid TEXT NOT NULL,
+  liked_at INTEGER NOT NULL DEFAULT 0,
   UNIQUE(kind, rid)
 );
 "#;
@@ -81,6 +89,9 @@ pub fn migrate(conn: &Connection) {
     let _ = conn.execute_batch(
         "ALTER TABLE playlist_tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'local';
          ALTER TABLE playlist_tracks ADD COLUMN online_id TEXT NOT NULL DEFAULT '';",
+    );
+    let _ = conn.execute_batch(
+        "ALTER TABLE online_tracks ADD COLUMN downloaded INTEGER NOT NULL DEFAULT 0;",
     );
 }
 
@@ -546,4 +557,63 @@ pub fn add_playlist_entry(conn: &Connection, pid: i64, kind: &str, track_id: i64
 
 pub fn remove_playlist_entry(conn: &Connection, rowid: i64) {
     let _ = conn.execute("DELETE FROM playlist_tracks WHERE rowid = ?1", params![rowid]);
+}
+
+// ---------- 在线喜欢（轻量引用，不下载） ----------
+
+pub fn like_online_track(conn: &Connection, kind: &str, rid: &str) {
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO liked_online(kind, rid, liked_at) VALUES(?1, ?2, ?3)",
+        params![kind, rid, now_secs()],
+    );
+}
+
+pub fn unlike_online_track(conn: &Connection, kind: &str, rid: &str) {
+    let _ = conn.execute(
+        "DELETE FROM liked_online WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+    );
+}
+
+pub fn liked_online_list(conn: &Connection) -> Vec<PlaylistEntryRow> {
+    let mut stmt = match conn.prepare(
+        "SELECT l.kind, l.rid, ot.title, ot.artist, ot.album, ot.cover, ot.duration_ms
+         FROM liked_online l
+         LEFT JOIN online_tracks ot ON ot.kind = l.kind AND ot.rid = l.rid
+         ORDER BY l.liked_at DESC, l.rowid DESC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    stmt.query_map([], |r| {
+        Ok(PlaylistEntryRow {
+            rowid: 0,
+            kind: r.get(0)?,
+            track_id: 0,
+            online_id: r.get(1)?,
+            title: r.get(2)?,
+            artist: r.get(3)?,
+            album: r.get(4)?,
+            cover: r.get(5)?,
+            duration: r.get::<_, i64>(6).unwrap_or(0) as f64 / 1000.0,
+        })
+    })
+    .map(|rows| rows.filter_map(|x| x.ok()).collect())
+    .unwrap_or_default()
+}
+
+pub fn is_liked_online(conn: &Connection, kind: &str, rid: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM liked_online WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+pub fn mark_online_downloaded(conn: &Connection, kind: &str, rid: &str) {
+    let _ = conn.execute(
+        "UPDATE online_tracks SET downloaded = 1 WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+    );
 }

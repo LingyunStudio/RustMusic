@@ -75,7 +75,19 @@ export const api = {
   neteaseLike: (id: number, like: boolean) =>
     invoke<void>("netease_like", { id, like }),
   neteaseLogout: () => invoke<void>("netease_logout"),
-  onlineSave: (req: {
+  likeOnline: (req: {
+    kind: string;
+    rid: string;
+    title: string;
+    artist: string;
+    album: string;
+    cover: string;
+    durationMs: number;
+    mediaMid: string;
+    vip: boolean;
+    like: boolean;
+  }) => invoke<void>("like_online", req),
+  downloadOnline: (req: {
     kind: string;
     id: string;
     title: string;
@@ -84,7 +96,12 @@ export const api = {
     coverUrl: string;
     durationMs: number;
     mediaMid: string;
-  }) => invoke<number>("online_save", { req }),
+  }) => invoke<string>("download_online", { req }),
+  likedOnlineList: () =>
+    invoke<import("./types").PlaylistEntryMeta[]>("liked_online_list"),
+  saveDirGet: () =>
+    invoke<{ dir: string; default: string }>("save_dir_get"),
+  saveDirSet: (dir: string) => invoke<void>("save_dir_set", { dir }),
   addOnlineToPlaylist: (req: {
     playlistId: number;
     kind: string;

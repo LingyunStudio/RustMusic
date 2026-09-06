@@ -421,17 +421,26 @@ pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
 
 /// 从 music_u 反查账号 ID（老版本登录时未存 uid 的兜底）
 pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
-    let payload = serde_json::json!({ "csrf_token": "" }).to_string();
-    let resp = weapi_post("/weapi/nos/token/anonymous", &payload, Some(music_u))?;
-    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    let url = "https://music.163.com/api/nuser/account/get?csrf_token=";
+    let resp = ureq::get(url)
+        .set("Cookie", &cookie_header(Some(music_u)))
+        .set("User-Agent", UA)
+        .set("Referer", "https://music.163.com/")
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| format!("账号信息请求失败: {e}"))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("账号信息读取失败: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("账号信息解析失败: {e}"))?;
+    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(format!("账号信息获取失败（code {code}）"));
     }
-    let uid = resp
-        .pointer("/token/account/id")
-        .or_else(|| resp.pointer("/account/id"))
-        .and_then(|v| v.as_i64());
-    uid.ok_or_else(|| "响应中缺少账号 ID".into())
+    v.pointer("/account/id")
+        .and_then(|x| x.as_i64())
+        .ok_or_else(|| "响应中缺少账号 ID".into())
 }
 
 /// 获取登录账号的歌单列表

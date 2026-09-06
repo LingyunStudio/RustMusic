@@ -621,7 +621,7 @@ fn save_dir(state: &State<AppState>) -> std::path::PathBuf {
     let conn = state.db.lock();
     let custom = db::get_setting(&conn, "save_dir").unwrap_or_default();
     if custom.is_empty() {
-        state.app_data.join("在线音乐")
+        state.app_data.join("下载音乐")
     } else {
         std::path::PathBuf::from(custom)
     }
@@ -641,12 +641,49 @@ fn sanitize_filename(s: &str) -> String {
         .to_string()
 }
 
-/// 收藏在线歌曲：取链接 → 下载 → 写标签 → 入库 → 加入“我喜欢”
+/// 收藏在线歌曲到“我喜欢”（轻量引用，不下载；播放时按权益取链接）
 #[tauri::command]
-pub async fn online_save(
+pub async fn like_online(
+    state: State<'_, AppState>,
+    kind: String,
+    rid: String,
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    cover: Option<String>,
+    duration_ms: Option<i64>,
+    media_mid: Option<String>,
+    vip: Option<bool>,
+    like: Option<bool>,
+) -> Result<(), String> {
+    let conn = state.db.lock();
+    let like = like.unwrap_or(true);
+    if like {
+        db::upsert_online_track(
+            &conn,
+            &kind,
+            &rid,
+            &title,
+            &artist.unwrap_or_default(),
+            &album.unwrap_or_default(),
+            &cover.unwrap_or_default(),
+            duration_ms.unwrap_or(0),
+            &media_mid.unwrap_or_default(),
+            vip.unwrap_or(false),
+        );
+        db::like_online_track(&conn, &kind, &rid);
+    } else {
+        db::unlike_online_track(&conn, &kind, &rid);
+    }
+    Ok(())
+}
+
+/// 下载在线歌曲到保存目录（写标签入库，资料库可见）
+#[tauri::command]
+pub async fn download_online(
     state: State<'_, AppState>,
     req: OnlineSaveReq,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let title = req.title.trim().to_string();
     if title.is_empty() {
         return Err("歌曲标题为空".into());
@@ -712,18 +749,59 @@ pub async fn online_save(
     };
     write_tags(&dest, &title, &req.artist, &req.album, &req.cover_url, lyrics.as_deref());
 
-    // 4) 解析入库
+    // 4) 解析入库 + 标记已下载 + 保存目录纳入扫描
     let track = crate::library::parse_track(&dest, &state.app_data).ok_or("解析歌曲失败")?;
-    let id = {
+    {
         let conn = state.db.lock();
         db::upsert_track(&conn, &track);
-        let id = conn.last_insert_rowid();
-        db::like_track(&conn, id, true);
-        db::record_play(&conn, id);
+        db::mark_online_downloaded(&conn, &req.kind, &req.id);
         let _ = db::add_folder(&conn, &dir.to_string_lossy());
-        id
-    };
-    Ok(id)
+    }
+    Ok(name)
+}
+
+/// “我喜欢”列表：在线条目部分
+#[tauri::command]
+pub async fn liked_online_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::models::PlaylistEntryMeta>, String> {
+    let conn = state.db.lock();
+    Ok(db::liked_online_list(&conn)
+        .into_iter()
+        .map(|e| crate::models::PlaylistEntryMeta {
+            rowid: 0,
+            kind: e.kind,
+            track_id: None,
+            online_id: Some(e.online_id),
+            title: e.title,
+            artist: e.artist,
+            album: e.album,
+            cover: e.cover,
+            duration: e.duration,
+        })
+        .collect())
+}
+
+/// 获取下载保存目录（custom 为空时用 default）
+#[tauri::command]
+pub async fn save_dir_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let conn = state.db.lock();
+    let custom = db::get_setting(&conn, "save_dir").unwrap_or_default();
+    Ok(json!({
+        "dir": custom,
+        "default": state.app_data.join("下载音乐").to_string_lossy(),
+    }))
+}
+
+#[tauri::command]
+pub async fn save_dir_set(state: State<'_, AppState>, dir: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&dir);
+    if !p.is_dir() {
+        return Err("该路径不是文件夹".into());
+    }
+    let conn = state.db.lock();
+    db::set_setting(&conn, "save_dir", &dir);
+    Ok(())
 }
 
 fn http_get_for(kind: &str, url: &str) -> Result<impl std::io::Read, String> {

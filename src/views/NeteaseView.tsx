@@ -45,7 +45,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
   const savedOnline = useStore((s) => s.savedOnline);
-  const saveOnline = useStore((s) => s.saveOnline);
+  const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
+  const downloadOnline = useStore((s) => s.downloadOnline);
   const addOnlineToPlaylist = useStore((s) => s.addOnlineToPlaylist);
   const neteaseLiked = useStore((s) => s.neteaseLiked);
   const playNetease = useStore((s) => s.playNetease);
@@ -391,7 +392,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       className="btn-ghost w-8 h-8"
                       onClick={(e) => {
                         e.stopPropagation();
-                        saveOnline({
+                        toggleLikeOnline({
                           kind: t.kind,
                           id: t.id,
                           name: t.name,
@@ -400,9 +401,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                           cover: t.cover,
                           durationMs: t.durationMs,
                           mediaMid: t.mediaMid,
+                          vip: t.vip,
                         });
                       }}
-                      title="收藏到“我喜欢”（下载到本机资料库）"
+                      title={saved ? "取消喜欢" : "收藏到“我喜欢”"}
                     >
                       <Heart
                         size={15}
@@ -500,7 +502,26 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
             onClick={() => {
-              saveOnline({
+              toggleLikeOnline({
+                kind: menu.row.kind,
+                id: menu.row.id,
+                name: menu.row.name,
+                artist: menu.row.artist,
+                album: menu.row.album,
+                cover: menu.row.cover,
+                durationMs: menu.row.durationMs,
+                mediaMid: menu.row.mediaMid,
+                vip: menu.row.vip,
+              });
+              setMenu(null);
+            }}
+          >
+            <Heart size={13} /> 收藏到“我喜欢”
+          </button>
+          <button
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            onClick={() => {
+              downloadOnline({
                 kind: menu.row.kind,
                 id: menu.row.id,
                 name: menu.row.name,
@@ -513,7 +534,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               setMenu(null);
             }}
           >
-            <Heart size={13} /> 收藏到“我喜欢”
+            <Play size={13} /> 下载到本地
           </button>
         </div>
       )}
