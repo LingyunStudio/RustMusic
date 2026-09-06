@@ -246,6 +246,31 @@ fn credential_cookie(musicid: &str, musickey: &str) -> String {
 }
 
 /// 在 QQLogin 响应的任意层级查找同时含 musicid 与 musickey 的对象
+fn find_str_anywhere(v: &serde_json::Value, key: &str) -> Option<String> {
+    if let Some(obj) = v.as_object() {
+        if let Some(x) = obj.get(key) {
+            if let Some(s) = x.as_str() {
+                if !s.is_empty() {
+                    return Some(s.to_string());
+                }
+            }
+        }
+        for (_, child) in obj {
+            if let Some(found) = find_str_anywhere(child, key) {
+                return Some(found);
+            }
+        }
+    }
+    if let Some(arr) = v.as_array() {
+        for child in arr {
+            if let Some(found) = find_str_anywhere(child, key) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
 fn find_credential(v: &serde_json::Value) -> Option<(String, String)> {
     if let Some(obj) = v.as_object() {
         let get = |k: &str| -> Option<String> {
@@ -454,6 +479,7 @@ pub struct QqQrCheck {
     pub nickname: Option<String>,
     pub musicid: Option<String>,
     pub musickey: Option<String>,
+    pub encrypt_uin: Option<String>,
 }
 
 /// 轮询扫码状态；成功时完成 check_sig → OAuth → QQLogin 换取播放凭证
@@ -473,7 +499,7 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             67 => "scanned",
             _ => "waiting",
         };
-        return Ok(QqQrCheck { status: status.into(), nickname: None, musicid: None, musickey: None });
+        return Ok(QqQrCheck { status: status.into(), nickname: None, musicid: None, musickey: None, encrypt_uin: None });
     }
 
     {
@@ -541,40 +567,38 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             })
         };
         let mut raw_log = String::new();
-        let credential = {
-            let signed = musicu_signed(&make_payload(), None);
-            match signed {
-                Ok(ref v) => match find_credential(v) {
-                    Some(c) => Some(c),
-                    None => {
-                        raw_log = serde_json::to_string(v).unwrap_or_default();
-                        None
-                    }
-                },
-                Err(_) => None,
+        let mut login_resp: Option<serde_json::Value> = None;
+        let mut credential: Option<(String, String)> = None;
+
+        if let Ok(v) = musicu_signed(&make_payload(), None) {
+            login_resp = Some(v.clone());
+            match find_credential(&v) {
+                Some(c) => credential = Some(c),
+                None => raw_log = serde_json::to_string(&v).unwrap_or_default(),
             }
         }
-        .or_else(|| {
+        if credential.is_none() {
             let url = "https://u.y.qq.com/cgi-bin/musicu.fcg";
-            let body = serde_json::to_string(&make_payload()).ok()?;
-            let text = ureq::post(url)
-                .set("Content-Type", "application/json")
-                .set("Referer", "https://y.qq.com/")
-                .set("User-Agent", UA)
-                .timeout(TIMEOUT)
-                .send_string(&body)
-                .ok()?
-                .into_string()
-                .ok()?;
-            let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-            match find_credential(&v) {
-                Some(c) => Some(c),
-                None => {
-                    raw_log = text;
-                    None
+            if let Ok(body) = serde_json::to_string(&make_payload()) {
+                let sent = ureq::post(url)
+                    .set("Content-Type", "application/json")
+                    .set("Referer", "https://y.qq.com/")
+                    .set("User-Agent", UA)
+                    .timeout(TIMEOUT)
+                    .send_string(&body);
+                if let Ok(r) = sent {
+                    if let Ok(text) = r.into_string() {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                            login_resp = Some(v.clone());
+                            match find_credential(&v) {
+                                Some(c) => credential = Some(c),
+                                None => raw_log = text,
+                            }
+                        }
+                    }
                 }
             }
-        });
+        }
 
         let (musicid, musickey) = credential.ok_or_else(|| {
             format!(
@@ -583,12 +607,16 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             )
         })?;
         let nickname = args.get(5).cloned();
+        let encrypt_uin = login_resp
+            .as_ref()
+            .and_then(|v| find_str_anywhere(v, "encryptUin"));
 
         Ok(QqQrCheck {
             status: "success".into(),
             nickname,
             musicid: Some(musicid),
             musickey: Some(musickey),
+            encrypt_uin,
         })
     }
 }
@@ -609,6 +637,126 @@ fn plain_get_with_cookie(url: &str, referer: &str, cookie: &str) -> Result<Strin
         .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?
         .into_string()
         .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))
+}
+
+
+/// 用户创建的歌单列表
+pub fn user_playlists(musicid: &str, musickey: &str) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+    let payload = serde_json::json!({
+        "comm": {"ct": 19, "cv": 1859},
+        "req_1": {
+            "module": "music.musicasset.PlaylistBaseRead",
+            "method": "GetPlaylistByUin",
+            "param": {"uin": musicid}
+        }
+    });
+    let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
+    let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 0 {
+        return Err(format!("获取歌单列表失败（code {code}）"));
+    }
+    let mut out = Vec::new();
+    if let Some(list) = resp.pointer("/req_1/data/v_playlist").and_then(|v| v.as_array()) {
+        for p in list {
+            let id = p.get("tid").or_else(|| p.get("dirid")).and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = p.get("diss_name").or_else(|| p.get("title")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let count = p.get("song_num").and_then(|v| v.as_i64()).unwrap_or(0);
+            if id != 0 && !name.is_empty() {
+                out.push(crate::models::UserPlaylistMeta { id, name, track_count: count });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 歌单内曲目（CgiGetDiss，分页拉全）
+pub fn playlist_tracks(
+    disstid: i64,
+    musicid: &str,
+    musickey: &str,
+) -> Result<Vec<QqSong>, String> {
+    let mut all = Vec::new();
+    let mut begin = 0i64;
+    loop {
+        let payload = serde_json::json!({
+            "comm": {"ct": 19, "cv": 1859},
+            "req_1": {
+                "module": "music.srfDissInfo.DissInfo",
+                "method": "CgiGetDiss",
+                "param": {
+                    "disstid": disstid,
+                    "dirid": 1,
+                    "tag": false,
+                    "song_begin": begin,
+                    "song_num": 100,
+                    "userinfo": false,
+                    "orderlist": true,
+                    "onlysonglist": 0
+                }
+            }
+        });
+        let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
+        let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64()).unwrap_or(0);
+        if code != 0 {
+            return Err(format!("获取歌单详情失败（code {code}）"));
+        }
+        let list = resp
+            .pointer("/req_1/data/songlist")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let got = list.len() as i64;
+        for t in &list {
+            let mid = t.get("mid").or_else(|| t.get("songmid")).and_then(|v| v.as_str()).unwrap_or("");
+            if mid.is_empty() {
+                continue;
+            }
+            let media_mid = t
+                .get("media_mid")
+                .and_then(|v| v.as_str())
+                .or_else(|| t.pointer("/file/media_mid").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .to_string();
+            all.push(QqSong {
+                id: mid.to_string(),
+                name: t.get("name").or_else(|| t.get("songname")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                singer: t
+                    .get("singer")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                            .collect::<Vec<_>>()
+                            .join(" / ")
+                    })
+                    .unwrap_or_default(),
+                album: t
+                    .pointer("/album/name")
+                    .or_else(|| t.get("albumname"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                album_mid: t
+                    .pointer("/album/mid")
+                    .or_else(|| t.get("albummid"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                media_mid,
+                duration_ms: t.get("interval").and_then(|v| v.as_i64()).unwrap_or(0) as u64 * 1000,
+                vip: t
+                    .pointer("/pay/pay_play")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v != 0)
+                    .unwrap_or(false),
+            });
+        }
+        if got < 100 || begin > 2000 {
+            break;
+        }
+        begin += 100;
+    }
+    Ok(all)
 }
 
 #[cfg(test)]

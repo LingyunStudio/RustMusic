@@ -992,6 +992,48 @@ pub async fn netease_import_playlist(
 }
 
 #[tauri::command]
+pub async fn qq_user_playlists(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+    let (musicid, musickey) = qq_credential(&state)?;
+    crate::qq::user_playlists(&musicid, &musickey)
+}
+
+/// 导入 QQ 音乐歌单：远程 dissid 拉曲目 → 写入本地播放列表
+#[tauri::command]
+pub async fn qq_import_playlist(
+    state: State<'_, AppState>,
+    remote_pid: i64,
+    local_pid: i64,
+) -> Result<i64, String> {
+    let (musicid, musickey) = qq_credential(&state)?;
+    let songs = crate::qq::playlist_tracks(remote_pid, &musicid, &musickey)?;
+    let count = {
+        let conn = state.db.lock();
+        for t in &songs {
+            db::upsert_online_track(
+                &conn,
+                "qq",
+                &t.id,
+                &t.name,
+                &t.singer,
+                &t.album,
+                &format!(
+                    "https://y.gtimg.cn/music/photo_new/T002R300x300M000{}.jpg",
+                    t.album_mid
+                ),
+                t.duration_ms as i64,
+                &t.media_mid,
+                t.vip,
+            );
+            db::add_online_to_playlist(&conn, local_pid, "qq", &t.id);
+        }
+        songs.len() as i64
+    };
+    Ok(count)
+}
+
+#[tauri::command]
 pub async fn set_play_quality(state: State<'_, AppState>, quality: String) -> Result<(), String> {
     if !matches!(quality.as_str(), "standard" | "high" | "lossless") {
         return Err("无效的音质选项".into());

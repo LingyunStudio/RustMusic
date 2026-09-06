@@ -175,6 +175,7 @@ interface Store {
   ): Promise<void>;
   removePlaylistEntryRow(rowid: number): Promise<void>;
   importNeteasePlaylist(remotePid: number, name: string): Promise<void>;
+  importQqPlaylist(remotePid: number, name: string): Promise<void>;
 
   loadLyricsByKey(key: string): Promise<void>;
   loadLyrics(trackId: number): Promise<void>;
@@ -958,6 +959,20 @@ export const useStore = create<Store>((set, get) => ({
       const created = pls[pls.length - 1];
       if (!created) throw new Error("创建播放列表失败");
       const n = await api.neteaseImportPlaylist(remotePid, created.id);
+      await get().refreshPlaylists();
+      get().toast(`已导入「${name}」${n} 首（在线播放，按账号权益）`, "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async importQqPlaylist(remotePid, name) {
+    try {
+      await get().createPlaylist(name);
+      const pls = get().playlists;
+      const created = pls[pls.length - 1];
+      if (!created) throw new Error("创建播放列表失败");
+      const n = await api.qqImportPlaylist(remotePid, created.id);
       await get().refreshPlaylists();
       get().toast(`已导入「${name}」${n} 首（在线播放，按账号权益）`, "success");
     } catch (e) {

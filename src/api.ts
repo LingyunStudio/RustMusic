@@ -120,6 +120,10 @@ export const api = {
     invoke<UserPlaylistMeta[]>("netease_user_playlists"),
   neteaseImportPlaylist: (remotePid: number, localPid: number) =>
     invoke<number>("netease_import_playlist", { remotePid, localPid }),
+  qqUserPlaylists: () =>
+    invoke<import("./types").UserPlaylistMeta[]>("qq_user_playlists"),
+  qqImportPlaylist: (remotePid: number, localPid: number) =>
+    invoke<number>("qq_import_playlist", { remotePid, localPid }),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),

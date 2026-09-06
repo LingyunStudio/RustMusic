@@ -228,6 +228,8 @@ fn main() {
             commands::remove_playlist_entry,
             commands::netease_user_playlists,
             commands::netease_import_playlist,
+            commands::qq_user_playlists,
+            commands::qq_import_playlist,
             commands::set_play_quality,
             commands::play_pause,
             commands::pause,

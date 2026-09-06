@@ -64,6 +64,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const playlists = useStore((s) => s.playlists);
   const createPlaylist = useStore((s) => s.createPlaylist);
   const importNeteasePlaylist = useStore((s) => s.importNeteasePlaylist);
+  const importQqPlaylist = useStore((s) => s.importQqPlaylist);
   const toast = useStore((s) => s.toast);
 
   const [kw, setKw] = useState("");
@@ -594,11 +595,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         </div>
       </Modal>
 
-      {/* 导入网易云歌单弹窗 */}
+      {/* 导入歌单弹窗（网易云 / QQ 音乐） */}
       <Modal
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        title="导入网易云歌单"
+        title={`导入${sourceName}歌单`}
         width={400}
       >
         {importList === null ? (
@@ -614,7 +615,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 className="h-10 px-3 rounded-lg text-left text-[13px] text-zinc-200 hover:bg-white/[0.07] flex items-center justify-between transition-colors"
                 onClick={async () => {
                   setImporting(true);
-                  await importNeteasePlaylist(p.id, p.name);
+                  if (source === "netease") await importNeteasePlaylist(p.id, p.name);
+                  else await importQqPlaylist(p.id, p.name);
                   setImporting(false);
                   setImportOpen(false);
                 }}

@@ -163,45 +163,16 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* 底部：统计 + 设置 */}
+      {/* 底部：扫描状态 + 设置 */}
       <div className="mt-auto flex flex-col gap-3">
-        <div
-          className="glass rounded-2xl px-4 py-3.5 relative overflow-hidden"
-          style={{ background: "rgba(243,233,216,0.05)" }}
-        >
-          <div
-            className="absolute -top-10 -right-10 w-28 h-28 rounded-full"
-            style={{
-              background: "radial-gradient(circle, var(--accent) 0%, transparent 70%)",
-              opacity: 0.18,
-            }}
-          />
-          <div className="text-[10.5px] text-[var(--ink-3)] tracking-[0.16em] mb-2">
-            资料库总览
-          </div>
-          {scan.active ? (
-            <div className="flex items-center gap-2 text-[12.5px] text-[var(--accent)]">
-              <Loader2 size={13} className="animate-spin" />
+        {scan.active && (
+          <div className="flex items-center gap-2 px-4 text-[12px] text-[var(--accent)]">
+            <Loader2 size={13} className="animate-spin" />
+            <span className="truncate">
               扫描中 {scan.total ? `${scan.done}/${scan.total}` : "…"}
-            </div>
-          ) : (
-            <div className="flex items-end gap-4">
-              <div>
-                <div className="text-[19px] font-bold leading-none tabular-nums text-[var(--ink)]">
-                  {tracks.length}
-                </div>
-                <div className="text-[10.5px] text-[var(--ink-3)] mt-1">首曲目</div>
-              </div>
-              <div className="w-px h-7 bg-[rgba(243,233,216,0.1)]" />
-              <div>
-                <div className="text-[19px] font-bold leading-none tabular-nums text-[var(--ink)]">
-                  {hours > 0 ? `${hours}h${mins}m` : `${mins}m`}
-                </div>
-                <div className="text-[10.5px] text-[var(--ink-3)] mt-1">总时长</div>
-              </div>
-            </div>
-          )}
-        </div>
+            </span>
+          </div>
+        )}
 
         <button
           onClick={() => setView("settings")}
