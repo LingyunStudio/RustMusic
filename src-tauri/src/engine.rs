@@ -185,32 +185,30 @@ impl Engine {
         if self.sink.empty() {
             return Err("当前没有正在播放的曲目".into());
         }
-        // 1) 常规 seek；MP3 边界位置偶发失败时回退 300ms 重试
+        // FLAC：解码器不支持 seek，失败的 try_seek 还会重置解码器状态
+        // （表现为进度先跳回开头再跳目标），直接走重建路径
+        let info_opt = self.current.read().clone();
+        let is_flac = info_opt
+            .as_ref()
+            .map(|i| i.path.to_lowercase().ends_with(".flac"))
+            .unwrap_or(false);
+        if is_flac {
+            let info = info_opt.ok_or("当前没有正在播放的曲目")?;
+            self.rebuilding.store(true, Ordering::Relaxed);
+            let r = self.rebuild_at(&info, ms);
+            self.rebuilding.store(false, Ordering::Relaxed);
+            return r;
+        }
+        drop(info_opt);
+        // 常规 seek；MP3 边界位置偶发失败时回退 300ms 重试
         match self.sink.try_seek(Duration::from_millis(ms)) {
-            Ok(()) => return Ok(()),
+            Ok(()) => Ok(()),
             Err(first) => {
                 let back = ms.saturating_sub(300);
-                if self.sink.try_seek(Duration::from_millis(back)).is_ok() {
-                    return Ok(());
+                match self.sink.try_seek(Duration::from_millis(back)) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(format!("定位失败: {first}")),
                 }
-                // 2) FLAC（symphonia/claxon 均不支持 seek）：
-                //    重开文件 + skip_duration 跳到目标位置重建播放
-                let info = self.current.read().clone();
-                let is_flac = info
-                    .as_ref()
-                    .map(|i| i.path.to_lowercase().ends_with(".flac"))
-                    .unwrap_or(false);
-                if !is_flac {
-                    return Err(format!("定位失败: {first}"));
-                }
-                let info = info.ok_or("当前没有正在播放的曲目")?;
-                self.rebuilding.store(true, Ordering::Relaxed);
-                let flac_seek = self.rebuild_at(&info, ms);
-                self.rebuilding.store(false, Ordering::Relaxed);
-                if flac_seek.is_err() {
-                    return Err(format!("定位失败: {first}"));
-                }
-                return flac_seek;
             }
         }
     }

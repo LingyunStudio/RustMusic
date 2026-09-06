@@ -632,10 +632,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   seek(ms) {
-    set({ pos: ms, scrubbing: false });
-    api.seek(Math.round(ms)).catch((e) => {
-      get().toast(`跳转失败：${e}`, "error");
-    });
+    // scrubbing 保持锁定直到后端 seek 完成（FLAC 重建耗时数百 ms）
+    set({ pos: ms });
+    api
+      .seek(Math.round(ms))
+      .catch((e) => get().toast(`跳转失败：${e}`, "error"))
+      .finally(() => set({ scrubbing: false }));
   },
 
   setVolume(v) {

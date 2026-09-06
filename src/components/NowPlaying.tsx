@@ -134,7 +134,7 @@ export default function NowPlaying() {
               className="absolute -inset-[25%] dynamic-gradient-layer"
               style={{
                 background: `conic-gradient(from 0deg at 30% 35%, ${palette[0]}, ${palette[1] ?? palette[0]}, ${palette[2] ?? palette[0]}, ${palette[3] ?? palette[1] ?? palette[0]}, ${palette[0]})`,
-                opacity: 0.85,
+                opacity: 0.55,
                 filter: "blur(120px) saturate(1.35)",
                 transform: "scale(1.18)",
               }}
