@@ -85,10 +85,8 @@ export default function PlayerBar() {
         }`}
         style={{
           background: "var(--bar-glass)",
-          backdropFilter: "blur(38px) saturate(1.6)",
-          WebkitBackdropFilter: "blur(38px) saturate(1.6)",
           border: "1px solid var(--glass-line)",
-          boxShadow: "0 18px 50px -12px rgba(0,0,0,0.7)",
+          boxShadow: "0 18px 50px -12px rgba(0,0,0,0.55)",
         }}
       >
         {/* 曲目信息 */}
