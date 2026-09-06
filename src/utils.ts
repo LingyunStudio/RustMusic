@@ -97,7 +97,27 @@ export async function extractPalette(url: string, count = 4): Promise<string[]> 
     const colors = [...buckets.values()]
       .sort((a, b) => b.w - a.w)
       .slice(0, count)
-      .map((x) => `rgb(${Math.round(x.r / x.w)}, ${Math.round(x.g / x.w)}, ${Math.round(x.b / x.w)})`);
+      .map((x) => {
+        const r = x.r / x.w / 255;
+        const g = x.g / x.w / 255;
+        const b = x.b / x.w / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const l = (max + min) / 2;
+        const d = max - min;
+        let h = 0;
+        let s2 = 0;
+        if (d !== 0) {
+          s2 = d / (1 - Math.abs(2 * l - 1));
+          if (max === r) h = ((g - b) / d) % 6;
+          else if (max === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          h *= 60;
+          if (h < 0) h += 360;
+        }
+        // hsl 字符串：hue-rotate 动画可平滑旋转色相
+        return `hsl(${Math.round(h)}, ${Math.round(s2 * 100)}%, ${Math.round(l * 100)}%)`;
+      });
     return colors;
   } catch {
     return [];

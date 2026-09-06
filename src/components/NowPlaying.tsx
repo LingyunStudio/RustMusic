@@ -95,7 +95,7 @@ export default function NowPlaying() {
 
   return (
     <div className="absolute inset-0 z-40 anim-np overflow-hidden">
-      {/* 背景：封面多色采样的动态渐变 */}
+      {/* 背景：封面取色的流动渐变（色相旋转 + 光斑漂移） */}
       <div className="absolute inset-0 overflow-hidden">
         <div
           className="absolute inset-0 transition-colors duration-1000"
@@ -104,25 +104,47 @@ export default function NowPlaying() {
               "linear-gradient(180deg, var(--backdrop-1) 0%, var(--backdrop-2) 55%, var(--bg) 100%)",
           }}
         />
-        {palette.slice(0, 4).map((c, i) => (
-          <div
-            key={i}
-            className="absolute rounded-full anim-Drift"
-            style={{
-              background: `radial-gradient(circle at center, ${c} 0%, transparent 62%)`,
-              width: `${44 + i * 12}%`,
-              height: `${40 + i * 10}%`,
-              left: `${8 + i * 22}%`,
-              top: `${i % 2 === 0 ? -6 + i * 8 : 44 - i * 6}%`,
-              filter: "blur(90px)",
-              opacity: 0.4,
-              animation: "blobDrift 16s ease-in-out infinite",
-              animationDelay: `${-i * 4}s`,
-              ["--blob-a" as string]: 0.42 - i * 0.06,
-              transition: "background 1.2s ease",
-            }}
-          />
-        ))}
+        {palette.length >= 2 && (
+          <>
+            {/* 大对流渐变层：颜色持续旋转流动 */}
+            <div
+              className="absolute -inset-[30%]"
+              style={{
+                background: `conic-gradient(from 0deg at 30% 35%, ${palette[0]}, ${palette[1] ?? palette[0]}, ${palette[2] ?? palette[0]}, ${palette[3] ?? palette[1] ?? palette[0]}, ${palette[0]})`,
+                opacity: 0.5,
+                animation: "hueFlow 30s linear infinite, slowSpin 46s linear infinite",
+              }}
+            />
+            {/* 双光斑漂移层 */}
+            <div
+              className="absolute rounded-full"
+              style={{
+                background: `radial-gradient(circle at center, ${palette[0]} 0%, transparent 62%)`,
+                width: "56%",
+                height: "52%",
+                left: "4%",
+                top: "-8%",
+                filter: "blur(85px)",
+                animation: "blobDrift 17s ease-in-out infinite",
+                ["--blob-a" as string]: 0.4,
+              }}
+            />
+            <div
+              className="absolute rounded-full"
+              style={{
+                background: `radial-gradient(circle at center, ${palette[1]} 0%, transparent 62%)`,
+                width: "52%",
+                height: "48%",
+                left: "48%",
+                top: "46%",
+                filter: "blur(95px)",
+                animation: "blobDrift 21s ease-in-out infinite",
+                animationDelay: "-7s",
+                ["--blob-a" as string]: 0.35,
+              }}
+            />
+          </>
+        )}
         <div
           className="absolute inset-0"
           style={{
