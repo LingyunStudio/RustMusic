@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 import { useStore } from "../store";
 import { InputModal } from "./Dialogs";
+import CoverImg from "./CoverImg";
 import type { ViewName } from "../types";
 
 const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [

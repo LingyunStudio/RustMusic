@@ -55,6 +55,8 @@ pub struct Playlist {
     pub name: String,
     pub track_ids: Vec<i64>,
     pub entries: Vec<PlaylistEntryMeta>,
+    /// 第一首歌的封面（在线条目为 URL，本地为文件路径）
+    pub cover: String,
     pub created_at: i64,
 }
 

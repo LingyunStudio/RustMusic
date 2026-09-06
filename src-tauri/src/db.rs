@@ -364,6 +364,7 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
                 name: r.get(1)?,
                 track_ids: vec![],
                 entries: vec![],
+                cover: String::new(),
                 created_at: r.get(2)?,
             })
         })
@@ -372,6 +373,9 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
 
     for pl in out.iter_mut() {
         for e in playlist_entries(conn, pl.id) {
+            if pl.cover.is_empty() && !e.cover.is_empty() {
+                pl.cover = e.cover.clone();
+            }
             if e.kind == "local" {
                 pl.track_ids.push(e.track_id);
             }

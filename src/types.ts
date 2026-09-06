@@ -44,6 +44,7 @@ export interface Playlist {
   name: string;
   trackIds: number[];
   entries: PlaylistEntryMeta[];
+  cover: string;
   createdAt: number;
 }
 

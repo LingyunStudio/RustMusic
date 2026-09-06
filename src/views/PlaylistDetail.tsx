@@ -128,15 +128,24 @@ export default function PlaylistDetail({ id }: { id: number }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <header className="pt-5 pb-4 px-5 flex gap-5 items-end">
-        <div
-          className="w-[104px] h-[104px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
-          style={{
-            background:
-              "linear-gradient(135deg, hsl(35, 55%, 45%), hsl(15, 60%, 32%))",
-          }}
-        >
-          <ListMusic size={34} className="text-white/85" />
-        </div>
+        {pl.cover ? (
+          <CoverImg
+            src={pl.cover}
+            seed={pl.name}
+            className="w-[104px] h-[104px] rounded-2xl shadow-xl shrink-0"
+            iconSize={34}
+          />
+        ) : (
+          <div
+            className="w-[104px] h-[104px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
+            style={{
+              background:
+                "linear-gradient(135deg, hsl(35, 55%, 45%), hsl(15, 60%, 32%))",
+            }}
+          >
+            <ListMusic size={34} className="text-white/85" />
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="text-[11px] text-zinc-500 tracking-wider mb-1">播放列表</div>
           <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
