@@ -203,23 +203,25 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   {nickname || "已登录"}
                 </span>
                 <div className="flex items-center gap-2">
-                  {source === "netease" && (
-                    <button
-                      className="btn-secondary !py-1.5 !px-3"
-                      onClick={async () => {
-                        setImportList(null);
-                        setImportOpen(true);
-                        try {
-                          setImportList(await api.neteaseUserPlaylists());
-                        } catch (e) {
-                          setImportOpen(false);
-                          toast(String(e), "error");
-                        }
-                      }}
-                    >
-                      导入歌单
-                    </button>
-                  )}
+                  <button
+                    className="btn-secondary !py-1.5 !px-3"
+                    onClick={async () => {
+                      setImportList(null);
+                      setImportOpen(true);
+                      try {
+                        const list =
+                          source === "netease"
+                            ? await api.neteaseUserPlaylists()
+                            : await api.qqUserPlaylists();
+                        setImportList(list);
+                      } catch (e) {
+                        setImportOpen(false);
+                        toast(String(e), "error");
+                      }
+                    }}
+                  >
+                    导入歌单
+                  </button>
                   <button
                     className="btn-secondary !py-1.5 !px-3"
                     onClick={() => (source === "netease" ? neteaseLogout() : qqLogout())}
