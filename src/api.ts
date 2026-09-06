@@ -118,8 +118,8 @@ export const api = {
     invoke<void>("remove_playlist_entry", { rowid }),
   neteaseUserPlaylists: () =>
     invoke<UserPlaylistMeta[]>("netease_user_playlists"),
-  neteaseImportPlaylist: (pid: number) =>
-    invoke<number>("netease_import_playlist", { pid }),
+  neteaseImportPlaylist: (remotePid: number, localPid: number) =>
+    invoke<number>("netease_import_playlist", { remotePid, localPid }),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),

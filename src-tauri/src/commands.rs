@@ -958,7 +958,8 @@ pub async fn netease_user_playlists(
 #[tauri::command]
 pub async fn netease_import_playlist(
     state: State<'_, AppState>,
-    pid: i64,
+    remote_pid: i64, // 网易云歌单 ID
+    local_pid: i64, // 本地新建的播放列表 ID
 ) -> Result<i64, String> {
     let music_u = {
         let conn = state.db.lock();
@@ -967,7 +968,7 @@ pub async fn netease_import_playlist(
     if music_u.is_empty() {
         return Err("未登录网易云账号".into());
     }
-    let songs = crate::netease::playlist_tracks(pid, &music_u)?;
+    let songs = crate::netease::playlist_tracks(remote_pid, &music_u)?;
     let count = {
         let conn = state.db.lock();
         for t in &songs {
@@ -983,7 +984,7 @@ pub async fn netease_import_playlist(
                 "",
                 t.fee == 1,
             );
-            db::add_online_to_playlist(&conn, pid, "netease", &t.id.to_string());
+            db::add_online_to_playlist(&conn, local_pid, "netease", &t.id.to_string());
         }
         songs.len() as i64
     };
