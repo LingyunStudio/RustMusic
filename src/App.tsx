@@ -190,12 +190,13 @@ export default function App() {
           </main>
 
           {queueOpen && <QueuePanel />}
-
-          {nowPlayingOpen && <NowPlaying />}
         </div>
 
         <PlayerBar />
       </div>
+
+      {/* 播放页：窗口级覆盖（背景与标题栏连为一体） */}
+      {nowPlayingOpen && <NowPlaying />}
 
       <ToastContainer />
     </div>

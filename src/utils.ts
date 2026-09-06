@@ -120,8 +120,8 @@ export async function extractPalette(url: string, count = 4): Promise<string[]> 
           if (h < 0) h += 360;
         }
         // 输出归一化 hsl：强制增饱和、亮度压低（浅色封面也产出浓艳色）
-        s2 = Math.min(1, Math.max(s2, 0.6) * 1.2); // 饱和度至少 60%
-        const lOut = Math.min(0.5, Math.max(l * 0.7, 0.32)); // 亮度 32%–50%
+        s2 = Math.min(1, Math.max(s2, 0.55) * 1.1); // 饱和度至少 55%
+        const lOut = Math.min(0.72, Math.max(l * 0.85, 0.48)); // 亮度 48%–72%（淡雅）
         return `hsl(${Math.round(h)}, ${Math.round(s2 * 100)}%, ${Math.round(lOut * 100)}%)`;
       });
     if (!colors.length) return [];

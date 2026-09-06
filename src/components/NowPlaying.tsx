@@ -114,7 +114,7 @@ export default function NowPlaying() {
   }, [palette]);
 
   return (
-    <div className="absolute inset-0 z-40 anim-np overflow-hidden">
+    <div className="absolute inset-0 z-40 anim-np overflow-hidden" style={{ background: "var(--bg)" }}>
       {/* 背景：封面取色的流动渐变（色相旋转 + 光斑漂移） */}
       <div className="absolute inset-0 overflow-hidden">
         {palette.length < 2 && (
@@ -178,8 +178,8 @@ export default function NowPlaying() {
         />
       </div>
 
-      {/* 顶栏 */}
-      <div className="relative flex items-center justify-between px-8 h-16">
+      {/* 顶栏（标题栏浮在渐变之上） */}
+      <div className="relative flex items-center justify-between px-8 pt-12 h-24">
         <span className="text-[11px] text-[var(--ink-3)] tracking-[0.26em] flex items-center gap-2.5">
           <Music4 size={14} />
           正在播放
@@ -193,7 +193,7 @@ export default function NowPlaying() {
       </div>
 
       {/* 主体 */}
-      <div className="relative flex gap-14 px-14 pb-8 items-stretch h-[calc(100%-64px)]">
+      <div className="relative flex gap-14 px-14 pb-8 items-stretch h-[calc(100%-96px)]">
         {/* 左：封面 */}
         <div className="w-[40%] max-w-[440px] flex flex-col items-center justify-center gap-5">
           <div className="relative">

@@ -79,7 +79,11 @@ export default function PlayerBar() {
         </div>
       )}
 
-      <div className="h-[88px] glass-strong rounded-[22px] flex items-center pl-5 pr-6 gap-5">
+      <div
+        className={`h-[88px] glass-strong rounded-[22px] flex items-center pl-5 pr-6 gap-5 transition-opacity duration-300 ${
+          nowPlayingOpen ? "opacity-60 hover:opacity-100" : ""
+        }`}
+      >
         {/* 曲目信息 */}
         <div className="flex items-center gap-4 w-[260px] min-w-[200px]">
           {current ? (

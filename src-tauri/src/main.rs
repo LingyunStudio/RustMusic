@@ -115,7 +115,10 @@ fn monitor(app: AppHandle) {
             );
         }
 
-        // 一首曲目自然播完（非暂停、非手动停止）
+        // 一首曲目自然播完（非暂停、非手动停止；FLAC 重建期间跳过）
+        if eng.rebuilding.load(Ordering::Relaxed) {
+            was_active = true;
+        }
         if was_active && !active && !paused && !eng.stopped.load(Ordering::Relaxed) {
             let _ = app.emit("player://ended", serde_json::json!({}));
         }

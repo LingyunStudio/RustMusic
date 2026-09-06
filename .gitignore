@@ -7,3 +7,4 @@ src-tauri/gen/schemas/
 Thumbs.db
 testdata/
 _qqapi/
+src-tauri/_*.rs

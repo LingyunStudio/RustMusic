@@ -116,6 +116,16 @@ pub struct EqSource<S> {
 
 impl<S: Source<Item = f32>> EqSource<S> {
     pub fn new(inner: S, shared: Arc<EqShared>, pos_ms: Arc<AtomicU64>) -> Self {
+        Self::with_base(inner, shared, pos_ms, 0.0)
+    }
+
+    /// base_ms：流起始的时间偏移（skip_duration 跳过的部分）
+    pub fn with_base(
+        inner: S,
+        shared: Arc<EqShared>,
+        pos_ms: Arc<AtomicU64>,
+        base_ms: f64,
+    ) -> Self {
         let channels = (inner.channels() as usize).max(1);
         let sr = inner.sample_rate() as f64;
         let mut s = Self {
@@ -128,7 +138,7 @@ impl<S: Source<Item = f32>> EqSource<S> {
             coeffs: Vec::new(),
             states: Vec::new(),
             frames: 0,
-            base_ms: 0.0,
+            base_ms,
             pos_ms,
         };
         s.refresh();

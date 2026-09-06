@@ -19,7 +19,7 @@ export default function Titlebar() {
   return (
     <div
       data-tauri-drag-region
-      className="h-12 flex items-center justify-between pl-6 pr-0 relative z-30 shrink-0"
+      className="h-12 flex items-center justify-between pl-6 pr-0 relative z-50 shrink-0"
     >
       <div data-tauri-drag-region className="w-[220px]" />
 

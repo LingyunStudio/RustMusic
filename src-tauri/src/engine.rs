@@ -52,6 +52,8 @@ pub struct Engine {
     pub dur_ms: Arc<AtomicU64>,
     pub user_paused: Arc<AtomicBool>,
     pub stopped: Arc<AtomicBool>,
+    /// FLAC seek 重建播放链期间置位，避免 monitor 误判“播完”
+    pub rebuilding: Arc<AtomicBool>,
     pub current: Arc<RwLock<Option<TrackInfo>>>,
     volume: AtomicU32,
     speed: AtomicU32,
@@ -86,6 +88,7 @@ impl Engine {
             dur_ms: Arc::new(AtomicU64::new(0)),
             user_paused: Arc::new(AtomicBool::new(false)),
             stopped: Arc::new(AtomicBool::new(true)),
+            rebuilding: Arc::new(AtomicBool::new(false)),
             current: Arc::new(RwLock::new(None)),
             volume: AtomicU32::new(volume.to_bits()),
             speed: AtomicU32::new(speed.to_bits()),
@@ -182,9 +185,60 @@ impl Engine {
         if self.sink.empty() {
             return Err("当前没有正在播放的曲目".into());
         }
+        // 1) 常规 seek；MP3 边界位置偶发失败时回退 300ms 重试
+        match self.sink.try_seek(Duration::from_millis(ms)) {
+            Ok(()) => return Ok(()),
+            Err(first) => {
+                let back = ms.saturating_sub(300);
+                if self.sink.try_seek(Duration::from_millis(back)).is_ok() {
+                    return Ok(());
+                }
+                // 2) FLAC（symphonia/claxon 均不支持 seek）：
+                //    重开文件 + skip_duration 跳到目标位置重建播放
+                let info = self.current.read().clone();
+                let is_flac = info
+                    .as_ref()
+                    .map(|i| i.path.to_lowercase().ends_with(".flac"))
+                    .unwrap_or(false);
+                if !is_flac {
+                    return Err(format!("定位失败: {first}"));
+                }
+                let info = info.ok_or("当前没有正在播放的曲目")?;
+                self.rebuilding.store(true, Ordering::Relaxed);
+                let flac_seek = self.rebuild_at(&info, ms);
+                self.rebuilding.store(false, Ordering::Relaxed);
+                if flac_seek.is_err() {
+                    return Err(format!("定位失败: {first}"));
+                }
+                return flac_seek;
+            }
+        }
+    }
+
+    /// FLAC 专用：重开文件并丢弃到目标时长，重建播放链
+    fn rebuild_at(&self, info: &TrackInfo, ms: u64) -> Result<(), String> {
+        let file = std::fs::File::open(&info.path).map_err(|e| format!("重开文件失败: {e}"))?;
+        let src = Decoder::new(BufReader::new(file))
+            .map_err(|e| format!("重新解码失败: {e}"))?
+            .convert_samples::<f32>()
+            .skip_duration(Duration::from_millis(ms));
+        let wrapped =
+            EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64);
+        self.pos_ms.store(ms, Ordering::Relaxed);
+        self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
+        self.sink.clear();
+        self.sink.append(wrapped);
         self.sink
-            .try_seek(Duration::from_millis(ms))
-            .map_err(|e| format!("定位失败: {e}"))
+            .set_volume(f32::from_bits(self.volume.load(Ordering::Relaxed)));
+        self.sink
+            .set_speed(f32::from_bits(self.speed.load(Ordering::Relaxed)));
+        let was_paused = self.user_paused.load(Ordering::Relaxed);
+        if was_paused {
+            self.sink.pause();
+        } else {
+            self.sink.play();
+        }
+        Ok(())
     }
 
     // ---------- 音量 / 速度 / 均衡器 ----------
