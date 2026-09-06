@@ -75,6 +75,7 @@ export interface TrackInfo {
   durationMs: number;
   nid?: number | null;
   qid?: string | null;
+  quality?: string | null;
 }
 
 export interface QqSong {
@@ -103,6 +104,7 @@ export interface PlayState extends TrackInfo {
 
 export interface CurrentTrack extends TrackInfo {
   liked: boolean;
+  quality?: string | null;
 }
 
 export type RepeatMode = "off" | "all" | "one";

@@ -53,10 +53,17 @@ export default function PlayerBar() {
   const total = dur || current?.durationMs || 0;
   const VolIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
   // 播放栏歌词：当前行（未打开播放页时也加载并展示）
-  const activeLyric = useMemo(
-    () => (nowPlayingOpenFlag ? null : activeLyricText(lyrics, pos)),
-    [nowPlayingOpenFlag, lyrics, pos]
-  );
+  // needsScroll 按可见宽度估算：约 13px 字号下，中文≈13px/字、ASCII≈7px/字
+  const activeLyric = useMemo(() => {
+    if (nowPlayingOpenFlag) return null;
+    const text = activeLyricText(lyrics, pos);
+    if (text == null) return null;
+    const width = [...text].reduce(
+      (acc, ch) => acc + (ch.charCodeAt(0) > 0x2e80 ? 13 : 7),
+      0
+    );
+    return { text, needsScroll: width > 210 };
+  }, [nowPlayingOpenFlag, lyrics, pos]);
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-1">
@@ -96,21 +103,30 @@ export default function PlayerBar() {
                 </div>
               </button>
               <div className="min-w-0">
-                {activeLyric ? (
+                {activeLyric != null ? (
                   <div
                     className="text-[13px] font-medium text-[var(--accent-strong)] cursor-pointer marquee-wrap"
-                    style={{ ["--dur" as string]: `${Math.max(10, activeLyric.length * 0.6)}s` }}
                     onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
                     title="点击展开播放页"
                   >
-                    <span
-                      className={`marquee-inner ${activeLyric.length > 18 ? "" : "!animate-none"}`}
-                    >
-                      {activeLyric}
-                      <span className="inline-block w-12" />
-                      {activeLyric}
-                      <span className="inline-block w-12" />
-                    </span>
+                    {activeLyric.needsScroll ? (
+                      <span
+                        className="marquee-inner"
+                        style={{
+                          ["--dur" as string]: `${Math.max(
+                            9,
+                            activeLyric.text.length * 0.55
+                          )}s`,
+                        }}
+                      >
+                        {activeLyric.text}
+                        <span className="inline-block w-14" />
+                        {activeLyric.text}
+                        <span className="inline-block w-14" />
+                      </span>
+                    ) : (
+                      <span className="inline-block">{activeLyric.text}</span>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -120,10 +136,16 @@ export default function PlayerBar() {
                     {current.title}
                   </div>
                 )}
-                <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
-                  {current.artist}
-                  {current.kind === "url" && (
-                    <span className="ml-2 text-[10px] text-[var(--accent)]">在线音源</span>
+                <div className="text-[12px] text-[var(--ink-3)] truncate mt-1 flex items-center gap-2">
+                  <span className="truncate">{current.artist}</span>
+                  {current.quality && (
+                    <span
+                      className="shrink-0 text-[9.5px] font-semibold px-1.5 py-px rounded text-[var(--accent-strong)]"
+                      style={{ background: "rgba(240,162,74,0.14)" }}
+                      title="当前播放音质"
+                    >
+                      {current.quality}
+                    </span>
                   )}
                 </div>
               </div>

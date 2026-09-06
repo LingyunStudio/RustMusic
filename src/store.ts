@@ -248,6 +248,7 @@ export const useStore = create<Store>((set, get) => ({
             durationMs: p.durationMs,
             nid: p.nid ?? null,
             qid: p.qid ?? null,
+            quality: p.quality ?? null,
             liked,
           },
           playing: p.playing,

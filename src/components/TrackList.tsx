@@ -108,21 +108,12 @@ export default function TrackList({
               <span
                 className={`text-[12.5px] tabular-nums transition-opacity ${
                   active
-                    ? "text-[var(--accent)] font-bold opacity-100 group-hover:opacity-0"
+                    ? "text-[var(--accent)] font-bold"
                     : "text-[var(--ink-3)] group-hover:opacity-0"
                 }`}
               >
                 {String(i + 1).padStart(2, "0")}
               </span>
-              {active && (
-                <div className="absolute inset-0 flex items-center justify-center group-hover:opacity-0">
-                  <div className={`eq-bars ${playing ? "" : "paused"}`}>
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                </div>
-              )}
               <button
                 className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
                   active ? "text-[var(--accent)]" : "bg-[var(--ink)] text-[#241505]"

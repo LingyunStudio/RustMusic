@@ -276,14 +276,14 @@ fn find_credential(v: &serde_json::Value) -> Option<(String, String)> {
     None
 }
 
-/// 按音质请求播放直链，从所选音质逐级回退
+/// 按音质请求播放直链，从所选音质逐级回退；返回 (url, ext)
 pub fn song_url(
     songmid: &str,
     media_mid: &str,
     musicid: &str,
     musickey: &str,
     quality: &str,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     // 前缀：M500=128k M800=320k F000=flac；无 media_mid 时按官方规则用 songmid 拼接
     let ladder: Vec<(&str, &str)> = match quality {
         "lossless" => vec![("F000", "flac"), ("M800", "mp3"), ("M500", "mp3")],
@@ -321,7 +321,7 @@ pub fn song_url(
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if !purl.is_empty() {
-            return Ok(if purl.starts_with("http") {
+            let url = if purl.starts_with("http") {
                 purl.to_string()
             } else {
                 let sip = resp
@@ -335,7 +335,8 @@ pub fn song_url(
                     .unwrap_or("http://ws.stream.qqmusic.qq.com/")
                     .to_string();
                 format!("{}{}", sip, purl)
-            });
+            };
+            return Ok((url, ext.to_string()));
         }
         last_resp = serde_json::to_string(&resp).unwrap_or_default();
     }

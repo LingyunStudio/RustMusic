@@ -31,6 +31,9 @@ pub struct TrackInfo {
     pub nid: Option<i64>,
     #[serde(default)]
     pub qid: Option<String>,
+    /// 播放音质描述（如 "320kbps" / "FLAC"），来自取链接响应
+    #[serde(default)]
+    pub quality: Option<String>,
 }
 
 #[derive(Clone, Serialize)]

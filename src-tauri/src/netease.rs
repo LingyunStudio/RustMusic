@@ -419,6 +419,21 @@ pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
     Ok(lrc)
 }
 
+/// 从 music_u 反查账号 ID（老版本登录时未存 uid 的兜底）
+pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
+    let payload = serde_json::json!({ "csrf_token": "" }).to_string();
+    let resp = weapi_post("/weapi/nos/token/anonymous", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(format!("账号信息获取失败（code {code}）"));
+    }
+    let uid = resp
+        .pointer("/token/account/id")
+        .or_else(|| resp.pointer("/account/id"))
+        .and_then(|v| v.as_i64());
+    uid.ok_or_else(|| "响应中缺少账号 ID".into())
+}
+
 /// 获取登录账号的歌单列表
 pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
     let payload = serde_json::json!({ "uid": uid.to_string(), "offset": "0", "limit": "60" }).to_string();

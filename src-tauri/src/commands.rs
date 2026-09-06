@@ -252,6 +252,17 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
         let conn = state.db.lock();
         db::record_play(&conn, id);
     }
+    let local_quality = if meta.bit_depth >= 16 && meta.sample_rate >= 44100 {
+        format!(
+            "{}kHz/{}bit",
+            meta.sample_rate / 1000,
+            meta.bit_depth.max(16)
+        )
+    } else if meta.bitrate > 0 {
+        format!("{}kbps", meta.bitrate / 1000)
+    } else {
+        String::new()
+    };
     let info = TrackInfo {
         id: Some(meta.id),
         kind: "track".into(),
@@ -263,6 +274,7 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
         duration_ms: (meta.duration * 1000.0) as u64,
         nid: None,
         qid: None,
+        quality: (!local_quality.is_empty()).then_some(local_quality),
     };
     engine_clone(&state).play_file(info)
 }
@@ -288,6 +300,7 @@ pub async fn play_source(state: State<'_, AppState>, id: i64) -> Result<(), Stri
         duration_ms: 0,
         nid: None,
         qid: None,
+        quality: None,
     };
     engine_clone(&state).play_url(item.url, info)
 }
@@ -335,10 +348,15 @@ pub async fn netease_play(
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
-    let (url, _br, _ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
+    let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
         .ok_or_else(|| {
             "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string()
         })?;
+    let quality_label = if ext.eq_ignore_ascii_case("flac") {
+        "FLAC".to_string()
+    } else {
+        format!("{br}kbps")
+    };
     let info = TrackInfo {
         id: None,
         kind: "netease".into(),
@@ -350,6 +368,7 @@ pub async fn netease_play(
         duration_ms: track.duration_ms,
         nid: Some(track.id),
         qid: None,
+        quality: Some(quality_label),
     };
     let _ = app; // 事件由引擎发出
     engine_clone(&state).play_url(url, info)
@@ -497,7 +516,16 @@ pub async fn qq_play(
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
-    let url = crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality)?;
+    let (url, ext) = crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality)?;
+    let quality_label = if ext.eq_ignore_ascii_case("flac") {
+        "FLAC".to_string()
+    } else if ext.eq_ignore_ascii_case("mp3") && quality == "standard" {
+        "128kbps".to_string()
+    } else if ext.eq_ignore_ascii_case("mp3") {
+        "320kbps".to_string()
+    } else {
+        ext.to_uppercase()
+    };
     let info = TrackInfo {
         id: None,
         kind: "qq".into(),
@@ -512,6 +540,7 @@ pub async fn qq_play(
         duration_ms: track.duration_ms,
         nid: None,
         qid: Some(track.songmid),
+        quality: Some(quality_label),
     };
     engine_clone(&state).play_url(url, info)
 }
@@ -638,14 +667,14 @@ pub async fn online_save(
         }
         "qq" => {
             let (musicid, musickey) = qq_credential(&state)?;
-            let u = crate::qq::song_url(
+            let (u, ext) = crate::qq::song_url(
                 &req.id,
                 &req.media_mid,
                 &musicid,
                 &musickey,
                 &quality,
             )?;
-            (u, "mp3".to_string())
+            (u, ext)
         }
         _ => return Err("未知音源类型".into()),
     };
@@ -670,8 +699,18 @@ pub async fn online_save(
     .map_err(|e| format!("下载失败: {e}"))?;
     drop(file);
 
-    // 3) 写标签（失败静默）
-    write_tags(&dest, &title, &req.artist, &req.album, &req.cover_url);
+    // 3) 取歌词并写标签（失败静默）
+    let lyrics = match req.kind.as_str() {
+        "netease" => crate::netease::lyric(
+            req.id.parse::<i64>().unwrap_or(0),
+            netease_cookie(&state).as_deref(),
+        )
+        .ok()
+        .flatten(),
+        "qq" => crate::qq::lyric(&req.id).ok().flatten(),
+        _ => None,
+    };
+    write_tags(&dest, &title, &req.artist, &req.album, &req.cover_url, lyrics.as_deref());
 
     // 4) 解析入库
     let track = crate::library::parse_track(&dest, &state.app_data).ok_or("解析歌曲失败")?;
@@ -706,8 +745,15 @@ fn http_get_for(kind: &str, url: &str) -> Result<impl std::io::Read, String> {
     }
 }
 
-/// 给下载的音频写标签（标题/艺术家/专辑/封面）
-fn write_tags(path: &std::path::Path, title: &str, artist: &str, album: &str, cover_url: &str) {
+/// 给下载的音频写标签（标题/艺术家/专辑/封面/歌词）
+fn write_tags(
+    path: &std::path::Path,
+    title: &str,
+    artist: &str,
+    album: &str,
+    cover_url: &str,
+    lyrics: Option<&str>,
+) {
     let _ = (|| -> Result<(), String> {
         use lofty::prelude::*;
         let mut tagged = lofty::read_from_path(path).map_err(|e| e.to_string())?;
@@ -726,6 +772,9 @@ fn write_tags(path: &std::path::Path, title: &str, artist: &str, album: &str, co
             }
             if !album.is_empty() {
                 tag.insert_text(lofty::tag::ItemKey::AlbumTitle, album.to_string());
+            }
+            if let Some(lrc) = lyrics.filter(|l| !l.trim().is_empty()) {
+                tag.insert_text(lofty::tag::ItemKey::Lyrics, lrc.to_string());
             }
             if !cover_url.is_empty() {
                 if let Ok(resp) = ureq::get(cover_url)
@@ -811,10 +860,19 @@ pub async fn netease_user_playlists(
             db::get_setting(&conn, "netease_music_u").unwrap_or_default(),
         )
     };
-    if uid.is_empty() || music_u.is_empty() {
+    if music_u.is_empty() {
         return Err("未登录网易云账号".into());
     }
-    let uid: i64 = uid.parse().map_err(|_| "账号 ID 无效".to_string())?;
+    let uid: i64 = if uid.is_empty() {
+        let resolved = crate::netease::resolve_uid(&music_u)?;
+        {
+            let conn = state.db.lock();
+            db::set_setting(&conn, "netease_uid", &resolved.to_string());
+        }
+        resolved
+    } else {
+        uid.parse().map_err(|_| "账号 ID 无效".to_string())?
+    };
     crate::netease::user_playlists(uid, &music_u)
 }
 
