@@ -633,7 +633,7 @@ mod tests {
 
     #[test]
     fn test_search_and_lyric() {
-        let r = search("小情歌 苏打绿", 5).expect("search failed");
+        let r = search("小情歌 苏打绿", 5, 1).expect("search failed");
         for s in &r {
             println!("  [{}] {} - {} vip={} {}s", s.id, s.name, s.singer, s.vip, s.duration_ms / 1000);
         }

@@ -465,23 +465,44 @@ pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::User
     Ok(out)
 }
 
-/// 获取歌单内的全部歌曲
+/// 获取歌单内的全部歌曲（明文 API v6，字段与搜索一致）
 pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> {
-    let payload = serde_json::json!({ "id": pid.to_string(), "n": 1000, "csrf_token": "" }).to_string();
-    let resp = weapi_post("/weapi/v3/playlist/detail", &payload, Some(music_u))?;
-    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    let url = format!(
+        "https://music.163.com/api/v6/playlist/detail?id={pid}&n=1000&csrf_token="
+    );
+    let resp = ureq::get(&url)
+        .set("Cookie", &cookie_header(Some(music_u)))
+        .set("User-Agent", UA)
+        .set("Referer", "https://music.163.com/")
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| format!("获取歌单详情失败: {e}"))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("歌单详情读取失败: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("歌单详情解析失败: {e} | body: {}", text.chars().take(120).collect::<String>()))?;
+    let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(format!("获取歌单详情失败（code {code}）"));
     }
     let mut out = Vec::new();
-    if let Some(list) = resp
-        .pointer("/playlist/tracks")
-        .and_then(|v| v.as_array())
-    {
-        for t in list {
-            if let Ok(song) = serde_json::from_value::<NetSong>(t.clone()) {
-                out.push(song);
+    if let Some(list) = v.pointer("/playlist/trackIds").and_then(|x| x.as_array()) {
+        // trackIds 全量；详情在 playlist/tracks（可能截断）——用统一归一化解析
+        if let Some(tracks) = v.pointer("/playlist/tracks").and_then(|x| x.as_array()) {
+            for t in tracks {
+                if let Ok(song) = serde_json::from_value::<NetSong>(t.clone()) {
+                    out.push(song);
+                }
             }
+        }
+        if out.len() < list.len() {
+            // tracks 被截断时按 trackIds 计数提示（v6 通常一次性给全）
+            eprintln!(
+                "[netease] playlist {pid}: got {} tracks, ids {}",
+                out.len(),
+                list.len()
+            );
         }
     }
     Ok(out)
@@ -622,7 +643,7 @@ mod tests {
 
     #[test]
     fn test_search() {
-        let r = search("晴天", 8, None).expect("search failed");
+        let r = search("晴天", 8, 0, None).expect("search failed");
         println!("total={} songs={}", r.total, r.songs.len());
         for s in &r.songs {
             println!(
@@ -640,7 +661,7 @@ mod cover_lyric_tests {
 
     #[test]
     fn test_covers_and_lyric() {
-        let r = search("晴天", 5, None).expect("search failed");
+        let r = search("晴天", 5, 0, None).expect("search failed");
         for s in &r.songs {
             println!("  [{}] {} pic={:?}", s.id, s.name, s.al.pic_url.as_deref().map(|u| &u[..u.len().min(48)]));
         }
@@ -652,6 +673,21 @@ mod cover_lyric_tests {
         match &lrc {
             Some(t) => println!("lyric[{}] first 80 chars: {}", any_id, &t.chars().take(80).collect::<String>()),
             None => println!("lyric[{}]: none", any_id),
+        }
+    }
+}
+
+#[cfg(test)]
+mod playlist_tests {
+    use super::*;
+
+    #[test]
+    fn test_playlist_detail_anonymous() {
+        // 匿名也能拿公开歌单（用云音乐官方示例歌单 ID）
+        let r = playlist_tracks(60198, "");
+        match r {
+            Ok(songs) => println!("got {} songs, first: {:?}", songs.len(), songs.first().map(|s| (&s.name, &s.ar))),
+            Err(e) => println!("ERR: {e}"),
         }
     }
 }
