@@ -67,13 +67,17 @@ export default function PlayerBar() {
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-50 pointer-events-none">
-      {/* 背景渐变层：不拦截点击，下方内容可滚动/点击穿透 */}
+      {/* 玻璃层：backdrop-blur + 半透明底 + 顶部细边框；不拦截点击 */}
       <div
         className="absolute inset-0 transition-opacity duration-300"
         style={{
           background:
-            "linear-gradient(180deg, rgba(0,0,0,0) 0%, var(--bar-tint) 58%)",
-          opacity: nowPlayingOpen ? 0.9 : 1,
+            "linear-gradient(180deg, var(--bar-glass) 0%, var(--bar-tint) 62%)",
+          backdropFilter: "blur(28px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(28px) saturate(1.3)",
+          borderTop: "1px solid var(--line)",
+          boxShadow: "0 -14px 40px rgba(0,0,0,0.25)",
+          opacity: nowPlayingOpen ? 0.92 : 1,
         }}
       />
       {download && (
