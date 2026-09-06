@@ -85,6 +85,8 @@ export default function PlayerBar() {
         }`}
         style={{
           background: "var(--bar-glass)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
           border: "1px solid var(--glass-line)",
           boxShadow: "0 18px 50px -12px rgba(0,0,0,0.55)",
         }}
