@@ -25,6 +25,7 @@
   --vignette: rgba(5, 3, 2, 0.55);
   --backdrop-1: #241a10;
   --backdrop-2: #14100b;
+  --bar-tint: rgba(15, 12, 9, 0.82);
   color-scheme: dark;
 }
 
@@ -43,6 +44,7 @@ html[data-theme="light"] {
   --vignette: rgba(120, 105, 85, 0.16);
   --backdrop-1: #efe6d8;
   --backdrop-2: #f7f2ea;
+  --bar-tint: rgba(247, 242, 234, 0.85);
   color-scheme: light;
 }
 

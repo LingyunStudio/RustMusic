@@ -254,7 +254,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <span className="text-right">操作</span>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5">
+          <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[84px]">
             {searching && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />

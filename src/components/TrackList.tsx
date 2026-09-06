@@ -88,7 +88,7 @@ export default function TrackList({
   }
 
   return (
-    <div className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 py-2.5" : "px-5 pb-4"}`}>
+    <div className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 pt-2.5 pb-[84px]" : "px-5 pb-[84px]"}`}>
       {tracks.map((t, i) => {
         const active = current?.kind === "track" && current.id === t.id;
         return (

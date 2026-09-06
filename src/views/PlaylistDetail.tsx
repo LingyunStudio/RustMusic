@@ -198,7 +198,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               列表里还没有歌曲（可在在线曲库右键添加）
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto px-2.5 py-2.5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[84px]">
               {list.map((r, i) => {
                 const active =
                 current != null &&

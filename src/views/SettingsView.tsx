@@ -84,7 +84,7 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 pb-8">
+    <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-5 pb-[92px]">
       <h1 className="text-[22px] font-bold flex items-center gap-2.5 mb-5">
         <SettingsIcon size={20} className="text-[var(--accent)]" />
         设置
