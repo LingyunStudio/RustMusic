@@ -66,22 +66,9 @@ export default function PlayerBar() {
   }, [nowPlayingOpenFlag, lyrics, pos]);
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-50 pointer-events-none">
-      {/* 玻璃层：backdrop-blur + 半透明底 + 顶部细边框；不拦截点击 */}
-      <div
-        className="absolute inset-0 transition-opacity duration-300"
-        style={{
-          background:
-            "linear-gradient(180deg, var(--bar-glass) 0%, var(--bar-tint) 62%)",
-          backdropFilter: "blur(28px) saturate(1.3)",
-          WebkitBackdropFilter: "blur(28px) saturate(1.3)",
-          borderTop: "1px solid var(--line)",
-          boxShadow: "0 -14px 40px rgba(0,0,0,0.25)",
-          opacity: nowPlayingOpen ? 0.92 : 1,
-        }}
-      />
+    <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-1">
       {download && (
-        <div className="absolute left-8 right-8 bottom-[96px] h-[3px] bg-[var(--shade)] rounded-full overflow-hidden">
+        <div className="absolute left-8 right-8 top-0 h-[3px] bg-[var(--shade)] rounded-full overflow-hidden">
           <div
             className="h-full transition-all duration-300 rounded-full"
             style={{
@@ -93,10 +80,16 @@ export default function PlayerBar() {
       )}
 
       <div
-        className={`relative h-[92px] items-center pl-5 pr-6 gap-5 flex pb-3 transition-opacity duration-300 ${
-          nowPlayingOpen ? "opacity-90 hover:opacity-100" : ""
+        className={`h-[88px] rounded-[22px] flex items-center pl-5 pr-6 gap-5 transition-opacity duration-300 ${
+          nowPlayingOpen ? "opacity-80 hover:opacity-100" : ""
         }`}
-        style={{ pointerEvents: "auto" }}
+        style={{
+          background: "var(--bar-glass)",
+          backdropFilter: "blur(30px) saturate(1.35)",
+          WebkitBackdropFilter: "blur(30px) saturate(1.35)",
+          border: "1px solid var(--glass-line)",
+          boxShadow: "0 18px 50px -12px rgba(0,0,0,0.7)",
+        }}
       >
         {/* 曲目信息 */}
         <div className="flex items-center gap-4 w-[260px] min-w-[200px]">
