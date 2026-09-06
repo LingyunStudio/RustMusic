@@ -658,10 +658,27 @@ pub fn user_playlists(musicid: &str, musickey: &str) -> Result<Vec<crate::models
     let mut out = Vec::new();
     if let Some(list) = resp.pointer("/req_1/data/v_playlist").and_then(|v| v.as_array()) {
         for p in list {
-            let id = p.get("tid").or_else(|| p.get("dirid")).and_then(|v| v.as_i64()).unwrap_or(0);
-            let name = p.get("diss_name").or_else(|| p.get("title")).and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let count = p.get("song_num").and_then(|v| v.as_i64()).unwrap_or(0);
-            if id != 0 && !name.is_empty() {
+            // 响应为驼峰命名：tid / dirName / songNum（蛇形为兼容备选）
+            let id = p
+                .get("tid")
+                .or_else(|| p.get("dirId"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let name = p
+                .get("dirName")
+                .or_else(|| p.get("diss_name"))
+                .or_else(|| p.get("title"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let count = p
+                .get("songNum")
+                .or_else(|| p.get("song_num"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            // “我喜欢”(dirId=201) 是 QQ 的内部收藏夹，跳过
+            let dir_id = p.get("dirId").and_then(|v| v.as_i64()).unwrap_or(0);
+            if id != 0 && !name.is_empty() && dir_id != 201 {
                 out.push(crate::models::UserPlaylistMeta { id, name, track_count: count });
             }
         }
