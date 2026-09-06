@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (
   playlist_id INTEGER NOT NULL,
   track_id INTEGER NOT NULL,
   position INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (playlist_id, track_id)
+  kind TEXT NOT NULL DEFAULT 'local',
+  online_id TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (playlist_id, kind, online_id, track_id)
 );
 CREATE TABLE IF NOT EXISTS sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,12 +89,42 @@ CREATE TABLE IF NOT EXISTS liked_online (
 // playlist_tracks 的 kind/online_id 列为渐进迁移（旧库自动补列）
 pub fn migrate(conn: &Connection) {
     let _ = conn.execute_batch(
-        "ALTER TABLE playlist_tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'local';
-         ALTER TABLE playlist_tracks ADD COLUMN online_id TEXT NOT NULL DEFAULT '';",
-    );
-    let _ = conn.execute_batch(
         "ALTER TABLE online_tracks ADD COLUMN downloaded INTEGER NOT NULL DEFAULT 0;",
     );
+    // playlist_tracks 旧主键 (playlist_id, track_id) 会吞掉同列表的多个在线条目
+    // （track_id 恒为 0），检测旧结构并重建为 (playlist_id, kind, online_id, track_id)
+    let old_pk: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='playlist_tracks'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    let needs_rebuild = old_pk
+        .as_deref()
+        .map(|sql| sql.contains("PRIMARY KEY (playlist_id, track_id)"))
+        .unwrap_or(false);
+    if needs_rebuild {
+        let _ = conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE playlist_tracks_new (
+               playlist_id INTEGER NOT NULL,
+               track_id INTEGER NOT NULL,
+               position INTEGER NOT NULL DEFAULT 0,
+               kind TEXT NOT NULL DEFAULT 'local',
+               online_id TEXT NOT NULL DEFAULT '',
+               PRIMARY KEY (playlist_id, kind, online_id, track_id)
+             );
+             INSERT OR IGNORE INTO playlist_tracks_new
+               (playlist_id, track_id, position, kind, online_id)
+             SELECT playlist_id, track_id, position,
+               COALESCE(NULLIF(kind, ''), 'local'), COALESCE(online_id, '')
+             FROM playlist_tracks;
+             DROP TABLE playlist_tracks;
+             ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;
+             COMMIT;",
+        );
+    }
 }
 
 pub fn init(path: &Path) -> Result<Connection, String> {
@@ -550,7 +582,7 @@ pub fn add_playlist_entry(conn: &Connection, pid: i64, kind: &str, track_id: i64
         )
         .unwrap_or(1);
     let _ = conn.execute(
-        "INSERT INTO playlist_tracks(playlist_id, track_id, position, kind, online_id) VALUES(?1,?2,?3,?4,?5)",
+        "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position, kind, online_id) VALUES(?1,?2,?3,?4,?5)",
         params![pid, track_id, pos, kind, online_id],
     );
 }
