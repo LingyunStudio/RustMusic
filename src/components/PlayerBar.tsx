@@ -68,7 +68,7 @@ export default function PlayerBar() {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-1">
       {download && (
-        <div className="absolute left-8 right-8 top-0 h-[3px] bg-white/[0.07] rounded-full overflow-hidden">
+        <div className="absolute left-8 right-8 top-0 h-[3px] bg-[var(--shade)] rounded-full overflow-hidden">
           <div
             className="h-full transition-all duration-300 rounded-full"
             style={{
@@ -95,10 +95,10 @@ export default function PlayerBar() {
                   className="w-[56px] h-[56px] rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
                   iconSize={20}
                 />
-                <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <div className="absolute inset-0 rounded-xl bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                   <ChevronUp
                     size={18}
-                    className={`text-white transition-transform ${nowPlayingOpen ? "rotate-180" : ""}`}
+                    className={`text-[var(--ink)] transition-transform ${nowPlayingOpen ? "rotate-180" : ""}`}
                   />
                 </div>
               </button>
@@ -210,7 +210,7 @@ export default function PlayerBar() {
               <SkipBack size={17} className="fill-current" />
             </button>
             <button
-              className="w-11 h-11 rounded-full flex items-center justify-center text-[#241505] hover:scale-105 active:scale-95 transition-transform"
+              className="w-11 h-11 rounded-full flex items-center justify-center text-[var(--accent-on)] hover:scale-105 active:scale-95 transition-transform"
               style={{
                 background: "linear-gradient(135deg, #ffc470 0%, #f0a24a 60%, #e8823f 120%)",
                 boxShadow: "0 6px 20px -4px rgba(240,162,74,0.5)",
@@ -286,7 +286,7 @@ export default function PlayerBar() {
             <ListMusic size={16} />
             {queue.length > 1 && (
               <span
-                className="absolute -top-1 -right-1 text-[9.5px] text-[#241505] rounded-full min-w-[15px] leading-[15px] font-bold text-center px-0.5"
+                className="absolute -top-1 -right-1 text-[9.5px] text-[var(--accent-on)] rounded-full min-w-[15px] leading-[15px] font-bold text-center px-0.5"
                 style={{ background: "var(--accent)" }}
               >
                 {queue.length}

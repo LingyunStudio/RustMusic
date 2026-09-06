@@ -173,7 +173,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 placeholder={
                   source === "netease" ? "搜索网易云曲库…" : "搜索 QQ 音乐曲库…"
                 }
-                className="w-full h-10 rounded-xl bg-black/25 border border-[var(--line)] pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
+                className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
               />
             </div>
             <button
@@ -307,7 +307,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 <div
                   key={`${t.kind}-${t.id}`}
                   className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
-                    active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
+                    active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-[var(--shade-hover)]"
                   }`}
                   onDoubleClick={() => playRow(i)}
                   onContextMenu={(e) => {
@@ -483,7 +483,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           ].map((item) => (
             <button
               key={item.action}
-              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
               onClick={() => {
                 menuAction(menu.row, item.action);
                 setMenu(null);
@@ -492,9 +492,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <Play size={13} /> {item.label}
             </button>
           ))}
-          <div className="my-1 mx-2 border-t border-white/[0.07]" />
+          <div className="my-1 mx-2 border-t border-[var(--line)]" />
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               setPickerRow(menu.row);
               setMenu(null);
@@ -503,7 +503,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             <Heart size={13} /> 添加到播放列表…
           </button>
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               toggleLikeOnline({
                 kind: menu.row.kind,
@@ -522,7 +522,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             <Heart size={13} /> 收藏到“我喜欢”
           </button>
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               downloadOnline({
                 kind: menu.row.kind,
@@ -553,20 +553,20 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           {playlists.map((p) => (
             <button
               key={p.id}
-              className="h-10 px-3 rounded-lg text-left text-[13px] text-zinc-200 hover:bg-white/[0.07] flex items-center justify-between transition-colors"
+              className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
               onClick={async () => {
                 if (pickerRow) await addOnlineToPlaylist(p.id, pickerRow);
                 setPickerRow(null);
               }}
             >
               <span className="truncate">{p.name}</span>
-              <span className="text-[11px] text-zinc-500">
+              <span className="text-[11px] text-[var(--ink-2)]">
                 {p.entries.length} 首
               </span>
             </button>
           ))}
           {!playlists.length && (
-            <div className="text-[12.5px] text-zinc-500 py-2">
+            <div className="text-[12.5px] text-[var(--ink-2)] py-2">
               还没有播放列表，在下方创建
             </div>
           )}
@@ -577,7 +577,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             value={newPlName}
             onChange={(e) => setNewPlName(e.target.value)}
             placeholder="新播放列表名称"
-            className="flex-1 h-9 rounded-lg bg-white/[0.06] border border-white/[0.09] px-3 text-[13px] focus:border-white/25 outline-none"
+            className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[13px] focus:border-[var(--line)] outline-none"
           />
           <button
             className="btn-secondary"
@@ -605,7 +605,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         width={400}
       >
         {importList === null ? (
-          <div className="flex items-center justify-center gap-2 text-[13px] text-zinc-400 py-6">
+          <div className="flex items-center justify-center gap-2 text-[13px] text-[var(--ink-2)] py-6">
             <Loader2 size={15} className="animate-spin" /> 获取中…
           </div>
         ) : (
@@ -614,7 +614,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <button
                 key={p.id}
                 disabled={importing}
-                className="h-10 px-3 rounded-lg text-left text-[13px] text-zinc-200 hover:bg-white/[0.07] flex items-center justify-between transition-colors"
+                className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
                 onClick={async () => {
                   setImporting(true);
                   if (source === "netease") await importNeteasePlaylist(p.id, p.name);
@@ -624,13 +624,13 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 }}
               >
                 <span className="truncate">{p.name}</span>
-                <span className="text-[11px] text-zinc-500 shrink-0 ml-3">
+                <span className="text-[11px] text-[var(--ink-2)] shrink-0 ml-3">
                   {p.trackCount} 首
                 </span>
               </button>
             ))}
             {!importList.length && (
-              <div className="text-[12.5px] text-zinc-500 py-2">账号下没有歌单</div>
+              <div className="text-[12.5px] text-[var(--ink-2)] py-2">账号下没有歌单</div>
             )}
           </div>
         )}
@@ -758,7 +758,7 @@ function QrLoginModal({
               {errMsg}
             </span>
           ) : (
-            <Loader2 size={26} className="animate-spin text-zinc-400" />
+            <Loader2 size={26} className="animate-spin text-[var(--ink-2)]" />
           )}
         </div>
         <div className="text-[12.5px] text-[var(--ink-2)] text-center leading-relaxed">

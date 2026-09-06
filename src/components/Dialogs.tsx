@@ -39,7 +39,7 @@ export function InputModal({
         placeholder={placeholder}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        className="w-full h-10 rounded-lg bg-white/[0.06] border border-white/[0.09] px-3.5 text-[13px] focus:border-white/25 outline-none"
+        className="w-full h-10 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3.5 text-[13px] focus:border-[var(--line)] outline-none"
       />
       <div className="flex justify-end gap-2 mt-4">
         <button className="btn-secondary" onClick={onClose}>
@@ -74,7 +74,7 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   return (
     <Modal open={open} onClose={onClose} title={title} width={380}>
-      <div className="text-[13px] text-zinc-400 leading-relaxed">{children}</div>
+      <div className="text-[13px] text-[var(--ink-2)] leading-relaxed">{children}</div>
       <div className="flex justify-end gap-2 mt-5">
         <button className="btn-secondary" onClick={onClose}>
           取消

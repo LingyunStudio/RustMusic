@@ -95,7 +95,7 @@ export default function TrackList({
           <div
             key={t.id}
             className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
-              active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
+              active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-[var(--shade-hover)]"
             }`}
             onDoubleClick={() => playTracks(tracks, i)}
             onContextMenu={(e) => {
@@ -165,7 +165,7 @@ export default function TrackList({
 
             {/* 格式 / 时长（与表头同列，右对齐） */}
             <div className="flex items-center justify-end gap-3">
-              <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-white/[0.07] text-[var(--ink-2)] font-semibold tracking-wider">
+              <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider">
                 {t.format || "AUDIO"}
               </span>
               <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right">

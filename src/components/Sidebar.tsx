@@ -58,7 +58,7 @@ export default function Sidebar() {
               height: 0,
               borderTop: "7px solid transparent",
               borderBottom: "7px solid transparent",
-              borderLeft: "11px solid #241505",
+              borderLeft: "11px solid var(--accent-strong)",
             }}
           />
         </div>
@@ -83,7 +83,7 @@ export default function Sidebar() {
               className={`relative h-11 pl-4 pr-3 rounded-xl flex items-center gap-3.5 text-[13.5px] transition-all duration-200 ${
                 active
                   ? "text-[var(--ink)] font-semibold"
-                  : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-white/[0.05]"
+                  : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
               }`}
               style={
                 active
@@ -139,8 +139,8 @@ export default function Sidebar() {
               onClick={() => setView("playlist", p.id)}
               className={`h-10 pl-4 pr-3 rounded-xl flex items-center gap-3 text-[13px] transition-all ${
                 active
-                  ? "bg-white/[0.08] text-[var(--ink)]"
-                  : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-white/[0.05]"
+                  ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                  : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
               }`}
             >
               <ListMusic
@@ -179,8 +179,8 @@ export default function Sidebar() {
           onClick={() => setView("settings")}
           className={`h-11 px-4 rounded-xl flex items-center gap-3.5 text-[13.5px] transition-all ${
             view === "settings"
-              ? "bg-white/[0.08] text-[var(--ink)]"
-              : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-white/[0.05]"
+              ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+              : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
           }`}
         >
           <Settings size={17} strokeWidth={1.9} />

@@ -1,5 +1,14 @@
 import { create } from "zustand";
 import { api, listenEvent, type ListenerUnbind } from "./api";
+import {
+  ACCENTS,
+  applyAccent,
+  applyTheme,
+  loadAccent,
+  loadTheme,
+  saveAccent,
+  saveTheme,
+} from "./theme";
 import type {
   CurrentTrack,
   PlaylistEntryMeta,
@@ -69,6 +78,8 @@ interface Store {
   qqCache: Record<string, QqSong>;
 
   quality: string;
+  theme: "dark" | "light";
+  accent: string;
   savedOnline: Record<string, boolean>;
   likedOnline: import("./types").PlaylistEntryMeta[];
   loadMoreLock: boolean;
@@ -137,6 +148,8 @@ interface Store {
   playQq(list: QqSong[], idx: number): void;
 
   setQuality(q: string): void;
+  setTheme(t: "dark" | "light"): void;
+  setAccent(key: string): void;
   toggleLikeOnline(row: {
     kind: string;
     id: string | number;
@@ -235,6 +248,8 @@ export const useStore = create<Store>((set, get) => ({
   qqCache: {},
 
   quality: "high",
+  theme: "dark",
+  accent: "amber",
   savedOnline: {},
   likedOnline: [],
   loadMoreLock: false,
@@ -347,6 +362,8 @@ export const useStore = create<Store>((set, get) => ({
         api.qqStatus(),
       ]);
       set({
+        theme: loadTheme(),
+        accent: loadAccent(),
         volume: settings.volume,
         speed: settings.speed,
         eqGains: settings.eqGains,
@@ -862,6 +879,19 @@ export const useStore = create<Store>((set, get) => ({
   setQuality(q) {
     set({ quality: q });
     api.setPlayQuality(q).catch((e) => get().toast(String(e), "error"));
+  },
+
+  setTheme(t) {
+    set({ theme: t });
+    saveTheme(t);
+    applyTheme(t);
+    applyAccent(get().accent); // 强调色需按模式重算
+  },
+
+  setAccent(key) {
+    set({ accent: key });
+    saveAccent(key);
+    applyAccent(key);
   },
 
   async toggleLikeOnline(row) {

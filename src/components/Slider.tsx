@@ -67,7 +67,7 @@ export default function Slider({
       }}
     >
       <div
-        className="relative w-full rounded-full bg-white/[0.12] overflow-hidden transition-all"
+        className="relative w-full rounded-full bg-[var(--shade-strong)] overflow-hidden transition-all"
         style={{ height: thick + (dragging ? 2 : 0) }}
       >
         <div

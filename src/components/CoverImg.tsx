@@ -26,13 +26,13 @@ export default function CoverImg({ src, seed, className = "", iconSize = 18 }: C
         alt=""
         draggable={false}
         onError={() => setErr(true)}
-        className={`object-cover bg-white/5 ${className}`}
+        className={`object-cover bg-[var(--shade)] ${className}`}
       />
     );
   }
   return (
     <div
-      className={`flex items-center justify-center text-white/40 ${className}`}
+      className={`flex items-center justify-center text-[var(--ink)]/40 ${className}`}
       style={{ background: gradientFor(seed) }}
     >
       <Music2 size={iconSize} strokeWidth={1.6} />

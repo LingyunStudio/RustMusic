@@ -14,7 +14,7 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
   if (!open) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 anim-fade"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 anim-fade"
       onMouseDown={onClose}
     >
       <div

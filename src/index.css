@@ -1,24 +1,58 @@
 @import "tailwindcss";
 
 @theme {
-  --color-accent: #f0a24a;
   --font-sans:
     "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui,
     -apple-system, sans-serif;
 }
 
+/* ---------- 主题变量 ----------
+   :root 为暗色（默认）；html[data-theme="light"] 为浅色。
+   --accent 系列由 JS 按用户选择的强调色写入。 */
+
 :root {
-  /* 暖色 Hi-Fi 主题 */
-  --accent: #f0a24a;
-  --accent-strong: #ffc470;
-  --accent-soft: rgba(240, 162, 74, 0.32);
-  --glow: #c2570f;
   --bg: #0f0c09;
   --ink: #f3ede3;
   --ink-2: #b3a897;
   --ink-3: #7d7365;
   --line: rgba(243, 233, 216, 0.09);
+  --glass-bg: rgba(255, 244, 228, 0.045);
+  --glass-bg-strong: rgba(26, 21, 16, 0.72);
+  --glass-line: rgba(243, 233, 216, 0.1);
+  --shade: rgba(243, 233, 216, 0.05);
+  --shade-strong: rgba(243, 233, 216, 0.09);
+  --shade-hover: rgba(243, 233, 216, 0.045);
+  --vignette: rgba(5, 3, 2, 0.55);
+  --backdrop-1: #241a10;
+  --backdrop-2: #14100b;
   color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #f7f2ea;
+  --ink: #2c241a;
+  --ink-2: #6b6053;
+  --ink-3: #9a8e7e;
+  --line: rgba(42, 33, 24, 0.12);
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(252, 248, 241, 0.85);
+  --glass-line: rgba(42, 33, 24, 0.1);
+  --shade: rgba(42, 33, 24, 0.05);
+  --shade-strong: rgba(42, 33, 24, 0.1);
+  --shade-hover: rgba(42, 33, 24, 0.06);
+  --vignette: rgba(120, 105, 85, 0.16);
+  --backdrop-1: #efe6d8;
+  --backdrop-2: #f7f2ea;
+  color-scheme: light;
+}
+
+/* 默认强调色（琥珀），启动时 JS 会覆盖为用户选择 */
+:root {
+  --accent: #f0a24a;
+  --accent-strong: #ffc470;
+  --accent-soft: rgba(240, 162, 74, 0.32);
+  --accent-weak: rgba(240, 162, 74, 0.12);
+  --accent-on: #fff;
 }
 
 * {
@@ -40,6 +74,9 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   cursor: default;
+  transition:
+    background 0.35s ease,
+    color 0.35s ease;
 }
 
 input,
@@ -48,7 +85,7 @@ textarea {
 }
 
 ::selection {
-  background: rgba(240, 162, 74, 0.35);
+  background: var(--accent-soft);
 }
 
 /* ---------- 滚动条 ---------- */
@@ -61,13 +98,13 @@ textarea {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(243, 233, 216, 0.16);
+  background: var(--shade-strong);
   border-radius: 5px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(243, 233, 216, 0.28);
+  background: var(--ink-3);
   border: 3px solid transparent;
   background-clip: padding-box;
 }
@@ -75,97 +112,72 @@ textarea {
 /* ---------- 面板 ---------- */
 
 .glass {
-  background: rgba(255, 244, 228, 0.045);
+  background: var(--glass-bg);
   border: 1px solid var(--line);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
 }
 
 .glass-strong {
-  background: rgba(26, 21, 16, 0.72);
+  background: var(--glass-bg-strong);
   backdrop-filter: blur(32px) saturate(1.25);
   -webkit-backdrop-filter: blur(32px) saturate(1.25);
-  border: 1px solid rgba(243, 233, 216, 0.1);
+  border: 1px solid var(--glass-line);
 }
 
 /* ---------- 动画 ---------- */
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes riseIn {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes npIn {
-  from {
-    opacity: 0;
-    transform: scale(0.965);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.965); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes toastIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes menuIn {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes eqBar {
-  0%,
-  100% {
-    transform: scaleY(0.3);
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+/* 播放页封面取色渐变光斑缓慢漂移呼吸 */
+@keyframes blobDrift {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: var(--blob-a, 0.35);
   }
-  50% {
-    transform: scaleY(1);
+  33% {
+    transform: translate(6%, -5%) scale(1.12);
+    opacity: calc(var(--blob-a, 0.35) * 0.72);
+  }
+  66% {
+    transform: translate(-5%, 4%) scale(0.94);
+    opacity: calc(var(--blob-a, 0.35) * 1.12);
   }
 }
 
-.anim-fade {
-  animation: fadeIn 0.25s ease both;
-}
-.anim-rise {
-  animation: riseIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.anim-np {
-  animation: npIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.anim-toast {
-  animation: toastIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.anim-menu {
-  animation: menuIn 0.13s ease both;
-}
+.anim-fade { animation: fadeIn 0.25s ease both; }
+.anim-rise { animation: riseIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-np { animation: npIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-toast { animation: toastIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-menu { animation: menuIn 0.13s ease both; }
 
 /* 播放中的曲目动效 */
 .eq-bars {
@@ -182,18 +194,9 @@ textarea {
   transform-origin: bottom;
   animation: eqBar 0.9s ease-in-out infinite;
 }
-.eq-bars i:nth-child(1) {
-  height: 100%;
-  animation-delay: -0.3s;
-}
-.eq-bars i:nth-child(2) {
-  height: 100%;
-  animation-delay: -0.6s;
-}
-.eq-bars i:nth-child(3) {
-  height: 100%;
-  animation-delay: -0.15s;
-}
+.eq-bars i:nth-child(1) { height: 100%; animation-delay: -0.3s; }
+.eq-bars i:nth-child(2) { height: 100%; animation-delay: -0.6s; }
+.eq-bars i:nth-child(3) { height: 100%; animation-delay: -0.15s; }
 .paused .eq-bars i {
   animation-play-state: paused;
   transform: scaleY(0.3);
@@ -221,30 +224,14 @@ textarea {
 /* ---------- 播放栏滚动歌词 ---------- */
 
 @keyframes marquee {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-50%);
-  }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 .marquee-wrap {
   overflow: hidden;
   white-space: nowrap;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0,
-    black 6%,
-    black 94%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0,
-    black 6%,
-    black 94%,
-    transparent 100%
-  );
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 6%, black 94%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, black 6%, black 94%, transparent 100%);
 }
 .marquee-inner {
   display: inline-block;
@@ -271,7 +258,7 @@ input[type="url"] {
     transform 0.12s;
 }
 .btn-ghost:hover {
-  background: rgba(243, 233, 216, 0.09);
+  background: var(--shade-strong);
   color: var(--ink);
 }
 .btn-ghost:active {
@@ -284,20 +271,20 @@ input[type="url"] {
   justify-content: center;
   gap: 8px;
   border-radius: 12px;
-  padding: 9px 20px;
+  padding: 9px 18px;
   font-weight: 700;
   font-size: 13px;
-  color: #221607;
-  background: linear-gradient(120deg, #ffc470 0%, #f0a24a 55%, #e8823f 120%);
+  color: #fff;
+  background: linear-gradient(120deg, var(--accent) 0%, var(--accent-strong) 100%);
   box-shadow:
-    0 6px 22px -6px rgba(240, 162, 74, 0.45),
+    0 6px 22px -6px var(--accent-soft),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition:
     filter 0.16s,
     transform 0.12s;
 }
 .btn-primary:hover {
-  filter: brightness(1.07);
+  filter: brightness(1.08);
 }
 .btn-primary:active {
   transform: scale(0.97);
@@ -309,20 +296,21 @@ input[type="url"] {
   justify-content: center;
   gap: 8px;
   border-radius: 12px;
-  padding: 9px 16px;
+  padding: 9px 15px;
   font-weight: 500;
   font-size: 13px;
   color: var(--ink);
-  background: rgba(243, 233, 216, 0.07);
-  border: 1px solid rgba(243, 233, 216, 0.12);
+  background: var(--shade);
+  border: 1px solid var(--line);
   transition:
     background 0.16s,
     color 0.16s,
     border-color 0.16s;
 }
 .btn-secondary:hover {
-  background: rgba(243, 233, 216, 0.13);
-  border-color: rgba(243, 233, 216, 0.2);
+  background: var(--shade-strong);
+  border-color: var(--glass-line);
+  color: var(--ink);
 }
 
 .chip {

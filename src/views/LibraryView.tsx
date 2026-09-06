@@ -159,7 +159,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               className={`chip ${
                 sortKey === s.key
                   ? "bg-[rgba(240,162,74,0.14)] text-[var(--accent-strong)] font-medium"
-                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:bg-white/[0.05]"
+                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:bg-[var(--shade-hover)]"
               }`}
             >
               {s.label}

@@ -58,7 +58,7 @@ export default function QueuePanel() {
   const upcoming = queue.slice(qIndex + 1);
 
   return (
-    <aside className="w-[300px] shrink-0 flex flex-col border-l border-[var(--line)] bg-black/25 relative z-20 anim-fade">
+    <aside className="w-[300px] shrink-0 flex flex-col border-l border-[var(--line)] bg-[var(--shade)] relative z-20 anim-fade">
       <div className="h-14 px-5 flex items-center justify-between shrink-0">
         <span className="text-[13.5px] font-semibold flex items-center gap-2.5 text-[var(--ink)]">
           <ListMusic size={15} className="text-[var(--accent)]" />
@@ -88,11 +88,11 @@ export default function QueuePanel() {
             <div
               key={`${item.kind}-${item.id}-${i}`}
               className={`group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer transition-colors ${
-                active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.05]"
+                active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-[var(--shade-hover)]"
               }`}
               onClick={() => jumpTo(i)}
             >
-              <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center overflow-hidden shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-[var(--shade)] flex items-center justify-center overflow-hidden shrink-0">
                 {active && playing ? (
                   <div className="eq-bars">
                     <i />

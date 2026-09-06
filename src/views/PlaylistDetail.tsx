@@ -119,7 +119,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
 
   if (!pl) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-500">
+      <div className="flex-1 flex items-center justify-center text-[var(--ink-2)]">
         播放列表不存在
       </div>
     );
@@ -143,13 +143,13 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 "linear-gradient(135deg, hsl(35, 55%, 45%), hsl(15, 60%, 32%))",
             }}
           >
-            <ListMusic size={34} className="text-white/85" />
+            <ListMusic size={34} className="text-[var(--ink)]/85" />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] text-zinc-500 tracking-wider mb-1">播放列表</div>
+          <div className="text-[11px] text-[var(--ink-2)] tracking-wider mb-1">播放列表</div>
           <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
-          <div className="text-[12.5px] text-zinc-500 mt-1.5">
+          <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
             {list.length} 首曲目
           </div>
           <div className="flex items-center gap-2 mt-3">
@@ -194,7 +194,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {list.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-[13px] text-zinc-500">
+            <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
               列表里还没有歌曲（可在在线曲库右键添加）
             </div>
           ) : (
@@ -210,7 +210,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                   <div
                     key={r.entry.rowid}
                     className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
-                      active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-white/[0.045]"
+                      active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-[var(--shade-hover)]"
                     }`}
                     onDoubleClick={() => playEntries(list.map((x) => x.entry), i)}
                     onContextMenu={(ev) => {
@@ -257,7 +257,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         >
                           <span className="truncate">{r.name}</span>
                           {r.kind !== "track" && (
-                            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-white/[0.08] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1">
+                            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1">
                               <Cloud size={9} />
                               {r.kind === "netease" ? "网易云" : "QQ音乐"}
                             </span>
@@ -364,7 +364,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           onMouseLeave={() => setMenu(null)}
         >
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               const idx = list.findIndex((r) => r.entry.rowid === menu.e.rowid);
               playEntries(
@@ -377,7 +377,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
             <Play size={13} /> 播放
           </button>
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               const r = list.find((x) => x.entry.rowid === menu.e.rowid);
               if (r) {
@@ -392,7 +392,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           </button>
           {menu.e.kind !== "local" && (
             <button
-              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
               onClick={() => {
                 const r = list.find((x) => x.entry.rowid === menu.e.rowid);
                 if (r)
@@ -412,7 +412,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
             </button>
           )}
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-rose-300 hover:bg-white/[0.08] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-rose-300 hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               removePlaylistEntryRow(menu.e.rowid);
               if (menu.e.kind === "local" && menu.e.trackId != null)

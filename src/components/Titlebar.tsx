@@ -30,7 +30,7 @@ export default function Titlebar() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索歌曲、艺术家、专辑…"
-            className="w-full h-9 rounded-full bg-black/25 border border-[var(--line)] pl-10 pr-9 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:bg-black/35 focus:border-[rgba(243,233,216,0.22)] transition-colors"
+            className="w-full h-9 rounded-full bg-[var(--shade)] border border-[var(--line)] pl-10 pr-9 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:bg-[var(--shade-strong)] focus:border-[rgba(243,233,216,0.22)] transition-colors"
           />
           <svg
             className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
@@ -57,19 +57,19 @@ export default function Titlebar() {
 
       <div className="flex items-center h-12">
         <button
-          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-white/[0.07] hover:text-[var(--ink)] transition-colors"
+          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.minimize()}
         >
           <Minus size={15} />
         </button>
         <button
-          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-white/[0.07] hover:text-[var(--ink)] transition-colors"
+          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.toggleMaximize()}
         >
           {maximized ? <Copy size={12.5} className="-scale-x-100" /> : <Square size={12} />}
         </button>
         <button
-          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-white transition-colors"
+          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.close()}
         >
           <X size={16} />

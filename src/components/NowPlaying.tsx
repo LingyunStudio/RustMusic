@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Heart, Mic2, Music4 } from "lucide-react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import { coverSrc } from "../api";
-import { extractColor } from "../utils";
+import { extractPalette } from "../utils";
 
 export default function NowPlaying() {
   const current = useStore((s) => s.current);
@@ -77,31 +77,57 @@ export default function NowPlaying() {
   if (!current) return null;
   const coverUrl = current.cover ? coverSrc(current.cover) : "";
 
+  // 封面取色 → 动态渐变背景
+  const [palette, setPalette] = useState<string[]>([]);
+  useEffect(() => {
+    if (!coverUrl) {
+      setPalette([]);
+      return;
+    }
+    let alive = true;
+    extractPalette(coverUrl, 4).then((colors) => {
+      if (alive) setPalette(colors);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [coverUrl]);
+
   return (
     <div className="absolute inset-0 z-40 anim-np overflow-hidden">
-      {/* 背景：近实心暖色底 + 封面微光 */}
+      {/* 背景：封面多色采样的动态渐变 */}
       <div className="absolute inset-0 overflow-hidden">
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 transition-colors duration-1000"
           style={{
             background:
-              "linear-gradient(180deg, #1a1309 0%, #120e09 52%, #0b0906 100%)",
+              "linear-gradient(180deg, var(--backdrop-1) 0%, var(--backdrop-2) 55%, var(--bg) 100%)",
           }}
         />
-        {coverUrl && (
-          <img
-            src={coverUrl}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover scale-150 opacity-[0.12]"
-            style={{ filter: "blur(72px)" }}
-            draggable={false}
+        {palette.slice(0, 4).map((c, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full anim-Drift"
+            style={{
+              background: `radial-gradient(circle at center, ${c} 0%, transparent 62%)`,
+              width: `${44 + i * 12}%`,
+              height: `${40 + i * 10}%`,
+              left: `${8 + i * 22}%`,
+              top: `${i % 2 === 0 ? -6 + i * 8 : 44 - i * 6}%`,
+              filter: "blur(90px)",
+              opacity: 0.4,
+              animation: "blobDrift 16s ease-in-out infinite",
+              animationDelay: `${-i * 4}s`,
+              ["--blob-a" as string]: 0.42 - i * 0.06,
+              transition: "background 1.2s ease",
+            }}
           />
-        )}
+        ))}
         <div
           className="absolute inset-0"
           style={{
             background:
-              "radial-gradient(ellipse 90% 70% at 30% 40%, rgba(240,162,74,0.07) 0%, transparent 60%)",
+              "radial-gradient(ellipse 130% 110% at 50% 45%, transparent 55%, var(--vignette) 100%)",
           }}
         />
       </div>
@@ -178,12 +204,12 @@ export default function NowPlaying() {
                 </button>
               )}
               {current.kind === "qq" && (
-                <span className="text-[11px] text-[var(--ink-3)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
+                <span className="text-[11px] text-[var(--ink-3)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
                   QQ音乐
                 </span>
               )}
               {current.kind === "track" && (
-                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
+                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
                   {current.album || "未知专辑"}
                 </span>
               )}
@@ -193,7 +219,7 @@ export default function NowPlaying() {
                 </span>
               )}
               {current.kind === "qq" && current.album && (
-                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-white/[0.06]">
+                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
                   {current.album}
                 </span>
               )}

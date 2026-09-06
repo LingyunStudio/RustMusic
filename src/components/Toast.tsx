@@ -20,7 +20,7 @@ export default function ToastContainer() {
           ) : (
             <Info size={15} className="text-[var(--accent)] shrink-0" />
           )}
-          <span className="text-zinc-200 leading-snug">{t.msg}</span>
+          <span className="text-[var(--ink)] leading-snug">{t.msg}</span>
         </div>
       ))}
     </div>

@@ -20,9 +20,9 @@ export default function SourcesView() {
         <h1 className="text-[22px] font-bold flex items-center gap-2.5">
           <Radio size={20} className="text-[var(--accent)]" />
           在线音源
-          <span className="text-[13px] font-normal text-zinc-500 mb-0.5">{sources.length} 个</span>
+          <span className="text-[13px] font-normal text-[var(--ink-2)] mb-0.5">{sources.length} 个</span>
         </h1>
-        <p className="text-[12.5px] text-zinc-500 mt-1.5 leading-relaxed">
+        <p className="text-[12.5px] text-[var(--ink-2)] mt-1.5 leading-relaxed">
           添加任意音频文件直链（http/https 的 mp3 / flac / wav / ogg / m4a 等），
           RustMusic 会自动下载缓存后播放。请仅添加你有权使用的音源。
         </p>
@@ -31,7 +31,7 @@ export default function SourcesView() {
           <div className="relative flex-1 max-w-[480px]">
             <Link2
               size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-2)]"
             />
             <input
               type="url"
@@ -45,7 +45,7 @@ export default function SourcesView() {
                 }
               }}
               placeholder="https://example.com/song.mp3"
-              className="w-full h-9 rounded-lg bg-white/[0.06] border border-white/[0.09] pl-8 pr-3 text-[12.5px] focus:border-white/25 transition-colors"
+              className="w-full h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-3 text-[12.5px] focus:border-[var(--line)] transition-colors"
             />
           </div>
           <input
@@ -60,7 +60,7 @@ export default function SourcesView() {
               }
             }}
             placeholder="名称（可选）"
-            className="w-[160px] h-9 rounded-lg bg-white/[0.06] border border-white/[0.09] px-3 text-[12.5px] focus:border-white/25 transition-colors"
+            className="w-[160px] h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[12.5px] focus:border-[var(--line)] transition-colors"
           />
           <button
             className="btn-primary"
@@ -80,7 +80,7 @@ export default function SourcesView() {
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4">
         {sources.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-600">
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-[var(--ink-3)]">
             <div
               className="w-16 h-16 rounded-2xl flex items-center justify-center"
               style={{
@@ -88,7 +88,7 @@ export default function SourcesView() {
                 border: "1px solid rgba(255,255,255,0.06)",
               }}
             >
-              <Radio size={26} className="text-zinc-600" />
+              <Radio size={26} className="text-[var(--ink-3)]" />
             </div>
             <div className="text-[13.5px]">还没有添加任何在线音源</div>
           </div>
@@ -100,22 +100,22 @@ export default function SourcesView() {
               return (
                 <div
                   key={s.id}
-                  className="group flex items-center gap-3 h-[58px] px-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06] transition-colors"
+                  className="group flex items-center gap-3 h-[58px] px-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] hover:bg-[var(--shade)] transition-colors"
                 >
                   <button
                     className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
                     style={{ background: "linear-gradient(135deg, #ffc470, #e8823f)" }}
                     onClick={() => playSourceItem(s)}
                   >
-                    <Play size={14} className="fill-current text-white ml-px" />
+                    <Play size={14} className="fill-current text-[var(--ink)] ml-px" />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] text-zinc-100 truncate">
+                    <div className="text-[13px] text-[var(--ink)] truncate">
                       {s.title || s.url.split("/").pop() || "在线音源"}
                     </div>
-                    <div className="text-[11.5px] text-zinc-500 truncate">{s.url}</div>
+                    <div className="text-[11.5px] text-[var(--ink-2)] truncate">{s.url}</div>
                   </div>
-                  <span className="text-[11px] text-zinc-600 shrink-0">
+                  <span className="text-[11px] text-[var(--ink-3)] shrink-0">
                     {fmtDate(s.createdAt)}
                   </span>
                   <button

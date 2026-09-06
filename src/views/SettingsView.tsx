@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
+import { ACCENTS } from "../theme";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
@@ -42,6 +43,10 @@ export default function SettingsView() {
   const setSpeed = useStore((s) => s.setSpeed);
   const quality = useStore((s) => s.quality);
   const setQuality = useStore((s) => s.setQuality);
+  const theme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
+  const accent = useStore((s) => s.accent);
+  const setAccent = useStore((s) => s.setAccent);
   const clearCache = useStore((s) => s.clearCache);
   const [saveDir, setSaveDir] = useState("");
   const [saveDirDefault, setSaveDirDefault] = useState("");
@@ -86,6 +91,59 @@ export default function SettingsView() {
       </h1>
 
       <div className="flex flex-col gap-4 max-w-[760px]">
+        {/* 外观 */}
+        <section className="glass rounded-2xl p-5">
+          <h2 className="text-[14.5px] font-semibold mb-4">外观</h2>
+          <div className="flex items-center gap-4 mb-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">界面模式</span>
+            <div className="flex items-center gap-1.5">
+              {(
+                [
+                  { key: "dark", label: "深色" },
+                  { key: "light", label: "浅色" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTheme(t.key)}
+                  className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
+                    theme === t.key
+                      ? "text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                  style={
+                    theme === t.key
+                      ? { background: "var(--accent-weak)" }
+                      : undefined
+                  }
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">强调色</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a.key}
+                  onClick={() => setAccent(a.key)}
+                  title={a.label}
+                  className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
+                    accent === a.key ? "ring-2 ring-offset-2" : ""
+                  }`}
+                  style={{
+                    background: `linear-gradient(135deg, ${a.base}, ${a.strong})`,
+                    ["--tw-ring-color" as string]: a.base,
+                    ["--tw-ring-offset-color" as string]: "var(--bg)",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* 音乐文件夹 */}
         <section className="glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
@@ -112,10 +170,10 @@ export default function SettingsView() {
               {folders.map((f) => (
                 <div
                   key={f.id}
-                  className="group flex items-center gap-2.5 h-10 px-3 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+                  className="group flex items-center gap-2.5 h-10 px-3 rounded-lg bg-white/[0.03] hover:bg-[var(--shade)] transition-colors"
                 >
-                  <Folder size={14} className="text-zinc-500 shrink-0" />
-                  <span className="text-[12.5px] text-zinc-300 truncate">{f.path}</span>
+                  <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
+                  <span className="text-[12.5px] text-[var(--ink)] truncate">{f.path}</span>
                   <button
                     className="btn-ghost w-7 h-7 ml-auto shrink-0 opacity-0 group-hover:opacity-100 hover:!text-rose-400"
                     onClick={() => removeFolder(f.id)}
@@ -127,7 +185,7 @@ export default function SettingsView() {
               ))}
             </div>
           ) : (
-            <div className="text-[12.5px] text-zinc-500 py-2">
+            <div className="text-[12.5px] text-[var(--ink-2)] py-2">
               还没有添加文件夹。也可以直接把文件 / 文件夹拖进窗口。
             </div>
           )}
@@ -138,7 +196,7 @@ export default function SettingsView() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[14.5px] font-semibold">
               均衡器
-              <span className="ml-2 text-[11.5px] font-normal text-zinc-500">10 段</span>
+              <span className="ml-2 text-[11.5px] font-normal text-[var(--ink-2)]">10 段</span>
             </h2>
             <div className="flex items-center gap-1.5">
               {Object.keys(PRESETS).concat("自定义").map((name) => (
@@ -151,8 +209,8 @@ export default function SettingsView() {
                   }}
                   className={`px-2.5 py-1 rounded-full text-[11.5px] transition-colors ${
                     preset === name
-                      ? "bg-white/[0.12] text-white"
-                      : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]"
+                      ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
                   {name}
@@ -160,7 +218,7 @@ export default function SettingsView() {
               ))}
               <button
                 className={`ml-2 relative w-10 h-[22px] rounded-full transition-colors ${
-                  eqEnabled ? "bg-[var(--accent)]" : "bg-white/[0.12]"
+                  eqEnabled ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
                 }`}
                 onClick={() => setEq(eqGains, !eqEnabled)}
                 title={eqEnabled ? "关闭均衡器" : "启用均衡器"}
@@ -176,7 +234,7 @@ export default function SettingsView() {
           <div className={`flex justify-between gap-2 ${eqEnabled ? "" : "opacity-40"}`}>
             {EQ_FREQS.map((label, i) => (
               <div key={label} className="flex flex-col items-center gap-1.5 flex-1">
-                <span className="text-[10.5px] text-zinc-500 tabular-nums">
+                <span className="text-[10.5px] text-[var(--ink-2)] tabular-nums">
                   {eqGains[i] > 0 ? "+" : ""}
                   {eqGains[i].toFixed(0)}
                 </span>
@@ -186,7 +244,7 @@ export default function SettingsView() {
                   max={12}
                   onChange={(v) => setBand(i, Math.round(v))}
                 />
-                <span className="text-[10.5px] text-zinc-600">{label}</span>
+                <span className="text-[10.5px] text-[var(--ink-3)]">{label}</span>
               </div>
             ))}
           </div>
@@ -196,7 +254,7 @@ export default function SettingsView() {
         <section className="glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-zinc-400 w-[80px]">在线音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">在线音质</span>
             <div className="flex items-center gap-1.5">
               {QUALITIES.map((q) => (
                 <button
@@ -205,7 +263,7 @@ export default function SettingsView() {
                   className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
                     quality === q.key
                       ? "bg-[rgba(240,162,74,0.14)] text-[var(--accent-strong)] font-medium"
-                      : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
                   {q.label}
@@ -215,7 +273,7 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-[12.5px] text-zinc-400 w-[80px]">播放速度</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放速度</span>
             <input
               type="range"
               min={0.5}
@@ -225,11 +283,11 @@ export default function SettingsView() {
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
               className="flex-1 accent-amber-400"
             />
-            <span className="text-[12px] text-zinc-300 tabular-nums w-10 text-right">
+            <span className="text-[12px] text-[var(--ink)] tabular-nums w-10 text-right">
               {speed.toFixed(2)}x
             </span>
           </div>
-          <p className="text-[11.5px] text-zinc-600 mt-2">
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
             变速通过重采样实现，音调会随之变化；均衡器实时作用于所有播放。
           </p>
         </section>
@@ -238,15 +296,15 @@ export default function SettingsView() {
         <section className="glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-3">下载保存目录</h2>
           <div className="flex items-center gap-3">
-            <Folder size={14} className="text-zinc-500 shrink-0" />
-            <span className="text-[12.5px] text-zinc-300 truncate flex-1">
+            <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
+            <span className="text-[12.5px] text-[var(--ink)] truncate flex-1">
               {saveDir || saveDirDefault}
             </span>
             <button className="btn-secondary !py-1.5 !px-3" onClick={pickSaveDir}>
               更改目录
             </button>
           </div>
-          <p className="text-[11.5px] text-zinc-600 mt-2">
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
             在线歌曲“下载到本地”将保存到此目录，并自动加入资料库（含标签与歌词）。
           </p>
         </section>
@@ -254,7 +312,7 @@ export default function SettingsView() {
         {/* 缓存 */}
         <section className="glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-2">缓存</h2>
-          <p className="text-[12px] text-zinc-500 mb-3">
+          <p className="text-[12px] text-[var(--ink-2)] mb-3">
             在线音源下载后的缓存文件存放在应用数据目录的 downloads 文件夹。
           </p>
           <button className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15" onClick={clearCache}>
@@ -263,7 +321,7 @@ export default function SettingsView() {
           </button>
         </section>
 
-        <div className="text-[11.5px] text-zinc-600 px-1 pb-2">
+        <div className="text-[11.5px] text-[var(--ink-3)] px-1 pb-2">
           RustMusic v0.1.0 · Rust + Tauri 2 + React · 引擎 rodio / symphonia ·
           界面仅支持 Windows（架构上保留跨平台能力）
         </div>
@@ -289,7 +347,7 @@ function VSlider({
   const y = ((value - min) / (max - min)) * H;
   return (
     <div
-      className="relative w-7 rounded-full bg-white/[0.07] cursor-pointer touch-none"
+      className="relative w-7 rounded-full bg-[var(--shade)] cursor-pointer touch-none"
       style={{ height: H }}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);

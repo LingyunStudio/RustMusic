@@ -45,7 +45,7 @@ function DynamicBackdrop() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 120% 100% at 50% -20%, #241a10 0%, #14100b 45%, #0f0c09 100%)",
+            "radial-gradient(ellipse 120% 100% at 50% -20%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%)",
         }}
       />
       {/* 封面主色微光（低饱和、低调） */}
@@ -72,7 +72,7 @@ function DynamicBackdrop() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 135% 115% at 50% 42%, transparent 52%, rgba(5,3,2,0.55) 100%)",
+            "radial-gradient(ellipse 135% 115% at 50% 42%, transparent 52%, var(--vignette) 100%)",
         }}
       />
       <div
@@ -147,7 +147,7 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 bg-[#0b0b10]">
+      <div className="h-full flex flex-col items-center justify-center gap-4 bg-[var(--bg)]">
         <div
           className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xl animate-pulse"
           style={{ background: "linear-gradient(135deg, #ffc470, #e8823f)" }}
@@ -163,13 +163,13 @@ export default function App() {
             }}
           />
         </div>
-        <div className="text-[13px] text-zinc-500">RustMusic 正在启动…</div>
+        <div className="text-[13px] text-[var(--ink-2)]">RustMusic 正在启动…</div>
       </div>
     );
   }
 
   return (
-    <div className="h-full relative overflow-hidden bg-[#0b0b10]">
+    <div className="h-full relative overflow-hidden bg-[var(--bg)]">
       <DynamicBackdrop />
 
       <div className="relative h-full flex flex-col pb-[104px]">
