@@ -26,7 +26,7 @@
   --backdrop-1: #241a10;
   --backdrop-2: #14100b;
   --bar-tint: rgba(15, 12, 9, 0.82);
-  --bar-glass: rgba(26, 21, 16, 0.16);
+  --bar-glass: rgba(26, 21, 16, 0.04);
   color-scheme: dark;
 }
 
@@ -46,7 +46,7 @@ html[data-theme="light"] {
   --backdrop-1: #efe6d8;
   --backdrop-2: #f7f2ea;
   --bar-tint: rgba(247, 242, 234, 0.85);
-  --bar-glass: rgba(252, 248, 241, 0.22);
+  --bar-glass: rgba(252, 248, 241, 0.06);
   color-scheme: light;
 }
 
