@@ -78,6 +78,7 @@ interface Store {
   qqCache: Record<string, QqSong>;
 
   quality: string;
+  scrubbing: boolean;
   theme: "dark" | "light";
   accent: string;
   savedOnline: Record<string, boolean>;
@@ -108,6 +109,7 @@ interface Store {
   next(auto?: boolean): void;
   prev(): void;
   seek(ms: number): void;
+  setScrubbing(v: boolean): void;
   setVolume(v: number): void;
   setSpeed(v: number): void;
   setRepeat(m: RepeatMode): void;
@@ -210,6 +212,7 @@ export const useStore = create<Store>((set, get) => ({
   playing: false,
   pos: 0,
   dur: 0,
+  scrubbing: false,
   queue: [],
   qIndex: 0,
   history: [],
@@ -283,7 +286,8 @@ export const useStore = create<Store>((set, get) => ({
           },
           playing: p.playing,
           dur: p.durationMs,
-          pos: 0,
+          // 只有真正的“开播”才归零进度；暂停/恢复的 state 事件保留当前进度
+          pos: p.playing ? 0 : get().pos,
         });
         if (!p.playing) set({ pos: get().pos });
         // 自动加载当前曲目的歌词（播放栏滚动展示用）
@@ -301,6 +305,8 @@ export const useStore = create<Store>((set, get) => ({
 
     unbinds.push(
       await listenEvent<{ pos: number; dur: number }>("player://pos", (p) => {
+        // 拖动进度条期间不回写事件进度，避免位置抖动
+        if (get().scrubbing) return;
         set({ pos: p.pos, dur: p.dur > 0 ? p.dur : get().dur });
       })
     );
@@ -621,9 +627,15 @@ export const useStore = create<Store>((set, get) => ({
     get().playQueueIndex(idx);
   },
 
+  setScrubbing(v) {
+    set({ scrubbing: v });
+  },
+
   seek(ms) {
-    set({ pos: ms });
-    api.seek(Math.round(ms)).catch(() => {});
+    set({ pos: ms, scrubbing: false });
+    api.seek(Math.round(ms)).catch((e) => {
+      get().toast(`跳转失败：${e}`, "error");
+    });
   },
 
   setVolume(v) {

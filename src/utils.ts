@@ -56,11 +56,14 @@ export function gradientFor(seed: string): string {
   return `linear-gradient(135deg, hsl(${h}, 52%, 46%), hsl(${h2}, 58%, 32%))`;
 }
 
-/** 从封面提取多个代表色（k-means 简化版：分桶取最饱和/最亮的色心） */
+/** 从封面提取多个代表色（色相分桶取加权色心）
+ * asset:// 协议（本地文件）不受同源限制，无需 crossOrigin；
+ * http 封面若跨域被 CORS 允许也可采样，失败则静默回退。 */
 export async function extractPalette(url: string, count = 4): Promise<string[]> {
   try {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    // 不设 crossOrigin：asset 协议不需要；远程封面按需带
+    if (/^https?:/.test(url)) img.crossOrigin = "anonymous";
     img.src = url;
     await img.decode();
     const c = document.createElement("canvas");
@@ -70,6 +73,7 @@ export async function extractPalette(url: string, count = 4): Promise<string[]> 
     if (!ctx) return [];
     ctx.drawImage(img, 0, 0, 36, 36);
     const data = ctx.getImageData(0, 0, 36, 36).data;
+    if (!data || data.length < 4) return [];
     // 按色相分桶，桶内取加权最优色
     const buckets = new Map<number, { r: number; g: number; b: number; w: number }>();
     for (let i = 0; i < data.length; i += 4) {

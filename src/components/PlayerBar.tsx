@@ -244,7 +244,9 @@ export default function PlayerBar() {
             <Slider
               value={pos}
               max={total || 1}
-              onChange={(v) => useStore.setState({ pos: v })}
+              onChange={(v) =>
+                useStore.setState({ pos: v, scrubbing: true })
+              }
               onCommit={(v) => seek(v)}
               className="flex-1"
             />

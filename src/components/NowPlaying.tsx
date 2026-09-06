@@ -93,6 +93,26 @@ export default function NowPlaying() {
     };
   }, [coverUrl]);
 
+  // rAF 驱动对流层的色相旋转与缓慢自转（WebView2 的 filter 动画不可靠）
+  const bgRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (palette.length < 2) return;
+    const el = bgRef.current;
+    if (!el) return;
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = (now - start) / 1000;
+      const hue = (t * 12) % 360; // 12°/s → 30s 一轮
+      const spin = (t * 9) % 360; // 9°/s → 40s 一圈
+      el.style.filter = `blur(120px) saturate(1.35) hue-rotate(${hue}deg)`;
+      el.style.transform = `rotate(${spin}deg) scale(1.18)`;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [palette]);
+
   return (
     <div className="absolute inset-0 z-40 anim-np overflow-hidden">
       {/* 背景：封面取色的流动渐变（色相旋转 + 光斑漂移） */}
@@ -110,12 +130,13 @@ export default function NowPlaying() {
           <>
             {/* 大对流渐变层：颜色持续旋转流动（占满背景、高不透明度） */}
             <div
+              ref={bgRef}
               className="absolute -inset-[25%] dynamic-gradient-layer"
               style={{
                 background: `conic-gradient(from 0deg at 30% 35%, ${palette[0]}, ${palette[1] ?? palette[0]}, ${palette[2] ?? palette[0]}, ${palette[3] ?? palette[1] ?? palette[0]}, ${palette[0]})`,
                 opacity: 0.85,
-                animation:
-                  "hueFlow 24s linear infinite, slowSpin 40s linear infinite",
+                filter: "blur(120px) saturate(1.35)",
+                transform: "scale(1.18)",
               }}
             />
             {/* 双光斑漂移层 */}

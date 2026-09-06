@@ -144,7 +144,10 @@ export const api = {
 export { convertFileSrc };
 
 export function coverSrc(path: string): string {
-  return path ? convertFileSrc(path) : "";
+  if (!path) return "";
+  // http(s) 封面直接用原 URL；本地文件路径才转 asset 协议
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return convertFileSrc(path);
 }
 
 export type ListenerUnbind = () => void;
