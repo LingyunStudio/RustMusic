@@ -329,7 +329,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
                         active
                           ? "text-[var(--accent)]"
-                          : "bg-[var(--ink)] text-[#241505]"
+                          : "bg-[var(--accent)] text-[var(--accent-on)]"
                       }`}
                       onClick={() => playRow(i)}
                       title="播放"

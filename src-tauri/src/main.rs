@@ -234,6 +234,7 @@ fn main() {
             commands::qq_user_playlists,
             commands::qq_import_playlist,
             commands::set_play_quality,
+            commands::extract_cover_palette,
             commands::play_pause,
             commands::pause,
             commands::resume,

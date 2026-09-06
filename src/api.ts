@@ -125,6 +125,7 @@ export const api = {
   qqImportPlaylist: (remotePid: number, localPid: number) =>
     invoke<number>("qq_import_playlist", { remotePid, localPid }),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
+  extractCoverPalette: (url: string) => invoke<string[]>("extract_cover_palette", { url }),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),
   playPause: () => invoke<void>("play_pause"),

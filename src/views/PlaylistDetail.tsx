@@ -170,7 +170,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               随机
             </button>
             <button
-              className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15"
+              className="btn-secondary !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)]"
               onClick={() => setConfirmDel(true)}
             >
               <Trash2 size={13} />
@@ -232,7 +232,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
                           active
                             ? "text-[var(--accent)]"
-                            : "bg-[var(--ink)] text-[#241505]"
+                            : "bg-[var(--accent)] text-[var(--accent-on)]"
                         }`}
                         onClick={() => playEntries(list.map((x) => x.entry), i)}
                       >

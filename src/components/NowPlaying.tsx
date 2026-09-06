@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Heart, Mic2, Music4 } from "lucide-react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
-import { coverSrc } from "../api";
+import { api, coverSrc } from "../api";
 import { extractPalette } from "../utils";
 
 export default function NowPlaying() {
@@ -78,6 +78,7 @@ export default function NowPlaying() {
   const coverUrl = current.cover ? coverSrc(current.cover) : "";
 
   // 封面取色 → 动态渐变背景
+  // http 封面一律走后端提取（QQ 的 y.gtimg.cn 无 CORS，前端 canvas 会被污染）
   const [palette, setPalette] = useState<string[]>([]);
   useEffect(() => {
     if (!coverUrl) {
@@ -85,9 +86,17 @@ export default function NowPlaying() {
       return;
     }
     let alive = true;
-    extractPalette(coverUrl, 4).then((colors) => {
-      if (alive) setPalette(colors);
-    });
+    const getPalette = async () => {
+      try {
+        const colors = /^https?:/.test(coverUrl)
+          ? await api.extractCoverPalette(coverUrl)
+          : await extractPalette(coverUrl, 4);
+        if (alive) setPalette(colors);
+      } catch {
+        if (alive) setPalette([]);
+      }
+    };
+    getPalette();
     return () => {
       alive = false;
     };

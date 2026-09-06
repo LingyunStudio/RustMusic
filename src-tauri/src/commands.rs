@@ -526,6 +526,20 @@ pub async fn qq_play(
     } else {
         ext.to_uppercase()
     };
+    // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
+    let cover = {
+        let conn = state.db.lock();
+        db::get_online_cover(&conn, "qq", &track.songmid).unwrap_or_else(|| {
+            if track.album_mid.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "https://y.gtimg.cn/music/photo_new/T002R300x300M000{}.jpg",
+                    track.album_mid
+                )
+            }
+        })
+    };
     let info = TrackInfo {
         id: None,
         kind: "qq".into(),
@@ -533,10 +547,7 @@ pub async fn qq_play(
         title: track.title,
         artist: track.artist,
         album: track.album,
-        cover: format!(
-            "https://y.gtimg.cn/music/photo_new/T002R300x300M000{}.jpg",
-            track.album_mid
-        ),
+        cover,
         duration_ms: track.duration_ms,
         nid: None,
         qid: Some(track.songmid),
@@ -1156,4 +1167,103 @@ pub async fn get_app_info(
         "version": app.package_info().version.to_string(),
         "dataDir": state.app_data.to_string_lossy(),
     }))
+}
+
+// ---------- 封面取色（服务端，绕过 QQ 封面域无 CORS 的限制） ----------
+
+#[tauri::command]
+pub async fn extract_cover_palette(
+    url: String,
+) -> Result<Vec<String>, String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Ok(vec![]);
+    }
+    let bytes = match ureq::get(&url)
+        .set("User-Agent", "Mozilla/5.0")
+        .timeout(std::time::Duration::from_secs(10))
+        .call()
+    {
+        Ok(resp) => {
+            let mut buf = Vec::new();
+            use std::io::Read;
+            resp.into_reader()
+                .take(2 * 1024 * 1024)
+                .read_to_end(&mut buf)
+                .map_err(|e| e.to_string())?;
+            buf
+        }
+        Err(_) => return Ok(vec![]),
+    };
+    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+    let rgb = img.thumbnail(36, 36).to_rgb8();
+    // 色相分桶（与前端算法一致），输出 hsl
+    let mut buckets: std::collections::BTreeMap<i64, (f64, f64, f64, f64)> =
+        std::collections::BTreeMap::new();
+    for p in rgb.pixels() {
+        let (r, g, b) = (p[0] as f64 / 255.0, p[1] as f64 / 255.0, p[2] as f64 / 255.0);
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let lum = r * 0.3 + g * 0.6 + b * 0.1;
+        if lum < 0.06 || lum > 0.97 {
+            continue;
+        }
+        let sat = if max == 0.0 { 0.0 } else { (max - min) / max };
+        let d = max - min;
+        let mut hue = 0.0;
+        if d != 0.0 {
+            if max == r {
+                hue = ((g - b) / d) % 6.0;
+            } else if max == g {
+                hue = (b - r) / d + 2.0;
+            } else {
+                hue = (r - g) / d + 4.0;
+            }
+            hue *= 60.0;
+            if hue < 0.0 {
+                hue += 360.0;
+            }
+        }
+        let bucket = (hue / 45.0).floor() as i64;
+        let w = 0.4 + sat;
+        let e = buckets.entry(bucket).or_insert((0.0, 0.0, 0.0, 0.0));
+        e.0 += r * w;
+        e.1 += g * w;
+        e.2 += b * w;
+        e.3 += w;
+    }
+    let mut colors: Vec<(f64, f64, f64, f64)> = buckets.into_values().collect();
+    colors.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = Vec::new();
+    for (r, g, b, _) in colors.iter().take(4) {
+        let (r, g, b) = (*r, *g, *b);
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let l = (max + min) / 2.0;
+        let d = max - min;
+        let mut h = 0.0;
+        let mut s = 0.0;
+        if d != 0.0 {
+            s = d / (1.0 - (2.0 * l - 1.0).abs());
+            if max == r {
+                h = ((g - b) / d) % 6.0;
+            } else if max == g {
+                h = (b - r) / d + 2.0;
+            } else {
+                h = (r - g) / d + 4.0;
+            }
+            h *= 60.0;
+            if h < 0.0 {
+                h += 360.0;
+            }
+        }
+        let s2 = (s.max(0.55) * 1.1).min(1.0);
+        let l_out = (l.max(0.66)).min(0.85);
+        out.push(format!(
+            "hsl({}, {:.0}%, {:.0}%)",
+            h.round() as i64,
+            s2 * 100.0,
+            l_out * 100.0
+        ));
+    }
+    Ok(out)
 }

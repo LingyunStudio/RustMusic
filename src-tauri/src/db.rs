@@ -653,3 +653,14 @@ pub fn mark_online_downloaded(conn: &Connection, kind: &str, rid: &str) {
         params![kind, rid],
     );
 }
+
+/// 取在线条目存的封面 URL
+pub fn get_online_cover(conn: &Connection, kind: &str, rid: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT cover FROM online_tracks WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+        |r| r.get(0),
+    )
+    .ok()
+    .filter(|s: &String| !s.is_empty())
+}
