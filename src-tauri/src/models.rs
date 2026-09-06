@@ -35,10 +35,26 @@ pub struct Folder {
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct PlaylistEntryMeta {
+    pub rowid: i64,
+    /// local | netease | qq
+    pub kind: String,
+    pub track_id: Option<i64>,
+    pub online_id: Option<String>,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub cover: String,
+    pub duration: f64,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Playlist {
     pub id: i64,
     pub name: String,
     pub track_ids: Vec<i64>,
+    pub entries: Vec<PlaylistEntryMeta>,
     pub created_at: i64,
 }
 
@@ -72,4 +88,14 @@ pub struct SettingsPayload {
     pub speed: f32,
     pub eq_gains: Vec<f32>,
     pub eq_enabled: bool,
+    /// standard | high | lossless
+    pub quality: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct UserPlaylistMeta {
+    pub id: i64,
+    pub name: String,
+    pub track_count: i64,
 }

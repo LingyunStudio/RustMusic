@@ -218,6 +218,39 @@ textarea {
   );
 }
 
+/* ---------- 播放栏滚动歌词 ---------- */
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+.marquee-wrap {
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black 6%,
+    black 94%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    black 6%,
+    black 94%,
+    transparent 100%
+  );
+}
+.marquee-inner {
+  display: inline-block;
+  animation: marquee var(--dur, 16s) linear infinite;
+}
+
 /* ---------- 控件 ---------- */
 
 input[type="text"],

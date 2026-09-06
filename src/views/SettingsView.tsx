@@ -12,6 +12,12 @@ import { useStore } from "../store";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
+const QUALITIES: { key: string; label: string; desc: string }[] = [
+  { key: "standard", label: "标准", desc: "128k" },
+  { key: "high", label: "较高", desc: "320k" },
+  { key: "lossless", label: "无损", desc: "FLAC" },
+];
+
 const PRESETS: Record<string, number[]> = {
   平直: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   流行: [-1, 1, 3, 4, 3, 0, -1, -1, -1, -2],
@@ -33,6 +39,8 @@ export default function SettingsView() {
   const setEq = useStore((s) => s.setEq);
   const speed = useStore((s) => s.speed);
   const setSpeed = useStore((s) => s.setSpeed);
+  const quality = useStore((s) => s.quality);
+  const setQuality = useStore((s) => s.setQuality);
   const clearCache = useStore((s) => s.clearCache);
   const [preset, setPreset] = useState("平直");
 
@@ -160,6 +168,25 @@ export default function SettingsView() {
         {/* 播放 */}
         <section className="glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
+          <div className="flex items-center gap-4 mb-4">
+            <span className="text-[12.5px] text-zinc-400 w-[80px]">在线音质</span>
+            <div className="flex items-center gap-1.5">
+              {QUALITIES.map((q) => (
+                <button
+                  key={q.key}
+                  onClick={() => setQuality(q.key)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
+                    quality === q.key
+                      ? "bg-[rgba(240,162,74,0.14)] text-[var(--accent-strong)] font-medium"
+                      : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]"
+                  }`}
+                >
+                  {q.label}
+                  <span className="ml-1 text-[10px] opacity-70">{q.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-zinc-400 w-[80px]">播放速度</span>
             <input

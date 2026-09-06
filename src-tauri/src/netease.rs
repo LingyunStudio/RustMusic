@@ -235,13 +235,18 @@ impl NetSong {
 // ---------- 业务接口 ----------
 
 /// 搜索歌曲（标准 web 搜索接口，匿名可用，字段兼容新旧两套）
-pub fn search(keyword: &str, limit: i64, music_u: Option<&str>) -> Result<NetSearchResult, String> {
+pub fn search(
+    keyword: &str,
+    limit: i64,
+    offset: i64,
+    music_u: Option<&str>,
+) -> Result<NetSearchResult, String> {
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return Ok(NetSearchResult { total: 0, songs: vec![] });
     }
     let payload = serde_json::json!({
-        "s": keyword, "type": 1, "offset": 0,
+        "s": keyword, "type": 1, "offset": offset,
         "limit": limit, "total": true
     })
     .to_string();
@@ -334,42 +339,63 @@ fn enrich_covers(songs: &mut [NetSong], music_u: Option<&str>) {
     }
 }
 
-/// 获取播放直链（weapi，需登录 cookie；按账号权益返回）
-pub fn song_url(id: i64, music_u: Option<&str>) -> Result<Option<(String, i64)>, String> {
+/// 按音质请求播放直链（weapi，需登录 cookie），从所选音质逐级回退
+/// 返回 (url, br, ext)
+pub fn song_url(
+    id: i64,
+    music_u: Option<&str>,
+    quality: &str,
+) -> Result<Option<(String, i64, String)>, String> {
     let music_u = music_u.filter(|s| !s.is_empty());
     if music_u.is_none() {
         return Err("未登录网易云账号，无法获取播放链接，请先扫码登录".into());
     }
-    let payload =
-        serde_json::json!({ "ids": format!("[{id}]"), "br": 320000, "csrf_token": "" }).to_string();
-    let resp = weapi_post("/weapi/song/enhance/player/url", &payload, music_u)?;
-    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-    if code != 200 {
-        return Err(format!("获取播放链接失败（code {code}）"));
-    }
-    let first = resp
-        .pointer("/data/0")
-        .cloned()
-        .ok_or_else(|| "响应中没有该歌曲的数据".to_string())?;
-    let item_code = first.get("code").and_then(|c| c.as_i64()).unwrap_or(200);
-    let url = first
-        .get("url")
-        .and_then(|u| u.as_str())
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty());
-    let br = first.get("br").and_then(|b| b.as_i64()).unwrap_or(0);
-    match url {
-        Some(u) => Ok(Some((u, br))),
-        None => {
-            let hint = match item_code {
-                404 => "该歌曲暂无版权音频（可能需要 VIP 或已下架）",
-                402 => "该内容需要付费",
-                600 => "该歌曲需要 VIP 权益",
-                _ => "该歌曲没有可播放的音频",
-            };
-            Err(hint.to_string())
+    let ladder: Vec<i64> = match quality {
+        "lossless" => vec![999000, 320000, 128000],
+        "standard" => vec![128000],
+        _ => vec![320000, 128000],
+    };
+    let mut last_hint = String::from("该歌曲没有可播放的音频");
+    for br in ladder {
+        let payload = serde_json::json!({
+            "ids": format!("[{id}]"), "br": br, "csrf_token": ""
+        })
+        .to_string();
+        let resp = weapi_post("/weapi/song/enhance/player/url", &payload, music_u)?;
+        let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+        if code != 200 {
+            return Err(format!("获取播放链接失败（code {code}）"));
         }
+        let first = resp
+            .pointer("/data/0")
+            .cloned()
+            .ok_or_else(|| "响应中没有该歌曲的数据".to_string())?;
+        let item_code = first.get("code").and_then(|c| c.as_i64()).unwrap_or(200);
+        let url = first
+            .get("url")
+            .and_then(|u| u.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(u) = url {
+            let ext = u
+                .split('?')
+                .next()
+                .unwrap_or("")
+                .rsplit('.')
+                .next()
+                .unwrap_or("mp3")
+                .to_lowercase();
+            let real_br = first.get("br").and_then(|b| b.as_i64()).unwrap_or(br);
+            return Ok(Some((u, real_br, ext)));
+        }
+        last_hint = match item_code {
+            404 => "该歌曲暂无版权音频（可能需要 VIP 或已下架）".into(),
+            402 => "该内容需要付费".into(),
+            600 => "该歌曲需要 VIP 权益".into(),
+            _ => last_hint,
+        };
     }
+    Err(last_hint)
 }
 
 /// 获取歌词（LRC 文本，含逐行时间标签）
@@ -391,6 +417,50 @@ pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
     Ok(lrc)
+}
+
+/// 获取登录账号的歌单列表
+pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+    let payload = serde_json::json!({ "uid": uid.to_string(), "offset": "0", "limit": "60" }).to_string();
+    let resp = weapi_post("/weapi/user/playlist", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(format!("获取歌单列表失败（code {code}）"));
+    }
+    let mut out = Vec::new();
+    if let Some(list) = resp.pointer("/playlist").and_then(|v| v.as_array()) {
+        for p in list {
+            let id = p.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let count = p.get("trackCount").and_then(|v| v.as_i64()).unwrap_or(0);
+            if id != 0 && !name.is_empty() {
+                out.push(crate::models::UserPlaylistMeta { id, name, track_count: count });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 获取歌单内的全部歌曲
+pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> {
+    let payload = serde_json::json!({ "id": pid.to_string(), "n": 1000, "csrf_token": "" }).to_string();
+    let resp = weapi_post("/weapi/v3/playlist/detail", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(format!("获取歌单详情失败（code {code}）"));
+    }
+    let mut out = Vec::new();
+    if let Some(list) = resp
+        .pointer("/playlist/tracks")
+        .and_then(|v| v.as_array())
+    {
+        for t in list {
+            if let Ok(song) = serde_json::from_value::<NetSong>(t.clone()) {
+                out.push(song);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 创建扫码登录二维码，返回 (unikey, qr_png_base64)

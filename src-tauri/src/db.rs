@@ -61,11 +61,33 @@ CREATE TABLE IF NOT EXISTS stats (
 CREATE TABLE IF NOT EXISTS liked (
   track_id INTEGER PRIMARY KEY
 );
+CREATE TABLE IF NOT EXISTS online_tracks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  rid TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  artist TEXT NOT NULL DEFAULT '',
+  album TEXT NOT NULL DEFAULT '',
+  cover TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  media_mid TEXT NOT NULL DEFAULT '',
+  vip INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(kind, rid)
+);
 "#;
+
+// playlist_tracks 的 kind/online_id 列为渐进迁移（旧库自动补列）
+pub fn migrate(conn: &Connection) {
+    let _ = conn.execute_batch(
+        "ALTER TABLE playlist_tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'local';
+         ALTER TABLE playlist_tracks ADD COLUMN online_id TEXT NOT NULL DEFAULT '';",
+    );
+}
 
 pub fn init(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+    migrate(&conn);
     Ok(conn)
 }
 
@@ -298,25 +320,29 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
                 id: r.get(0)?,
                 name: r.get(1)?,
                 track_ids: vec![],
+                entries: vec![],
                 created_at: r.get(2)?,
             })
         })
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
 
-    let mut pstm = match conn.prepare(
-        "SELECT playlist_id, track_id FROM playlist_tracks ORDER BY position, track_id",
-    ) {
-        Ok(s) => s,
-        Err(_) => return out,
-    };
-    let pairs: Vec<(i64, i64)> = pstm
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        .unwrap_or_default();
-    for (pid, tid) in pairs {
-        if let Some(pl) = out.iter_mut().find(|p| p.id == pid) {
-            pl.track_ids.push(tid);
+    for pl in out.iter_mut() {
+        for e in playlist_entries(conn, pl.id) {
+            if e.kind == "local" {
+                pl.track_ids.push(e.track_id);
+            }
+            pl.entries.push(crate::models::PlaylistEntryMeta {
+                rowid: e.rowid,
+                kind: e.kind.clone(),
+                track_id: (e.kind == "local").then_some(e.track_id),
+                online_id: (e.kind != "local").then_some(e.online_id.clone()),
+                title: e.title.clone(),
+                artist: e.artist.clone(),
+                album: e.album.clone(),
+                cover: e.cover.clone(),
+                duration: e.duration,
+            });
         }
     }
     out
@@ -338,6 +364,16 @@ pub fn delete_playlist(conn: &Connection, id: i64) {
 
 pub fn rename_playlist(conn: &Connection, id: i64, name: &str) {
     let _ = conn.execute("UPDATE playlists SET name = ?2 WHERE id = ?1", params![id, name]);
+}
+
+pub fn add_online_to_playlist(
+    conn: &Connection,
+    pid: i64,
+    kind: &str,
+    rid: &str,
+) -> Result<(), String> {
+    add_playlist_entry(conn, pid, kind, 0, rid);
+    Ok(())
 }
 
 pub fn add_to_playlist(conn: &Connection, pid: i64, tid: i64) -> Result<(), String> {
@@ -417,4 +453,97 @@ pub fn now_secs() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+// ---------- 在线曲目（网易云 / QQ 音乐条目入库） ----------
+
+pub fn upsert_online_track(
+    conn: &Connection,
+    kind: &str,
+    rid: &str,
+    title: &str,
+    artist: &str,
+    album: &str,
+    cover: &str,
+    duration_ms: i64,
+    media_mid: &str,
+    vip: bool,
+) -> i64 {
+    let _ = conn.execute(
+        "INSERT INTO online_tracks(kind, rid, title, artist, album, cover, duration_ms, media_mid, vip)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(kind, rid) DO UPDATE SET
+           title=?3, artist=?4, album=?5, cover=?6, duration_ms=?7, media_mid=?8, vip=?9",
+        params![kind, rid, title, artist, album, cover, duration_ms, media_mid, vip as i64],
+    );
+    conn.last_insert_rowid()
+}
+
+// ---------- 播放列表条目（本地 + 在线混合） ----------
+
+#[derive(Debug, Clone)]
+pub struct PlaylistEntryRow {
+    pub rowid: i64,
+    pub kind: String,
+    pub track_id: i64,
+    pub online_id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub cover: String,
+    pub duration: f64,
+}
+
+pub fn playlist_entries(conn: &Connection, pid: i64) -> Vec<PlaylistEntryRow> {
+    let mut stmt = match conn
+        .prepare(
+            "SELECT pt.rowid, pt.kind, pt.track_id, pt.online_id,
+              COALESCE(t.title, ot.title, '') AS title,
+              COALESCE(t.artist, ot.artist, '') AS artist,
+              COALESCE(t.album, ot.album, '') AS album,
+              COALESCE(t.cover, ot.cover, '') AS cover,
+              COALESCE(t.duration, ot.duration_ms / 1000.0, 0) AS duration
+             FROM playlist_tracks pt
+             LEFT JOIN tracks t ON pt.kind = 'local' AND t.id = pt.track_id
+             LEFT JOIN online_tracks ot ON pt.kind != 'local' AND ot.kind = pt.kind AND ot.rid = pt.online_id
+             WHERE pt.playlist_id = ?1
+             ORDER BY pt.position, pt.rowid",
+        )
+    {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    stmt.query_map(params![pid], |r| {
+        Ok(PlaylistEntryRow {
+            rowid: r.get(0)?,
+            kind: r.get(1)?,
+            track_id: r.get(2)?,
+            online_id: r.get(3)?,
+            title: r.get(4)?,
+            artist: r.get(5)?,
+            album: r.get(6)?,
+            cover: r.get(7)?,
+            duration: r.get(8)?,
+        })
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
+}
+
+pub fn add_playlist_entry(conn: &Connection, pid: i64, kind: &str, track_id: i64, online_id: &str) {
+    let pos: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
+            params![pid],
+            |r| r.get(0),
+        )
+        .unwrap_or(1);
+    let _ = conn.execute(
+        "INSERT INTO playlist_tracks(playlist_id, track_id, position, kind, online_id) VALUES(?1,?2,?3,?4,?5)",
+        params![pid, track_id, pos, kind, online_id],
+    );
+}
+
+pub fn remove_playlist_entry(conn: &Connection, rowid: i64) {
+    let _ = conn.execute("DELETE FROM playlist_tracks WHERE rowid = ?1", params![rowid]);
 }

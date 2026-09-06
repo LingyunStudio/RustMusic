@@ -148,7 +148,7 @@ export default function Sidebar() {
               />
               <span className="truncate">{p.name}</span>
               <span className="ml-auto text-[11.5px] text-[var(--ink-3)] tabular-nums">
-                {p.trackIds.length}
+                {p.entries.length}
               </span>
             </button>
           );

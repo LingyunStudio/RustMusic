@@ -26,6 +26,7 @@ interface OnlineRow {
   cover: string;
   durationMs: number;
   vip: boolean;
+  mediaMid: string;
 }
 
 const qqCover = (albumMid: string) =>
@@ -37,13 +38,16 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const neteaseResults = useStore((s) => s.neteaseResults);
   const neteaseSearching = useStore((s) => s.neteaseSearching);
   const neteaseSearched = useStore((s) => s.neteaseSearched);
+  const neteaseTotal = useStore((s) => s.neteaseTotal);
   const qqResults = useStore((s) => s.qqResults);
   const qqSearching = useStore((s) => s.qqSearching);
   const qqSearched = useStore((s) => s.qqSearched);
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
+  const savedOnline = useStore((s) => s.savedOnline);
+  const saveOnline = useStore((s) => s.saveOnline);
+  const addOnlineToPlaylist = useStore((s) => s.addOnlineToPlaylist);
   const neteaseLiked = useStore((s) => s.neteaseLiked);
-  const neteaseToggleLike = useStore((s) => s.neteaseToggleLike);
   const playNetease = useStore((s) => s.playNetease);
   const playQq = useStore((s) => s.playQq);
   const playNext = useStore((s) => s.playNext);
@@ -56,17 +60,29 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const qqNickname = useStore((s) => s.qqNickname);
   const neteaseLogout = useStore((s) => s.neteaseLogout);
   const qqLogout = useStore((s) => s.qqLogout);
+  const playlists = useStore((s) => s.playlists);
+  const createPlaylist = useStore((s) => s.createPlaylist);
+  const importNeteasePlaylist = useStore((s) => s.importNeteasePlaylist);
+  const toast = useStore((s) => s.toast);
 
   const [kw, setKw] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; row: OnlineRow } | null>(
     null
   );
   const [qrSource, setQrSource] = useState<Source | null>(null);
+  const [pickerRow, setPickerRow] = useState<OnlineRow | null>(null);
+  const [newPlName, setNewPlName] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importList, setImportList] = useState<
+    { id: number; name: string; trackCount: number }[] | null
+  >(null);
+  const [importing, setImporting] = useState(false);
 
   const searching = source === "netease" ? neteaseSearching : qqSearching;
   const searched = source === "netease" ? neteaseSearched : qqSearched;
   const loggedIn = source === "netease" ? neteaseLoggedIn : qqLoggedIn;
   const nickname = source === "netease" ? neteaseNickname : qqNickname;
+  const sourceName = source === "netease" ? "网易云" : "QQ 音乐";
 
   const rows: OnlineRow[] = useMemo(() => {
     if (source === "netease") {
@@ -79,6 +95,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         cover: t.al?.picUrl ?? "",
         durationMs: t.dt,
         vip: t.fee === 1,
+        mediaMid: "",
       }));
     }
     return qqResults.map((t: QqSong) => ({
@@ -90,6 +107,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       cover: qqCover(t.albumMid),
       durationMs: t.durationMs,
       vip: t.vip,
+      mediaMid: t.mediaMid,
     }));
   }, [source, neteaseResults, qqResults]);
 
@@ -115,12 +133,17 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     }
   };
 
+  const hasMore =
+    source === "netease"
+      ? rows.length < neteaseTotal
+      : rows.length > 0 && rows.length % 30 === 0;
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* 头部 */}
-      <header className="px-8 pt-7 pb-5">
-        <div className="flex items-end justify-between gap-6">
-          <div className="min-w-0 anim-rise">
+      {/* 头部：标题 | 搜索 | 登录（同一行区域） */}
+      <header className="px-8 pt-7 pb-4">
+        <div className="flex items-end justify-between gap-5">
+          <div className="min-w-0 anim-rise shrink-0">
             <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
               <Cloud size={13} />
               在线曲库
@@ -129,81 +152,90 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               搜一下，就能听
             </h1>
             <div className="flex items-center gap-3 mt-3 text-[12.5px] text-[var(--ink-2)]">
-              {searched && <span className="tabular-nums">{rows.length} 条结果</span>}
+              <span className="tabular-nums">{rows.length} 条结果</span>
             </div>
           </div>
 
+          {/* 搜索（与标题同行） */}
+          <div className="flex items-center gap-2.5 flex-1 max-w-[520px] mb-1">
+            <div className="relative flex-1">
+              <Search
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
+              />
+              <input
+                type="text"
+                value={kw}
+                onChange={(e) => setKw(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder={
+                  source === "netease" ? "搜索网易云曲库…" : "搜索 QQ 音乐曲库…"
+                }
+                className="w-full h-10 rounded-xl bg-black/25 border border-[var(--line)] pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
+              />
+            </div>
+            <button
+              className="btn-primary h-10"
+              onClick={submit}
+              disabled={searching}
+            >
+              {searching ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Search size={13} />
+              )}
+              搜索
+            </button>
+          </div>
+
           {/* 登录状态 */}
-          <div className="shrink-0 flex items-center gap-2.5">
+          <div className="shrink-0 flex flex-col items-end gap-2 mb-1">
             {loggedIn ? (
               <>
                 <span
                   className="chip text-[var(--accent-strong)]"
                   style={{ background: "rgba(240,162,74,0.12)" }}
-                  title={`已登录${source === "netease" ? "网易云" : "QQ 音乐"}账号`}
+                  title={`已登录${sourceName}账号`}
                 >
                   <ShieldCheck size={13} />
                   {nickname || "已登录"}
                 </span>
-                <button
-                  className="btn-secondary"
-                  onClick={() => (source === "netease" ? neteaseLogout() : qqLogout())}
-                >
-                  <LogOut size={13} />
-                  退出
-                </button>
+                <div className="flex items-center gap-2">
+                  {source === "netease" && (
+                    <button
+                      className="btn-secondary !py-1.5 !px-3"
+                      onClick={async () => {
+                        setImportList(null);
+                        setImportOpen(true);
+                        try {
+                          setImportList(await api.neteaseUserPlaylists());
+                        } catch (e) {
+                          setImportOpen(false);
+                          toast(String(e), "error");
+                        }
+                      }}
+                    >
+                      导入歌单
+                    </button>
+                  )}
+                  <button
+                    className="btn-secondary !py-1.5 !px-3"
+                    onClick={() => (source === "netease" ? neteaseLogout() : qqLogout())}
+                  >
+                    退出
+                  </button>
+                </div>
               </>
             ) : (
-              <button className="btn-secondary" onClick={() => setQrSource(source)}>
-                扫码登录{source === "netease" ? "网易云" : "QQ 音乐"}
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                onClick={() => setQrSource(source)}
+              >
+                扫码登录
               </button>
             )}
           </div>
         </div>
-
-        {/* 搜索框 */}
-        <div className="flex items-center gap-3 mt-4 max-w-[620px]">
-          <div className="relative flex-1">
-            <Search
-              size={15}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
-            />
-            <input
-              type="text"
-              value={kw}
-              onChange={(e) => setKw(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder={
-                source === "netease" ? "搜索网易云曲库…" : "搜索 QQ 音乐曲库…"
-              }
-              className="w-full h-11 rounded-xl bg-black/25 border border-[var(--line)] pl-10 pr-4 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
-            />
-          </div>
-          <button className="btn-primary h-11" onClick={submit} disabled={searching}>
-            {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-            搜索
-          </button>
-        </div>
-
-        {!loggedIn && (
-          <button
-            onClick={() => setQrSource(source)}
-            className="mt-4 w-full max-w-[620px] flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-[rgba(240,162,74,0.08)]"
-            style={{
-              background: "rgba(240,162,74,0.07)",
-              border: "1px solid rgba(240,162,74,0.25)",
-            }}
-          >
-            <ShieldCheck size={16} className="text-[var(--accent)] shrink-0" />
-            <span className="text-[12.5px] text-[var(--ink-2)] leading-relaxed">
-              当前未登录：可以搜索浏览，获取播放链接需要登录。
-              <span className="text-[var(--accent-strong)]">
-                点击扫码登录{source === "netease" ? "网易云" : "QQ 音乐"}
-              </span>
-              （凭证只保存在本机），登录后按账号权益播放。
-            </span>
-          </button>
-        )}
       </header>
 
       {/* 结果列表 */}
@@ -256,8 +288,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   搜索在线曲库，双击即可播放
                 </div>
                 <div className="text-[11.5px] text-[var(--ink-3)] max-w-[440px] text-center leading-relaxed">
-                  支持网易云音乐与 QQ
-                  音乐两个来源。免费曲目可直接播放；扫码登录自己的账号后按账号权益播放（含会员曲目）。请支持正版。
+                  {sourceName}
+                  免费曲目可直接播放；扫码登录自己的账号后按账号权益播放（含会员曲目）。请支持正版。
                 </div>
               </div>
             )}
@@ -266,6 +298,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               const active =
                 current?.kind === t.kind &&
                 (t.kind === "qq" ? current.qid === t.id : current.id === t.id);
+              const saved = !!savedOnline[`${t.kind}-${t.id}`];
               return (
                 <div
                   key={`${t.kind}-${t.id}`}
@@ -354,29 +387,32 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   </div>
 
                   <div className="flex items-center justify-end gap-1 pr-1">
-                    {t.kind === "netease" && (
-                      <button
-                        className="btn-ghost w-8 h-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          neteaseToggleLike(t.id as number);
-                        }}
-                        title={
-                          neteaseLiked[t.id as number]
-                            ? "取消收藏"
-                            : "收藏到“我喜欢”"
+                    <button
+                      className="btn-ghost w-8 h-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        saveOnline({
+                          kind: t.kind,
+                          id: t.id,
+                          name: t.name,
+                          artist: t.artist,
+                          album: t.album,
+                          cover: t.cover,
+                          durationMs: t.durationMs,
+                          mediaMid: t.mediaMid,
+                        });
+                      }}
+                      title="收藏到“我喜欢”（下载到本机资料库）"
+                    >
+                      <Heart
+                        size={15}
+                        className={
+                          saved
+                            ? "fill-[#e0533f] text-[#e0533f]"
+                            : "opacity-0 group-hover:opacity-100"
                         }
-                      >
-                        <Heart
-                          size={15}
-                          className={
-                            neteaseLiked[t.id as number]
-                              ? "fill-[#e0533f] text-[#e0533f]"
-                              : "opacity-0 group-hover:opacity-100"
-                          }
-                        />
-                      </button>
-                    )}
+                      />
+                    </button>
                     <button
                       className="btn-ghost w-8 h-8"
                       onClick={(e) => {
@@ -408,6 +444,21 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 </div>
               );
             })}
+
+            {hasMore && (
+              <div className="flex justify-center pt-1 pb-2">
+                <button
+                  className="btn-secondary !py-1.5 !px-4"
+                  disabled={searching}
+                  onClick={() =>
+                    source === "netease" ? neteaseSearch(kw, true) : qqSearch(kw, true)
+                  }
+                >
+                  {searching ? <Loader2 size={13} className="animate-spin" /> : null}
+                  加载更多
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -436,9 +487,134 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <Play size={13} /> {item.label}
             </button>
           ))}
+          <div className="my-1 mx-2 border-t border-white/[0.07]" />
+          <button
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            onClick={() => {
+              setPickerRow(menu.row);
+              setMenu(null);
+            }}
+          >
+            <Heart size={13} /> 添加到播放列表…
+          </button>
+          <button
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-zinc-200 hover:bg-white/[0.08] text-left"
+            onClick={() => {
+              saveOnline({
+                kind: menu.row.kind,
+                id: menu.row.id,
+                name: menu.row.name,
+                artist: menu.row.artist,
+                album: menu.row.album,
+                cover: menu.row.cover,
+                durationMs: menu.row.durationMs,
+                mediaMid: menu.row.mediaMid,
+              });
+              setMenu(null);
+            }}
+          >
+            <Heart size={13} /> 收藏到“我喜欢”
+          </button>
         </div>
       )}
 
+      {/* 添加到播放列表弹窗 */}
+      <Modal
+        open={!!pickerRow}
+        onClose={() => setPickerRow(null)}
+        title="添加到播放列表"
+        width={380}
+      >
+        <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
+          {playlists.map((p) => (
+            <button
+              key={p.id}
+              className="h-10 px-3 rounded-lg text-left text-[13px] text-zinc-200 hover:bg-white/[0.07] flex items-center justify-between transition-colors"
+              onClick={async () => {
+                if (pickerRow) await addOnlineToPlaylist(p.id, pickerRow);
+                setPickerRow(null);
+              }}
+            >
+              <span className="truncate">{p.name}</span>
+              <span className="text-[11px] text-zinc-500">
+                {p.entries.length} 首
+              </span>
+            </button>
+          ))}
+          {!playlists.length && (
+            <div className="text-[12.5px] text-zinc-500 py-2">
+              还没有播放列表，在下方创建
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 mt-3">
+          <input
+            type="text"
+            value={newPlName}
+            onChange={(e) => setNewPlName(e.target.value)}
+            placeholder="新播放列表名称"
+            className="flex-1 h-9 rounded-lg bg-white/[0.06] border border-white/[0.09] px-3 text-[13px] focus:border-white/25 outline-none"
+          />
+          <button
+            className="btn-secondary"
+            onClick={async () => {
+              if (!newPlName.trim() || !pickerRow) return;
+              await createPlaylist(newPlName.trim());
+              const pls = useStore.getState().playlists;
+              const created = pls[pls.length - 1];
+              if (created && pickerRow)
+                await addOnlineToPlaylist(created.id, pickerRow);
+              setNewPlName("");
+              setPickerRow(null);
+            }}
+          >
+            创建并添加
+          </button>
+        </div>
+      </Modal>
+
+      {/* 导入网易云歌单弹窗 */}
+      <Modal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="导入网易云歌单"
+        width={400}
+      >
+        {importList === null ? (
+          <div className="flex items-center justify-center gap-2 text-[13px] text-zinc-400 py-6">
+            <Loader2 size={15} className="animate-spin" /> 获取中…
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5 max-h-[320px] overflow-y-auto">
+            {importList.map((p) => (
+              <button
+                key={p.id}
+                disabled={importing}
+                className="h-10 px-3 rounded-lg text-left text-[13px] text-zinc-200 hover:bg-white/[0.07] flex items-center justify-between transition-colors"
+                onClick={async () => {
+                  setImporting(true);
+                  await importNeteasePlaylist(p.id, p.name);
+                  setImporting(false);
+                  setImportOpen(false);
+                }}
+              >
+                <span className="truncate">{p.name}</span>
+                <span className="text-[11px] text-zinc-500 shrink-0 ml-3">
+                  {p.trackCount} 首
+                </span>
+              </button>
+            ))}
+            {!importList.length && (
+              <div className="text-[12.5px] text-zinc-500 py-2">账号下没有歌单</div>
+            )}
+          </div>
+        )}
+        <div className="text-[10.5px] text-[var(--ink-3)] mt-3 leading-relaxed">
+          导入的歌单以在线条目保存：播放时按账号权益实时获取播放链接，不占用本地磁盘。
+        </div>
+      </Modal>
+
+      {/* 扫码登录弹窗 */}
       <QrLoginModal source={qrSource} onClose={() => setQrSource(null)} />
     </div>
   );
@@ -564,7 +740,7 @@ function QrLoginModal({
           {status === "loading"
             ? "正在生成二维码…"
             : status === "waiting"
-              ? `打开${sourceName} App 扫一扫`
+              ? `打开${sourceName === "QQ 音乐" ? "QQ" : "网易云"} App 扫一扫`
               : status === "scanned"
                 ? "已在手机上确认，请在手机上点击登录"
                 : status === "expired"

@@ -13,10 +13,11 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { useMemo } from "react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import Slider from "./Slider";
-import { fmtTime } from "../utils";
+import { activeLyricText, fmtTime } from "../utils";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 
@@ -35,6 +36,8 @@ export default function PlayerBar() {
   const nowPlayingOpen = useStore((s) => s.nowPlayingOpen);
   const neteaseLiked = useStore((s) => s.neteaseLiked);
   const neteaseToggleLike = useStore((s) => s.neteaseToggleLike);
+  const lyrics = useStore((s) => s.lyrics);
+  const nowPlayingOpenFlag = useStore((s) => s.nowPlayingOpen);
   const togglePlay = useStore((s) => s.togglePlay);
   const next = useStore((s) => s.next);
   const prev = useStore((s) => s.prev);
@@ -49,6 +52,11 @@ export default function PlayerBar() {
 
   const total = dur || current?.durationMs || 0;
   const VolIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
+  // 播放栏歌词：当前行（未打开播放页时也加载并展示）
+  const activeLyric = useMemo(
+    () => (nowPlayingOpenFlag ? null : activeLyricText(lyrics, pos)),
+    [nowPlayingOpenFlag, lyrics, pos]
+  );
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-1">
@@ -88,12 +96,30 @@ export default function PlayerBar() {
                 </div>
               </button>
               <div className="min-w-0">
-                <div
-                  className="text-[13.5px] font-semibold text-[var(--ink)] truncate cursor-pointer hover:text-[var(--accent-strong)] transition-colors"
-                  onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
-                >
-                  {current.title}
-                </div>
+                {activeLyric ? (
+                  <div
+                    className="text-[13px] font-medium text-[var(--accent-strong)] cursor-pointer marquee-wrap"
+                    style={{ ["--dur" as string]: `${Math.max(10, activeLyric.length * 0.6)}s` }}
+                    onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
+                    title="点击展开播放页"
+                  >
+                    <span
+                      className={`marquee-inner ${activeLyric.length > 18 ? "" : "!animate-none"}`}
+                    >
+                      {activeLyric}
+                      <span className="inline-block w-12" />
+                      {activeLyric}
+                      <span className="inline-block w-12" />
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    className="text-[13.5px] font-semibold text-[var(--ink)] truncate cursor-pointer hover:text-[var(--accent-strong)] transition-colors"
+                    onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
+                  >
+                    {current.title}
+                  </div>
+                )}
                 <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
                   {current.artist}
                   {current.kind === "url" && (

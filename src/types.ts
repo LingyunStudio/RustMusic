@@ -27,10 +27,23 @@ export interface Folder {
   path: string;
 }
 
+export interface PlaylistEntryMeta {
+  rowid: number;
+  kind: "local" | "netease" | "qq";
+  trackId: number | null;
+  onlineId: string | null;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  duration: number;
+}
+
 export interface Playlist {
   id: number;
   name: string;
   trackIds: number[];
+  entries: PlaylistEntryMeta[];
   createdAt: number;
 }
 
@@ -70,6 +83,7 @@ export interface QqSong {
   singer: string;
   album: string;
   albumMid: string;
+  mediaMid: string;
   durationMs: number;
   vip: boolean;
 }
@@ -125,6 +139,13 @@ export interface SettingsPayload {
   speed: number;
   eqGains: number[];
   eqEnabled: boolean;
+  quality: string;
+}
+
+export interface UserPlaylistMeta {
+  id: number;
+  name: string;
+  trackCount: number;
 }
 
 export interface Toast {

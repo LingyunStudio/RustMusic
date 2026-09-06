@@ -1,3 +1,4 @@
+use std::io::Read;
 use serde_json::json;
 use lofty::prelude::*;
 use tauri::{AppHandle, State};
@@ -317,9 +318,10 @@ fn netease_cookie(state: &State<AppState>) -> Option<String> {
 pub async fn netease_search(
     state: State<'_, AppState>,
     keyword: String,
+    offset: Option<i64>,
 ) -> Result<crate::netease::NetSearchResult, String> {
     let music_u = netease_cookie(&state);
-    crate::netease::search(&keyword, 30, music_u.as_deref())
+    crate::netease::search(&keyword, 30, offset.unwrap_or(0), music_u.as_deref())
 }
 
 #[tauri::command]
@@ -329,7 +331,11 @@ pub async fn netease_play(
     track: NeteasePlayReq,
 ) -> Result<(), String> {
     let music_u = netease_cookie(&state);
-    let (url, _br) = crate::netease::song_url(track.id, music_u.as_deref())?
+    let quality = {
+        let conn = state.db.lock();
+        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+    };
+    let (url, _br, _ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
         .ok_or_else(|| {
             "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string()
         })?;
@@ -453,6 +459,8 @@ pub struct QqPlayReq {
     #[serde(default)]
     pub album_mid: String,
     #[serde(default)]
+    pub media_mid: String,
+    #[serde(default)]
     pub duration_ms: u64,
 }
 
@@ -471,8 +479,12 @@ fn qq_credential(state: &State<AppState>) -> Result<(String, String), String> {
 }
 
 #[tauri::command]
-pub async fn qq_search(keyword: String) -> Result<Vec<crate::qq::QqSong>, String> {
-    crate::qq::search(&keyword, 30)
+pub async fn qq_search(
+    keyword: String,
+    page: Option<i64>,
+) -> Result<serde_json::Value, String> {
+    let songs = crate::qq::search(&keyword, 30, page.unwrap_or(1))?;
+    Ok(json!({ "songs": songs }))
 }
 
 #[tauri::command]
@@ -481,7 +493,11 @@ pub async fn qq_play(
     track: QqPlayReq,
 ) -> Result<(), String> {
     let (musicid, musickey) = qq_credential(&state)?;
-    let url = crate::qq::song_url(&track.songmid, &musicid, &musickey)?;
+    let quality = {
+        let conn = state.db.lock();
+        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+    };
+    let url = crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality)?;
     let info = TrackInfo {
         id: None,
         kind: "qq".into(),
@@ -549,6 +565,302 @@ pub async fn qq_logout(state: State<'_, AppState>) -> Result<(), String> {
     db::set_setting(&conn, "qq_musicid", "");
     db::set_setting(&conn, "qq_musickey", "");
     db::set_setting(&conn, "qq_nickname", "");
+    Ok(())
+}
+
+// ---------- 在线歌曲收藏到本地 / 歌单导入 ----------
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineSaveReq {
+    pub kind: String, // netease | qq
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub cover_url: String,
+    #[serde(default)]
+    pub duration_ms: u64,
+    #[serde(default)]
+    pub media_mid: String,
+}
+
+fn save_dir(state: &State<AppState>) -> std::path::PathBuf {
+    let conn = state.db.lock();
+    let custom = db::get_setting(&conn, "save_dir").unwrap_or_default();
+    if custom.is_empty() {
+        state.app_data.join("在线音乐")
+    } else {
+        std::path::PathBuf::from(custom)
+    }
+}
+
+fn sanitize_filename(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// 收藏在线歌曲：取链接 → 下载 → 写标签 → 入库 → 加入“我喜欢”
+#[tauri::command]
+pub async fn online_save(
+    state: State<'_, AppState>,
+    req: OnlineSaveReq,
+) -> Result<i64, String> {
+    let title = req.title.trim().to_string();
+    if title.is_empty() {
+        return Err("歌曲标题为空".into());
+    }
+
+    // 1) 按当前音质取播放链接
+    let quality = {
+        let conn = state.db.lock();
+        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+    };
+    let (url, ext) = match req.kind.as_str() {
+        "netease" => {
+            let id: i64 = req.id.parse().map_err(|_| "网易云歌曲 ID 无效".to_string())?;
+            let music_u = netease_cookie(&state);
+            let (u, _br, ext) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
+                .ok_or("该歌曲暂无可播放链接")?;
+            (u, ext)
+        }
+        "qq" => {
+            let (musicid, musickey) = qq_credential(&state)?;
+            let u = crate::qq::song_url(
+                &req.id,
+                &req.media_mid,
+                &musicid,
+                &musickey,
+                &quality,
+            )?;
+            (u, "mp3".to_string())
+        }
+        _ => return Err("未知音源类型".into()),
+    };
+
+    // 2) 下载到保存目录
+    let dir = save_dir(&state);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建保存目录失败: {e}"))?;
+    let artist = sanitize_filename(&req.artist);
+    let name = format!(
+        "{} - {}.{}",
+        if artist.is_empty() { "Unknown" } else { &artist },
+        sanitize_filename(&title),
+        ext
+    );
+    let dest = dir.join(&name);
+    let mut file = std::fs::File::create(&dest).map_err(|e| format!("创建文件失败: {e}"))?;
+    let resp = http_get_for(&req.kind, &url)?;
+    std::io::copy(
+        &mut resp.take(128 * 1024 * 1024),
+        &mut file,
+    )
+    .map_err(|e| format!("下载失败: {e}"))?;
+    drop(file);
+
+    // 3) 写标签（失败静默）
+    write_tags(&dest, &title, &req.artist, &req.album, &req.cover_url);
+
+    // 4) 解析入库
+    let track = crate::library::parse_track(&dest, &state.app_data).ok_or("解析歌曲失败")?;
+    let id = {
+        let conn = state.db.lock();
+        db::upsert_track(&conn, &track);
+        let id = conn.last_insert_rowid();
+        db::like_track(&conn, id, true);
+        db::record_play(&conn, id);
+        let _ = db::add_folder(&conn, &dir.to_string_lossy());
+        id
+    };
+    Ok(id)
+}
+
+fn http_get_for(kind: &str, url: &str) -> Result<impl std::io::Read, String> {
+    match kind {
+        "qq" => Ok(crate::qq::http_agent()
+            .get(url)
+            .set("Referer", "https://y.qq.com/")
+            .set("User-Agent", crate::qq::UA)
+            .timeout(std::time::Duration::from_secs(30))
+            .call()
+            .map_err(|e| format!("下载失败: {e}"))?
+            .into_reader()),
+        _ => Ok(ureq::get(url)
+            .set("User-Agent", "Mozilla/5.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .call()
+            .map_err(|e| format!("下载失败: {e}"))?
+            .into_reader()),
+    }
+}
+
+/// 给下载的音频写标签（标题/艺术家/专辑/封面）
+fn write_tags(path: &std::path::Path, title: &str, artist: &str, album: &str, cover_url: &str) {
+    let _ = (|| -> Result<(), String> {
+        use lofty::prelude::*;
+        let mut tagged = lofty::read_from_path(path).map_err(|e| e.to_string())?;
+        let tag_type = tagged.file_type().primary_tag_type();
+        {
+            let tag = match tagged.primary_tag_mut() {
+                Some(t) => t,
+                None => {
+                    tagged.insert_tag(lofty::tag::Tag::new(tag_type));
+                    tagged.primary_tag_mut().ok_or("无主标签")?
+                }
+            };
+            tag.insert_text(lofty::tag::ItemKey::TrackTitle, title.to_string());
+            if !artist.is_empty() {
+                tag.insert_text(lofty::tag::ItemKey::TrackArtist, artist.to_string());
+            }
+            if !album.is_empty() {
+                tag.insert_text(lofty::tag::ItemKey::AlbumTitle, album.to_string());
+            }
+            if !cover_url.is_empty() {
+                if let Ok(resp) = ureq::get(cover_url)
+                    .set("User-Agent", "Mozilla/5.0")
+                    .timeout(std::time::Duration::from_secs(15))
+                    .call()
+                {
+                    let mut data = Vec::new();
+                    if resp.into_reader().read_to_end(&mut data).is_ok() && !data.is_empty() {
+                        let mime = if cover_url.contains(".png") {
+                            lofty::picture::MimeType::Png
+                        } else {
+                            lofty::picture::MimeType::Jpeg
+                        };
+                        let pic = lofty::picture::Picture::new_unchecked(
+                            lofty::picture::PictureType::CoverFront,
+                            Some(mime),
+                            None,
+                            data,
+                        );
+                        tag.push_picture(pic);
+                    }
+                }
+            }
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map_err(|e| e.to_string())?;
+        tagged
+            .save_to(&mut file, lofty::config::WriteOptions::default())
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+}
+
+#[tauri::command]
+pub async fn add_online_to_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    kind: String,
+    rid: String,
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    cover: Option<String>,
+    duration_ms: Option<i64>,
+    media_mid: Option<String>,
+    vip: Option<bool>,
+) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::upsert_online_track(
+        &conn,
+        &kind,
+        &rid,
+        &title,
+        &artist.unwrap_or_default(),
+        &album.unwrap_or_default(),
+        &cover.unwrap_or_default(),
+        duration_ms.unwrap_or(0),
+        &media_mid.unwrap_or_default(),
+        vip.unwrap_or(false),
+    );
+    db::add_online_to_playlist(&conn, playlist_id, &kind, &rid)
+}
+
+#[tauri::command]
+pub async fn remove_playlist_entry(state: State<'_, AppState>, rowid: i64) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::remove_playlist_entry(&conn, rowid);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn netease_user_playlists(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+    let (uid, music_u) = {
+        let conn = state.db.lock();
+        (
+            db::get_setting(&conn, "netease_uid").unwrap_or_default(),
+            db::get_setting(&conn, "netease_music_u").unwrap_or_default(),
+        )
+    };
+    if uid.is_empty() || music_u.is_empty() {
+        return Err("未登录网易云账号".into());
+    }
+    let uid: i64 = uid.parse().map_err(|_| "账号 ID 无效".to_string())?;
+    crate::netease::user_playlists(uid, &music_u)
+}
+
+/// 导入网易云歌单：创建本地播放列表并写入在线条目（播放时按权益取链接）
+#[tauri::command]
+pub async fn netease_import_playlist(
+    state: State<'_, AppState>,
+    pid: i64,
+) -> Result<i64, String> {
+    let music_u = {
+        let conn = state.db.lock();
+        db::get_setting(&conn, "netease_music_u").unwrap_or_default()
+    };
+    if music_u.is_empty() {
+        return Err("未登录网易云账号".into());
+    }
+    let songs = crate::netease::playlist_tracks(pid, &music_u)?;
+    let count = {
+        let conn = state.db.lock();
+        for t in &songs {
+            db::upsert_online_track(
+                &conn,
+                "netease",
+                &t.id.to_string(),
+                &t.name,
+                &t.artist_str(),
+                &t.album_name(),
+                &t.cover_url().unwrap_or_default(),
+                t.duration_ms(),
+                "",
+                t.fee == 1,
+            );
+            db::add_online_to_playlist(&conn, pid, "netease", &t.id.to_string());
+        }
+        songs.len() as i64
+    };
+    Ok(count)
+}
+
+#[tauri::command]
+pub async fn set_play_quality(state: State<'_, AppState>, quality: String) -> Result<(), String> {
+    if !matches!(quality.as_str(), "standard" | "high" | "lossless") {
+        return Err("无效的音质选项".into());
+    }
+    let conn = state.db.lock();
+    db::set_setting(&conn, "quality", &quality);
     Ok(())
 }
 
@@ -630,7 +942,14 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
     let eq_enabled = db::get_setting(&conn, "eq_enabled")
         .map(|s| s == "true")
         .unwrap_or(false);
-    Ok(SettingsPayload { volume, speed, eq_gains, eq_enabled })
+    let quality = db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string());
+    Ok(SettingsPayload {
+        volume,
+        speed,
+        eq_gains,
+        eq_enabled,
+        quality,
+    })
 }
 
 // ---------- 其他 ----------

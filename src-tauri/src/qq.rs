@@ -13,7 +13,7 @@ fn b64_encode(data: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(data)
 }
 
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+pub const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const TIMEOUT: Duration = Duration::from_secs(12);
 const GUID: &str = "2844095639";
 
@@ -37,7 +37,7 @@ fn system_proxy() -> Option<ureq::Proxy> {
 }
 
 /// QQ 系接口统一走系统代理（ptlogin2 登录网关直连会被拒绝）
-fn http_agent() -> &'static ureq::Agent {
+pub fn http_agent() -> &'static ureq::Agent {
     use std::sync::OnceLock;
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| match system_proxy() {
@@ -173,21 +173,24 @@ pub struct QqSong {
     pub singer: String,
     pub album: String,
     pub album_mid: String,
+    /// 媒体文件 mid（构造 vkey filename 用）
+    pub media_mid: String,
     pub duration_ms: u64,
     pub vip: bool,
 }
 
 // ---------- 搜索（匿名可用） ----------
 
-pub fn search(keyword: &str, limit: i64) -> Result<Vec<QqSong>, String> {
+pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, String> {
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return Ok(vec![]);
     }
     let url = format!(
-        "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?ct=24&qqmusic_ver=1298&remoteplace=txt.yqq.top&t=0&aggr=1&cr=1&w={}&format=json&n={}",
+        "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?ct=24&qqmusic_ver=1298&remoteplace=txt.yqq.top&t=0&aggr=1&cr=1&w={}&format=json&n={}&p={}",
         form_encode(keyword),
-        limit
+        limit,
+        page
     );
     let text = plain_get(&url, "https://y.qq.com/")?;
     let resp: serde_json::Value = serde_json::from_str(&text)
@@ -218,6 +221,7 @@ pub fn search(keyword: &str, limit: i64) -> Result<Vec<QqSong>, String> {
                 singer,
                 album: s.get("albumname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 album_mid: s.get("albummid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                media_mid: s.get("media_mid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 duration_ms: s.get("interval").and_then(|v| v.as_i64()).unwrap_or(0) as u64 * 1000,
                 vip: s
                     .pointer("/pay/payplay")
@@ -241,57 +245,105 @@ fn credential_cookie(musicid: &str, musickey: &str) -> String {
     )
 }
 
-/// 获取播放直链；失败（VIP/版权）返回 Err 带用户可读原因
-pub fn song_url(songmid: &str, musicid: &str, musickey: &str) -> Result<String, String> {
-    let payload = serde_json::json!({
-        "comm": {"ct": 19, "cv": 1859},
-        "req_1": {
-            "module": "music.vkey.GetVkeyServerBase",
-            "method": "CgiGetVkey",
-            "param": {
-                "guid": GUID,
-                "songmid": [songmid],
-                "songtype": [0],
-                "uin": musicid,
-                "loginflag": 1,
-                "platform": "20",
+/// 在 QQLogin 响应的任意层级查找同时含 musicid 与 musickey 的对象
+fn find_credential(v: &serde_json::Value) -> Option<(String, String)> {
+    if let Some(obj) = v.as_object() {
+        let get = |k: &str| -> Option<String> {
+            obj.get(k).and_then(|x| {
+                x.as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| x.as_i64().map(|n| n.to_string()))
+            })
+        };
+        if let (Some(id), Some(key)) = (get("musicid").or_else(|| get("str_musicid")), get("musickey")) {
+            if !id.is_empty() && !key.is_empty() {
+                return Some((id, key));
             }
         }
-    });
-    let resp = musicu_signed(
-        &payload,
-        Some(&credential_cookie(musicid, musickey)),
-    )?;
-    let code = resp
-        .pointer("/req_1/code")
-        .and_then(|c| c.as_i64())
-        .unwrap_or(0);
-    if code != 0 {
-        return Err(format!("获取播放链接失败（code {code}）"));
+        for (_, child) in obj {
+            if let Some(found) = find_credential(child) {
+                return Some(found);
+            }
+        }
     }
-    let purl = resp
-        .pointer("/req_1/data/midurlinfo/0/purl")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if purl.is_empty() {
-        return Err("该歌曲暂无可播放链接（可能需要 QQ 音乐 VIP 或版权受限）".into());
+    if let Some(arr) = v.as_array() {
+        for child in arr {
+            if let Some(found) = find_credential(child) {
+                return Some(found);
+            }
+        }
     }
-    if purl.starts_with("http") {
-        return Ok(purl.to_string());
-    }
-    let sip = resp
-        .pointer("/req_1/data/sip")
-        .and_then(|v| v.as_array())
-        .and_then(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str())
-                .find(|s| s.starts_with("http"))
-        })
-        .unwrap_or("http://ws.stream.qqmusic.qq.com/")
-        .to_string();
-    Ok(format!("{}{}", sip, purl))
+    None
 }
 
+/// 按音质请求播放直链，从所选音质逐级回退
+pub fn song_url(
+    songmid: &str,
+    media_mid: &str,
+    musicid: &str,
+    musickey: &str,
+    quality: &str,
+) -> Result<String, String> {
+    // 前缀：M500=128k M800=320k F000=flac；无 media_mid 时按官方规则用 songmid 拼接
+    let ladder: Vec<(&str, &str)> = match quality {
+        "lossless" => vec![("F000", "flac"), ("M800", "mp3"), ("M500", "mp3")],
+        "standard" => vec![("M500", "mp3")],
+        _ => vec![("M800", "mp3"), ("M500", "mp3")],
+    };
+    let mut last_resp = String::new();
+    for (prefix, ext) in ladder {
+        let file_base = if media_mid.is_empty() {
+            format!("{songmid}{songmid}")
+        } else {
+            format!("{media_mid}{songmid}")
+        };
+        let payload = serde_json::json!({
+            "comm": {"ct": 19, "cv": 1859},
+            "req_1": {
+                "module": "music.vkey.GetVkey",
+                "method": "UrlGetVkey",
+                "param": {
+                    "uin": musicid,
+                    "filename": [format!("{prefix}{file_base}.{ext}")],
+                    "guid": GUID,
+                    "songmid": [songmid],
+                    "songtype": [0],
+                    "ctx": 0,
+                }
+            }
+        });
+        let resp = musicu_signed(
+            &payload,
+            Some(&credential_cookie(musicid, musickey)),
+        )?;
+        let purl = resp
+            .pointer("/req_1/data/midurlinfo/0/purl")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !purl.is_empty() {
+            return Ok(if purl.starts_with("http") {
+                purl.to_string()
+            } else {
+                let sip = resp
+                    .pointer("/req_1/data/sip")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str())
+                            .find(|s| s.starts_with("http"))
+                    })
+                    .unwrap_or("http://ws.stream.qqmusic.qq.com/")
+                    .to_string();
+                format!("{}{}", sip, purl)
+            });
+        }
+        last_resp = serde_json::to_string(&resp).unwrap_or_default();
+    }
+    Err(format!(
+        "该歌曲暂无可播放链接（可能需要 QQ 音乐 VIP 或版权受限）| {}",
+        last_resp.chars().take(120).collect::<String>()
+    ))
+}
 // ---------- 歌词（匿名可用，返回 base64 编码的 LRC） ----------
 
 pub fn lyric(songmid: &str) -> Result<Option<String>, String> {
@@ -476,37 +528,60 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
         })?;
 
         // Step 3: QQLogin —— 用 code 换取播放凭证（musicid / musickey）
-        let payload = serde_json::json!({
-            "comm": {"tmeLoginType": 2},
-            "req_1": {
-                "module": "QQConnectLogin.LoginServer",
-                "method": "QQLogin",
-                "param": {"code": oauth_code}
+        // 先走签名通道（musics.fcg），失败再试明文通道（musicu.fcg）
+        let make_payload = || {
+            serde_json::json!({
+                "comm": {"tmeLoginType": 2},
+                "req_1": {
+                    "module": "QQConnectLogin.LoginServer",
+                    "method": "QQLogin",
+                    "param": {"code": oauth_code}
+                }
+            })
+        };
+        let mut raw_log = String::new();
+        let credential = {
+            let signed = musicu_signed(&make_payload(), None);
+            match signed {
+                Ok(ref v) => match find_credential(v) {
+                    Some(c) => Some(c),
+                    None => {
+                        raw_log = serde_json::to_string(v).unwrap_or_default();
+                        None
+                    }
+                },
+                Err(_) => None,
+            }
+        }
+        .or_else(|| {
+            let url = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+            let body = serde_json::to_string(&make_payload()).ok()?;
+            let text = ureq::post(url)
+                .set("Content-Type", "application/json")
+                .set("Referer", "https://y.qq.com/")
+                .set("User-Agent", UA)
+                .timeout(TIMEOUT)
+                .send_string(&body)
+                .ok()?
+                .into_string()
+                .ok()?;
+            let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+            match find_credential(&v) {
+                Some(c) => Some(c),
+                None => {
+                    raw_log = text;
+                    None
+                }
             }
         });
-        let resp = musicu_signed(&payload, None)?;
-        let top = &resp;
-        let data = resp.get("data").unwrap_or(&serde_json::Value::Null);
-        let pick_str = |base: &serde_json::Value, key: &str| -> Option<String> {
-            base.get(key)
-                .and_then(|v| {
-                    v.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| v.as_i64().map(|n| n.to_string()))
-                })
-                .filter(|s| !s.is_empty())
-        };
-        let musicid = pick_str(top, "musicid")
-            .or_else(|| pick_str(data, "musicid"))
-            .or_else(|| pick_str(top, "str_musicid"))
-            .or_else(|| pick_str(data, "str_musicid"))
-            .ok_or("登录响应缺少 musicid")?;
-        let musickey = pick_str(top, "musickey")
-            .or_else(|| pick_str(data, "musickey"))
-            .ok_or("登录响应缺少 musickey")?;
-        let nickname = pick_str(top, "nickname")
-            .or_else(|| pick_str(data, "nickname"))
-            .or_else(|| args.get(5).cloned());
+
+        let (musicid, musickey) = credential.ok_or_else(|| {
+            format!(
+                "登录响应缺少凭证 | {}",
+                raw_log.chars().take(200).collect::<String>()
+            )
+        })?;
+        let nickname = args.get(5).cloned();
 
         Ok(QqQrCheck {
             status: "success".into(),

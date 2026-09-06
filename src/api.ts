@@ -5,6 +5,7 @@ import type {
   NeteaseTrack,
   Playlist,
   QqSong,
+  UserPlaylistMeta,
   PlayState,
   ScanState,
   SettingsPayload,
@@ -35,8 +36,11 @@ export const api = {
   addSource: (url: string, title?: string) =>
     invoke<number>("add_source", { url, title: title ?? "" }),
   deleteSource: (id: number) => invoke<void>("delete_source", { id }),
-  neteaseSearch: (keyword: string) =>
-    invoke<{ total: number; songs: NeteaseTrack[] }>("netease_search", { keyword }),
+  neteaseSearch: (keyword: string, offset: number) =>
+    invoke<{ total: number; songs: NeteaseTrack[] }>("netease_search", {
+      keyword,
+      offset,
+    }),
   neteasePlay: (track: {
     id: number;
     title: string;
@@ -50,14 +54,15 @@ export const api = {
   neteaseQrCheck: (key: string) =>
     invoke<{ status: string; nickname?: string }>("netease_qr_check", { key }),
   neteaseLyric: (id: number) => invoke<LyricsPayload>("netease_lyric", { id }),
-  qqSearch: (keyword: string) =>
-    invoke<QqSong[]>("qq_search", { keyword }),
+  qqSearch: (keyword: string, page: number) =>
+    invoke<{ songs: QqSong[] }>("qq_search", { keyword, page }),
   qqPlay: (track: {
     songmid: string;
     title: string;
     artist: string;
     album: string;
     albumMid: string;
+    mediaMid: string;
     durationMs: number;
   }) => invoke<void>("qq_play", { track }),
   qqLyric: (songmid: string) => invoke<LyricsPayload>("qq_lyric", { songmid }),
@@ -70,6 +75,35 @@ export const api = {
   neteaseLike: (id: number, like: boolean) =>
     invoke<void>("netease_like", { id, like }),
   neteaseLogout: () => invoke<void>("netease_logout"),
+  onlineSave: (req: {
+    kind: string;
+    id: string;
+    title: string;
+    artist: string;
+    album: string;
+    coverUrl: string;
+    durationMs: number;
+    mediaMid: string;
+  }) => invoke<number>("online_save", { req }),
+  addOnlineToPlaylist: (req: {
+    playlistId: number;
+    kind: string;
+    rid: string;
+    title: string;
+    artist: string;
+    album: string;
+    cover: string;
+    durationMs: number;
+    mediaMid: string;
+    vip: boolean;
+  }) => invoke<void>("add_online_to_playlist", req),
+  removePlaylistEntry: (rowid: number) =>
+    invoke<void>("remove_playlist_entry", { rowid }),
+  neteaseUserPlaylists: () =>
+    invoke<UserPlaylistMeta[]>("netease_user_playlists"),
+  neteaseImportPlaylist: (pid: number) =>
+    invoke<number>("netease_import_playlist", { pid }),
+  setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),
   playPause: () => invoke<void>("play_pause"),

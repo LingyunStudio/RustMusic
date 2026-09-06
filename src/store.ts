@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api, listenEvent, type ListenerUnbind } from "./api";
 import type {
   CurrentTrack,
+  PlaylistEntryMeta,
   DownloadState,
   Folder,
   LyricsPayload,
@@ -66,6 +67,10 @@ interface Store {
   qqLoggedIn: boolean;
   qqNickname: string;
   qqCache: Record<string, QqSong>;
+
+  quality: string;
+  savedOnline: Record<string, boolean>;
+  loadMoreLock: boolean;
   neteaseLiked: Record<number, boolean>;
 
   init(): Promise<void>;
@@ -84,6 +89,8 @@ interface Store {
   playTracks(tracks: TrackMeta[], idx: number): void;
   playSourceItem(s: SourceItem): void;
   playNetease(list: NeteaseTrack[], idx: number): void;
+  playQq(list: QqSong[], idx: number): void;
+  playEntries(entries: PlaylistEntryMeta[], idx: number): void;
   playQueueIndex(i: number): void;
   togglePlay(): void;
   next(auto?: boolean): void;
@@ -115,18 +122,46 @@ interface Store {
   setEq(gains: number[], enabled: boolean): void;
   clearCache(): Promise<void>;
 
-  neteaseSearch(kw: string): Promise<void>;
+  neteaseSearch(kw: string, append?: boolean): Promise<void>;
   neteaseRefreshStatus(): Promise<void>;
   neteaseSetLogin(loggedIn: boolean, nickname: string): void;
   neteaseSyncLikes(): Promise<void>;
   neteaseToggleLike(id: number): void;
   neteaseLogout(): Promise<void>;
 
-  qqSearch(kw: string): Promise<void>;
+  qqSearch(kw: string, append?: boolean): Promise<void>;
   qqRefreshStatus(): Promise<void>;
   qqSetLogin(loggedIn: boolean, nickname: string): void;
   qqLogout(): Promise<void>;
   playQq(list: QqSong[], idx: number): void;
+
+  setQuality(q: string): void;
+  saveOnline(row: {
+    kind: string;
+    id: string | number;
+    name: string;
+    artist: string;
+    album: string;
+    cover: string;
+    durationMs: number;
+    mediaMid?: string;
+  }): Promise<void>;
+  addOnlineToPlaylist(
+    pid: number,
+    row: {
+      kind: string;
+      id: string | number;
+      name: string;
+      artist: string;
+      album: string;
+      cover: string;
+      durationMs: number;
+      mediaMid?: string;
+      vip?: boolean;
+    }
+  ): Promise<void>;
+  removePlaylistEntryRow(rowid: number): Promise<void>;
+  importNeteasePlaylist(pid: number, name: string): Promise<void>;
 
   loadLyricsByKey(key: string): Promise<void>;
   loadLyrics(trackId: number): Promise<void>;
@@ -184,6 +219,10 @@ export const useStore = create<Store>((set, get) => ({
   qqLoggedIn: false,
   qqNickname: "",
   qqCache: {},
+
+  quality: "high",
+  savedOnline: {},
+  loadMoreLock: false,
   neteaseLiked: {},
 
   // ---------- 初始化 ----------
@@ -216,6 +255,16 @@ export const useStore = create<Store>((set, get) => ({
           pos: 0,
         });
         if (!p.playing) set({ pos: get().pos });
+        // 自动加载当前曲目的歌词（播放栏滚动展示用）
+        const key =
+          p.kind === "track" && p.id != null
+            ? `track-${p.id}`
+            : p.kind === "netease" && p.nid != null
+              ? `net-${p.nid}`
+              : p.kind === "qq" && p.qid != null
+                ? `qq-${p.qid}`
+                : null;
+        if (key) get().loadLyricsByKey(key);
       })
     );
 
@@ -294,6 +343,7 @@ export const useStore = create<Store>((set, get) => ({
         neteaseNickname: neteaseStatus.nickname,
         qqLoggedIn: qqStatus.loggedIn,
         qqNickname: qqStatus.nickname,
+        quality: settings.quality,
         ready: true,
       });
       if (neteaseStatus.loggedIn) get().neteaseSyncLikes();
@@ -396,6 +446,49 @@ export const useStore = create<Store>((set, get) => ({
       .catch((e) => get().toast(`播放音源失败：${e}`, "error"));
   },
 
+  playEntries(entries: PlaylistEntryMeta[], idx: number) {
+    const queue: QueueItem[] = [];
+    const neteaseCache = { ...get().neteaseCache };
+    const qqCache = { ...get().qqCache };
+    for (const e of entries) {
+      if (e.kind === "local" && e.trackId != null) {
+        queue.push({ kind: "track", id: e.trackId });
+      } else if (e.kind === "netease" && e.onlineId) {
+        const idNum = Number(e.onlineId);
+        neteaseCache[idNum] = {
+          id: idNum,
+          name: e.title,
+          ar: [{ name: e.artist }],
+          al: { name: e.album, picUrl: e.cover },
+          dt: Math.round(e.duration * 1000),
+          fee: 0,
+        };
+        queue.push({ kind: "netease", id: idNum });
+      } else if (e.kind === "qq" && e.onlineId) {
+        qqCache[e.onlineId] = {
+          id: e.onlineId,
+          name: e.title,
+          singer: e.artist,
+          album: e.album,
+          albumMid: "",
+          mediaMid: "",
+          durationMs: Math.round(e.duration * 1000),
+          vip: false,
+        };
+        queue.push({ kind: "qq", id: e.onlineId });
+      }
+    }
+    const target = Math.max(0, Math.min(idx, queue.length - 1));
+    set((s) => ({
+      neteaseCache,
+      qqCache,
+      queue,
+      qIndex: target,
+      history: [...s.history.slice(-50), s.qIndex],
+    }));
+    if (queue.length) get().playQueueIndex(target);
+  },
+
   playQueueIndex(i) {
     const { queue } = get();
     const item = queue[i];
@@ -431,6 +524,7 @@ export const useStore = create<Store>((set, get) => ({
           artist: t.singer,
           album: t.album,
           albumMid: t.albumMid,
+          mediaMid: t.mediaMid,
           durationMs: t.durationMs,
         })
         .catch((e) => get().toast(`播放失败：${e}`, "error"));
@@ -706,15 +800,21 @@ export const useStore = create<Store>((set, get) => ({
     get().playQueueIndex(target);
   },
 
-  async qqSearch(kw) {
+  async qqSearch(kw, append = false) {
     const keyword = kw.trim();
     if (!keyword) return;
+    if (append && get().loadMoreLock) return;
     set({ qqSearching: true, qqSearched: true });
     try {
-      const songs = await api.qqSearch(keyword);
+      const page = append ? Math.floor(get().qqResults.length / 30) + 1 : 1;
+      const r = await api.qqSearch(keyword, page);
       const cache = { ...get().qqCache };
-      for (const t of songs) cache[t.id] = t;
-      set({ qqResults: songs, qqSearching: false, qqCache: cache });
+      for (const t of r.songs) cache[t.id] = t;
+      set((s) => ({
+        qqResults: append ? [...s.qqResults, ...r.songs] : r.songs,
+        qqSearching: false,
+        qqCache: cache,
+      }));
     } catch (e) {
       set({ qqSearching: false });
       get().toast(String(e), "error");
@@ -742,20 +842,94 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  async neteaseSearch(kw) {
+  setQuality(q) {
+    set({ quality: q });
+    api.setPlayQuality(q).catch((e) => get().toast(String(e), "error"));
+  },
+
+  async saveOnline(row) {
+    const key = `${row.kind}-${row.id}`;
+    try {
+      const newId = await api.onlineSave({
+        kind: row.kind,
+        id: String(row.id),
+        title: row.name,
+        artist: row.artist,
+        album: row.album,
+        coverUrl: row.cover,
+        durationMs: row.durationMs,
+        mediaMid: row.mediaMid ?? "",
+      });
+      set((s) => ({ savedOnline: { ...s.savedOnline, [key]: true } }));
+      await get().refreshTracks();
+      const t = get().tracks.find((x) => x.id === newId);
+      if (t && !t.liked) get().toggleLike(newId);
+      get().toast(`已收藏到“我喜欢”（已下载到本地）`, "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async addOnlineToPlaylist(pid, row) {
+    try {
+      await api.addOnlineToPlaylist({
+        playlistId: pid,
+        kind: row.kind,
+        rid: String(row.id),
+        title: row.name,
+        artist: row.artist,
+        album: row.album,
+        cover: row.cover,
+        durationMs: row.durationMs,
+        mediaMid: row.mediaMid ?? "",
+        vip: row.vip ?? false,
+      });
+      await get().refreshPlaylists();
+      const pl = get().playlists.find((p) => p.id === pid);
+      get().toast(`已添加到「${pl?.name ?? "播放列表"}」`, "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async removePlaylistEntryRow(rowid) {
+    try {
+      await api.removePlaylistEntry(rowid);
+      await get().refreshPlaylists();
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async importNeteasePlaylist(pid, name) {
+    try {
+      await get().createPlaylist(name);
+      const pls = get().playlists;
+      const created = pls[pls.length - 1];
+      if (!created) throw new Error("创建播放列表失败");
+      const n = await api.neteaseImportPlaylist(created.id);
+      await get().refreshPlaylists();
+      get().toast(`已导入「${name}」${n} 首（在线播放，按账号权益）`, "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async neteaseSearch(kw, append = false) {
     const keyword = kw.trim();
     if (!keyword) return;
     set({ neteaseSearching: true, neteaseSearched: true });
     try {
-      const r = await api.neteaseSearch(keyword);
+      const offset = append ? get().neteaseResults.length : 0;
+      const r = await api.neteaseSearch(keyword, offset);
       const cache = { ...get().neteaseCache };
       for (const t of r.songs) cache[t.id] = t;
-      set({
-        neteaseResults: r.songs,
+      set((s) => ({
+        neteaseResults: append ? [...s.neteaseResults, ...r.songs] : r.songs,
         neteaseTotal: r.total,
         neteaseSearching: false,
         neteaseCache: cache,
-      });
+      }));
     } catch (e) {
       set({ neteaseSearching: false });
       get().toast(String(e), "error");
