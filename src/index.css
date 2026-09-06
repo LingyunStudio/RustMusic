@@ -159,14 +159,19 @@ textarea {
 
 /* 播放页背景渐变：色相持续流动 + 缓慢旋转 */
 @keyframes hueFlow {
-  0% { filter: blur(110px) saturate(1.25) hue-rotate(0deg); }
-  50% { filter: blur(110px) saturate(1.45) hue-rotate(60deg); }
-  100% { filter: blur(110px) saturate(1.25) hue-rotate(360deg); }
+  0% { filter: blur(110px) saturate(1.3) hue-rotate(0deg); }
+  100% { filter: blur(110px) saturate(1.3) hue-rotate(360deg); }
 }
 
 @keyframes slowSpin {
-  from { transform: rotate(0deg) scale(1.05); }
-  to { transform: rotate(360deg) scale(1.05); }
+  from { transform: rotate(0deg) scale(1.18); }
+  to { transform: rotate(360deg) scale(1.18); }
+}
+
+/* hueFlow 与 slowSpin 同层叠加，will-change 保证合成器独立执行 */
+.dynamic-gradient-layer {
+  will-change: transform, filter;
+  transform-origin: center;
 }
 
 /* 播放页封面取色渐变光斑缓慢漂移呼吸 */

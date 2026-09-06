@@ -97,22 +97,25 @@ export default function NowPlaying() {
     <div className="absolute inset-0 z-40 anim-np overflow-hidden">
       {/* 背景：封面取色的流动渐变（色相旋转 + 光斑漂移） */}
       <div className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute inset-0 transition-colors duration-1000"
-          style={{
-            background:
-              "linear-gradient(180deg, var(--backdrop-1) 0%, var(--backdrop-2) 55%, var(--bg) 100%)",
-          }}
-        />
+        {palette.length < 2 && (
+          <div
+            className="absolute inset-0 transition-colors duration-1000"
+            style={{
+              background:
+                "linear-gradient(180deg, var(--backdrop-1) 0%, var(--backdrop-2) 55%, var(--bg) 100%)",
+            }}
+          />
+        )}
         {palette.length >= 2 && (
           <>
-            {/* 大对流渐变层：颜色持续旋转流动 */}
+            {/* 大对流渐变层：颜色持续旋转流动（占满背景、高不透明度） */}
             <div
-              className="absolute -inset-[30%]"
+              className="absolute -inset-[25%] dynamic-gradient-layer"
               style={{
                 background: `conic-gradient(from 0deg at 30% 35%, ${palette[0]}, ${palette[1] ?? palette[0]}, ${palette[2] ?? palette[0]}, ${palette[3] ?? palette[1] ?? palette[0]}, ${palette[0]})`,
-                opacity: 0.5,
-                animation: "hueFlow 30s linear infinite, slowSpin 46s linear infinite",
+                opacity: 0.85,
+                animation:
+                  "hueFlow 24s linear infinite, slowSpin 40s linear infinite",
               }}
             />
             {/* 双光斑漂移层 */}
@@ -286,7 +289,7 @@ export default function NowPlaying() {
                 className={`px-4 py-[10px] text-center cursor-pointer transition-all duration-300 rounded-2xl ${
                   i === activeIdx
                     ? "text-[var(--accent-strong)] text-[24px] font-bold scale-[1.02]"
-                    : "text-[rgba(243,233,216,0.4)] text-[19px] hover:text-[var(--ink-2)]"
+                    : "text-[var(--ink-3)] opacity-80 text-[19px] hover:text-[var(--ink-2)] hover:opacity-100"
                 }`}
                 style={{ transformOrigin: "center" }}
               >

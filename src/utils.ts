@@ -115,9 +115,13 @@ export async function extractPalette(url: string, count = 4): Promise<string[]> 
           h *= 60;
           if (h < 0) h += 360;
         }
-        // hsl 字符串：hue-rotate 动画可平滑旋转色相
-        return `hsl(${Math.round(h)}, ${Math.round(s2 * 100)}%, ${Math.round(l * 100)}%)`;
+        // 输出归一化 hsl：强制增饱和、亮度压低（浅色封面也产出浓艳色）
+        s2 = Math.min(1, Math.max(s2, 0.6) * 1.2); // 饱和度至少 60%
+        const lOut = Math.min(0.5, Math.max(l * 0.7, 0.32)); // 亮度 32%–50%
+        return `hsl(${Math.round(h)}, ${Math.round(s2 * 100)}%, ${Math.round(lOut * 100)}%)`;
       });
+    if (!colors.length) return [];
+    // 全部色彩作为底色还是太浅时（如纯白封面）：注入互补的浓色作伴
     return colors;
   } catch {
     return [];
