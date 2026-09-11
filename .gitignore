@@ -1,10 +1,30 @@
+# Dependencies
 node_modules/
+
+# Frontend build output
 dist/
+
+# Rust / Tauri
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# Installer build output
+installer/output/
+
+# Icon tool transient previews
+scripts/icon-tool/preview-*.png
+
+# Logs
 *.log
+
+# OS / editor
 .DS_Store
 Thumbs.db
-testdata/
-_qqapi/
+desktop.ini
+
+# Scratch & debug dumps（根目录下划线开头的临时文件 / 参考资料目录）
+/_*
 src-tauri/_*.rs
+
+# Test audio files
+/testdata/
