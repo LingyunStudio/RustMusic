@@ -96,3 +96,11 @@ npm run tauri build  # 构建发布版可执行文件（前端资源内嵌进 ex
 - [ ] 歌词翻译 / 双语歌词
 - [ ] 音频转码 / 标签批量编辑
 - [ ] macOS / Linux 构建
+
+## 📄 许可证
+
+本项目基于 [Apache-2.0](LICENSE) 许可证发布。
+
+其中 `src-tauri/src/qrc.rs`（QQ QRC 歌词解密）来自开源项目
+[navidrome-lyrics-plugin](https://github.com/J0R6IT0/navidrome-lyrics-plugin)（MIT），
+按 Apache-2.0 修改后并入，文件头部保留原始版权声明。
