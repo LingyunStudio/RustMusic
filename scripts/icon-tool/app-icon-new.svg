@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- 中性暗色底（彩虹需要中立背景，暖棕会与绿/蓝撞色） -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262230"/>
+      <stop offset="1" stop-color="#120f16"/>
+    </linearGradient>
+    <!-- 柔和氛围光 -->
+    <radialGradient id="glow" cx="0.5" cy="0.52" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="0.65" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 左上柔和高光 -->
+    <radialGradient id="gloss" cx="0.22" cy="0.16" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 彩虹六色：每根条上亮下沉的同色系渐变 -->
+    <linearGradient id="b1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff9a8a"/>
+      <stop offset="1" stop-color="#f0563f"/>
+    </linearGradient>
+    <linearGradient id="b2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb45e"/>
+      <stop offset="1" stop-color="#f07f1e"/>
+    </linearGradient>
+    <linearGradient id="b3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#f0b429"/>
+    </linearGradient>
+    <linearGradient id="b4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fd88f"/>
+      <stop offset="1" stop-color="#2f9e5f"/>
+    </linearGradient>
+    <linearGradient id="b5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ab3f0"/>
+      <stop offset="1" stop-color="#2f6fd4"/>
+    </linearGradient>
+    <linearGradient id="b6" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b39bf0"/>
+      <stop offset="1" stop-color="#7d55d4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 底：超圆角方形（92% 占宽，圆角 26%） -->
+  <rect x="41" y="41" width="942" height="942" rx="245" fill="url(#bg)"/>
+  <circle cx="512" cy="532" r="452" fill="url(#glow)"/>
+  <rect x="41" y="41" width="942" height="942" rx="245" fill="url(#gloss)"/>
+  <rect x="41" y="41" width="942" height="942" rx="245" fill="none"
+        stroke="#ffffff" stroke-opacity="0.12" stroke-width="5"/>
+
+  <!-- 声波律动条：6 根圆头柱 = 彩虹六色，中间最高（呼应 10 段均衡器） -->
+  <g>
+    <rect x="230" y="412" width="64" height="200" rx="32" fill="url(#b1)"/>
+    <rect x="330" y="357" width="64" height="310" rx="32" fill="url(#b2)"/>
+    <rect x="430" y="292" width="64" height="440" rx="32" fill="url(#b3)"/>
+    <rect x="530" y="297" width="64" height="430" rx="32" fill="url(#b4)"/>
+    <rect x="630" y="362" width="64" height="300" rx="32" fill="url(#b5)"/>
+    <rect x="730" y="417" width="64" height="190" rx="32" fill="url(#b6)"/>
+  </g>
+</svg>
