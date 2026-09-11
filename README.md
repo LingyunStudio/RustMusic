@@ -51,7 +51,7 @@
 │   ├── store.ts             # Zustand 状态（队列与播放逻辑在前端编排）
 │   └── api.ts               # Tauri invoke / 事件封装
 ├── scripts/icon-tool/       # 图标生成工具（SVG 源文件 → 母图 → 全平台图标）
-├── installer/RustMusic.iss  # Inno Setup 安装包脚本（NSIS 之外的备选方案）
+├── installer/               # Windows 打包：Inno Setup 脚本 + 一键打包脚本
 └── src-tauri/               # Rust 后端
     └── src/
         ├── engine.rs        # 音频引擎：rodio Sink、解码、在线源下载缓存
@@ -73,7 +73,7 @@
 ```bash
 npm install          # 安装前端依赖
 npm run tauri dev    # 开发模式（热更新）
-npm run tauri build  # 发布构建（NSIS 安装包，输出于 src-tauri/target/release/bundle）
+npm run tauri build  # 构建发布版可执行文件（前端资源内嵌进 exe，无打包步骤）
 ```
 
 要求：Rust (MSVC) 1.77+、Node 18+、WebView2 Runtime（Win10/11 通常自带）。
@@ -83,7 +83,8 @@ npm run tauri build  # 发布构建（NSIS 安装包，输出于 src-tauri/targe
 - 修改应用图标：编辑 `scripts/icon-tool/app-icon-new.svg`，然后运行
   `node scripts/icon-tool/render.js && npm run tauri icon scripts/icon-tool/icon-1024.png`
   重新生成全平台图标
-- 需要 Inno Setup 安装包时，用 `installer/RustMusic.iss` 编译（输出于 `installer/output/`）
+- Windows 安装包：`powershell -ExecutionPolicy Bypass -File installer\build.ps1`
+  （Inno Setup 编译，输出于 `installer/output/`；加 `-SkipBuild` 可跳过构建直接用现有产物打包）
 
 ## ⚖️ 音源与版权
 

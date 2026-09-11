@@ -1,6 +1,6 @@
 ﻿; RustMusic Windows 安装包脚本（Inno Setup 6）
-; 使用前先构建产物: npm run tauri build -- --no-bundle
-; 编译: "D:\InnoSetup6\ISCC.exe" installer\RustMusic.iss
+; 一键打包: powershell -ExecutionPolicy Bypass -File installer\build.ps1
+;          （等价于: npm run tauri build → 本脚本编译）
 ; 输出: installer\output\RustMusic_<版本>_x64-setup.exe
 
 #define MyAppName "RustMusic"

@@ -37,13 +37,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
-    "windows": {
-      "nsis": {
-        "languages": ["SimpChinese"],
-        "displayLanguageSelector": false
-      }
-    }
+    "targets": [],
+    "icon": ["icons/icon.ico", "icons/icon.png"]
   }
 }
