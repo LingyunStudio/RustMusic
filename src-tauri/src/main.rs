@@ -9,6 +9,7 @@ mod lyrics;
 mod models;
 mod netease;
 mod qq;
+mod qrc;
 mod smtc;
 
 use std::sync::atomic::Ordering;
@@ -30,6 +31,53 @@ fn show_main(app: &AppHandle) {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
+    }
+}
+
+/// 监听系统默认输出设备变化（耳机插入/拔出、切换默认设备）：
+/// 用户未固定设备时自动重建输出流跟到新默认设备，并通知前端刷新设置页。
+/// cpal/Windows 无设备变更回调，用轮询实现（2s 间隔，仅查名字开销可忽略）。
+fn device_watcher(app: AppHandle) {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    let eng = {
+        let st = app.state::<AppState>();
+        let e = st.engine.lock().clone();
+        e
+    };
+    let mut last_default: String = rodio::cpal::default_host()
+        .default_output_device()
+        .and_then(|d| d.name().ok())
+        .unwrap_or_default();
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let now_default: String = rodio::cpal::default_host()
+            .default_output_device()
+            .and_then(|d| d.name().ok())
+            .unwrap_or_default();
+        if now_default == last_default || now_default.is_empty() {
+            continue;
+        }
+        last_default = now_default.clone();
+        // 用户固定了设备（且该设备仍存在）时不打扰；跟随系统则自动切换
+        if let Some(pref) = eng.device_preference() {
+            let still_there = rodio::cpal::default_host()
+                .output_devices()
+                .map(|mut ds| {
+                    ds.any(|d| d.name().ok().as_deref() == Some(pref.as_str()))
+                })
+                .unwrap_or(false);
+            if still_there {
+                continue;
+            }
+            eprintln!("[engine] 固定设备「{pref}」已不存在，跟随系统默认");
+        }
+        eprintln!("[engine] 默认输出设备变更 → 切到 {now_default}");
+        if eng.switch_output_device(None).is_ok() {
+            let _ = app.emit(
+                "device://changed",
+                serde_json::json!({ "current": eng.current_device_name() }),
+            );
+        }
     }
 }
 
@@ -85,6 +133,7 @@ fn monitor(app: AppHandle) {
     };
     let mut was_active = false;
     let mut last_pos_emit = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    let mut last_smtc = std::time::Instant::now() - std::time::Duration::from_secs(1);
 
     let mut diag = 0u32;
     loop {
@@ -104,31 +153,67 @@ fn monitor(app: AppHandle) {
             );
         }
 
-        if active && !paused && last_pos_emit.elapsed() >= std::time::Duration::from_millis(250) {
-            last_pos_emit = std::time::Instant::now();
-            let _ = app.emit(
-                "player://pos",
-                serde_json::json!({
-                    "pos": eng.pos_ms.load(Ordering::Relaxed),
-                    "dur": eng.dur_ms.load(Ordering::Relaxed),
-                }),
-            );
+        if active && !paused {
+            if last_pos_emit.elapsed() >= std::time::Duration::from_millis(250) {
+                last_pos_emit = std::time::Instant::now();
+                let _ = app.emit(
+                    "player://pos",
+                    serde_json::json!({
+                        "pos": eng.pos_ms.load(Ordering::Relaxed),
+                        "dur": eng.dur_ms.load(Ordering::Relaxed),
+                    }),
+                );
+            }
+            // 同步系统媒体浮窗（SMTC）进度，每秒刷新一次
+            if last_smtc.elapsed() >= std::time::Duration::from_secs(1) {
+                last_smtc = std::time::Instant::now();
+                eng.notify_smtc_pos();
+            }
         }
 
-        // 一首曲目自然播完（非暂停、非手动停止；FLAC 重建期间跳过）
-        if eng.rebuilding.load(Ordering::Relaxed) {
-            was_active = true;
-        }
-        if was_active && !active && !paused && !eng.stopped.load(Ordering::Relaxed) {
+        // 一首曲目自然播完（非暂停、非手动停止；FLAC 重建 / 换曲瞬间 sink 短暂为空，跳过）
+        let rebuilding = eng.rebuilding.load(Ordering::Relaxed);
+        let switching = eng.switching.load(Ordering::Relaxed);
+        if was_active
+            && !active
+            && !paused
+            && !eng.stopped.load(Ordering::Relaxed)
+            && !rebuilding
+            && !switching
+        {
             let _ = app.emit("player://ended", serde_json::json!({}));
         }
-        was_active = active;
+        was_active = active || rebuilding || switching;
     }
 }
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            // 主窗口点关闭：按用户设置决定隐藏到托盘（默认）或退出应用。
+            // 只拦主窗口——桌面歌词窗口的关闭是正常功能（先存几何再关），
+            // 退出路径（托盘退出）走的 app.exit，不触发 CloseRequested。
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let app = window.app_handle();
+                    let action = {
+                        let st = app.state::<AppState>();
+                        let conn = st.db.lock();
+                        db::get_setting(&conn, "close_action").unwrap_or_else(|| "tray".into())
+                    };
+                    if action == "tray" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    } else {
+                        // exit：显式退出——托盘图标存在时默认关闭可能仅移除窗口，
+                        // 进程会以无窗口状态残留在托盘
+                        api.prevent_close();
+                        app.exit(0);
+                    }
+                }
+            }
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             let app_data = handle
@@ -165,23 +250,44 @@ fn main() {
             let eq = Arc::new(eq::EqShared::new(eq_gains, eq_enabled));
 
             let smtc_tx = smtc::spawn(handle.clone());
+            let cache_limit: u64 = db::get_setting(&conn, "cache_limit")
+                .and_then(|v| v.parse().ok())
+                // 默认 2GB：无损音质单曲可达几十 MB，无上限会无限膨胀
+                .unwrap_or(2 * 1024 * 1024 * 1024);
             let eng = engine::Engine::new(
                 handle.clone(),
                 &app_data,
                 volume,
                 speed,
                 eq,
+                cache_limit,
                 smtc_tx,
             )?;
+            let eng = Arc::new(eng);
+
+            // 恢复保存的输出设备偏好（空 = 跟随系统默认）
+            {
+                let pref = db::get_setting(&conn, "output_device")
+                    .filter(|s| !s.is_empty());
+                if let Some(name) = pref {
+                    if let Err(e) = eng.switch_output_device(Some(&name)) {
+                        // 设备已不存在：回落默认并在日志说明
+                        eprintln!("[engine] 恢复输出设备「{name}」失败: {e}");
+                    }
+                }
+            }
 
             app.manage(AppState {
                 db: Mutex::new(conn),
-                engine: Mutex::new(Arc::new(eng)),
+                engine: Mutex::new(eng),
                 app_data: app_data.clone(),
             });
 
             let mhandle = handle.clone();
             std::thread::spawn(move || monitor(mhandle));
+
+            let dwhandle = handle.clone();
+            std::thread::spawn(move || device_watcher(dwhandle));
 
             setup_tray(&handle)?;
             Ok(())
@@ -192,6 +298,9 @@ fn main() {
             commands::add_folder,
             commands::remove_folder,
             commands::rescan,
+            commands::open_folder,
+            commands::list_output_devices,
+            commands::set_output_device,
             commands::drop_paths,
             commands::get_lyrics,
             commands::like_track,
@@ -225,15 +334,20 @@ fn main() {
             commands::like_online,
             commands::download_online,
             commands::liked_online_list,
+            commands::recent_online_list,
             commands::save_dir_get,
             commands::save_dir_set,
             commands::add_online_to_playlist,
             commands::remove_playlist_entry,
+            commands::save_manual_order,
+            commands::get_manual_order,
+            commands::reorder_playlist,
             commands::netease_user_playlists,
             commands::netease_import_playlist,
             commands::qq_user_playlists,
             commands::qq_import_playlist,
             commands::set_play_quality,
+            commands::set_close_action,
             commands::extract_cover_palette,
             commands::play_pause,
             commands::pause,
@@ -245,7 +359,12 @@ fn main() {
             commands::set_eq,
             commands::get_settings,
             commands::clear_cache,
+            commands::cache_stats,
+            commands::set_cache_limit,
             commands::get_app_info,
+            commands::desktop_lyrics_open,
+            commands::desktop_lyrics_close,
+            commands::desktop_lyrics_unlock,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

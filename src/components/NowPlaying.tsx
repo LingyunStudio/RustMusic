@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Heart, Mic2, Music4 } from "lucide-react";
+import { ChevronDown, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import { api, coverSrc } from "../api";
-import { extractPalette } from "../utils";
+import { extractPalette, lyricLineProgress } from "../utils";
 
 export default function NowPlaying() {
   const current = useStore((s) => s.current);
-  const pos = useStore((s) => s.pos);
   const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
+  const fullscreen = useStore((s) => s.fullscreen);
+  const toggleFullscreen = useStore((s) => s.toggleFullscreen);
   const toggleLike = useStore((s) => s.toggleLike);
   const lyrics = useStore((s) => s.lyrics);
   const lyricsLoading = useStore((s) => s.lyricsLoading);
@@ -16,9 +17,38 @@ export default function NowPlaying() {
   const seek = useStore((s) => s.seek);
   const neteaseLiked = useStore((s) => s.neteaseLiked);
   const neteaseToggleLike = useStore((s) => s.neteaseToggleLike);
+  const savedOnline = useStore((s) => s.savedOnline);
+  const likedOnline = useStore((s) => s.likedOnline);
+  const recentOnline = useStore((s) => s.recentOnline);
+  const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
+  const playing = useStore((s) => s.playing);
+
+  // 歌词逐字染色完全脱离 React 渲染（同桌面歌词）：
+  // - 不订阅 s.pos（250ms 一次会让整页重渲染，挤压歌词渲染帧预算），
+  //   锚点在 store 订阅回调里写 ref；
+  // - 行样式/染色边界全部由 rAF 直接写 DOM，循环只在播放中运行。
+  const anchorRef = useRef({ pos: 0, at: performance.now() });
+  useEffect(() => {
+    // 挂载即对齐当前进度（播放中打开播放页不用等下一个 pos 事件）
+    const st0 = useStore.getState();
+    anchorRef.current = { pos: st0.pos, at: performance.now() };
+    // 只有 pos/playing 真正变化才移动锚点：订阅整个 store 的话，
+    // toast/下载进度等无关 set 也会重置锚点时间戳，外推被反复拉回，
+    // 染色边界出现回跳抖动
+    let lastPos = st0.pos;
+    let lastPlaying = st0.playing;
+    return useStore.subscribe((s) => {
+      if (s.pos !== lastPos || s.playing !== lastPlaying) {
+        anchorRef.current = { pos: s.pos, at: performance.now() };
+        lastPos = s.pos;
+        lastPlaying = s.playing;
+      }
+    });
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const lastActiveRef = useRef(-1);
 
   // 歌词键：本地曲目 / 网易云在线曲目
   const lyricsKey =
@@ -48,37 +78,112 @@ export default function NowPlaying() {
     [lyrics]
   );
 
-  const activeIdx = useMemo(() => {
-    if (!syncedLines.length) return -1;
-    let lo = 0;
-    let hi = syncedLines.length - 1;
-    let ans = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if ((syncedLines[mid].timeMs ?? 0) <= pos) {
-        ans = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return ans;
-  }, [syncedLines, pos]);
-
+  // 逐帧驱动：外推进度 → 定位当前行 → 行样式直接写 DOM。
+  // 播放中才跑循环（暂停时染色冻结，不空转——同桌面歌词）
   useEffect(() => {
-    const el = lineRefs.current[activeIdx];
-    const container = scrollRef.current;
-    if (el && container) {
-      const top = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
-      container.scrollTo({ top, behavior: "smooth" });
-    }
-  }, [activeIdx]);
+    if (!playing || !syncedLines.length) return;
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const a = anchorRef.current;
+      const posNow = a.pos + (performance.now() - a.at);
 
-  if (!current) return null;
-  const coverUrl = current.cover ? coverSrc(current.cover) : "";
+      // 当前行二分（行数据是排好序的）
+      let activeIdx = -1;
+      let lo = 0;
+      let hi = syncedLines.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if ((syncedLines[mid].timeMs ?? 0) <= posNow) {
+          activeIdx = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+
+      const prevActive = lastActiveRef.current;
+      if (activeIdx !== prevActive) {
+        // 行切换：旧当前行还原成普通行样式（染色层随 .active 移除而隐藏）
+        const prevEl = lineRefs.current[prevActive];
+        if (prevEl) {
+          prevEl.classList.remove("active");
+          prevEl.style.color = "";
+          prevEl.style.fontSize = "";
+          prevEl.style.fontWeight = "";
+          prevEl.style.opacity = "";
+          prevEl.style.filter = "";
+          prevEl.style.transform = "";
+          prevEl.style.removeProperty("--fill");
+        }
+        // 新当前行升级样式（will-change 合成层由 .active 类自动挂上）
+        const el = lineRefs.current[activeIdx];
+        if (el) {
+          el.classList.add("active");
+          el.style.color = "var(--ink)";
+          el.style.fontSize = "25px";
+          el.style.fontWeight = "800";
+          el.style.opacity = "1";
+          el.style.filter = "none";
+          el.style.transform = "scale(1)";
+        }
+        // 周边行透明度/缩放（只在新行附近的几行，代价小）
+        for (let i = 0; i < syncedLines.length; i++) {
+          const r = lineRefs.current[i];
+          if (!r || i === activeIdx) continue;
+          const dist = Math.abs(i - activeIdx);
+          r.style.opacity = String(Math.max(0.4, 0.75 - dist * 0.07));
+          r.style.transform = `scale(${Math.max(0.94, 1 - dist * 0.015)})`;
+        }
+        // 滚动到中心（只在行切换时触发一次，不逐帧滚动）
+        const cur = lineRefs.current[activeIdx];
+        const container = scrollRef.current;
+        if (cur && container) {
+          const top =
+            cur.offsetTop - container.clientHeight / 2 + cur.clientHeight / 2;
+          container.scrollTo({ top, behavior: "smooth" });
+        }
+        lastActiveRef.current = activeIdx;
+      }
+
+      // 当前行染色边界：与桌面歌词同款插值（逐字时间戳精确贴合演唱）
+      const el = lineRefs.current[activeIdx];
+      if (el) {
+        const line = syncedLines[activeIdx];
+        const start = line.timeMs ?? 0;
+        const end =
+          activeIdx + 1 < syncedLines.length
+            ? (syncedLines[activeIdx + 1].timeMs ?? start + 5000)
+            : start + 5000;
+        const fill = lyricLineProgress(line, posNow, end);
+        el.style.setProperty("--fill", `${(fill * 100).toFixed(2)}%`);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [syncedLines, playing]);
+
+  // 换曲 / 歌词重载：重置行内残留样式（rAF 循环会重建新状态）
+  useEffect(() => {
+    lastActiveRef.current = -1;
+    for (const r of lineRefs.current) {
+      if (!r) continue;
+      r.classList.remove("active");
+      r.style.color = "";
+      r.style.fontSize = "";
+      r.style.fontWeight = "";
+      r.style.opacity = "";
+      r.style.filter = "";
+      r.style.transform = "";
+      r.style.removeProperty("--fill");
+    }
+  }, [syncedLines]);
+
+  const coverUrl = current ? (current.cover ? coverSrc(current.cover) : "") : "";
 
   // 封面取色 → 动态渐变背景
-  // http 封面一律走后端提取（QQ 的 y.gtimg.cn 无 CORS，前端 canvas 会被污染）
+  // 远程 http(s) 封面一律走后端提取（QQ 的 y.gtimg.cn 无 CORS，前端 canvas 会被污染）；
+  // asset:// 本地封面是 WebView 虚拟主机，后端 ureq 连不上，只能前端采样
   const [palette, setPalette] = useState<string[]>([]);
   useEffect(() => {
     if (!coverUrl) {
@@ -88,7 +193,7 @@ export default function NowPlaying() {
     let alive = true;
     const getPalette = async () => {
       try {
-        const colors = /^https?:/.test(coverUrl)
+        const colors = /^https?:\/\/(?!asset\.)/.test(coverUrl)
           ? await api.extractCoverPalette(coverUrl)
           : await extractPalette(coverUrl, 4);
         if (alive) setPalette(colors);
@@ -102,25 +207,11 @@ export default function NowPlaying() {
     };
   }, [coverUrl]);
 
-  // rAF 驱动对流层的色相旋转与缓慢自转（WebView2 的 filter 动画不可靠）
-  const bgRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (palette.length < 2) return;
-    const el = bgRef.current;
-    if (!el) return;
-    let raf = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = (now - start) / 1000;
-      const hue = (t * 12) % 360; // 12°/s → 30s 一轮
-      const spin = (t * 9) % 360; // 9°/s → 40s 一圈
-      el.style.filter = `blur(120px) saturate(1.35) hue-rotate(${hue}deg)`;
-      el.style.transform = `rotate(${spin}deg) scale(1.18)`;
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [palette]);
+  // 注意：hooks 必须在条件 return 之前调用（React Hooks 规则）
+  // 背景流动动画全走 CSS @keyframes（slowSpin 纯 transform，合成器执行）：
+  // 此前用 rAF 每帧写 style.filter（120px blur 常驻 + 每帧重设），
+  // 是播放页歌词掉帧的元凶之一
+  if (!current) return null;
 
   return (
     <div className="absolute inset-0 z-40 anim-np overflow-hidden" style={{ background: "var(--bg)" }}>
@@ -137,15 +228,16 @@ export default function NowPlaying() {
         )}
         {palette.length >= 2 && (
           <>
-            {/* 大对流渐变层：颜色持续旋转流动（占满背景、高不透明度） */}
+            {/* 大对流渐变层：缓慢旋转（CSS keyframes 纯 transform，合成器执行；
+                不再用 rAF 每帧写 filter——那会持续重光栅化 120px blur，
+                挤压歌词渲染的帧预算） */}
             <div
-              ref={bgRef}
               className="absolute -inset-[25%] dynamic-gradient-layer"
               style={{
                 background: `conic-gradient(from 0deg at 30% 35%, ${palette[0]}, ${palette[1] ?? palette[0]}, ${palette[2] ?? palette[0]}, ${palette[3] ?? palette[1] ?? palette[0]}, ${palette[0]})`,
                 opacity: 0.55,
                 filter: "blur(120px) saturate(1.35)",
-                transform: "scale(1.18)",
+                animation: "slowSpin 40s linear infinite",
               }}
             />
             {/* 双光斑漂移层 */}
@@ -187,18 +279,31 @@ export default function NowPlaying() {
         />
       </div>
 
-      {/* 顶栏（标题栏浮在渐变之上） */}
+      {/* 顶栏（标题栏浮在渐变之上；全屏时窗口按钮被隐藏，提供自身控制） */}
       <div className="relative flex items-center justify-between px-8 pt-12 h-24">
         <span className="text-[11px] text-[var(--ink-3)] tracking-[0.26em] flex items-center gap-2.5">
           <Music4 size={14} />
           正在播放
         </span>
-        <button
-          className="btn-ghost w-10 h-10 !rounded-full"
-          onClick={() => setNowPlayingOpen(false)}
-        >
-          <ChevronDown size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn-ghost w-10 h-10 !rounded-full"
+            onClick={() => toggleFullscreen()}
+            title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
+          >
+            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+          </button>
+          <button
+            className="btn-ghost w-10 h-10 !rounded-full"
+            onClick={() => {
+              if (fullscreen) toggleFullscreen(false);
+              setNowPlayingOpen(false);
+            }}
+            title="收起播放页"
+          >
+            <ChevronDown size={20} />
+          </button>
+        </div>
       </div>
 
       {/* 主体 */}
@@ -211,13 +316,13 @@ export default function NowPlaying() {
               style={{
                 background: coverUrl
                   ? `url(${coverUrl}) center/cover`
-                  : "linear-gradient(135deg,#f0a24a,#e0533f)",
+                  : "linear-gradient(135deg, var(--accent), var(--accent-strong))",
               }}
             />
             <CoverImg
               src={current.cover}
               seed={current.title}
-              className="w-[min(36vh,340px)] h-[min(36vh,340px)] rounded-[28px] shadow-[0_36px_90px_rgba(0,0,0,0.7)] relative"
+              className="w-[min(36vh,340px)] h-[min(36vh,340px)] rounded-[28px] shadow-[var(--cover-shadow-lg)] relative"
               iconSize={56}
             />
           </div>
@@ -258,10 +363,36 @@ export default function NowPlaying() {
                   />
                 </button>
               )}
-              {current.kind === "qq" && (
-                <span className="text-[11px] text-[var(--ink-3)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
-                  QQ音乐
-                </span>
+              {current.kind === "qq" && current.qid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 !rounded-full glass"
+                  onClick={() => {
+                    const entry = [ ...likedOnline, ...recentOnline ].find(
+                      (e) => e.kind === "qq" && e.onlineId === current.qid
+                    );
+                    toggleLikeOnline({
+                      kind: "qq",
+                      id: current.qid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                      mediaMid: entry?.mediaMid ?? "",
+                      vip: entry?.vip ?? false,
+                    });
+                  }}
+                  title={savedOnline[`qq-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      savedOnline[`qq-${current.qid}`]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
               )}
               {current.kind === "track" && (
                 <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
@@ -269,7 +400,7 @@ export default function NowPlaying() {
                 </span>
               )}
               {current.kind === "netease" && (
-                <span className="text-[11px] text-[var(--accent)] px-2.5 py-0.5 rounded-full bg-[rgba(240,162,74,0.12)]">
+                <span className="text-[11px] text-[var(--accent)] px-2.5 py-0.5 rounded-full bg-[var(--accent-weak)]">
                   网易云 · {current.album || "在线曲库"}
                 </span>
               )}
@@ -309,23 +440,30 @@ export default function NowPlaying() {
                   : "暂无歌词"}
               </div>
             )}
-            {syncedLines.map((l, i) => (
-              <div
-                key={i}
-                ref={(el) => {
-                  lineRefs.current[i] = el;
-                }}
-                onClick={() => l.timeMs != null && seek(l.timeMs)}
-                className={`px-4 py-[10px] text-center cursor-pointer transition-all duration-300 rounded-2xl ${
-                  i === activeIdx
-                    ? "text-[var(--accent-strong)] text-[24px] font-bold scale-[1.02]"
-                    : "text-[var(--ink-3)] opacity-80 text-[19px] hover:text-[var(--ink-2)] hover:opacity-100"
-                }`}
-                style={{ transformOrigin: "center" }}
-              >
-                {l.text || "···"}
-              </div>
-            ))}
+            {/* Apple Music 式歌词：当前行逐字点亮。染色边界由 rAF 循环写
+                --fill 变量（clipPath 叠加层，与桌面歌词同机制），React 不参与
+                逐帧渲染；active/透明度/缩放也是 rAF 直接写 style。
+                染色层是真实 DOM 双层：外层铺满本行对齐布局，内层 inline-block
+                收缩到文字实际宽度——clip 百分比基准是文字而非整行，
+                居中行的逐字进度才不会被左右空白稀释（桌面歌词同构） */}
+            {syncedLines.map((l, i) => {
+              const text = l.text || "···";
+              return (
+                <div
+                  key={i}
+                  ref={(el) => {
+                    lineRefs.current[i] = el;
+                  }}
+                  onClick={() => l.timeMs != null && seek(l.timeMs)}
+                  className="lyric-line lyric-fill px-4 py-[9px] text-center cursor-pointer"
+                >
+                  {text}
+                  <div className="lyric-fill-ov" aria-hidden>
+                    <span>{text}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

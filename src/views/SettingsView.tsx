@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   Folder,
+  FolderOpen,
   FolderPlus,
+  Headphones,
   Loader2,
   RefreshCw,
   Settings as SettingsIcon,
@@ -10,7 +12,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
-import { ACCENTS } from "../theme";
+import { ACCENTS, loadCustomAccentHex, parseCustomAccent, saveCustomAccentHex } from "../theme";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
@@ -30,6 +32,23 @@ const PRESETS: Record<string, number[]> = {
   人声: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1],
 };
 
+const CACHE_LIMITS: { bytes: number; label: string }[] = [
+  { bytes: 512 * 1024 * 1024, label: "512 MB" },
+  { bytes: 1024 * 1024 * 1024, label: "1 GB" },
+  { bytes: 2 * 1024 * 1024 * 1024, label: "2 GB" },
+  { bytes: 5 * 1024 * 1024 * 1024, label: "5 GB" },
+  { bytes: 0, label: "不限制" },
+];
+
+/** 缓存占用展示（GB 感知） */
+function fmtCache(bytes: number): string {
+  if (bytes <= 0) return "0 MB";
+  const gb = bytes / 1024 / 1024 / 1024;
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
 export default function SettingsView() {
   const folders = useStore((s) => s.folders);
   const scan = useStore((s) => s.scan);
@@ -43,20 +62,86 @@ export default function SettingsView() {
   const setSpeed = useStore((s) => s.setSpeed);
   const quality = useStore((s) => s.quality);
   const setQuality = useStore((s) => s.setQuality);
+  const closeAction = useStore((s) => s.closeAction);
+  const setCloseAction = useStore((s) => s.setCloseAction);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const accent = useStore((s) => s.accent);
   const setAccent = useStore((s) => s.setAccent);
+  const desktopLyricsOn = useStore((s) => s.desktopLyricsOn);
+  const desktopLyricsLock = useStore((s) => s.desktopLyricsLock);
+  const openDesktopLyrics = useStore((s) => s.openDesktopLyrics);
+  const closeDesktopLyrics = useStore((s) => s.closeDesktopLyrics);
+  const unlockDesktopLyrics = useStore((s) => s.unlockDesktopLyrics);
+  const dlyricsColors = useStore((s) => s.dlyricsColors);
+  const setDlyricsColors = useStore((s) => s.setDlyricsColors);
   const clearCache = useStore((s) => s.clearCache);
+  const cacheLimit = useStore((s) => s.cacheLimit);
+  const setCacheLimit = useStore((s) => s.setCacheLimit);
+  const cacheBytes = useStore((s) => s.cacheBytes);
   const [saveDir, setSaveDir] = useState("");
   const [saveDirDefault, setSaveDirDefault] = useState("");
   const [preset, setPreset] = useState("平直");
+  const [devices, setDevices] = useState<
+    { name: string; isDefault: boolean }[]
+  >([]);
+  const [deviceCurrent, setDeviceCurrent] = useState("");
+  const [devicePref, setDevicePref] = useState<string | null>(null);
+  const [deviceSwitching, setDeviceSwitching] = useState(false);
+  // 自定义强调色（取色器当前值 / 回显上次选择）
+  const [customHex, setCustomHex] = useState(loadCustomAccentHex);
+
+  const refreshDevices = async () => {
+    try {
+      const d = await api.listOutputDevices();
+      setDevices(d.devices);
+      setDeviceCurrent(d.current);
+      setDevicePref(d.preference);
+    } catch (e) {
+      useStore.getState().toast(String(e), "error");
+    }
+  };
+
+  const pickDevice = async (value: string) => {
+    // "" = 跟随系统默认
+    setDeviceSwitching(true);
+    try {
+      await api.setOutputDevice(value === "" ? null : value);
+      await refreshDevices();
+      useStore.getState().toast(
+        value === "" ? "已跟随系统默认输出设备" : `输出已切换到「${value}」`,
+        "success"
+      );
+    } catch (e) {
+      useStore.getState().toast(String(e), "error");
+    } finally {
+      setDeviceSwitching(false);
+    }
+  };
 
   useEffect(() => {
     api.saveDirGet().then((d) => {
       setSaveDir(d.dir);
       setSaveDirDefault(d.default);
     });
+    refreshDevices();
+    useStore.getState().refreshCacheBytes();
+    // 设备热插拔（插入耳机等）后端自动切换时同步 UI
+    let unbind: (() => void) | undefined;
+    let disposed = false;
+    import("../api").then(({ listenEvent }) =>
+      listenEvent<{ current: string }>("device://changed", () => {
+        if (!disposed) refreshDevices();
+      }).then((u) => {
+        if (disposed) u();
+        else unbind = u;
+      })
+    );
+    return () => {
+      disposed = true;
+      unbind?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pickSaveDir = async () => {
@@ -91,16 +176,50 @@ export default function SettingsView() {
       </h1>
 
       <div className="flex flex-col gap-4 max-w-[760px]">
+        {/* 通用 */}
+        <section style={{ ["--row-idx" as string]: 0 }} className="anim-row glass rounded-2xl p-5">
+          <h2 className="text-[14.5px] font-semibold mb-4">通用</h2>
+          <div className="flex items-center gap-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">关闭窗口时</span>
+            <div className="flex items-center gap-1.5">
+              {(
+                [
+                  { key: "tray", label: "最小化到托盘" },
+                  { key: "exit", label: "直接退出应用" },
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.key}
+                  onClick={() => setCloseAction(o.key)}
+                  className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
+                    closeAction === o.key
+                      ? "text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                  style={
+                    closeAction === o.key ? { background: "var(--accent-weak)" } : undefined
+                  }
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+            最小化到托盘后音乐继续播放，从任务栏托盘图标可重新打开主界面或完全退出。
+          </p>
+        </section>
+
         {/* 外观 */}
-        <section className="glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 1 }} className="anim-row glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">外观</h2>
           <div className="flex items-center gap-4 mb-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">界面模式</span>
             <div className="flex items-center gap-1.5">
               {(
                 [
-                  { key: "dark", label: "深色" },
                   { key: "light", label: "浅色" },
+                  { key: "dark", label: "深色" },
                 ] as const
               ).map((t) => (
                 <button
@@ -140,12 +259,114 @@ export default function SettingsView() {
                   }}
                 />
               ))}
+
+              {/* 自定义取色盘：点击打开系统取色器，任意颜色即席生效 */}
+              <label
+                title="自定义颜色"
+                className={`relative w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110 ${
+                  accent.startsWith("custom:") ? "ring-2 ring-offset-2" : ""
+                }`}
+                style={{
+                  background: `conic-gradient(#f71, #ee4, #4d5, #4cd, #55f, #a4e, #f71)`,
+                  boxShadow: "inset 0 0 0 3.5px var(--bg)",
+                  ["--tw-ring-color" as string]: "var(--accent)",
+                  ["--tw-ring-offset-color" as string]: "var(--bg)",
+                }}
+              >
+                <input
+                  type="color"
+                  value={customHex}
+                  onChange={(e) => {
+                    const hex = e.target.value;
+                    setCustomHex(hex);
+                    saveCustomAccentHex(hex);
+                    setAccent(`custom:${hex}`);
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* 桌面歌词开关 */}
+          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">桌面歌词</span>
+            <button
+              className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
+                desktopLyricsOn
+                  ? "text-[var(--accent-strong)] font-medium"
+                  : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+              }`}
+              style={desktopLyricsOn ? { background: "var(--accent-weak)" } : undefined}
+              onClick={() =>
+                desktopLyricsOn
+                  ? desktopLyricsLock
+                    ? unlockDesktopLyrics()
+                    : closeDesktopLyrics()
+                  : openDesktopLyrics()
+              }
+            >
+              {desktopLyricsOn ? (desktopLyricsLock ? "已锁定（点按解锁）" : "已开启") : "已关闭"}
+            </button>
+            <span className="text-[11.5px] text-[var(--ink-3)]">
+              快捷键 L：开启 / 关闭 / 解锁
+            </span>
+          </div>
+
+          {/* 桌面歌词配色：已唱 / 未唱 / 下一句 */}
+          <div className="flex items-center gap-4 mt-3 pl-0">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">歌词配色</span>
+            <div className="flex items-center gap-5">
+              {(
+                [
+                  { key: "sung", label: "已唱" },
+                  { key: "unsung", label: "未唱" },
+                  { key: "next", label: "下一句" },
+                ] as const
+              ).map((c) => {
+                // rgba() 字符串对原生取色器不可解析：取 rgb 值拼 #hex 回显
+                const raw = dlyricsColors[c.key];
+                const m = raw.match(
+                  /rgba?\((\d+),\s*(\d+),\s*(\d+)/
+                );
+                const hex = m
+                  ? `#${[m[1], m[2], m[3]]
+                      .map((v) => (+v).toString(16).padStart(2, "0"))
+                      .join("")}`
+                  : /^#[0-9a-fA-F]{6}$/.test(raw)
+                    ? raw
+                    : "#ffffff";
+                return (
+                  <label
+                    key={c.key}
+                    className="flex items-center gap-1.5 cursor-pointer"
+                    title={`${c.label}颜色（点击选择）`}
+                  >
+                    <span
+                      className="w-5 h-5 rounded-full inline-block"
+                      style={{
+                        background: hex,
+                        boxShadow: "0 0 0 1px var(--line), inset 0 0 0 1px rgba(0,0,0,0.06)",
+                      }}
+                    />
+                    <span className="text-[11.5px] text-[var(--ink-2)]">{c.label}</span>
+                    <input
+                      type="color"
+                      value={hex}
+                      onChange={(e) =>
+                        setDlyricsColors({ ...dlyricsColors, [c.key]: e.target.value })
+                      }
+                      className="w-0 h-0 opacity-0"
+                    />
+                  </label>
+                );
+              })}
             </div>
           </div>
         </section>
 
         {/* 音乐文件夹 */}
-        <section className="glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 2 }} className="anim-row glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[14.5px] font-semibold">音乐文件夹</h2>
             <div className="flex items-center gap-2">
@@ -175,7 +396,16 @@ export default function SettingsView() {
                   <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
                   <span className="text-[12.5px] text-[var(--ink)] truncate">{f.path}</span>
                   <button
-                    className="btn-ghost w-7 h-7 ml-auto shrink-0 opacity-0 group-hover:opacity-100 hover:!text-rose-400"
+                    className="btn-ghost w-7 h-7 ml-auto shrink-0 opacity-0 group-hover:opacity-100"
+                    onClick={() =>
+                      api.openFolder(f.path).catch((e) => useStore.getState().toast(String(e), "error"))
+                    }
+                    title="在资源管理器中打开"
+                  >
+                    <FolderOpen size={14} />
+                  </button>
+                  <button
+                    className="btn-ghost w-7 h-7 shrink-0 opacity-0 group-hover:opacity-100 hover:!text-rose-400"
                     onClick={() => removeFolder(f.id)}
                     title="移除（不会删除文件）"
                   >
@@ -192,7 +422,7 @@ export default function SettingsView() {
         </section>
 
         {/* 均衡器 */}
-        <section className="glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 3 }} className="anim-row glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[14.5px] font-semibold">
               均衡器
@@ -251,7 +481,7 @@ export default function SettingsView() {
         </section>
 
         {/* 播放 */}
-        <section className="glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 4 }} className="anim-row glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
           <div className="flex items-center gap-4 mb-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">在线音质</span>
@@ -262,7 +492,7 @@ export default function SettingsView() {
                   onClick={() => setQuality(q.key)}
                   className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
                     quality === q.key
-                      ? "bg-[rgba(240,162,74,0.14)] text-[var(--accent-strong)] font-medium"
+                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
                       : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
@@ -281,7 +511,8 @@ export default function SettingsView() {
               step={0.05}
               value={speed}
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="flex-1 accent-amber-400"
+              className="flex-1"
+              style={{ ["--fill" as string]: `${((speed - 0.5) / 1.5) * 100}%` }}
             />
             <span className="text-[12px] text-[var(--ink)] tabular-nums w-10 text-right">
               {speed.toFixed(2)}x
@@ -292,8 +523,45 @@ export default function SettingsView() {
           </p>
         </section>
 
+        {/* 输出设备 */}
+        <section style={{ ["--row-idx" as string]: 5 }} className="anim-row glass rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[14.5px] font-semibold">输出设备</h2>
+            <button
+              className="btn-ghost w-7 h-7"
+              onClick={refreshDevices}
+              title="刷新设备列表"
+            >
+              <RefreshCw size={13} />
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <Headphones size={14} className="text-[var(--ink-2)] shrink-0" />
+            <select
+              className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-2.5 text-[12.5px] text-[var(--ink)] outline-none focus:border-[rgba(240,162,74,0.45)]"
+              value={devicePref ?? ""}
+              disabled={deviceSwitching}
+              onChange={(e) => pickDevice(e.target.value)}
+            >
+              <option value="">跟随系统默认{deviceCurrent && devicePref == null ? `（${deviceCurrent}）` : ""}</option>
+              {devices.map((d) => (
+                <option key={d.name} value={d.name}>
+                  {d.name}
+                  {d.isDefault ? "（系统默认）" : ""}
+                </option>
+              ))}
+            </select>
+            {deviceSwitching && (
+              <Loader2 size={14} className="animate-spin text-[var(--accent)] shrink-0" />
+            )}
+          </div>
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+            跟随系统默认时，插入耳机等设备热插拔会自动切换并从当前进度续播；固定设备则始终使用所选设备。
+          </p>
+        </section>
+
         {/* 下载目录 */}
-        <section className="glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 6 }} className="anim-row glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-3">下载保存目录</h2>
           <div className="flex items-center gap-3">
             <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
@@ -310,15 +578,47 @@ export default function SettingsView() {
         </section>
 
         {/* 缓存 */}
-        <section className="glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 7 }} className="anim-row glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-2">缓存</h2>
-          <p className="text-[12px] text-[var(--ink-2)] mb-3">
-            在线音源下载后的缓存文件存放在应用数据目录的 downloads 文件夹。
-          </p>
-          <button className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15" onClick={clearCache}>
+          <div className="flex items-center gap-4 mb-3">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">当前占用</span>
+            <span className="text-[12.5px] text-[var(--ink)] tabular-nums">
+              {cacheBytes == null ? "查询中…" : fmtCache(cacheBytes)}
+            </span>
+            <button
+              className="btn-ghost !py-1 !px-2 ml-1"
+              onClick={() => useStore.getState().refreshCacheBytes()}
+              title="刷新占用"
+            >
+              <RefreshCw size={12} />
+            </button>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">自动清理</span>
+            <div className="flex items-center gap-1.5">
+              {CACHE_LIMITS.map((o) => (
+                <button
+                  key={o.bytes}
+                  onClick={() => setCacheLimit(o.bytes)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
+                    cacheLimit === o.bytes
+                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15 mt-3" onClick={clearCache}>
             <Trash2 size={13} />
-            清理音源缓存
+            立即清理全部缓存
           </button>
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+            在线歌曲播放时会自动缓存到应用数据目录（同一首歌同一音质只缓存一份，重复播放不再下载）。
+            超过上限后从最旧缓存开始自动清理，正在播放的文件不受影响；「不限制」则永久保留。
+          </p>
         </section>
 
         <div className="text-[11.5px] text-[var(--ink-3)] px-1 pb-2">

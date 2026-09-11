@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Cloud,
   Heart,
@@ -12,7 +13,7 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import type { NeteaseTrack, QqSong } from "../types";
-import { fmtTime } from "../utils";
+import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
 
 type Source = "netease" | "qq";
@@ -35,6 +36,7 @@ const qqCover = (albumMid: string) =>
     : "";
 
 export default function OnlineLibraryView({ source }: { source: Source }) {
+  const qqPage = useStore((s) => s.qqPage);
   const neteaseResults = useStore((s) => s.neteaseResults);
   const neteaseSearching = useStore((s) => s.neteaseSearching);
   const neteaseSearched = useStore((s) => s.neteaseSearched);
@@ -138,7 +140,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const hasMore =
     source === "netease"
       ? rows.length < neteaseTotal
-      : rows.length > 0 && rows.length % 30 === 0;
+      : rows.length > 0 && rows.length === 30 * qqPage;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -242,11 +244,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         </div>
       </header>
 
-      {/* 结果列表 */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
+      {/* 结果列表（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
+      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {rows.length > 0 && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
+            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
               <span className="text-center">序号</span>
               <span>歌曲</span>
               <span>专辑</span>
@@ -254,7 +256,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <span className="text-right">操作</span>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[84px]">
+          <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[90px]">
             {searching && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
@@ -301,13 +303,18 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             {rows.map((t, i) => {
               const active =
                 current?.kind === t.kind &&
-                (t.kind === "qq" ? current.qid === t.id : current.id === t.id);
+                (t.kind === "qq"
+                  ? current.qid === t.id
+                  : t.kind === "netease"
+                    ? current.nid === t.id
+                    : false);
               const saved = !!savedOnline[`${t.kind}-${t.id}`];
               return (
                 <div
                   key={`${t.kind}-${t.id}`}
-                  className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
-                    active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-[var(--shade-hover)]"
+                  style={{ ["--row-idx" as string]: Math.min(i, 12) }}
+                  className={`anim-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
+                    active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
                   }`}
                   onDoubleClick={() => playRow(i)}
                   onContextMenu={(e) => {
@@ -343,7 +350,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       <img
                         src={t.cover}
                         alt=""
-                        className="w-11 h-11 rounded-xl object-cover shadow-[0_4px_14px_rgba(0,0,0,0.45)] shrink-0"
+                        className="hover-lift w-11 h-11 rounded-xl object-cover shadow-[var(--cover-shadow-sm)] shrink-0"
                         draggable={false}
                       />
                     ) : (
@@ -362,7 +369,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       >
                         <span className="truncate">{t.name}</span>
                         {t.vip && (
-                          <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[rgba(240,162,74,0.16)] text-[var(--accent-strong)] font-bold shrink-0">
+                          <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--accent-weak)] text-[var(--accent-strong)] font-bold shrink-0">
                             VIP
                           </span>
                         )}
@@ -437,7 +444,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                         const r = (
                           e.currentTarget as HTMLElement
                         ).getBoundingClientRect();
-                        setMenu({ x: r.left - 150, y: r.bottom + 6, row: t });
+                        setMenu({ x: r.right - 200, y: r.bottom + 4, row: t });
                       }}
                     >
                       <MoreHorizontal
@@ -469,10 +476,14 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       </div>
 
       {/* 右键菜单 */}
-      {menu && (
+      {menu &&
+        createPortal(
         <div
           className="fixed z-[75] w-[200px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
-          style={{ left: menu.x, top: menu.y }}
+          style={(() => {
+            const p = clampMenuPos(menu.x, menu.y, 200, 240);
+            return { left: p.x, top: p.y };
+          })()}
           onMouseDown={(e) => e.stopPropagation()}
           onMouseLeave={() => setMenu(null)}
         >
@@ -539,7 +550,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           >
             <Play size={13} /> 下载到本地
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 添加到播放列表弹窗 */}
@@ -583,11 +595,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             className="btn-secondary"
             onClick={async () => {
               if (!newPlName.trim() || !pickerRow) return;
-              await createPlaylist(newPlName.trim());
-              const pls = useStore.getState().playlists;
-              const created = pls[pls.length - 1];
-              if (created && pickerRow)
-                await addOnlineToPlaylist(created.id, pickerRow);
+              const pid = await createPlaylist(newPlName.trim());
+              if (pid >= 0) await addOnlineToPlaylist(pid, pickerRow);
               setNewPlName("");
               setPickerRow(null);
             }}

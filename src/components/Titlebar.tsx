@@ -1,80 +1,57 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useStore } from "../store";
 
 export default function Titlebar() {
   const [maximized, setMaximized] = useState(false);
-  const search = useStore((s) => s.search);
-  const setSearch = useStore((s) => s.setSearch);
   const win = getCurrentWindow();
 
   useEffect(() => {
-    const p = win.onResized(async () => setMaximized(await win.isMaximized()));
+    let disposed = false;
     let un: (() => void) | undefined;
-    p.then((u) => (un = u));
-    return () => un?.();
+    const p = win.onResized(async () => setMaximized(await win.isMaximized()));
+    p.then((u) => {
+      // 组件可能已在 promise resolve 前卸载（StrictMode 双挂载），避免泄漏监听器
+      if (disposed) u();
+      else un = u;
+    });
+    return () => {
+      disposed = true;
+      un?.();
+    };
   }, []);
 
   return (
-    <div
-      data-tauri-drag-region
-      className="h-12 flex items-center justify-between pl-6 pr-0 relative z-50 shrink-0"
-    >
-      <div data-tauri-drag-region className="w-[220px]" />
+    <>
+      {/* 顶部拖拽热区：扩大到 36px 高，向下压在内容区顶部的留白（各视图 pt-7）上。
+          绝对定位不参与布局，因此内容组件位置完全不变；data-tauri-drag-region
+          使空白处可拖动窗口。 */}
+      <div
+        data-tauri-drag-region
+        className="absolute top-0 left-0 right-0 h-9 z-[54] pointer-events-auto"
+      />
 
-      <div data-tauri-drag-region className="w-[360px]">
-        <div className="relative">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索歌曲、艺术家、专辑…"
-            className="w-full h-9 rounded-full bg-[var(--shade)] border border-[var(--line)] pl-10 pr-9 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:bg-[var(--shade-strong)] focus:border-[rgba(243,233,216,0.22)] transition-colors"
-          />
-          <svg
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          {search && (
-            <button
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
-              onClick={() => setSearch("")}
-            >
-              <X size={13} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center h-12">
+      {/* 窗口控制按钮（右上角悬浮，压在热区之上、内容区右上角留白处） */}
+      <div className="absolute top-0 right-0 flex items-center h-9 z-[56]">
         <button
-          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.minimize()}
         >
-          <Minus size={15} />
+          <Minus size={14} />
         </button>
         <button
-          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.toggleMaximize()}
         >
-          {maximized ? <Copy size={12.5} className="-scale-x-100" /> : <Square size={12} />}
+          {maximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
         </button>
         <button
-          className="w-12 h-12 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.close()}
         >
-          <X size={16} />
+          <X size={15} />
         </button>
       </div>
-    </div>
+    </>
   );
 }

@@ -8,6 +8,7 @@ export default function SourcesView() {
   const addSource = useStore((s) => s.addSource);
   const deleteSource = useStore((s) => s.deleteSource);
   const playSourceItem = useStore((s) => s.playSourceItem);
+  const playingSourceId = useStore((s) => s.playingSourceId);
   const current = useStore((s) => s.current);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -95,8 +96,8 @@ export default function SourcesView() {
         ) : (
           <div className="flex flex-col gap-1.5">
             {sources.map((s) => {
-              const active =
-                current?.kind === "url" && current.path.includes(s.url.slice(-20));
+              // 播放后 current.path 是本地缓存 hash 文件名，不含 URL，用 playingSourceId 判断
+              const active = current?.kind === "url" && playingSourceId === s.id;
               return (
                 <div
                   key={s.id}

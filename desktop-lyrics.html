@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>桌面歌词</title>
+    <style>
+      /* 透明窗口：html/body 全透明，文字直接悬浮在桌面 */
+      html, body {
+        background: transparent;
+        overflow: hidden;
+        margin: 0;
+        height: 100%;
+      }
+      #root { height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/desktop-lyrics/main.tsx"></script>
+  </body>
+</html>

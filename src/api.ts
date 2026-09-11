@@ -19,6 +19,15 @@ export const api = {
   addFolder: (path: string) => invoke<void>("add_folder", { path }),
   removeFolder: (id: number) => invoke<void>("remove_folder", { id }),
   rescan: () => invoke<void>("rescan"),
+  openFolder: (path: string) => invoke<void>("open_folder", { path }),
+  listOutputDevices: () =>
+    invoke<{
+      devices: { name: string; isDefault: boolean }[];
+      current: string;
+      preference: string | null;
+    }>("list_output_devices"),
+  setOutputDevice: (name: string | null) =>
+    invoke<void>("set_output_device", { name }),
   dropPaths: (paths: string[]) => invoke<number>("drop_paths", { paths }),
   getLyrics: (trackId: number) => invoke<LyricsPayload>("get_lyrics", { trackId }),
   likeTrack: (id: number, liked: boolean) =>
@@ -99,6 +108,8 @@ export const api = {
   }) => invoke<string>("download_online", { req }),
   likedOnlineList: () =>
     invoke<import("./types").PlaylistEntryMeta[]>("liked_online_list"),
+  recentOnlineList: () =>
+    invoke<import("./types").PlaylistEntryMeta[]>("recent_online_list"),
   saveDirGet: () =>
     invoke<{ dir: string; default: string }>("save_dir_get"),
   saveDirSet: (dir: string) => invoke<void>("save_dir_set", { dir }),
@@ -116,15 +127,22 @@ export const api = {
   }) => invoke<void>("add_online_to_playlist", req),
   removePlaylistEntry: (rowid: number) =>
     invoke<void>("remove_playlist_entry", { rowid }),
+  saveManualOrder: (list: string, keys: string[]) =>
+    invoke<void>("save_manual_order", { list, keys }),
+  getManualOrder: (list: string) =>
+    invoke<Record<string, number>>("get_manual_order", { list }),
+  reorderPlaylist: (playlistId: number, rowids: number[]) =>
+    invoke<void>("reorder_playlist", { playlistId, rowids }),
   neteaseUserPlaylists: () =>
     invoke<UserPlaylistMeta[]>("netease_user_playlists"),
-  neteaseImportPlaylist: (remotePid: number, localPid: number) =>
-    invoke<number>("netease_import_playlist", { remotePid, localPid }),
+  neteaseImportPlaylist: (remotePid: number, name: string) =>
+    invoke<[number, number]>("netease_import_playlist", { remotePid, name }),
   qqUserPlaylists: () =>
     invoke<import("./types").UserPlaylistMeta[]>("qq_user_playlists"),
-  qqImportPlaylist: (remotePid: number, localPid: number) =>
-    invoke<number>("qq_import_playlist", { remotePid, localPid }),
+  qqImportPlaylist: (remotePid: number, name: string) =>
+    invoke<[number, number]>("qq_import_playlist", { remotePid, name }),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
+  setCloseAction: (action: string) => invoke<void>("set_close_action", { action }),
   extractCoverPalette: (url: string) => invoke<string[]>("extract_cover_palette", { url }),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),
@@ -139,7 +157,14 @@ export const api = {
     invoke<void>("set_eq", { gains, enabled }),
   getSettings: () => invoke<SettingsPayload>("get_settings"),
   clearCache: () => invoke<number>("clear_cache"),
+  cacheStats: () =>
+    invoke<{ bytes: number; files: number }>("cache_stats"),
+  setCacheLimit: (bytes: number) =>
+    invoke<void>("set_cache_limit", { bytes }),
   getAppInfo: () => invoke<{ version: string; dataDir: string }>("get_app_info"),
+  desktopLyricsOpen: () => invoke<void>("desktop_lyrics_open"),
+  desktopLyricsClose: () => invoke<void>("desktop_lyrics_close"),
+  desktopLyricsUnlock: () => invoke<void>("desktop_lyrics_unlock"),
 };
 
 export { convertFileSrc };

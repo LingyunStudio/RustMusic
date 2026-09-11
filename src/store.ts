@@ -8,6 +8,9 @@ import {
   loadTheme,
   saveAccent,
   saveTheme,
+  loadDesktopLyricsColors,
+  saveDesktopLyricsColors,
+  type DesktopLyricsColors,
 } from "./theme";
 import type {
   CurrentTrack,
@@ -39,6 +42,8 @@ interface Store {
   playing: boolean;
   pos: number;
   dur: number;
+  /** 后端“开播代次”，用于区分换曲开播与暂停/恢复 */
+  playSeq: number;
   queue: QueueItem[];
   qIndex: number;
   history: number[];
@@ -53,6 +58,8 @@ interface Store {
   viewParam: number;
   search: string;
   nowPlayingOpen: boolean;
+  /** 播放页无边框全屏（隐藏系统任务栏；播放条隐藏、hover 唤起） */
+  fullscreen: boolean;
   queueOpen: boolean;
   scan: ScanState;
   download: DownloadState | null;
@@ -73,16 +80,32 @@ interface Store {
   qqResults: QqSong[];
   qqSearching: boolean;
   qqSearched: boolean;
+  /** 搜索分页页码（QQ 按页码翻页，不按结果数推算） */
+  qqPage: number;
   qqLoggedIn: boolean;
   qqNickname: string;
   qqCache: Record<string, QqSong>;
 
   quality: string;
+  /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
+  closeAction: "tray" | "exit";
+  /** 音源缓存上限（字节），0 = 不限制 */
+  cacheLimit: number;
+  /** 当前缓存占用（字节），null = 尚未查询 */
+  cacheBytes: number | null;
+  /** 播放失败的在线曲目（键 kind:id，值失败原因）：列表置灰 + 自动跳过 */
+  unavailable: Record<string, string>;
+  /** 连续播放失败计数（成功开播清零；达队列长度停止自动跳过） */
+  failStreak: number;
+  /** 当前播放的自定义在线音源 id（SourcesView 高亮用；path 是缓存文件名，无法从 URL 判断） */
+  playingSourceId: number | null;
   scrubbing: boolean;
   theme: "dark" | "light";
   accent: string;
   savedOnline: Record<string, boolean>;
   likedOnline: import("./types").PlaylistEntryMeta[];
+  /** “最近播放”的在线曲目部分（含 lastPlayed 用于合并排序） */
+  recentOnline: import("./types").PlaylistEntryMeta[];
   loadMoreLock: boolean;
   neteaseLiked: Record<number, boolean>;
 
@@ -92,6 +115,8 @@ interface Store {
   setView(v: ViewName, param?: number): void;
   setSearch(s: string): void;
   setNowPlayingOpen(v: boolean): void;
+  /** 切换无边框全屏（退出时同时收起播放页） */
+  toggleFullscreen(v?: boolean): void;
   setQueueOpen(v: boolean): void;
 
   refreshTracks(): Promise<void>;
@@ -105,6 +130,8 @@ interface Store {
   playQq(list: QqSong[], idx: number): void;
   playEntries(entries: PlaylistEntryMeta[], idx: number): void;
   playQueueIndex(i: number): void;
+  /** 在线条目（网易云/QQ）转可播放的队列项；无元数据时返回 null */
+  entryToQueueItem(e: PlaylistEntryMeta): QueueItem | null;
   togglePlay(): void;
   next(auto?: boolean): void;
   prev(): void;
@@ -115,6 +142,16 @@ interface Store {
   setRepeat(m: RepeatMode): void;
   toggleShuffle(): void;
 
+  /** 桌面歌词：开关状态 + 打开/关闭/解锁动作 */
+  desktopLyricsOn: boolean;
+  desktopLyricsLock: boolean;
+  openDesktopLyrics(): Promise<void>;
+  closeDesktopLyrics(): Promise<void>;
+  unlockDesktopLyrics(): Promise<void>;
+  /** 桌面歌词三色（已唱/未唱/下一句） */
+  dlyricsColors: DesktopLyricsColors;
+  setDlyricsColors(c: DesktopLyricsColors): void;
+
   toggleLike(id: number): void;
   addToQueue(item: QueueItem): void;
   playNext(item: QueueItem): void;
@@ -122,7 +159,7 @@ interface Store {
   clearQueue(): void;
   jumpTo(i: number): void;
 
-  createPlaylist(name: string): Promise<void>;
+  createPlaylist(name: string): Promise<number>;
   deletePlaylist(id: number): Promise<void>;
   renamePlaylist(id: number, name: string): Promise<void>;
   addToPlaylist(pid: number, tid: number): Promise<void>;
@@ -150,6 +187,9 @@ interface Store {
   playQq(list: QqSong[], idx: number): void;
 
   setQuality(q: string): void;
+  setCloseAction(a: "tray" | "exit"): void;
+  setCacheLimit(bytes: number): void;
+  refreshCacheBytes(): Promise<void>;
   setTheme(t: "dark" | "light"): void;
   setAccent(key: string): void;
   toggleLikeOnline(row: {
@@ -174,6 +214,7 @@ interface Store {
     mediaMid?: string;
   }): Promise<void>;
   refreshLikedOnline(): Promise<void>;
+  refreshRecentOnline(): Promise<void>;
   addOnlineToPlaylist(
     pid: number,
     row: {
@@ -192,6 +233,16 @@ interface Store {
   importNeteasePlaylist(remotePid: number, name: string): Promise<void>;
   importQqPlaylist(remotePid: number, name: string): Promise<void>;
 
+  /** 行 key（unavailable 同款：track:<id> / netease:<rid> / qq:<rid>） */
+  rowKeyOf(e: { kind: string; trackId?: number | null; onlineId?: string | null }): string;
+  /** “资料库/我喜欢”手动排序（整份顺序全量覆盖，乐观更新本地 state） */
+  saveManualOrder(list: "library" | "liked", keys: string[]): Promise<void>;
+  /** 手动序号缓存（list → row_key → pos；排序时用，0 = 无记录排最后） */
+  manualOrder: Record<string, Record<string, number>>;
+  loadManualOrder(list: "library" | "liked"): Promise<void>;
+  /** 播放列表条目手动排序（按 rowid 序列重写 position） */
+  reorderPlaylist(pid: number, rowids: number[]): Promise<void>;
+
   loadLyricsByKey(key: string): Promise<void>;
   loadLyrics(trackId: number): Promise<void>;
   applyMediaControl(action: string, value?: number): void;
@@ -200,6 +251,50 @@ interface Store {
 let toastSeq = 1;
 let unbinds: ListenerUnbind[] = [];
 let volumeTimer: ReturnType<typeof setTimeout> | null = null;
+/** init 单例：React StrictMode 双挂载 / 并发调用时只注册一次事件监听 */
+let initPromise: Promise<void> | null = null;
+
+/** 队列项显示名（失败提示用；取不到返回占位） */
+function titleOfQueueItem(
+  item: { kind: string; id: number | string },
+  caches: Pick<Store, "tracks" | "neteaseCache" | "qqCache" | "sources">
+): string {
+  if (item.kind === "track") {
+    return caches.tracks.find((t) => t.id === item.id)?.title ?? `曲目 #${item.id}`;
+  }
+  if (item.kind === "netease") {
+    return caches.neteaseCache[item.id as number]?.name ?? `网易云 #${item.id}`;
+  }
+  if (item.kind === "qq") {
+    return caches.qqCache[item.id as string]?.name ?? `QQ音乐 #${item.id}`;
+  }
+  return caches.sources.find((s) => s.id === item.id)?.title ?? `音源 #${item.id}`;
+}
+
+/** 推一帧歌词/进度给桌面歌词窗口（事件式，窗口不存在时 emit 静默无副作用） */
+async function pushDesktopLyrics(
+  s: Pick<
+    Store,
+    "lyrics" | "pos" | "dur" | "playing" | "current" | "desktopLyricsOn"
+  > & { dlyricsColors?: DesktopLyricsColors }
+) {
+  if (!s.desktopLyricsOn) return;
+  try {
+    const { emit } = await import("@tauri-apps/api/event");
+    emit("dlyrics://push", {
+      lines: s.lyrics?.lines ?? null,
+      synced: s.lyrics?.synced ?? false,
+      pos: s.pos,
+      dur: s.dur,
+      playing: s.playing,
+      title: s.current?.title ?? "",
+      artist: s.current?.artist ?? "",
+      colors: s.dlyricsColors ?? loadDesktopLyricsColors(),
+    });
+  } catch {
+    // 桌面歌词窗口未开/已关：忽略
+  }
+}
 
 export const useStore = create<Store>((set, get) => ({
   ready: false,
@@ -212,6 +307,7 @@ export const useStore = create<Store>((set, get) => ({
   playing: false,
   pos: 0,
   dur: 0,
+  playSeq: 0,
   scrubbing: false,
   queue: [],
   qIndex: 0,
@@ -227,6 +323,7 @@ export const useStore = create<Store>((set, get) => ({
   viewParam: 0,
   search: "",
   nowPlayingOpen: false,
+  fullscreen: false,
   queueOpen: false,
   scan: { active: false, done: 0, total: 0 },
   download: null,
@@ -246,29 +343,46 @@ export const useStore = create<Store>((set, get) => ({
   qqResults: [],
   qqSearching: false,
   qqSearched: false,
+  qqPage: 1,
   qqLoggedIn: false,
   qqNickname: "",
   qqCache: {},
 
   quality: "high",
-  theme: "dark",
+  closeAction: "tray",
+  cacheLimit: 2 * 1024 * 1024 * 1024,
+  cacheBytes: null,
+  unavailable: {},
+  failStreak: 0,
+  desktopLyricsOn: false,
+  desktopLyricsLock: false,
+  dlyricsColors: loadDesktopLyricsColors(),
+  playingSourceId: null,
+  theme: "light",
   accent: "amber",
   savedOnline: {},
   likedOnline: [],
+  recentOnline: [],
   loadMoreLock: false,
   neteaseLiked: {},
+  /** 手动排序序号缓存：{ list → row_key → pos } */
+  manualOrder: {},
 
   // ---------- 初始化 ----------
 
   async init() {
-    if (unbinds.length) return;
-
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
     unbinds.push(
       await listenEvent<PlayState>("player://state", (p) => {
         const liked =
           p.kind === "track" && p.id != null
             ? get().tracks.find((t) => t.id === p.id)?.liked ?? false
             : false;
+        // seq 增加 = 换曲开播，进度归零；seq 不变 = 暂停/恢复，保留进度
+        const isFreshStart =
+          p.seq != null ? p.seq > get().playSeq : p.playing && !get().playing;
+        if (p.seq != null) set({ playSeq: p.seq });
         set({
           current: {
             id: p.id ?? null,
@@ -286,10 +400,8 @@ export const useStore = create<Store>((set, get) => ({
           },
           playing: p.playing,
           dur: p.durationMs,
-          // 只有真正的“开播”才归零进度；暂停/恢复的 state 事件保留当前进度
-          pos: p.playing ? 0 : get().pos,
+          pos: isFreshStart ? 0 : get().pos,
         });
-        if (!p.playing) set({ pos: get().pos });
         // 自动加载当前曲目的歌词（播放栏滚动展示用）
         const key =
           p.kind === "track" && p.id != null
@@ -300,6 +412,12 @@ export const useStore = create<Store>((set, get) => ({
                 ? `qq-${p.qid}`
                 : null;
         if (key) get().loadLyricsByKey(key);
+        // 换曲开播：在线曲目更新“最近播放”（本地曲目由 refreshTracks 的 lastPlayed 体现）
+        if (isFreshStart && p.kind !== "track") get().refreshRecentOnline();
+        if (isFreshStart && p.kind === "track") get().refreshTracks();
+        // 播放/暂停/停止的即时同步：暂停后 pos 事件停发，
+        // 不在这里推一帧的话桌面歌词会一直按旧 playing 状态外推
+        pushDesktopLyrics(get());
       })
     );
 
@@ -308,6 +426,8 @@ export const useStore = create<Store>((set, get) => ({
         // 拖动进度条期间不回写事件进度，避免位置抖动
         if (get().scrubbing) return;
         set({ pos: p.pos, dur: p.dur > 0 ? p.dur : get().dur });
+        // 桌面歌词跟随（250ms 一帧，歌词窗口自行插值当前行）
+        pushDesktopLyrics(get());
       })
     );
 
@@ -383,14 +503,22 @@ export const useStore = create<Store>((set, get) => ({
         qqLoggedIn: qqStatus.loggedIn,
         qqNickname: qqStatus.nickname,
         quality: settings.quality,
+        closeAction: settings.closeAction ?? "tray",
+        cacheLimit: settings.cacheLimit ?? 2 * 1024 * 1024 * 1024,
         ready: true,
       });
+      get().refreshCacheBytes();
       if (neteaseStatus.loggedIn) get().neteaseSyncLikes();
       get().refreshLikedOnline();
+      get().refreshRecentOnline();
+      get().loadManualOrder("library");
+      get().loadManualOrder("liked");
     } catch (e) {
       set({ ready: true });
       get().toast(`初始化失败：${e}`, "error");
     }
+    })();
+    return initPromise;
   },
 
   // ---------- 提示 ----------
@@ -417,6 +545,26 @@ export const useStore = create<Store>((set, get) => ({
 
   setNowPlayingOpen(v) {
     set({ nowPlayingOpen: v });
+  },
+
+  toggleFullscreen(v) {
+    const next = v ?? !get().fullscreen;
+    set({ fullscreen: next });
+    // 真全屏（占据整个显示器、隐藏任务栏）。最大化状态下 Windows 会拒绝
+    // 切全屏，先还原窗口；错误显式提示而非静默吞掉
+    import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        const win = getCurrentWindow();
+        try {
+          if (next && await win.isMaximized()) {
+            await win.unmaximize();
+          }
+          await win.setFullscreen(next);
+        } catch (e) {
+          get().toast(`全屏切换失败：${e}`, "error");
+        }
+      })
+      .catch((e) => get().toast(`全屏切换失败：${e}`, "error"));
   },
 
   setQueueOpen(v) {
@@ -480,7 +628,12 @@ export const useStore = create<Store>((set, get) => ({
 
   playSourceItem(s) {
     const queue: QueueItem[] = [{ kind: "url", id: s.id }];
-    set((st) => ({ queue, qIndex: 0, history: [...st.history.slice(-50), st.qIndex] }));
+    set((st) => ({
+      playingSourceId: s.id,
+      queue,
+      qIndex: 0,
+      history: [...st.history.slice(-50), st.qIndex],
+    }));
     api
       .playSource(s.id)
       .catch((e) => get().toast(`播放音源失败：${e}`, "error"));
@@ -501,24 +654,31 @@ export const useStore = create<Store>((set, get) => ({
           ar: [{ name: e.artist }],
           al: { name: e.album, picUrl: e.cover },
           dt: Math.round(e.duration * 1000),
-          fee: 0,
+          fee: e.vip ? 1 : 0,
         };
         queue.push({ kind: "netease", id: idNum });
       } else if (e.kind === "qq" && e.onlineId) {
+        // e.cover 为完整封面 URL，最后一段即 albumMid
+        const albumMid = e.cover.match(/M000([0-9A-Za-z]+)\.jpg?/)?.[1] ?? "";
         qqCache[e.onlineId] = {
           id: e.onlineId,
           name: e.title,
           singer: e.artist,
           album: e.album,
-          albumMid: "",
-          mediaMid: "",
+          albumMid,
+          mediaMid: e.mediaMid ?? "",
           durationMs: Math.round(e.duration * 1000),
-          vip: false,
+          vip: e.vip ?? false,
         };
         queue.push({ kind: "qq", id: e.onlineId });
       }
     }
-    const target = Math.max(0, Math.min(idx, queue.length - 1));
+    let target = Math.max(0, Math.min(idx, queue.length - 1));
+    // 双击已知失败的曲目：从点击处向后找第一个可播项（全是坏项则停在原地提示）
+    const avail = queue.findIndex(
+      (q, i) => i >= target && get().unavailable[`${q.kind}:${q.id}`] == null
+    );
+    if (avail >= 0) target = avail;
     set((s) => ({
       neteaseCache,
       qqCache,
@@ -529,16 +689,87 @@ export const useStore = create<Store>((set, get) => ({
     if (queue.length) get().playQueueIndex(target);
   },
 
+  entryToQueueItem(e) {
+    if (e.kind === "local" && e.trackId != null) {
+      return { kind: "track", id: e.trackId };
+    }
+    if (e.kind === "netease" && e.onlineId) {
+      const idNum = Number(e.onlineId);
+      if (!Number.isFinite(idNum) || idNum <= 0) return null;
+      const neteaseCache = { ...get().neteaseCache };
+      neteaseCache[idNum] = {
+        id: idNum,
+        name: e.title,
+        ar: [{ name: e.artist }],
+        al: { name: e.album, picUrl: e.cover },
+        dt: Math.round(e.duration * 1000),
+        fee: e.vip ? 1 : 0,
+      };
+      set({ neteaseCache });
+      return { kind: "netease", id: idNum };
+    }
+    if (e.kind === "qq" && e.onlineId) {
+      const albumMid = e.cover.match(/M000([0-9A-Za-z]+)\.jpg?/)?.[1] ?? "";
+      const qqCache = { ...get().qqCache };
+      qqCache[e.onlineId] = {
+        id: e.onlineId,
+        name: e.title,
+        singer: e.artist,
+        album: e.album,
+        albumMid,
+        mediaMid: e.mediaMid ?? "",
+        durationMs: Math.round(e.duration * 1000),
+        vip: e.vip ?? false,
+      };
+      set({ qqCache });
+      return { kind: "qq", id: e.onlineId };
+    }
+    return null;
+  },
+
   playQueueIndex(i) {
     const { queue } = get();
     const item = queue[i];
     if (!item) return;
+    // 维护“正在播放的自定义音源 id”（供 SourcesView 高亮；非 url 播放时清除）
+    if (item.kind === "url") set({ playingSourceId: item.id });
+    else if (get().playingSourceId != null) set({ playingSourceId: null });
+
+    /** 播放失败统一处理：提示 + 按需标记不可用（列表置灰）+ 自动跳下一首。
+     *  只有疑似永久性失败（版权/VIP/下架/信息失效）才置灰；
+     *  网络错误/未登录等瞬时问题只跳过不标记，下次仍会尝试。
+     *  连环失败保护：一次连跳次数达到队列长度就停（全是坏链路时不再空转） */
+    const fail = (msg: string) => {
+      // 疑似永久性失败（版权/VIP/付费/下架/信息失效）才置灰；
+      // 网络错误/未登录等瞬时问题只跳过不标记。“未登录”显式排除。
+      const permanent =
+        /版权|VIP|付费|下架|失效|链接/.test(msg) && !/未登录|登录后/.test(msg);
+      const key = `${item.kind}:${item.id}`;
+      set((s) => ({
+        unavailable: permanent
+          ? { ...s.unavailable, [key]: msg }
+          : s.unavailable,
+        failStreak: s.failStreak + 1,
+      }));
+      get().toast(
+        `跳过「${titleOfQueueItem(item, get())}」：${msg}`,
+        "error"
+      );
+      if (get().failStreak < queue.length) {
+        get().next(true);
+      } else {
+        set({ playing: false });
+      }
+    };
+    // 开播成功则清零连跳计数
+    const ok = () => set({ failStreak: 0 });
+
     if (item.kind === "track") {
-      api.playTrack(item.id).catch((e) => get().toast(`播放失败：${e}`, "error"));
+      api.playTrack(item.id).then(ok).catch((e) => fail(String(e)));
     } else if (item.kind === "netease") {
       const t = get().neteaseCache[item.id];
       if (!t) {
-        get().toast("该在线曲目信息已失效，请重新搜索", "error");
+        fail("曲目信息已失效");
         return;
       }
       api
@@ -550,11 +781,12 @@ export const useStore = create<Store>((set, get) => ({
           cover: t.al?.picUrl ?? "",
           durationMs: t.dt,
         })
-        .catch((e) => get().toast(`播放失败：${e}`, "error"));
+        .then(ok)
+        .catch((e) => fail(String(e)));
     } else if (item.kind === "qq") {
       const t = get().qqCache[item.id];
       if (!t) {
-        get().toast("该在线曲目信息已失效，请重新搜索", "error");
+        fail("曲目信息已失效");
         return;
       }
       api
@@ -567,11 +799,10 @@ export const useStore = create<Store>((set, get) => ({
           mediaMid: t.mediaMid,
           durationMs: t.durationMs,
         })
-        .catch((e) => get().toast(`播放失败：${e}`, "error"));
+        .then(ok)
+        .catch((e) => fail(String(e)));
     } else {
-      api
-        .playSource(item.id)
-        .catch((e) => get().toast(`播放音源失败：${e}`, "error"));
+      api.playSource(item.id).then(ok).catch((e) => fail(String(e)));
     }
   },
 
@@ -593,8 +824,8 @@ export const useStore = create<Store>((set, get) => ({
     if (!queue.length) return;
 
     if (auto && repeat === "one" && current) {
-      // 单曲循环：重新播放当前曲目
-      get().playQueueIndex(qIndex);
+      // 单曲循环：重新播放当前曲目（qIndex 可能为 -1——当前项刚被删除，取 0）
+      get().playQueueIndex(Math.max(0, qIndex));
       return;
     }
 
@@ -606,8 +837,19 @@ export const useStore = create<Store>((set, get) => ({
     } else {
       idx = qIndex + 1;
     }
+    // 跳过已知失败的在线曲目（无版权/下架），最多检查一整圈防止死循环
+    let guard = queue.length;
+    while (guard-- > 0) {
+      if (idx >= queue.length) {
+        if (repeat === "all") idx = 0;
+        else break;
+      }
+      const q = queue[idx];
+      if (get().unavailable[`${q.kind}:${q.id}`] == null) break;
+      idx++;
+    }
     if (idx >= queue.length) {
-      if (repeat === "all") {
+      if (repeat === "all" && get().failStreak === 0) {
         idx = 0;
       } else {
         set({ playing: false, pos: 0 });
@@ -621,8 +863,15 @@ export const useStore = create<Store>((set, get) => ({
   prev() {
     const { queue, qIndex } = get();
     if (!queue.length) return;
-    // 直接切到上一曲（到列表头则回绕到最后一首）
-    const idx = qIndex > 0 ? qIndex - 1 : queue.length - 1;
+    // 直接切到上一曲（到列表头则回绕到最后一首），跳过已知失败项
+    let idx = qIndex > 0 ? qIndex - 1 : queue.length - 1;
+    let guard = queue.length;
+    while (guard-- > 0) {
+      const q = queue[idx];
+      if (get().unavailable[`${q.kind}:${q.id}`] == null) break;
+      idx = idx > 0 ? idx - 1 : queue.length - 1;
+    }
+    if (get().unavailable[`${queue[idx].kind}:${queue[idx].id}`] != null) return;
     set((s) => ({ qIndex: idx, history: [...s.history.slice(-50), s.qIndex] }));
     get().playQueueIndex(idx);
   },
@@ -662,18 +911,63 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({ shuffle: !s.shuffle }));
   },
 
+  // ---------- 桌面歌词 ----------
+
+  async openDesktopLyrics() {
+    try {
+      await api.desktopLyricsOpen();
+      set({ desktopLyricsOn: true, desktopLyricsLock: false });
+      // 立即推一帧当前状态（窗口加载完成可能晚于这次推送，靠后续 pos 事件补）
+      pushDesktopLyrics(get());
+      get().toast("桌面歌词已开启（L 键切换）", "info");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async closeDesktopLyrics() {
+    try {
+      await api.desktopLyricsClose();
+      set({ desktopLyricsOn: false, desktopLyricsLock: false });
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async unlockDesktopLyrics() {
+    try {
+      await api.desktopLyricsUnlock();
+      set({ desktopLyricsLock: false });
+    } catch {
+      // 窗口可能已关闭：静默
+    }
+  },
+
+  setDlyricsColors(c) {
+    set({ dlyricsColors: c });
+    saveDesktopLyricsColors(c);
+    // 即时生效：推一帧新颜色给悬浮窗（窗口没开时 push 内部自跳过）
+    pushDesktopLyrics(get());
+  },
+
   // ---------- 喜欢 / 队列 ----------
 
   toggleLike(id) {
     const t = get().tracks.find((x) => x.id === id);
     if (!t) return;
     const liked = !t.liked;
-    set((s) => ({
-      tracks: s.tracks.map((x) => (x.id === id ? { ...x, liked } : x)),
-      current:
-        s.current && s.current.id === id ? { ...s.current, liked } : s.current,
-    }));
-    api.likeTrack(id, liked).catch(() => {});
+    const apply = (v: boolean) =>
+      set((s) => ({
+        tracks: s.tracks.map((x) => (x.id === id ? { ...x, liked: v } : x)),
+        current:
+          s.current && s.current.id === id ? { ...s.current, liked: v } : s.current,
+      }));
+    apply(liked);
+    api.likeTrack(id, liked).catch(() => {
+      // 失败回滚，避免 UI 与数据库状态不一致（重启后状态跳回）
+      apply(!liked);
+      get().toast("喜欢状态同步失败", "error");
+    });
   },
 
   addToQueue(item) {
@@ -693,8 +987,10 @@ export const useStore = create<Store>((set, get) => ({
   removeQueueItem(i) {
     set((s) => {
       const q = s.queue.filter((_, idx) => idx !== i);
+      // 删除当前播放项（i === qIndex）时 qIndex 回退一位（可为 -1），
+      // 使播完后的 next() 恰好落在原下一首上，避免跳歌；UI 无高亮项符合语义
       let qIndex = s.qIndex;
-      if (i < s.qIndex) qIndex -= 1;
+      if (i <= s.qIndex) qIndex = Math.max(-1, qIndex - 1);
       return { queue: q, qIndex };
     });
   },
@@ -717,11 +1013,13 @@ export const useStore = create<Store>((set, get) => ({
 
   async createPlaylist(name) {
     try {
-      await api.createPlaylist(name);
+      const id = await api.createPlaylist(name);
       await get().refreshPlaylists();
       get().toast(`已创建播放列表「${name}」`, "success");
+      return id;
     } catch (e) {
       get().toast(String(e), "error");
+      return -1;
     }
   },
 
@@ -829,6 +1127,24 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e) {
       get().toast(String(e), "error");
     }
+    await get().refreshCacheBytes();
+  },
+
+  setCacheLimit(bytes) {
+    set({ cacheLimit: bytes });
+    api
+      .setCacheLimit(bytes)
+      .then(() => get().refreshCacheBytes())
+      .catch((e) => get().toast(String(e), "error"));
+  },
+
+  async refreshCacheBytes() {
+    try {
+      const s = await api.cacheStats();
+      set({ cacheBytes: s.bytes });
+    } catch {
+      // 非致命：设置页进入时会再查一次
+    }
   },
 
   // ---------- 网易云 ----------
@@ -854,18 +1170,22 @@ export const useStore = create<Store>((set, get) => ({
     if (append && get().loadMoreLock) return;
     set({ qqSearching: true, qqSearched: true });
     try {
-      const page = append ? Math.floor(get().qqResults.length / 30) + 1 : 1;
+      if (append) set({ loadMoreLock: true });
+      const page = append ? get().qqPage + 1 : 1;
       const r = await api.qqSearch(keyword, page);
       const cache = { ...get().qqCache };
       for (const t of r.songs) cache[t.id] = t;
       set((s) => ({
         qqResults: append ? [...s.qqResults, ...r.songs] : r.songs,
         qqSearching: false,
+        qqPage: page,
         qqCache: cache,
       }));
     } catch (e) {
       set({ qqSearching: false });
       get().toast(String(e), "error");
+    } finally {
+      set({ loadMoreLock: false });
     }
   },
 
@@ -893,6 +1213,11 @@ export const useStore = create<Store>((set, get) => ({
   setQuality(q) {
     set({ quality: q });
     api.setPlayQuality(q).catch((e) => get().toast(String(e), "error"));
+  },
+
+  setCloseAction(a) {
+    set({ closeAction: a });
+    api.setCloseAction(a).catch((e) => get().toast(String(e), "error"));
   },
 
   setTheme(t) {
@@ -965,6 +1290,12 @@ export const useStore = create<Store>((set, get) => ({
     } catch {}
   },
 
+  async refreshRecentOnline() {
+    try {
+      set({ recentOnline: await api.recentOnlineList() });
+    } catch {}
+  },
+
   async addOnlineToPlaylist(pid, row) {
     try {
       await api.addOnlineToPlaylist({
@@ -996,15 +1327,57 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
+  // ---------- 手动排序（拖拽调序） ----------
+
+  rowKeyOf(e) {
+    if (e.kind === "local") return `track:${e.trackId ?? 0}`;
+    return `${e.kind}:${e.onlineId ?? ""}`;
+  },
+
+  async loadManualOrder(list) {
+    try {
+      const map = await api.getManualOrder(list);
+      set((s) => ({ manualOrder: { ...s.manualOrder, [list]: map } }));
+    } catch {
+      // 静默：无排序记录时按默认排序展示
+    }
+  },
+
+  async saveManualOrder(list, keys) {
+    // 乐观更新：立即写入本地缓存，失败时回滚旧值
+    const prev = get().manualOrder[list] ?? {};
+    try {
+      const next: Record<string, number> = {};
+      keys.forEach((k, i) => (next[k] = i + 1));
+      set((s) => ({ manualOrder: { ...s.manualOrder, [list]: next } }));
+      await api.saveManualOrder(list, keys);
+    } catch (e) {
+      set((s) => ({ manualOrder: { ...s.manualOrder, [list]: prev } }));
+      get().toast("顺序保存失败", "error");
+    }
+  },
+
+  async reorderPlaylist(pid, rowids) {
+    try {
+      await api.reorderPlaylist(pid, rowids);
+      await get().refreshPlaylists();
+    } catch (e) {
+      get().toast("顺序保存失败", "error");
+    }
+  },
+
   async importNeteasePlaylist(remotePid, name) {
     try {
-      await get().createPlaylist(name);
-      const pls = get().playlists;
-      const created = pls[pls.length - 1];
-      if (!created) throw new Error("创建播放列表失败");
-      const n = await api.neteaseImportPlaylist(remotePid, created.id);
+      // 合并语义：同名/同远程 id 的已有列表直接补新歌（去重、不动顺序），
+      // 没有才新建——由后端统一判断
+      const [, added] = await api.neteaseImportPlaylist(remotePid, name);
       await get().refreshPlaylists();
-      get().toast(`已导入「${name}」${n} 首（在线播放，按账号权益）`, "success");
+      get().toast(
+        added > 0
+          ? `已同步「${name}」：新增 ${added} 首`
+          : `「${name}」没有新歌需要同步`,
+        "success"
+      );
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -1012,13 +1385,14 @@ export const useStore = create<Store>((set, get) => ({
 
   async importQqPlaylist(remotePid, name) {
     try {
-      await get().createPlaylist(name);
-      const pls = get().playlists;
-      const created = pls[pls.length - 1];
-      if (!created) throw new Error("创建播放列表失败");
-      const n = await api.qqImportPlaylist(remotePid, created.id);
+      const [, added] = await api.qqImportPlaylist(remotePid, name);
       await get().refreshPlaylists();
-      get().toast(`已导入「${name}」${n} 首（在线播放，按账号权益）`, "success");
+      get().toast(
+        added > 0
+          ? `已同步「${name}」：新增 ${added} 首`
+          : `「${name}」没有新歌需要同步`,
+        "success"
+      );
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -1027,8 +1401,10 @@ export const useStore = create<Store>((set, get) => ({
   async neteaseSearch(kw, append = false) {
     const keyword = kw.trim();
     if (!keyword) return;
+    if (append && get().loadMoreLock) return;
     set({ neteaseSearching: true, neteaseSearched: true });
     try {
+      if (append) set({ loadMoreLock: true });
       const offset = append ? get().neteaseResults.length : 0;
       const r = await api.neteaseSearch(keyword, offset);
       const cache = { ...get().neteaseCache };
@@ -1042,6 +1418,8 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e) {
       set({ neteaseSearching: false });
       get().toast(String(e), "error");
+    } finally {
+      set({ loadMoreLock: false });
     }
   },
 
@@ -1100,6 +1478,8 @@ export const useStore = create<Store>((set, get) => ({
   // ---------- 歌词 ----------
 
   async loadLyricsByKey(key) {
+    // 同 key 且已在加载/已加载：跳过（防止 pos 事件高频触发重复请求）；
+    // 不同 key 之间的来回切换由 lyricsFor 标识丢弃过期响应
     if (get().lyricsFor === key) return;
     set({ lyricsLoading: true, lyricsFor: key, lyrics: null });
     const [kind, ...rest] = key.split("-");
@@ -1113,9 +1493,10 @@ export const useStore = create<Store>((set, get) => ({
             : await api.getLyrics(Number(id));
       if (get().lyricsFor === key) {
         set({ lyrics: payload, lyricsLoading: false });
+        pushDesktopLyrics(get());
       }
     } catch {
-      if (get().lyricsFor === key) set({ lyricsLoading: false });
+      if (get().lyricsFor === key) set({ lyricsLoading: false, lyrics: null });
     }
   },
 

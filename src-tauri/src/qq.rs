@@ -15,10 +15,25 @@ fn b64_encode(data: &[u8]) -> String {
 
 pub const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const TIMEOUT: Duration = Duration::from_secs(12);
-const GUID: &str = "2844095639";
+/// 客户端 guid：每进程随机生成一次（10 位数字，与官方客户端格式一致），
+/// 避免所有安装共用固定值触发风控
+fn guid() -> &'static str {
+    use std::sync::OnceLock;
+    static GUID: OnceLock<String> = OnceLock::new();
+    GUID.get_or_init(|| {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let mut s = String::with_capacity(10);
+        s.push(char::from(b'1' + rng.gen_range(0..9) as u8));
+        for _ in 0..9 {
+            s.push(char::from(b'0' + rng.gen_range(0..10) as u8));
+        }
+        s
+    })
+}
 
 /// 读取环境变量中的代理配置（与 ureq 内建逻辑一致）
-fn system_proxy() -> Option<ureq::Proxy> {
+pub fn system_proxy() -> Option<ureq::Proxy> {
     for k in [
         "ALL_PROXY",
         "all_proxy",
@@ -181,58 +196,136 @@ pub struct QqSong {
 
 // ---------- 搜索（匿名可用） ----------
 
+/// 从搜索条目解析 QqSong（新旧通道字段兼容：
+/// 新=mid/name/singer/album.mid、旧=songmid/songname/albummid）
+fn song_from_search_json(s: &serde_json::Value) -> Option<QqSong> {
+    let id = s
+        .get("mid")
+        .or_else(|| s.get("songmid"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if id.is_empty() {
+        return None;
+    }
+    let singer = s
+        .get("singer")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                .collect::<Vec<_>>()
+                .join(" / ")
+        })
+        .unwrap_or_default();
+    Some(QqSong {
+        id: id.to_string(),
+        name: s
+            .get("name")
+            .or_else(|| s.get("songname"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        singer,
+        album: s
+            .pointer("/album/name")
+            .or_else(|| s.get("albumname"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        album_mid: s
+            .pointer("/album/mid")
+            .or_else(|| s.get("albummid"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        media_mid: s
+            .get("media_mid")
+            .or_else(|| s.pointer("/file/media_mid"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        duration_ms: s.get("interval").and_then(|v| v.as_i64()).unwrap_or(0) as u64 * 1000,
+        vip: s
+            .pointer("/pay/pay_play")
+            .or_else(|| s.pointer("/pay/payplay"))
+            .and_then(|v| v.as_i64())
+            .map(|v| v != 0)
+            .unwrap_or(false),
+    })
+}
+
 pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, String> {
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return Ok(vec![]);
     }
+    // 主通道：soso 明文接口 search_for_qq_cp（匿名 GET 可用）。
+    // 同族 client_search_cp 已 500，签名版 SearchCgiService 对部分网络
+    // 返回 500003（拒绝匿名请求），故以明文 soso 为主。
     let url = format!(
-        "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?ct=24&qqmusic_ver=1298&remoteplace=txt.yqq.top&t=0&aggr=1&cr=1&w={}&format=json&n={}&p={}",
+        "https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp?w={}&format=json&n={}&p={}&g_tk=5381",
         form_encode(keyword),
         limit,
         page
     );
-    let text = plain_get(&url, "https://y.qq.com/")?;
-    let resp: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("QQ 音乐搜索解析失败: {e}"))?;
-    if resp.get("code").and_then(|c| c.as_i64()) != Some(0) {
-        return Err("QQ 音乐搜索失败".into());
-    }
-    let mut out = Vec::new();
-    if let Some(list) = resp.pointer("/data/song/list").and_then(|v| v.as_array()) {
-        for s in list {
-            let id = s.get("songmid").and_then(|v| v.as_str()).unwrap_or("");
-            if id.is_empty() {
-                continue;
+    let mut last_err: String = match plain_get(&url, "https://y.qq.com/") {
+        Err(e) => e,
+        Ok(text) => {
+            let resp: serde_json::Value = match serde_json::from_str(&text) {
+                Ok(v) => v,
+                Err(e) => return Err(format!("QQ 音乐搜索解析失败: {e}")),
+            };
+            if resp.get("code").and_then(|c| c.as_i64()) == Some(0) {
+                if let Some(list) = resp.pointer("/data/song/list").and_then(|v| v.as_array()) {
+                    let out: Vec<QqSong> =
+                        list.iter().filter_map(song_from_search_json).collect();
+                    if !out.is_empty() {
+                        return Ok(out);
+                    }
+                }
             }
-            let singer = s
-                .get("singer")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(" / ")
-                })
-                .unwrap_or_default();
-            out.push(QqSong {
-                id: id.to_string(),
-                name: s.get("songname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                singer,
-                album: s.get("albumname").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                album_mid: s.get("albummid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                media_mid: s.get("media_mid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                duration_ms: s.get("interval").and_then(|v| v.as_i64()).unwrap_or(0) as u64 * 1000,
-                vip: s
-                    .pointer("/pay/payplay")
-                    .and_then(|v| v.as_i64())
-                    .map(|v| v != 0)
-                    .unwrap_or(false),
-            });
+            format!(
+                "soso 通道无数据（code {}）",
+                resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1)
+            )
         }
+    };
+
+    // 备用通道：musicu 的 SearchCgiService（网页版现行搜索，部分网络可用）
+    let payload = serde_json::json!({
+        "comm": {"ct": 19, "cv": 1859},
+        "req_1": {
+            "module": "music.adsense.SearchCgiService",
+            "method": "DoSearchForQmicMusic",
+            "param": {
+                "search_type": 0,
+                "query": keyword,
+                "page_num": page,
+                "num_per_page": limit
+            }
+        }
+    });
+    if let Ok(resp) = musicu_signed(&payload, None) {
+        let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        if code == 0 {
+            if let Some(list) = resp
+                .pointer("/req_1/data/body/song/list")
+                .and_then(|v| v.as_array())
+            {
+                let out: Vec<QqSong> =
+                    list.iter().filter_map(song_from_search_json).collect();
+                if !out.is_empty() {
+                    return Ok(out);
+                }
+            }
+            last_err = format!("{last_err}，签名通道无歌曲数据");
+        } else {
+            last_err = format!("{last_err}，签名通道 code {code}");
+        }
+    } else {
+        last_err = format!("{last_err}，签名通道请求失败");
     }
-    out.truncate(limit as usize);
-    Ok(out)
+    Err(format!("QQ 音乐搜索失败: {last_err}"))
 }
 
 // ---------- 播放链接（需登录 cookie） ----------
@@ -330,7 +423,7 @@ pub fn song_url(
                 "param": {
                     "uin": musicid,
                     "filename": [format!("{prefix}{file_base}.{ext}")],
-                    "guid": GUID,
+                    "guid": guid(),
                     "songmid": [songmid],
                     "songtype": [0],
                     "ctx": 0,
@@ -393,6 +486,68 @@ pub fn lyric(songmid: &str) -> Result<Option<String>, String> {
         }
         None => Ok(None),
     }
+}
+
+/// 逐字歌词（QRC）：musicu 的 PlayLyricInfo 模块，需登录凭证。
+/// lyric 字段为 hex 编码的 QQ 魔改 Triple-DES + zlib + XML 数据，
+/// 解密提取 LyricContent 后转换为增强 LRC；无逐字数据返回 None 回落行级。
+pub fn lyric_qrc(
+    songmid: &str,
+    musicid: &str,
+    musickey: &str,
+) -> Result<Option<String>, String> {
+    let payload = serde_json::json!({
+        "comm": {"uin": musicid, "format": "json", "ct": 19, "cv": 0},
+        "req_1": {
+            "module": "music.musichallSong.PlayLyricInfo",
+            "method": "GetPlayLyricInfo",
+            "param": {
+                "songMid": songmid,
+                "qrc": 1,            // 1 = 请求逐字（QRC），0 = 行级
+                "qrc_tts": 0,
+                "romalrc": 0,
+                "trans": 0
+            }
+        }
+    });
+    let cookie = credential_cookie(musicid, musickey);
+    let resp = musicu_signed(&payload, Some(&cookie))?;
+    let code = resp
+        .pointer("/req_1/code")
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0);
+    if code != 0 {
+        return Ok(None);
+    }
+    // qrc=1 → lyric 为逐字（加密）；qrc=0 → 行级 LRC（无逐字可回落）
+    let is_qrc = resp
+        .pointer("/req_1/data/qrc")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0)
+        == 1;
+    if !is_qrc {
+        return Ok(None);
+    }
+    let encoded = resp
+        .pointer("/req_1/data/lyric")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let Some(encoded) = encoded else { return Ok(None) };
+    // 解密失败（格式变化等）时返回 None，调用方回落行级 LRC
+    let xml = match crate::qrc::decrypt(encoded) {
+        Ok(x) => x,
+        Err(_) => return Ok(None),
+    };
+    let Some(content) = crate::qrc::extract_lyric_content(&xml) else {
+        return Ok(None);
+    };
+    // XML 属性里的换行是转义文本：还原为真实行
+    let content = content.replace("\\n", "\n");
+    let enhanced = crate::qrc::to_enhanced_lrc(&content);
+    if enhanced.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(enhanced))
 }
 
 // ---------- 扫码登录 ----------

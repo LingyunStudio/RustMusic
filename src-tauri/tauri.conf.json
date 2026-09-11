@@ -16,7 +16,7 @@
         "label": "main",
         "title": "RustMusic",
         "width": 1280,
-        "height": 820,
+        "height": 880,
         "minWidth": 1000,
         "minHeight": 660,
         "center": true,

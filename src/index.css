@@ -26,27 +26,49 @@
   --backdrop-1: #241a10;
   --backdrop-2: #14100b;
   --bar-tint: rgba(15, 12, 9, 0.82);
-  --bar-glass: rgba(26, 21, 16, 0.22);
+  --bar-glass: rgba(26, 21, 16, 0.45);
+  --bar-line: rgba(243, 233, 216, 0.08);
+  --bar-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55);
+  --cover-shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --cover-shadow-lg: 0 36px 90px rgba(0, 0, 0, 0.7);
+  --glow: #c2570f;
+  --blob-warm: #8a3d1f;
+  --noise-opacity: 0.3;
+  --play-btn-bg: #f3ede3;
+  --play-btn-on: #241505;
   color-scheme: dark;
 }
 
+/* ---------- 液态玻璃浅色主题 ----------
+   参考「纯CSS液态玻璃」：浅色网格底 + 多层内高光 + 对角高光渐变 + 内圈暗影。
+   参考实现依赖父级 contrast(3) 放大微弱阴影（会毁掉文字/封面），
+   这里将对比度直接预调进各阴影/渐变值。 */
 html[data-theme="light"] {
-  --bg: #f7f2ea;
-  --ink: #2c241a;
-  --ink-2: #6b6053;
-  --ink-3: #9a8e7e;
-  --line: rgba(42, 33, 24, 0.12);
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(252, 248, 241, 0.85);
-  --glass-line: rgba(42, 33, 24, 0.1);
-  --shade: rgba(42, 33, 24, 0.05);
-  --shade-strong: rgba(42, 33, 24, 0.1);
-  --shade-hover: rgba(42, 33, 24, 0.06);
-  --vignette: rgba(120, 105, 85, 0.16);
-  --backdrop-1: #efe6d8;
-  --backdrop-2: #f7f2ea;
-  --bar-tint: rgba(247, 242, 234, 0.85);
-  --bar-glass: rgba(252, 248, 241, 0.26);
+  --bg: #eef1f7;
+  --ink: #2b3546;
+  --ink-2: #5d6a7e;
+  --ink-3: #8d99ab;
+  --line: rgba(43, 53, 70, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-bg-strong: rgba(250, 252, 255, 0.88);
+  --glass-line: rgba(255, 255, 255, 0.75);
+  --shade: rgba(43, 53, 70, 0.055);
+  --shade-strong: rgba(43, 53, 70, 0.1);
+  --shade-hover: rgba(43, 53, 70, 0.045);
+  --vignette: rgba(154, 170, 193, 0.2);
+  --backdrop-1: #e7ecf4;
+  --backdrop-2: #eef1f7;
+  --bar-tint: rgba(238, 241, 247, 0.88);
+  --bar-glass: rgba(255, 255, 255, 0.55);
+  --bar-line: rgba(255, 255, 255, 0.45);
+  --bar-shadow: 0 12px 32px -12px rgba(37, 50, 68, 0.28);
+  --cover-shadow-sm: 0 4px 14px rgba(37, 50, 68, 0.22);
+  --cover-shadow-lg: 0 36px 90px -18px rgba(37, 50, 68, 0.42);
+  --glow: #9db4d4;
+  --blob-warm: #c3cfdf;
+  --noise-opacity: 0.08;
+  --play-btn-bg: #ffffff;
+  --play-btn-on: #2b3546;
   color-scheme: light;
 }
 
@@ -86,6 +108,22 @@ body {
 input,
 textarea {
   user-select: text;
+}
+
+/* 行拖拽调序期间：禁一切选中文本，光标提示可移动 */
+body.dragging-rows,
+body.dragging-rows * {
+  user-select: none !important;
+  cursor: grabbing !important;
+}
+
+/* 拖拽中的幽灵行：提层 + 阴影 + 轻微放大，与让位行形成层次 */
+.drag-row-ghost {
+  z-index: 20;
+  position: relative;
+  pointer-events: none;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28) !important;
+  filter: brightness(1.06);
 }
 
 ::selection {
@@ -129,6 +167,114 @@ textarea {
   border: 1px solid var(--glass-line);
 }
 
+/* ---------- 液态玻璃（浅色主题特化） ----------
+   高光栈来自「纯CSS液态玻璃」参考：
+   · 多层 inset 白高光 = 玻璃边缘反光
+   · inset 0 0 Npx 暗色 = 内圈柔和暗影（参考的 ::before 模糊暗环）
+   · 对角高光渐变 = 参考 ::after 的 45° 白色渐变（端点亮、中部透）
+   · 外阴影浮起 */
+
+html[data-theme="light"] .glass {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(255, 255, 255, 0.38) 24%,
+      rgba(255, 255, 255, 0.16) 50%,
+      rgba(255, 255, 255, 0.4) 78%,
+      rgba(255, 255, 255, 0.9) 100%
+    ),
+    rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  box-shadow:
+    inset 2px -2px 1px -1px rgba(255, 255, 255, 0.95),
+    inset -2px 2px 1px -1px rgba(255, 255, 255, 0.95),
+    inset 6px -6px 1px -6px rgba(255, 255, 255, 0.65),
+    inset -6px 6px 1px -6px rgba(255, 255, 255, 0.65),
+    inset 0 0 12px rgba(47, 62, 84, 0.07),
+    0 6px 22px -8px rgba(37, 50, 68, 0.16),
+    0 1px 2px rgba(37, 50, 68, 0.06);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+html[data-theme="light"] .glass-strong {
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(246, 249, 253, 0.9) 55%,
+    rgba(255, 255, 255, 0.94) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    inset 2px -2px 1px -1px rgba(255, 255, 255, 0.95),
+    inset -2px 2px 1px -1px rgba(255, 255, 255, 0.95),
+    inset 0 0 10px rgba(47, 62, 84, 0.05),
+    0 16px 44px -14px rgba(37, 50, 68, 0.24);
+  backdrop-filter: blur(28px) saturate(1.25);
+  -webkit-backdrop-filter: blur(28px) saturate(1.25);
+}
+
+/* 浅色下的次级按钮：玻璃质感（白渐变 + 边缘高光） */
+html[data-theme="light"] .btn-secondary {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.55) 60%,
+    rgba(255, 255, 255, 0.85) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 1px -1px 1px -1px rgba(255, 255, 255, 0.95),
+    inset -1px 1px 1px -1px rgba(255, 255, 255, 0.95),
+    0 2px 8px rgba(37, 50, 68, 0.1);
+}
+html[data-theme="light"] .btn-secondary:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.75) 60%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+  border-color: rgba(255, 255, 255, 1);
+}
+
+/* 浅色下的输入框 / 下拉：玻璃质感 */
+html[data-theme="light"] select,
+html[data-theme="light"] input[type="text"],
+html[data-theme="light"] input[type="url"] {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.6) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 1px 1px 1px -1px rgba(255, 255, 255, 0.9),
+    inset 0 0 8px rgba(47, 62, 84, 0.04),
+    0 1px 4px rgba(37, 50, 68, 0.08);
+}
+html[data-theme="light"] select option {
+  background: #f6f8fc;
+  color: var(--ink);
+}
+
+/* 浅色下的网格纹理层——不采用：参考 demo 的网格仅是展示背景，
+   玻璃效果本身只依赖背景色与高光栈 */
+
+/* 全局统一交互反馈：任何图标按钮按下都弹跳（心形、播放、菜单等） */
+button:active > svg {
+  transform: scale(0.88);
+  transition: transform 0.1s ease;
+}
+button:not(:active) > svg {
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* 爱心按钮保留更明显的弹跳动画（优先级更高） */
+.btn-ghost:active > svg {
+  animation: heartPop 0.38s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 /* ---------- 动画 ---------- */
 
 @keyframes fadeIn {
@@ -161,12 +307,202 @@ textarea {
   50% { transform: scaleY(1); }
 }
 
-/* 播放页背景渐变：色相持续流动 + 缓慢旋转 */
-@keyframes hueFlow {
-  0% { filter: blur(120px) saturate(1.35) hue-rotate(0deg); }
-  100% { filter: blur(120px) saturate(1.35) hue-rotate(360deg); }
+/* ---------- 高级动效 ---------- */
+
+/* 视图切换：内容上浮 + 淡入（配合 App 的 view-key 重挂载） */
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.995); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.anim-view { animation: viewIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* 列表行 stagger 入场：第 n 行延迟 n*24ms，前 12 行有入场编排 */
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-row {
+  animation: rowIn 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--row-idx, 0) * 24ms);
 }
 
+/* 主按钮光泽扫过（hover 时高光从左到右掠过） */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  transition: none;
+  pointer-events: none;
+}
+.btn-primary:hover::after {
+  animation: shineSweep 0.7s ease;
+}
+@keyframes shineSweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+
+/* 收藏爱心弹出反馈 */
+@keyframes heartPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  70% { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+/* 点击爱心类按钮时图标弹跳（:active 瞬时触发，无需 JS state） */
+.btn-ghost:active > svg {
+  animation: heartPop 0.38s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 播放条滑入（视图加载/切回时） */
+@keyframes barIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-bar { animation: barIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* 封面悬停浮升（行内封面） */
+.hover-lift {
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.22s ease;
+}
+.group:hover .hover-lift {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: var(--cover-shadow-sm), 0 8px 20px -6px rgba(0, 0, 0, 0.25);
+}
+
+/* 液态玻璃悬浮呼吸（活动卡片微光流动，浅色下尤其明显） */
+@keyframes glassSheen {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+}
+.glass-sheen {
+  background-size: 220% 220%;
+  animation: glassSheen 9s ease-in-out infinite;
+}
+
+/* 强调色光标跟随侧栏按钮（选中指示条弹性进入） */
+@keyframes indicatorIn {
+  from { transform: translateY(-50%) scaleY(0); opacity: 0; }
+  to { transform: translateY(-50%) scaleY(1); opacity: 1; }
+}
+.anim-indicator {
+  animation: indicatorIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 侧栏项 hover：左侧滑入高光 + 文字滑移（所有侧栏按钮统一） */
+.nav-item {
+  position: relative;
+  overflow: hidden;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nav-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    var(--shade-hover) 35%,
+    var(--shade-strong) 50%,
+    var(--shade-hover) 65%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+.nav-item:hover::before {
+  transform: translateX(100%);
+}
+.nav-item:hover {
+  transform: translateX(2px);
+}
+.nav-item:active {
+  transform: translateX(2px) scale(0.985);
+}
+.nav-item > svg {
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nav-item:hover > svg {
+  transform: scale(1.12);
+}
+
+/* Apple Music 式歌词行：切换行时的字号/字重/透明/缩放平滑过渡；
+   当前行染色由 rAF 直接写 style/--fill（叠加层 clipPath，脱离 React 渲染，
+   保证逐字推进不随主线程负载掉帧——与桌面歌词同机制）。
+   will-change 只挂在当前行（.active）：全部行常驻会各建一个合成层，
+   百行歌词直接拖垮 GPU 帧预算 */
+.lyric-line {
+  transform-origin: center;
+  transition:
+    color 0.5s ease,
+    font-size 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
+    font-weight 0.5s ease,
+    opacity 0.5s ease,
+    transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  color: var(--ink-3);
+  font-size: 20px;
+  font-weight: 600;
+}
+.lyric-line.active {
+  will-change: transform, opacity;
+}
+
+/* 当前行染色：叠加层与桌面歌词同构——外层 absolute 铺满本行（与本体
+   文字精确重合），内层 inline-block 收缩到文字实际宽度，clip-path 的
+   百分比基准就是文字本身（居中行不会被左右空白稀释逐字进度）。
+   文字本体保持灰白；仅当前行（.active）渲染染色层 */
+.lyric-fill {
+  position: relative;
+}
+.lyric-fill:not(.active) .lyric-fill-ov {
+  display: none;
+}
+.lyric-fill .lyric-fill-ov {
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  text-align: inherit;
+  pointer-events: none;
+  /* 染色层不参与行切换过渡（透明度由本行的 opacity 控制） */
+  transition: none;
+}
+.lyric-fill .lyric-fill-ov > span {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--accent-strong);
+  clip-path: inset(0 calc(100% - var(--fill, 0%)) 0 0);
+}
+
+/* 歌词行激活弹跳 */
+@keyframes lyricActive {
+  from { transform: scale(0.92); opacity: 0.6; }
+  to { transform: scale(1.02); opacity: 1; }
+}
+.anim-lyric {
+  animation: lyricActive 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 播放页背景渐变：缓慢旋转（纯 transform，合成器执行零主线程开销）。
+   曾叠加 hueFlow（filter 动画）——即使 CSS keyframes，120px blur 的
+   filter 每帧重光栅化仍会挤压歌词渲染帧预算，播放页歌词卡顿元凶之一；
+   大模糊下色相缓慢变化视觉不可感知，删除 */
 @keyframes slowSpin {
   from { transform: rotate(0deg) scale(1.18); }
   to { transform: rotate(360deg) scale(1.18); }
@@ -350,4 +686,77 @@ input[type="range"] {
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
+  height: 18px;
+}
+/* 轨道 */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--shade-strong);
+}
+/* 已填充段（用 accent 渐变打底，宽度由 accentcolor 动态设定） */
+input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill, 0%),
+    var(--shade-strong) var(--fill, 100%)
+  );
+}
+/* 滑块 */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  margin-top: -5px;
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(0.92);
+}
+
+/* ---------- 全局按钮动效兜底 ----------
+   原则：任何按钮 hover 有反馈、active 有弹性回缩。
+   · 前面的 button:active > svg 规则已给图标按钮提供弹跳；
+   · btn-* / nav-item 自带动效，且都在本块之前定义，specificity 相同
+     时后写的会覆盖，因此这里仅用「无冲突的补充」：亮度 + filter + 弹性 scale。
+   · 已有 :active transform 的类（btn-ghost 等）不受影响：本块选择器更靠后，
+     但那些类规则带同等 specificity 且更早 —— 为避免覆盖，用 :not() 排除。 */
+
+/* 1) 所有按钮：hover 轻微提亮 + 光标就绪反馈 */
+button:not(.btn-primary):not(.btn-ghost):not(.nav-item):not(.titlebar-btn):hover {
+  filter: brightness(1.12);
+  transition: filter 0.15s ease, transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+button:not(.btn-primary):not(.btn-ghost):not(.nav-item):not(.titlebar-btn):not(:hover) {
+  transition: filter 0.25s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 2) 所有按钮：active 弹性回缩（排除已定义专属动效的类） */
+button:not(.btn-primary):not(.btn-ghost):not(.nav-item):active {
+  transform: scale(0.94);
+  filter: brightness(0.92);
+}
+
+/* 3) btn-secondary / chip 按下反馈（此前缺失） */
+.btn-secondary:active,
+.chip:active {
+  transform: scale(0.96);
+  filter: brightness(0.95);
+}
+
+/* 4) 标题栏窗口按钮：专属动效（背景 hover 已有，补按下缩放） */
+.titlebar-btn:active {
+  transform: scale(0.88);
 }

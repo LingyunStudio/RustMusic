@@ -419,6 +419,32 @@ pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
     Ok(lrc)
 }
 
+/// 获取逐字歌词（yrc），返回转换为增强 LRC 的文本
+/// （[mm:ss.xx]<mm:ss.xx>字...，时间精度 10ms 即 yrc 原始精度）。
+/// 需要开通逐字歌词权益的歌曲才有；没有时返回 None，调用方回落行级 LRC。
+pub fn lyric_yrc(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
+    let music_u = music_u.filter(|s| !s.is_empty());
+    // 逐字歌词必须走 /lyric/v1 端点（旧 /lyric 端点无 yrc 字段），
+    // yv=-1 请求逐字；需要账号有逐字权益，没有时 yrc 缺失 → 回落行级
+    let payload = serde_json::json!({
+        "id": id.to_string(), "lv": "-1", "tv": "-1",
+        "rv": "-1", "kv": "-1", "yv": "-1", "yrv": "-1", "ytc": "-1",
+        "csrf_token": ""
+    })
+    .to_string();
+    let resp = weapi_post("/weapi/song/lyric/v1?tagVer=1", &payload, music_u)?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Ok(None);
+    }
+    let yrc = resp
+        .pointer("/yrc/lyric")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty());
+    let Some(yrc) = yrc else { return Ok(None) };
+    Ok(crate::lyrics::yrc_to_enhanced_lrc(yrc))
+}
+
 /// 从 music_u 反查账号 ID（老版本登录时未存 uid 的兜底）
 pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
     let url = "https://music.163.com/api/nuser/account/get?csrf_token=";
@@ -640,6 +666,38 @@ pub fn like(id: i64, like: bool, music_u: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn yrc_to_enhanced_lrc() {
+        // 真实样例格式（字节级实测自网易云 API）：
+        //   [行start,行dur](start,dur,0)字(start,dur,0)字…字(…,…)尾巴字
+        // 元组跟在字后面；行末最后一个“尾巴字”不带自己的元组，
+        // 其区间由下一行起始（= 行 start+dur）界定。
+        let yrc = "[1,4890](1,270,0)词(270,270,0)版(540,270,0)名\n[4890,2750](4890,270,0)曲(5160,270,0)谱";
+        let out = crate::lyrics::yrc_to_enhanced_lrc(yrc).expect("yrc parsed");
+        let p = crate::lyrics::parse(&out);
+        assert_eq!(p.lines.len(), 2);
+        let l1 = &p.lines[0];
+        assert_eq!(l1.text, "词版名", "行末尾巴字（无元组）不能丢");
+        let ws = l1.words.as_ref().unwrap();
+        let real: Vec<&crate::models::Word> = ws.iter().filter(|w| !w.text.is_empty()).collect();
+        assert_eq!(real.len(), 3);
+        // 配对规则：元组配它前面的紧邻文本段。行首 (1,270,0) 前无字 =
+        // 起拍占位元组，跳过；“词”的真实区间是 (270,270) → 270~540
+        assert_eq!((real[0].start_ms, real[0].end_ms, real[0].text.as_str()), (270, 540, "词"));
+        assert_eq!((real[1].start_ms, real[1].end_ms, real[1].text.as_str()), (540, 810, "版"));
+        // 尾巴字“名”：区间 = 前元组 end(540+270=810) → 行末(1+4890=4891→4.89 粒度)
+        assert_eq!((real[2].start_ms, real[2].end_ms, real[2].text.as_str()), (810, 4890, "名"));
+        // 旧格式（每个字都带元组、无尾巴）依然兼容
+        let yrc2 = "[1450,2200]你(1450,300)好(1750,400)呀(2150,500)\n[3650,1800]再(3650,600)见(4250,1200)";
+        let out2 = crate::lyrics::yrc_to_enhanced_lrc(yrc2).expect("yrc2 parsed");
+        let p2 = crate::lyrics::parse(&out2);
+        assert_eq!(p2.lines[1].text, "再见");
+        let ws2 = p2.lines[1].words.as_ref().unwrap();
+        let real2: Vec<&crate::models::Word> = ws2.iter().filter(|w| !w.text.is_empty()).collect();
+        assert_eq!(real2.len(), 2);
+        assert_eq!((real2[0].start_ms, real2[0].end_ms), (3650, 4250));
+        assert_eq!((real2[1].start_ms, real2[1].end_ms), (4250, 5450));
+    }
 
     #[test]
     fn test_search() {

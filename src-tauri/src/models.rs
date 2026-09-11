@@ -24,6 +24,10 @@ pub struct TrackMeta {
     pub liked: bool,
     pub play_count: i64,
     pub last_played: i64,
+    /// 首次喜欢的时间（unix 秒，0 = 未喜欢过；“我喜欢”排序用）
+    pub liked_at: i64,
+    /// 文件已不在任何监控目录下（软删除：保留记录供“我喜欢/最近播放”，资料库隐藏）
+    pub missing: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -46,6 +50,18 @@ pub struct PlaylistEntryMeta {
     pub album: String,
     pub cover: String,
     pub duration: f64,
+    /// 在线条目（QQ）的媒体 mid，播放/下载取链接时需要
+    #[serde(default)]
+    pub media_mid: String,
+    /// 在线条目是否 VIP 曲目（前端显示 VIP 角标）
+    #[serde(default)]
+    pub vip: bool,
+    /// 最近播放时间（unix 秒，0 = 无记录；“最近播放”合并排序用）
+    #[serde(default)]
+    pub last_played: i64,
+    /// 收藏时间（unix 秒，0 = 无记录；“我喜欢”合并排序用）
+    #[serde(default)]
+    pub liked_at: i64,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -58,6 +74,12 @@ pub struct Playlist {
     /// 第一首歌的封面（在线条目为 URL，本地为文件路径）
     pub cover: String,
     pub created_at: i64,
+    /// 来源远程歌单标识（netease/qq + 远程歌单 id；空 = 普通本地列表）。
+    /// 重复导入时按它合并进已有列表
+    #[serde(default)]
+    pub remote_kind: String,
+    #[serde(default)]
+    pub remote_pid: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -73,6 +95,18 @@ pub struct SourceItem {
 #[serde(rename_all = "camelCase")]
 pub struct LyricLine {
     pub time_ms: Option<u64>,
+    pub text: String,
+    /// 逐字时间戳（yrc/增强 LRC）；缺省时前端按文字长度加权推进
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub words: Option<Vec<Word>>,
+}
+
+/// 一个字（或词）的起止时间
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Word {
+    pub start_ms: u64,
+    pub end_ms: u64,
     pub text: String,
 }
 
@@ -92,6 +126,10 @@ pub struct SettingsPayload {
     pub eq_enabled: bool,
     /// standard | high | lossless
     pub quality: String,
+    /// 音源缓存上限（字节），0 = 不限制
+    pub cache_limit: u64,
+    /// 关闭主窗口行为：tray（默认，隐藏到托盘）| exit（退出应用）
+    pub close_action: String,
 }
 
 #[derive(Serialize, Clone, Debug)]

@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+use std::io::Read;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
@@ -13,6 +15,11 @@ use crate::engine::TrackInfo;
 pub enum SmtcMsg {
     Update {
         info: Option<TrackInfo>,
+        playing: bool,
+        pos_ms: u64,
+    },
+    /// 仅刷新系统浮窗播放进度（播放中由 monitor 周期发送，不重复设置元数据）
+    Position {
         playing: bool,
         pos_ms: u64,
     },
@@ -85,36 +92,92 @@ fn run(app: AppHandle, rx: Receiver<SmtcMsg>) {
     }
     let _ = controls.set_playback(MediaPlayback::Stopped);
 
+    let mut has_track = false;
     for msg in rx {
-        let SmtcMsg::Update { info, playing, pos_ms } = msg;
-        match info {
-            Some(i) => {
-                let _ = controls.set_metadata(MediaMetadata {
-                    title: Some(&i.title),
-                    artist: Some(&i.artist),
-                    album: Some(&i.album),
-                    duration: Some(Duration::from_millis(i.duration_ms)),
-                    cover_url: cover_uri(&i.cover).as_deref(),
-                });
-                let pos = MediaPosition(Duration::from_millis(pos_ms));
-                let _ = controls.set_playback(if playing {
-                    MediaPlayback::Playing { progress: Some(pos) }
-                } else {
-                    MediaPlayback::Paused { progress: Some(pos) }
-                });
+        match msg {
+            SmtcMsg::Update { info, playing, pos_ms } => {
+                has_track = info.is_some();
+                match info {
+                    Some(i) => {
+                        let _ = controls.set_metadata(MediaMetadata {
+                            title: Some(&i.title),
+                            artist: Some(&i.artist),
+                            album: Some(&i.album),
+                            duration: Some(Duration::from_millis(i.duration_ms)),
+                            cover_url: cover_uri(&i.cover, &app).as_deref(),
+                        });
+                        let pos = MediaPosition(Duration::from_millis(pos_ms));
+                        let _ = controls.set_playback(if playing {
+                            MediaPlayback::Playing { progress: Some(pos) }
+                        } else {
+                            MediaPlayback::Paused { progress: Some(pos) }
+                        });
+                    }
+                    None => {
+                        let _ = controls.set_playback(MediaPlayback::Stopped);
+                    }
+                }
             }
-            None => {
-                let _ = controls.set_playback(MediaPlayback::Stopped);
+            SmtcMsg::Position { playing, pos_ms } => {
+                // 系统媒体浮窗（SMTC）不会自行走表，播放中需周期刷新进度
+                if has_track {
+                    let pos = MediaPosition(Duration::from_millis(pos_ms));
+                    let _ = controls.set_playback(if playing {
+                        MediaPlayback::Playing { progress: Some(pos) }
+                    } else {
+                        MediaPlayback::Paused { progress: Some(pos) }
+                    });
+                }
             }
         }
     }
 }
 
-fn cover_uri(p: &str) -> Option<String> {
-    if p.is_empty() || !std::path::Path::new(p).exists() {
+fn cover_uri(p: &str, app: &AppHandle) -> Option<String> {
+    if p.is_empty() {
         return None;
     }
-    let norm = p.replace('\\', "/");
+    let path: std::path::PathBuf = if p.starts_with("http://") || p.starts_with("https://") {
+        // 远程封面（网易云 / QQ 为 http 直链）：缓存到本地后以 file:// 提供给 SMTC
+        let dir = app
+            .try_state::<crate::AppState>()
+            .map(|s| s.app_data.join("covers").join("smtc"))?;
+        let _ = std::fs::create_dir_all(&dir);
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        p.hash(&mut h);
+        let ext = if p.to_lowercase().contains(".png") { "png" } else { "jpg" };
+        let dest = dir.join(format!("{:016x}.{ext}", h.finish()));
+        let missing = !dest.exists()
+            || dest.metadata().map(|m| m.len() == 0).unwrap_or(true);
+        if missing {
+            // 连接与读取分段超时，避免整体超时掐断大封面
+            let agent = ureq::AgentBuilder::new()
+                .timeout_connect(Duration::from_secs(5))
+                .timeout_read(Duration::from_secs(10))
+                .build();
+            let mut data = Vec::new();
+            agent
+                .get(p)
+                .set("User-Agent", "Mozilla/5.0")
+                .call()
+                .ok()?
+                .into_reader()
+                .take(2 * 1024 * 1024)
+                .read_to_end(&mut data)
+                .ok()?;
+            if data.is_empty() {
+                return None;
+            }
+            std::fs::write(&dest, data).ok()?;
+        }
+        dest
+    } else {
+        if !std::path::Path::new(p).exists() {
+            return None;
+        }
+        std::path::PathBuf::from(p)
+    };
+    let norm = path.to_string_lossy().replace('\\', "/");
     Some(format!("file:///{}", utf8_percent_encode(&norm, FRAGMENT)))
 }
 

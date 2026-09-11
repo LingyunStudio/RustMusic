@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
+  Ban,
   Heart,
   ListMusic,
   MoreHorizontal,
@@ -9,8 +11,9 @@ import {
   Cloud,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useDragList } from "../hooks/useDragList";
 import { ConfirmModal } from "../components/Dialogs";
-import { fmtTime, matchSearch } from "../utils";
+import { clampMenuPos, fmtTime, matchSearch } from "../utils";
 import CoverImg from "../components/CoverImg";
 import Modal from "../components/Modal";
 import type { PlaylistEntryMeta } from "../types";
@@ -56,7 +59,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const search = useStore((s) => s.search);
   const playing = useStore((s) => s.playing);
   const playEntries = useStore((s) => s.playEntries);
-  const removeFromPlaylist = useStore((s) => s.removeFromPlaylist);
+  const entryToQueueItem = useStore((s) => s.entryToQueueItem);
   const removePlaylistEntryRow = useStore((s) => s.removePlaylistEntryRow);
   const toggleLike = useStore((s) => s.toggleLike);
   const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
@@ -65,12 +68,15 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const addToQueue = useStore((s) => s.addToQueue);
   const deletePlaylist = useStore((s) => s.deletePlaylist);
   const current = useStore((s) => s.current);
+  const savedOnline = useStore((s) => s.savedOnline);
   const [confirmDel, setConfirmDel] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; e: PlaylistEntryMeta } | null>(
     null
   );
+  const reorderPlaylist = useStore((s) => s.reorderPlaylist);
 
   const pl = playlists.find((p) => p.id === id);
+  const unavailable = useStore((s) => s.unavailable);
 
   const list = useMemo<DetailRow[]>(() => {
     if (!pl) return [];
@@ -105,17 +111,40 @@ export default function PlaylistDetail({ id }: { id: number }) {
             ...base,
             kind: "netease",
             id: Number(e.onlineId ?? 0),
-            liked: false,
+            liked: !!savedOnline[`netease-${e.onlineId}`],
           };
         }
         return {
           ...base,
           kind: "qq",
           id: e.onlineId ?? "",
-          liked: false,
+          liked: !!savedOnline[`qq-${e.onlineId}`],
         };
       });
-  }, [pl, tracks, search]);
+  }, [pl, tracks, search, savedOnline]);
+
+  // 长按拖拽调序：提交时按 rowid 序列重写 position。
+  // 搜索过滤时 list 只是可见子集——基于全量 entries 重排（被拖行插到
+  // 目标行之后，其余行保持相对顺序），保证隐藏行不丢
+  const { rowProps } = useDragList((from, to) => {
+    if (!pl) return;
+    const allEntries = pl.entries;
+    if (!search) {
+      const rows = list.map((r) => r.entry);
+      const [moved] = rows.splice(from, 1);
+      rows.splice(to, 0, moved);
+      reorderPlaylist(pl.id, rows.map((r) => r.rowid));
+      return;
+    }
+    const movedRow = list[from]?.entry;
+    if (!movedRow) return;
+    const anchor = list[to + 1]?.entry ?? null; // 插入锚点：目标位置下一行
+    const rows = allEntries.filter((e) => e.rowid !== movedRow.rowid);
+    const anchorIdx = anchor ? rows.findIndex((e) => e.rowid === anchor.rowid) : -1;
+    const insertAt = anchorIdx >= 0 ? anchorIdx : rows.length;
+    rows.splice(insertAt, 0, movedRow);
+    reorderPlaylist(pl.id, rows.map((e) => e.rowid));
+  });
 
   if (!pl) {
     return (
@@ -140,10 +169,10 @@ export default function PlaylistDetail({ id }: { id: number }) {
             className="w-[104px] h-[104px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
             style={{
               background:
-                "linear-gradient(135deg, hsl(35, 55%, 45%), hsl(15, 60%, 32%))",
+                "linear-gradient(135deg, var(--accent-soft), var(--shade-strong))",
             }}
           >
-            <ListMusic size={34} className="text-[var(--ink)]/85" />
+            <ListMusic size={34} className="text-[var(--accent)]" />
           </div>
         )}
         <div className="min-w-0 flex-1">
@@ -151,6 +180,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
           <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
           <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
             {list.length} 首曲目
+            {list.length > 0 && (
+              <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-3">
             <button className="btn-primary" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
@@ -191,27 +223,37 @@ export default function PlaylistDetail({ id }: { id: number }) {
         确定删除播放列表「{pl.name}」？列表中的曲目不会被删除。
       </ConfirmModal>
 
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
+      {/* 底边界抬到播放条上方，留 4px 空隙（播放条总占位 64+16+4=84px） */}
+      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {list.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
               列表里还没有歌曲（可在在线曲库右键添加）
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[84px]">
+            <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[62px]">
               {list.map((r, i) => {
                 const active =
-                current != null &&
-                current.kind === r.kind &&
-                (r.kind === "qq"
-                  ? current.qid === r.id
-                  : current.id === (r.id as number));
+                  current != null &&
+                  current.kind === r.kind &&
+                  (r.kind === "qq"
+                    ? current.qid === r.id
+                    : r.kind === "netease"
+                      ? current.nid === r.id
+                      : current.id === r.id);
+                // 播放失败（无版权/下架等）：整行置灰 + 无版权标记
+                const dead =
+                  r.kind !== "track" &&
+                  unavailable[`${r.kind}:${r.id}`] != null;
                 return (
                   <div
                     key={r.entry.rowid}
-                    className={`group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
-                      active ? "bg-[rgba(240,162,74,0.1)]" : "hover:bg-[var(--shade-hover)]"
-                    }`}
+                    {...rowProps(i)}
+                    style={{ ["--row-idx" as string]: Math.min(i, 12) }}
+                    className={`anim-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
+                      active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+                    } ${dead ? "opacity-45" : ""}`}
+                    title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
                     onDoubleClick={() => playEntries(list.map((x) => x.entry), i)}
                     onContextMenu={(ev) => {
                       ev.preventDefault();
@@ -244,10 +286,10 @@ export default function PlaylistDetail({ id }: { id: number }) {
                       <CoverImg
                         src={r.cover}
                         seed={r.name}
-                        className="w-11 h-11 rounded-xl shadow-[0_4px_14px_rgba(0,0,0,0.45)] shrink-0"
+                        className="hover-lift w-11 h-11 rounded-xl shadow-[var(--cover-shadow-sm)] shrink-0"
                         iconSize={16}
                       />
-                      <div className="min-w-0">
+                        <div className="min-w-0">
                         <div
                           className={`text-[13.5px] truncate flex items-center gap-2 ${
                             active
@@ -260,6 +302,17 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1">
                               <Cloud size={9} />
                               {r.kind === "netease" ? "网易云" : "QQ音乐"}
+                            </span>
+                          )}
+                          {r.kind !== "track" && r.entry.vip && !dead && (
+                            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--accent-weak)] text-[var(--accent-strong)] font-bold shrink-0">
+                              VIP
+                            </span>
+                          )}
+                          {dead && (
+                            <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1" title={unavailable[`${r.kind}:${r.id}`]}>
+                              <Ban size={9} />
+                              无版权
                             </span>
                           )}
                         </div>
@@ -292,6 +345,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
                               album: r.album,
                               cover: r.cover,
                               durationMs: r.durationMs,
+                              mediaMid: r.entry.mediaMid,
+                              vip: r.entry.vip,
                             });
                         }}
                         title={
@@ -305,7 +360,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         <Heart
                           size={15}
                           className={
-                            r.kind === "track" && r.liked
+                            r.liked
                               ? "fill-[#e0533f] text-[#e0533f]"
                               : "opacity-0 group-hover:opacity-100"
                           }
@@ -315,11 +370,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         className="btn-ghost w-8 h-8"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (r.kind === "track")
-                            playNext({ kind: "track", id: r.id });
-                          else if (r.kind === "netease")
-                            playNext({ kind: "netease", id: r.id as number });
-                          else playNext({ kind: "qq", id: r.id as string });
+                          const item = entryToQueueItem(r.entry);
+                          if (item) playNext(item);
                         }}
                         title="下一首播放"
                       >
@@ -335,8 +387,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             ev.currentTarget as HTMLElement
                           ).getBoundingClientRect();
                           setMenu({
-                            x: rect.left - 150,
-                            y: rect.bottom + 6,
+                            x: rect.right - 200,
+                            y: rect.bottom + 4,
                             e: r.entry,
                           });
                         }}
@@ -355,11 +407,15 @@ export default function PlaylistDetail({ id }: { id: number }) {
         </div>
       </div>
 
-      {/* 条目菜单 */}
-      {menu && (
+      {/* 条目菜单（Portal 到 body：脱离 .glass 卡片，fixed 才相对视口） */}
+      {menu &&
+        createPortal(
         <div
           className="fixed z-[75] w-[200px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
-          style={{ left: menu.x, top: menu.y }}
+          style={(() => {
+            const p = clampMenuPos(menu.x, menu.y, 200, 240);
+            return { left: p.x, top: p.y };
+          })()}
           onMouseDown={(ev) => ev.stopPropagation()}
           onMouseLeave={() => setMenu(null)}
         >
@@ -381,9 +437,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
             onClick={() => {
               const r = list.find((x) => x.entry.rowid === menu.e.rowid);
               if (r) {
-                if (r.kind === "track") playNext({ kind: "track", id: r.id });
-                else if (r.kind === "netease") playNext({ kind: "netease", id: r.id });
-                else playNext({ kind: "qq", id: r.id });
+                const item = entryToQueueItem(r.entry);
+                if (item) playNext(item);
               }
               setMenu(null);
             }}
@@ -404,6 +459,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                     album: r.album,
                     cover: r.cover,
                     durationMs: r.durationMs,
+                    mediaMid: r.entry.mediaMid,
                   });
                 setMenu(null);
               }}
@@ -412,17 +468,18 @@ export default function PlaylistDetail({ id }: { id: number }) {
             </button>
           )}
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-rose-300 hover:bg-[var(--shade-strong)] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
+              // rowid 已唯一定位该条目；不再按 trackId 二次删除
+              //（同曲目在列表出现多次时会误删另一条目）
               removePlaylistEntryRow(menu.e.rowid);
-              if (menu.e.kind === "local" && menu.e.trackId != null)
-                removeFromPlaylist(pl.id, menu.e.trackId);
               setMenu(null);
             }}
           >
             <Trash2 size={13} /> 从列表移除
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

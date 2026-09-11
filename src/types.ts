@@ -20,6 +20,10 @@ export interface TrackMeta {
   liked: boolean;
   playCount: number;
   lastPlayed: number;
+  /** 首次喜欢的时间（unix 秒，0 = 未喜欢过） */
+  likedAt: number;
+  /** 文件已不在任何监控目录（软删除：资料库隐藏，喜欢/最近播放保留记录） */
+  missing: boolean;
 }
 
 export interface Folder {
@@ -37,6 +41,14 @@ export interface PlaylistEntryMeta {
   album: string;
   cover: string;
   duration: number;
+  /** QQ 在线条目的媒体 mid（播放/下载取链接需要） */
+  mediaMid?: string;
+  /** 在线条目是否 VIP */
+  vip?: boolean;
+  /** 最近播放时间（unix 秒，0 = 无记录） */
+  lastPlayed?: number;
+  /** 收藏时间（unix 秒，0 = 无记录） */
+  likedAt?: number;
 }
 
 export interface Playlist {
@@ -46,6 +58,10 @@ export interface Playlist {
   entries: PlaylistEntryMeta[];
   cover: string;
   createdAt: number;
+  /** 来源远程歌单标识（"netease"/"qq" + 远程歌单 id；空 = 普通本地列表）。
+   *  重复导入时按它合并进已有列表 */
+  remoteKind?: string;
+  remotePid?: string;
 }
 
 export interface SourceItem {
@@ -55,9 +71,17 @@ export interface SourceItem {
   createdAt: number;
 }
 
+export interface LyricWord {
+  startMs: number;
+  endMs: number;
+  text: string;
+}
+
 export interface LyricLine {
   timeMs: number | null;
   text: string;
+  /** 逐字时间戳（yrc/QRC/增强 LRC）；缺省时按文字长度加权推进 */
+  words?: LyricWord[];
 }
 
 export interface LyricsPayload {
@@ -101,6 +125,8 @@ export interface NeteaseTrack {
 
 export interface PlayState extends TrackInfo {
   playing: boolean;
+  /** 后端“开播代次”（每次换曲 +1），用于区分开播与暂停/恢复 */
+  seq?: number;
 }
 
 export interface CurrentTrack extends TrackInfo {
@@ -143,6 +169,9 @@ export interface SettingsPayload {
   eqGains: number[];
   eqEnabled: boolean;
   quality: string;
+  cacheLimit: number;
+  /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
+  closeAction: "tray" | "exit";
 }
 
 export interface UserPlaylistMeta {

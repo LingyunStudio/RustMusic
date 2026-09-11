@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -8,7 +9,8 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 use lofty::prelude::*;
-use rodio::{Decoder, OutputStream, Sink, Source};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -42,24 +44,49 @@ pub struct PlayState {
     #[serde(flatten)]
     pub info: TrackInfo,
     pub playing: bool,
+    /// 单调递增的"开播代次"：start() 每次 +1；前端据此区分
+    /// "换曲开播"（进度归零）与"暂停/恢复"（保留进度）
+    #[serde(default)]
+    pub seq: u64,
+}
+
+/// 输出设备信息（前端下拉用）
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputDeviceInfo {
+    /// cpal 设备名（唯一标识）
+    pub name: String,
+    /// 是否当前系统默认输出设备
+    pub is_default: bool,
 }
 
 pub struct Engine {
-    sink: Sink,
+    /// 当前输出流 handle（cpal Stream 非 Send，泄漏保活；设备切换时重建）
+    out: RwLock<&'static OutputStreamHandle>,
+    sink: RwLock<Sink>,
     app: AppHandle,
     pub eq: Arc<EqShared>,
     pub pos_ms: Arc<AtomicU64>,
     pub dur_ms: Arc<AtomicU64>,
     pub user_paused: Arc<AtomicBool>,
     pub stopped: Arc<AtomicBool>,
-    /// FLAC seek 重建播放链期间置位，避免 monitor 误判“播完”
+    /// FLAC seek 重建播放链期间置位，避免 monitor 误判"播完"
     pub rebuilding: Arc<AtomicBool>,
+    /// start() 换曲瞬间（clear 与 append 之间）置位，避免 monitor 误判"播完"
+    pub switching: Arc<AtomicBool>,
     pub current: Arc<RwLock<Option<TrackInfo>>>,
     volume: AtomicU32,
     speed: AtomicU32,
+    play_seq: AtomicU64,
     want_url: Arc<RwLock<Option<String>>>,
+    /// 正在后台下载的 URL 集合，防止同一 URL 并发下载写坏缓存文件
+    downloading: RwLock<HashSet<String>>,
     downloads_dir: PathBuf,
+    /// 缓存上限（字节），0 = 不限制；下载完成后超限即 LRU 清理
+    cache_limit: AtomicU64,
     smtc: Sender<SmtcMsg>,
+    /// 用户指定的输出设备名（None = 跟随系统默认，设备热插拔时自动切换）
+    device_pref: RwLock<Option<String>>,
 }
 
 impl Engine {
@@ -69,19 +96,28 @@ impl Engine {
         volume: f32,
         speed: f32,
         eq: Arc<EqShared>,
+        cache_limit: u64,
         smtc: Sender<SmtcMsg>,
     ) -> Result<Self, String> {
-        let (_stream, handle) =
-            OutputStream::try_default().map_err(|e| format!("无法初始化音频输出设备: {e}"))?;
-        // OutputStream（cpal Stream）不是 Send/Sync，但设备需要存活整个进程周期：
-        // 泄漏保活，Engine 只持有可跨线程的 Sink。
-        let _leaked: &'static OutputStream = Box::leak(Box::new(_stream));
-        let sink = Sink::try_new(&handle).map_err(|e| format!("无法创建播放通道: {e}"))?;
-        sink.pause();
+        let (handle, sink) = Self::build_output(None)?;
         let downloads_dir = app_data.join("downloads");
         let _ = std::fs::create_dir_all(&downloads_dir);
+        // 旧版缓存按 URL 哈希命名（无 net-/qq- 前缀），链接签名变化导致
+        // 这些文件永不再命中，启动时清掉以免白占磁盘
+        if let Ok(rd) = std::fs::read_dir(&downloads_dir) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let recognized = name.starts_with("net-")
+                    || name.starts_with("qq-")
+                    || name.starts_with("url-");
+                if !recognized {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
         Ok(Self {
-            sink,
+            out: RwLock::new(handle),
+            sink: RwLock::new(sink),
             app,
             eq,
             pos_ms: Arc::new(AtomicU64::new(0)),
@@ -89,13 +125,124 @@ impl Engine {
             user_paused: Arc::new(AtomicBool::new(false)),
             stopped: Arc::new(AtomicBool::new(true)),
             rebuilding: Arc::new(AtomicBool::new(false)),
+            switching: Arc::new(AtomicBool::new(false)),
             current: Arc::new(RwLock::new(None)),
             volume: AtomicU32::new(volume.to_bits()),
             speed: AtomicU32::new(speed.to_bits()),
+            play_seq: AtomicU64::new(0),
             want_url: Arc::new(RwLock::new(None)),
+            downloading: RwLock::new(HashSet::new()),
             downloads_dir,
+            cache_limit: AtomicU64::new(cache_limit),
             smtc,
+            device_pref: RwLock::new(None),
         })
+    }
+
+    /// 按设备偏好创建输出流与 Sink；None = 系统默认设备。
+    /// cpal Stream 非 Send/Sync：泄漏保活整个进程周期（与旧实现一致），
+    /// 设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
+    fn build_output(
+        pref: Option<&str>,
+    ) -> Result<(&'static OutputStreamHandle, Sink), String> {
+        let host = rodio::cpal::default_host();
+        let device = match pref {
+            Some(name) => host
+                .output_devices()
+                .map_err(|e| format!("枚举输出设备失败: {e}"))?
+                .find(|d| d.name().as_deref().map(|n| n == name).unwrap_or(false))
+                .ok_or_else(|| format!("输出设备「{name}」不存在"))?,
+            None => host
+                .default_output_device()
+                .ok_or("没有可用的音频输出设备")?,
+        };
+        let (stream, handle) = rodio::OutputStream::try_from_device(&device)
+            .map_err(|e| format!("打开输出设备失败: {e}"))?;
+        let _leaked: &'static OutputStream = Box::leak(Box::new(stream));
+        let sink = rodio::Sink::try_new(&handle).map_err(|e| format!("创建播放通道失败: {e}"))?;
+        sink.pause();
+        let leaked_handle: &'static OutputStreamHandle = Box::leak(Box::new(handle));
+        Ok((leaked_handle, sink))
+    }
+
+    /// 当前使用的输出设备名
+    pub fn current_device_name(&self) -> String {
+        // cpal 无"stream 绑定的设备"查询；按偏好返回，无偏好时取系统默认
+        if let Some(name) = self.device_pref.read().as_deref() {
+            return name.to_string();
+        }
+        rodio::cpal::default_host()
+            .default_output_device()
+            .and_then(|d| d.name().ok())
+            .unwrap_or_default()
+    }
+
+    pub fn device_preference(&self) -> Option<String> {
+        self.device_pref.read().clone()
+    }
+
+    pub fn set_device_preference(&self, name: Option<&str>) {
+        *self.device_pref.write() = name.map(|s| s.to_string());
+    }
+
+    /// 切换输出设备：重建输出流与 Sink，当前曲目从进度处无缝续播
+    pub fn switch_output_device(self: &Arc<Self>, name: Option<&str>) -> Result<(), String> {
+        // 重建期间 monitor 会因 sink 短暂为空误判"播完"，借用 rebuilding 标志屏蔽
+        self.rebuilding.store(true, Ordering::Relaxed);
+        let result = (|| -> Result<(), String> {
+            let info = self.current.read().clone();
+            let pos = self.pos_ms.load(Ordering::Relaxed);
+            let was_paused = self.user_paused.load(Ordering::Relaxed);
+            let volume = f32::from_bits(self.volume.load(Ordering::Relaxed));
+            let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
+
+            let (handle, sink) = Self::build_output(name)?;
+            {
+                let mut old_sink = self.sink.write();
+                old_sink.stop();
+                *old_sink = sink;
+                *self.out.write() = handle;
+            }
+            self.set_device_preference(name);
+
+            if let Some(info) = info {
+                // 当前有曲目：从 pos 处重建播放链。
+                // path 一律是本地路径（本地曲目或已缓存的在线音源文件）
+                if !info.path.is_empty() {
+                    match File::open(&info.path) {
+                        Ok(file) => {
+                            let src = Decoder::new(BufReader::new(file))
+                                .map_err(|e| format!("无法解码该音频文件: {e}"))?
+                                .convert_samples::<f32>()
+                                .skip_duration(Duration::from_millis(pos));
+                            let wrapped = EqSource::with_base(
+                                src,
+                                self.eq.clone(),
+                                self.pos_ms.clone(),
+                                pos as f64,
+                            );
+                            let sink = self.sink.read();
+                            sink.clear();
+                            sink.append(wrapped);
+                            sink.set_volume(volume);
+                            sink.set_speed(speed);
+                            if was_paused {
+                                sink.pause();
+                            } else {
+                                sink.play();
+                            }
+                            self.stopped.store(false, Ordering::Relaxed);
+                        }
+                        Err(e) => {
+                            eprintln!("[engine] 切换设备后重开音频失败: {e}");
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })();
+        self.rebuilding.store(false, Ordering::Relaxed);
+        result
     }
 
     // ---------- 播放 ----------
@@ -120,13 +267,14 @@ impl Engine {
         self.pos_ms.store(0, Ordering::Relaxed);
         self.dur_ms
             .store(info.duration_ms, Ordering::Relaxed);
-        self.sink.clear();
-        self.sink.append(wrapped);
-        self.sink
-            .set_volume(f32::from_bits(self.volume.load(Ordering::Relaxed)));
-        self.sink
-            .set_speed(f32::from_bits(self.speed.load(Ordering::Relaxed)));
-        self.sink.play();
+        // 换曲瞬间 sink 短暂为空，置位避免 monitor 采样到 empty 误判"播完"
+        self.switching.store(true, Ordering::Relaxed);
+        let sink = self.sink.read();
+        sink.clear();
+        sink.append(wrapped);
+        drop(sink);
+        self.switching.store(false, Ordering::Relaxed);
+        sink_play_common(&self.sink, self.volume.load(Ordering::Relaxed), self.speed.load(Ordering::Relaxed));
         self.user_paused.store(false, Ordering::Relaxed);
         self.stopped.store(false, Ordering::Relaxed);
         #[cfg(debug_assertions)]
@@ -136,28 +284,33 @@ impl Engine {
         );
         *self.current.write() = Some(info.clone());
         self.notify_smtc();
+        let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
         let _ = self.app.emit(
             "player://state",
-            PlayState { playing: true, info },
+            PlayState { playing: true, info, seq },
         );
         Ok(())
     }
 
     pub fn pause(&self) {
-        if self.sink.empty() {
+        let sink = self.sink.read();
+        if sink.empty() {
             return;
         }
-        self.sink.pause();
+        sink.pause();
+        drop(sink);
         self.user_paused.store(true, Ordering::Relaxed);
         self.notify_smtc();
         self.emit_state(false);
     }
 
     pub fn resume(&self) {
-        if self.sink.empty() {
+        let sink = self.sink.read();
+        if sink.empty() {
             return;
         }
-        self.sink.play();
+        sink.play();
+        drop(sink);
         self.user_paused.store(false, Ordering::Relaxed);
         self.stopped.store(false, Ordering::Relaxed);
         self.notify_smtc();
@@ -173,7 +326,9 @@ impl Engine {
     }
 
     pub fn stop(&self) {
-        self.sink.stop();
+        let sink = self.sink.read();
+        sink.stop();
+        drop(sink);
         self.stopped.store(true, Ordering::Relaxed);
         self.user_paused.store(false, Ordering::Relaxed);
         self.pos_ms.store(0, Ordering::Relaxed);
@@ -182,7 +337,8 @@ impl Engine {
     }
 
     pub fn seek(&self, ms: u64) -> Result<(), String> {
-        if self.sink.empty() {
+        let sink = self.sink.read();
+        if sink.empty() {
             return Err("当前没有正在播放的曲目".into());
         }
         // FLAC：解码器不支持 seek，失败的 try_seek 还会重置解码器状态
@@ -194,6 +350,7 @@ impl Engine {
             .unwrap_or(false);
         if is_flac {
             let info = info_opt.ok_or("当前没有正在播放的曲目")?;
+            drop(sink);
             self.rebuilding.store(true, Ordering::Relaxed);
             let r = self.rebuild_at(&info, ms);
             self.rebuilding.store(false, Ordering::Relaxed);
@@ -201,11 +358,11 @@ impl Engine {
         }
         drop(info_opt);
         // 常规 seek；MP3 边界位置偶发失败时回退 300ms 重试
-        match self.sink.try_seek(Duration::from_millis(ms)) {
+        match sink.try_seek(Duration::from_millis(ms)) {
             Ok(()) => Ok(()),
             Err(first) => {
                 let back = ms.saturating_sub(300);
-                match self.sink.try_seek(Duration::from_millis(back)) {
+                match sink.try_seek(Duration::from_millis(back)) {
                     Ok(()) => Ok(()),
                     Err(_) => Err(format!("定位失败: {first}")),
                 }
@@ -224,18 +381,18 @@ impl Engine {
             EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64);
         self.pos_ms.store(ms, Ordering::Relaxed);
         self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
-        self.sink.clear();
-        self.sink.append(wrapped);
-        self.sink
-            .set_volume(f32::from_bits(self.volume.load(Ordering::Relaxed)));
-        self.sink
-            .set_speed(f32::from_bits(self.speed.load(Ordering::Relaxed)));
+        let sink = self.sink.read();
+        sink.clear();
+        sink.append(wrapped);
+        sink.set_volume(f32::from_bits(self.volume.load(Ordering::Relaxed)));
+        sink.set_speed(f32::from_bits(self.speed.load(Ordering::Relaxed)));
         let was_paused = self.user_paused.load(Ordering::Relaxed);
         if was_paused {
-            self.sink.pause();
+            sink.pause();
         } else {
-            self.sink.play();
+            sink.play();
         }
+        drop(sink);
         Ok(())
     }
 
@@ -244,7 +401,7 @@ impl Engine {
     pub fn set_volume(&self, v: f32) {
         let v = v.clamp(0.0, 1.0);
         self.volume.store(v.to_bits(), Ordering::Relaxed);
-        self.sink.set_volume(v);
+        self.sink.read().set_volume(v);
     }
 
     pub fn volume(&self) -> f32 {
@@ -254,7 +411,7 @@ impl Engine {
     pub fn set_speed(&self, v: f32) {
         let v = v.clamp(0.5, 2.0);
         self.speed.store(v.to_bits(), Ordering::Relaxed);
-        self.sink.set_speed(v);
+        self.sink.read().set_speed(v);
     }
 
     pub fn speed(&self) -> f32 {
@@ -264,20 +421,22 @@ impl Engine {
     // ---------- 状态查询 ----------
 
     pub fn is_active(&self) -> bool {
-        !self.sink.empty()
+        !self.sink.read().empty()
     }
 
     fn emit_state(&self, playing: bool) {
         if let Some(info) = self.current.read().clone() {
+            let seq = self.play_seq.load(Ordering::Relaxed);
             let _ = self
                 .app
-                .emit("player://state", PlayState { playing, info });
+                .emit("player://state", PlayState { playing, info, seq });
         }
     }
 
     fn notify_smtc(&self) {
         let info = self.current.read().clone();
-        let playing = !self.user_paused.load(Ordering::Relaxed) && !self.sink.empty();
+        let playing =
+            !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
         let _ = self.smtc.send(SmtcMsg::Update {
             info,
             playing,
@@ -285,13 +444,49 @@ impl Engine {
         });
     }
 
+/// 仅刷新系统媒体浮窗进度（播放中由 monitor 周期调用，不重复设置元数据）
+    pub fn notify_smtc_pos(&self) {
+        if self.current.read().is_none() {
+            return;
+        }
+        let playing =
+            !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        let _ = self.smtc.send(SmtcMsg::Position {
+            playing,
+            pos_ms: self.pos_ms.load(Ordering::Relaxed),
+        });
+    }
+
+    // ---------- 输出设备 ----------
+
+    /// 枚举输出设备（含"当前默认"标记）
+    pub fn list_output_devices(&self) -> Vec<OutputDeviceInfo> {
+        let host = rodio::cpal::default_host();
+        let default_name = host
+            .default_output_device()
+            .and_then(|d| d.name().ok())
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        if let Ok(devices) = host.output_devices() {
+            for d in devices {
+                if let Ok(name) = d.name() {
+                    out.push(OutputDeviceInfo {
+                        is_default: name == default_name,
+                        name,
+                    });
+                }
+            }
+        }
+        out
+    }
+
     // ---------- 在线音源 ----------
 
-    fn cache_path_for(&self, url: &str) -> PathBuf {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        url.hash(&mut h);
-        let name = h.finish();
+    /// 稳定的缓存键：网易云/QQ 的 CDN 直链每次请求都带新的签名参数，
+    /// 按 URL 哈希命名会导致同一首歌每次播放都重新下载；
+    /// 因此用歌曲 ID + 实际音质做键（同一首歌同一音质只缓存一份）。
+    /// 返回 (缓存键, 扩展名)。ext 用于从 URL 提前确定文件扩展名。
+    fn cache_key_for(&self, url: &str, info: &TrackInfo) -> (String, String) {
         let ext = url
             .split(['?', '#'])
             .next()
@@ -306,10 +501,32 @@ impl Engine {
                 )
             })
             .unwrap_or_else(|| "bin".into());
-        self.downloads_dir.join(format!("{name:016x}.{ext}"))
+        // 实际音质（FLAC 按无损档），落到缓存键里：换音质后不命中旧缓存
+        let q = info
+            .quality
+            .as_deref()
+            .map(|q| if q.eq_ignore_ascii_case("flac") { "flac".to_string() } else { q.replace([' ', 'k'], "") })
+            .unwrap_or_else(|| "d".into());
+        let key = match (info.kind.as_str(), info.nid, info.qid.as_deref()) {
+            ("netease", Some(nid), _) => format!("net-{nid}-{q}"),
+            ("qq", _, Some(qid)) => format!("qq-{qid}-{q}"),
+            // 自定义在线音源没有稳定 ID，仍按 URL 哈希
+            _ => {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                url.hash(&mut h);
+                format!("url-{h:016x}-{q}", h = h.finish())
+            }
+        };
+        (key, ext)
     }
 
-    /// 播放在线音源：有缓存直接播放，否则后台下载（带进度事件）完成后自动播放
+    fn cache_path_for(&self, key: &str, ext: &str) -> PathBuf {
+        self.downloads_dir.join(format!("{key}.{ext}"))
+    }
+
+    /// 播放在线音源：有缓存直接播放，否则后台下载（带进度事件）完成后自动播放。
+    /// 下载完成后按缓存上限做 LRU 清理。
     pub fn play_url(self: &Arc<Self>, url: String, info: TrackInfo) -> Result<(), String> {
         let url = url.trim().to_string();
         if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -318,8 +535,14 @@ impl Engine {
         if url.contains(".m3u8") {
             return Err("暂不支持 m3u8/HLS 流，请使用音频文件直链".into());
         }
-        let cache = self.cache_path_for(&url);
+        let (key, ext) = self.cache_key_for(&url, &info);
+        let cache = self.cache_path_for(&key, &ext);
         if cache.exists() && cache.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+            // 命中缓存：更新访问时间（LRU 依据），当前曲目直接播放
+            let _ = filetime::set_file_mtime(
+                &cache,
+                filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+            );
             let mut info = info;
             info.path = cache.to_string_lossy().into_owned();
             if info.duration_ms == 0 {
@@ -329,27 +552,148 @@ impl Engine {
             return self.play_file(info);
         }
         *self.want_url.write() = Some(url.clone());
+        // 同一缓存键已有下载在进行：只登记意图后返回，复用进行中的下载，
+        // 避免两个线程同时写同一个 .part 缓存文件导致内容损坏
+        {
+            let mut dl = self.downloading.write();
+            if dl.contains(&key) {
+                return Ok(());
+            }
+            dl.insert(key.clone());
+        }
         let engine = Arc::clone(self);
         let app = self.app.clone();
         std::thread::spawn(move || {
-            if let Err(e) = download_to(&app, &url, &cache) {
-                let _ = app.emit(
-                    "download://progress",
-                    serde_json::json!({ "url": url, "done": true, "error": e }),
-                );
-                return;
-            }
-            let still_wanted = engine.want_url.read().as_deref() == Some(url.as_str());
-            if still_wanted {
-                let mut info = info;
-                info.path = cache.to_string_lossy().into_owned();
-                if info.duration_ms == 0 {
-                    info.duration_ms = probe_duration(&cache);
+            let result = download_to(&app, &url, &cache);
+            engine.downloading.write().remove(&key);
+            match result {
+                Err(e) => {
+                    let _ = app.emit(
+                        "download://progress",
+                        serde_json::json!({ "url": url, "done": true, "error": e }),
+                    );
+                    // 用户仍在等这首时清除意图，便于下次点击重新发起下载
+                    if engine.want_url.read().as_deref() == Some(url.as_str()) {
+                        *engine.want_url.write() = None;
+                    }
                 }
-                let _ = engine.play_file(info);
+                Ok(()) => {
+                    let still_wanted = engine.want_url.read().as_deref() == Some(url.as_str());
+                    if still_wanted {
+                        let mut info = info;
+                        info.path = cache.to_string_lossy().into_owned();
+                        if info.duration_ms == 0 {
+                            info.duration_ms = probe_duration(&cache);
+                        }
+                        let _ = engine.play_file(info);
+                    }
+                    // 下载成功后按上限清理（跳过正在播放/下载中的文件）
+                    engine.evict_cache();
+                }
             }
         });
         Ok(())
+    }
+
+    // ---------- 缓存管理 ----------
+
+    /// 缓存目录内所有完整缓存文件（含大小与最后访问时间），按新旧降序
+    fn cache_entries(&self) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
+        let mut out = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&self.downloads_dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if !p.is_file() {
+                    continue;
+                }
+                if p.extension().and_then(|x| x.to_str()) == Some("part") {
+                    continue;
+                }
+                let Ok(meta) = e.metadata() else { continue };
+                let mtime = meta
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                out.push((p, meta.len(), mtime));
+            }
+        }
+        out.sort_by(|a, b| b.2.cmp(&a.2)); // 新 -> 旧
+        out
+    }
+
+    /// 当前缓存占用（字节）与文件数
+    pub fn cache_usage(&self) -> (u64, u32) {
+        let mut total = 0u64;
+        let mut count = 0u32;
+        for (_, len, _) in self.cache_entries() {
+            total += len;
+            count += 1;
+        }
+        (total, count)
+    }
+
+    /// 强制清理全部缓存；正在播放的文件跳过（Windows 上删除会失败）。
+    /// 返回删除的文件数。
+    pub fn clear_cache(&self) -> u32 {
+        let playing = self
+            .current
+            .read()
+            .as_ref()
+            .map(|c| c.path.clone())
+            .unwrap_or_default();
+        let mut n = 0u32;
+        for (p, _, _) in self.cache_entries() {
+            if !playing.is_empty() && p == PathBuf::from(&playing) {
+                continue;
+            }
+            if std::fs::remove_file(&p).is_ok() {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// 缓存上限（字节），0 = 不限制
+    pub fn cache_limit(&self) -> u64 {
+        self.cache_limit.load(Ordering::Relaxed)
+    }
+
+    pub fn set_cache_limit(&self, bytes: u64) {
+        self.cache_limit.store(bytes, Ordering::Relaxed);
+        self.evict_cache();
+    }
+
+    /// LRU 清理：超过上限时从最旧开始删，直到回到上限内。
+    /// 跳过正在播放的文件和 .part 下载中间文件（后者不占上限，由下载流程自管）。
+    fn evict_cache(&self) {
+        let limit = self.cache_limit();
+        if limit == 0 {
+            return;
+        }
+        let playing = self
+            .current
+            .read()
+            .as_ref()
+            .map(|c| c.path.clone())
+            .unwrap_or_default();
+        let entries = self.cache_entries();
+        let mut total = 0u64;
+        for (_, len, _) in &entries {
+            total += len;
+        }
+        if total <= limit {
+            return;
+        }
+        for (p, len, _) in entries.iter().rev() {
+            if total <= limit {
+                break;
+            }
+            if !playing.is_empty() && *p == PathBuf::from(&playing) {
+                continue;
+            }
+            if std::fs::remove_file(p).is_ok() {
+                total = total.saturating_sub(*len);
+            }
+        }
     }
 }
 
@@ -360,11 +704,24 @@ fn probe_duration(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
+/// start() 尾部的公共播放准备（新 Sink 后设置音量/速度并开播）
+fn sink_play_common(sink: &RwLock<Sink>, volume_bits: u32, speed_bits: u32) {
+    let s = sink.read();
+    s.set_volume(f32::from_bits(volume_bits));
+    s.set_speed(f32::from_bits(speed_bits));
+    s.play();
+}
+
 /// 下载 URL 到本地缓存文件，通过 download://progress 事件回报进度
 fn download_to(app: &AppHandle, url: &str, dest: &Path) -> Result<(), String> {
     let part = dest.with_extension("part");
-    let resp = ureq::get(url)
-        .timeout(Duration::from_secs(30))
+    // 连接与读取分段超时：整体超时会在大文件（FLAC 等几十 MB）下载中途掐断连接
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(30))
+        .build();
+    let resp = agent
+        .get(url)
         .call()
         .map_err(|e| format!("下载音源失败: {e}"))?;
     let total: u64 = resp

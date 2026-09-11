@@ -80,8 +80,15 @@ export function ConfirmModal({
           取消
         </button>
         <button
-          className={`btn-primary ${danger ? "!bg-none" : ""}`}
-          style={danger ? { background: "linear-gradient(135deg,#e11d48,#be123c)" } : undefined}
+          className="btn-primary"
+          style={
+            danger
+              ? {
+                  background: "linear-gradient(135deg,#e11d48,#be123c)",
+                  color: "#fff",
+                }
+              : undefined
+          }
           onClick={() => {
             onConfirm();
             onClose();
