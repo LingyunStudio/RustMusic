@@ -425,6 +425,9 @@ export const useStore = create<Store>((set, get) => ({
       await listenEvent<{ pos: number; dur: number }>("player://pos", (p) => {
         // 拖动进度条期间不回写事件进度，避免位置抖动
         if (get().scrubbing) return;
+        // 自愈：引擎只在播放中发 pos 事件。UI 的 playing 若与此不符
+        // （在线切歌失败等路径误改），以引擎为准纠正
+        if (!get().playing) set({ playing: true });
         set({ pos: p.pos, dur: p.dur > 0 ? p.dur : get().dur });
         // 桌面歌词跟随（250ms 一帧，歌词窗口自行插值当前行）
         pushDesktopLyrics(get());
@@ -754,14 +757,13 @@ export const useStore = create<Store>((set, get) => ({
         `跳过「${titleOfQueueItem(item, get())}」：${msg}`,
         "error"
       );
-      if (needRelogin) {
-        set({ playing: false });
-        return;
-      }
+      // 登录过期：整个队列都会失败，停止继续尝试即可。
+      // 注意：失败的只是"切歌尝试"，引擎里可能仍在放换队列前的歌
+      // （如在线曲目失败回落的场景），绝不能动 playing——按钮和进度
+      // 一律以引擎的 player://nowplaying 事件为准。
+      if (needRelogin) return;
       if (get().failStreak < queue.length) {
         get().next(true);
-      } else {
-        set({ playing: false });
       }
     };
     // 开播成功则清零连跳计数
@@ -856,7 +858,9 @@ export const useStore = create<Store>((set, get) => ({
       if (repeat === "all" && get().failStreak === 0) {
         idx = 0;
       } else {
-        set({ playing: false, pos: 0 });
+        // 引擎可能仍在放换队列前的歌（在线播放失败场景），此时不能
+        // 把 playing/pos 一把清掉；引擎空闲时该分支本就是幂等复位
+        if (!get().playing) set({ playing: false, pos: 0 });
         return;
       }
     }
