@@ -293,14 +293,20 @@ mod tests {
     #[test]
     #[ignore]
     fn fetch_latest_against_github() {
-        // 当前仓库最新即 v0.1.1：以当前版本查询应返回 None（无更新）
-        assert!(fetch_latest("0.1.1").unwrap().is_none());
-        // 以旧版本查询应返回安装包信息
-        let info = fetch_latest("0.0.9").unwrap().expect("应有更新");
-        assert!(is_newer(&info.version, "0.0.9"));
-        assert!(info.asset_url.contains("github.com/LingyunStudio/RustMusic/releases/download"));
+        // 以很旧的版本查询：必然有更新，且附件是合法的安装包
+        let info = fetch_latest("0.0.1").unwrap().expect("应有更新");
+        assert!(is_newer(&info.version, "0.0.1"));
+        assert!(info
+            .asset_url
+            .contains("github.com/LingyunStudio/RustMusic/releases/download"));
         assert!(info.asset_name.to_lowercase().contains("setup"));
         assert!(info.asset_size > 0);
+
+        // 以当前版本查询：除非仓库又发了更新，否则应为 None；若返回了则其版本必须更新
+        let current = env!("CARGO_PKG_VERSION");
+        if let Some(info) = fetch_latest(current).unwrap() {
+            assert!(is_newer(&info.version, current));
+        }
     }
 
     #[test]
