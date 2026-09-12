@@ -8,6 +8,7 @@ import QueuePanel from "./components/QueuePanel";
 import NowPlaying from "./components/NowPlaying";
 import Logo from "./components/Logo";
 import ToastContainer from "./components/Toast";
+import UpdateDialog from "./components/UpdateDialog";
 import LibraryView from "./views/LibraryView";
 import PlaylistDetail from "./views/PlaylistDetail";
 import SourcesView from "./views/SourcesView";
@@ -234,6 +235,9 @@ export default function App() {
       {fullscreen && <FullscreenPlayerBar />}
 
       <ToastContainer />
+
+      {/* 自动更新弹窗：启动检查到新版本时自动弹出，设置页也可手动触发 */}
+      <UpdateDialog />
     </div>
   );
 }

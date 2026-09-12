@@ -130,6 +130,8 @@ pub struct SettingsPayload {
     pub cache_limit: u64,
     /// 关闭主窗口行为：tray（默认，隐藏到托盘）| exit（退出应用）
     pub close_action: String,
+    /// 启动时自动检查 GitHub 更新（默认开启）
+    pub auto_update: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]

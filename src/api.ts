@@ -5,6 +5,7 @@ import type {
   NeteaseTrack,
   Playlist,
   QqSong,
+  UpdateInfo,
   UserPlaylistMeta,
   PlayState,
   ScanState,
@@ -144,6 +145,20 @@ export const api = {
     invoke<[number, number]>("qq_import_playlist", { remotePid, name }),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
   setCloseAction: (action: string) => invoke<void>("set_close_action", { action }),
+  setAutoUpdate: (enabled: boolean) => invoke<void>("set_auto_update", { enabled }),
+  // ---------- 自动更新（GitHub Release） ----------
+  /** 前端就绪后触发一次启动自动检查（结果通过 update://available 事件推送） */
+  autoCheckUpdate: () => invoke<void>("auto_check_update"),
+  /** 手动检查：有更新返回信息，已是最新返回 null */
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
+  /** 下载安装包到临时目录，进度走 update://progress 事件，返回文件路径 */
+  downloadUpdate: (req: { url: string; name: string; size: number }) =>
+    invoke<string>("download_update", req),
+  cancelUpdateDownload: () => invoke<void>("cancel_update_download"),
+  /** 安装并重启应用（安装位置不变，安装完成后自动重启） */
+  installUpdate: (path: string) => invoke<void>("install_update", { path }),
+  /** 用系统浏览器打开链接（release notes 内跳转用） */
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
   extractCoverPalette: (url: string) => invoke<string[]>("extract_cover_palette", { url }),
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),
@@ -196,4 +211,5 @@ export type {
   SettingsPayload,
   SourceItem,
   TrackMeta,
+  UpdateInfo,
 };

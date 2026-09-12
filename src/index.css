@@ -760,3 +760,84 @@ button:not(.btn-primary):not(.btn-ghost):not(.nav-item):active {
 .titlebar-btn:active {
   transform: scale(0.88);
 }
+
+/* ---------- 自动更新：release notes（markdown）渲染样式 ---------- */
+.release-notes {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+.release-notes h1,
+.release-notes h2,
+.release-notes h3,
+.release-notes h4 {
+  color: var(--ink);
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+.release-notes h1 { font-size: 15px; }
+.release-notes h2 { font-size: 14px; }
+.release-notes h3 { font-size: 13px; }
+.release-notes h4 { font-size: 12.5px; }
+.release-notes p { margin: 6px 0; }
+.release-notes ul,
+.release-notes ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.release-notes ul { list-style: disc; }
+.release-notes ol { list-style: decimal; }
+.release-notes li { margin: 3px 0; }
+.release-notes li::marker { color: var(--ink-3); }
+.release-notes a {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+.release-notes a:hover { text-decoration: underline; }
+.release-notes strong { color: var(--ink); font-weight: 600; }
+.release-notes code {
+  background: var(--shade-strong);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.release-notes pre {
+  background: var(--shade-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.release-notes pre code { background: transparent; padding: 0; }
+.release-notes blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 10px;
+  margin: 6px 0;
+  color: var(--ink-3);
+}
+.release-notes hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 12px 0;
+}
+.release-notes img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 6px 0;
+}
+.release-notes table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.release-notes th,
+.release-notes td {
+  border: 1px solid var(--line);
+  padding: 4px 10px;
+}
+.release-notes > :first-child { margin-top: 0; }
+.release-notes > :last-child { margin-bottom: 0; }
+.release-notes .rn-empty { color: var(--ink-3); margin: 0; }

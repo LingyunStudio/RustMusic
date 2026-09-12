@@ -89,6 +89,8 @@ interface Store {
   quality: string;
   /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
   closeAction: "tray" | "exit";
+  /** 启动时自动检查 GitHub 更新（默认开启） */
+  autoUpdate: boolean;
   /** 音源缓存上限（字节），0 = 不限制 */
   cacheLimit: number;
   /** 当前缓存占用（字节），null = 尚未查询 */
@@ -188,6 +190,7 @@ interface Store {
 
   setQuality(q: string): void;
   setCloseAction(a: "tray" | "exit"): void;
+  setAutoUpdate(enabled: boolean): void;
   setCacheLimit(bytes: number): void;
   refreshCacheBytes(): Promise<void>;
   setTheme(t: "dark" | "light"): void;
@@ -350,6 +353,7 @@ export const useStore = create<Store>((set, get) => ({
 
   quality: "high",
   closeAction: "tray",
+  autoUpdate: true,
   cacheLimit: 2 * 1024 * 1024 * 1024,
   cacheBytes: null,
   unavailable: {},
@@ -507,6 +511,7 @@ export const useStore = create<Store>((set, get) => ({
         qqNickname: qqStatus.nickname,
         quality: settings.quality,
         closeAction: settings.closeAction ?? "tray",
+        autoUpdate: settings.autoUpdate ?? true,
         cacheLimit: settings.cacheLimit ?? 2 * 1024 * 1024 * 1024,
         ready: true,
       });
@@ -1233,6 +1238,11 @@ export const useStore = create<Store>((set, get) => ({
   setCloseAction(a) {
     set({ closeAction: a });
     api.setCloseAction(a).catch((e) => get().toast(String(e), "error"));
+  },
+
+  setAutoUpdate(enabled) {
+    set({ autoUpdate: enabled });
+    api.setAutoUpdate(enabled).catch((e) => get().toast(String(e), "error"));
   },
 
   setTheme(t) {

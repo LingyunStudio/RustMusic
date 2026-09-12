@@ -8,6 +8,7 @@ use crate::engine::TrackInfo;
 use crate::library;
 use crate::lyrics;
 use crate::models::*;
+use crate::updater;
 use crate::AppState;
 
 fn engine_clone(state: &State<AppState>) -> std::sync::Arc<crate::engine::Engine> {
@@ -1412,6 +1413,9 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
         .unwrap_or(2 * 1024 * 1024 * 1024);
     let close_action =
         db::get_setting(&conn, "close_action").unwrap_or_else(|| "tray".to_string());
+    let auto_update = db::get_setting(&conn, "auto_update")
+        .map(|s| s != "false")
+        .unwrap_or(true);
     Ok(SettingsPayload {
         volume,
         speed,
@@ -1420,7 +1424,16 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
         quality,
         cache_limit,
         close_action,
+        auto_update,
     })
+}
+
+/// 设置是否在启动时自动检查更新
+#[tauri::command]
+pub async fn set_auto_update(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::set_setting(&conn, "auto_update", if enabled { "true" } else { "false" });
+    Ok(())
 }
 
 // ---------- 其他 ----------
@@ -1661,5 +1674,95 @@ pub async fn desktop_lyrics_unlock(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("desktop-lyrics") {
         let _ = w.set_ignore_cursor_events(false);
     }
+    Ok(())
+}
+
+// ---------- 自动更新（GitHub Release） ----------
+
+/// 手动检查更新：有新版本返回安装包信息，已是最新返回 null
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> Result<Option<updater::UpdateInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let current = app.package_info().version.to_string();
+        updater::fetch_latest(&current)
+    })
+    .await
+    .map_err(|e| format!("检查更新任务失败：{e}"))?
+}
+
+/// 前端就绪后触发一次启动自动检查（后台线程执行，结果通过
+/// `update://available` 事件推送；调试构建不检查，避免开发时误装到 target 目录）
+#[tauri::command]
+pub async fn auto_check_update(app: AppHandle) -> Result<(), String> {
+    if cfg!(debug_assertions) {
+        return Ok(());
+    }
+    let enabled = {
+        let st = app.state::<AppState>();
+        let conn = st.db.lock();
+        db::get_setting(&conn, "auto_update")
+            .map(|s| s != "false")
+            .unwrap_or(true)
+    };
+    if !enabled {
+        return Ok(());
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let current = app.package_info().version.to_string();
+        match updater::fetch_latest(&current) {
+            Ok(Some(info)) => {
+                let _ = app.emit("update://available", info);
+            }
+            Ok(None) => eprintln!("[updater] 已是最新版本 {current}"),
+            Err(e) => eprintln!("[updater] 自动检查更新失败：{e}"),
+        }
+    });
+    Ok(())
+}
+
+/// 下载安装包到临时目录，进度通过 `update://progress` 事件上报，返回文件路径
+#[tauri::command]
+pub async fn download_update(
+    app: AppHandle,
+    url: String,
+    name: String,
+    size: u64,
+) -> Result<String, String> {
+    // 下载可能持续数分钟：放到阻塞线程池，避免占用异步运行时
+    tauri::async_runtime::spawn_blocking(move || {
+        updater::download(&app, &url, &name, size)
+    })
+    .await
+    .map_err(|e| format!("下载任务失败：{e}"))?
+    .map(|p| p.to_string_lossy().to_string())
+}
+
+/// 取消进行中的下载
+#[tauri::command]
+pub async fn cancel_update_download() -> Result<(), String> {
+    updater::cancel_download();
+    Ok(())
+}
+
+/// 安装已下载的安装包并重启应用（分离助手接管后本进程自动退出）
+#[tauri::command]
+pub async fn install_update(app: AppHandle, path: String) -> Result<(), String> {
+    updater::install_and_restart(&app, std::path::Path::new(&path))
+}
+
+/// 用系统默认浏览器打开链接（release notes 内的跳转用）
+#[tauri::command]
+pub async fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("不支持的链接".into());
+    }
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("打开链接失败：{e}"))?;
     Ok(())
 }

@@ -13,6 +13,7 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import { ACCENTS, loadCustomAccentHex, parseCustomAccent, saveCustomAccentHex } from "../theme";
+import { showUpdateDialog } from "../components/UpdateDialog";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
@@ -64,6 +65,8 @@ export default function SettingsView() {
   const setQuality = useStore((s) => s.setQuality);
   const closeAction = useStore((s) => s.closeAction);
   const setCloseAction = useStore((s) => s.setCloseAction);
+  const autoUpdate = useStore((s) => s.autoUpdate);
+  const setAutoUpdate = useStore((s) => s.setAutoUpdate);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const accent = useStore((s) => s.accent);
@@ -90,6 +93,9 @@ export default function SettingsView() {
   const [deviceSwitching, setDeviceSwitching] = useState(false);
   // 自定义强调色（取色器当前值 / 回显上次选择）
   const [customHex, setCustomHex] = useState(loadCustomAccentHex);
+  // 关于与更新
+  const [appVersion, setAppVersion] = useState("");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const refreshDevices = async () => {
     try {
@@ -125,6 +131,7 @@ export default function SettingsView() {
       setSaveDirDefault(d.default);
     });
     refreshDevices();
+    api.getAppInfo().then((i) => setAppVersion(i.version)).catch(() => {});
     useStore.getState().refreshCacheBytes();
     // 设备热插拔（插入耳机等）后端自动切换时同步 UI
     let unbind: (() => void) | undefined;
@@ -166,6 +173,22 @@ export default function SettingsView() {
     g[i] = v;
     setEq(g, eqEnabled);
     setPreset("自定义");
+  };
+
+  const checkForUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const info = await api.checkUpdate();
+      if (info) {
+        showUpdateDialog(info);
+      } else {
+        useStore.getState().toast(`当前已是最新版本（v${appVersion}）`, "success");
+      }
+    } catch (e) {
+      useStore.getState().toast(String(e), "error");
+    } finally {
+      setCheckingUpdate(false);
+    }
   };
 
   return (
@@ -621,9 +644,54 @@ export default function SettingsView() {
           </p>
         </section>
 
+        {/* 关于与更新 */}
+        <section style={{ ["--row-idx" as string]: 8 }} className="anim-row glass rounded-2xl p-5">
+          <h2 className="text-[14.5px] font-semibold mb-3">关于与更新</h2>
+          <div className="flex items-center gap-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">当前版本</span>
+            <span className="text-[12.5px] text-[var(--ink)] tabular-nums">
+              {appVersion ? `v${appVersion}` : "…"}
+            </span>
+            <button
+              className="btn-secondary !py-1.5 !px-3"
+              onClick={checkForUpdate}
+              disabled={checkingUpdate}
+            >
+              {checkingUpdate ? (
+                <Loader2 size={12.5} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12.5} />
+              )}
+              检查更新
+            </button>
+          </div>
+          <div className="flex items-center gap-4 mt-3">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">自动检查</span>
+            <button
+              className={`relative w-10 h-[22px] rounded-full transition-colors ${
+                autoUpdate ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
+              }`}
+              onClick={() => setAutoUpdate(!autoUpdate)}
+              title={autoUpdate ? "关闭自动检查更新" : "开启自动检查更新"}
+            >
+              <span
+                className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
+                  autoUpdate ? "left-[21px]" : "left-[3px]"
+                }`}
+              />
+            </button>
+            <span className="text-[11.5px] text-[var(--ink-3)]">
+              启动时自动检测 GitHub 上的新版本
+            </span>
+          </div>
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+            发现新版本时会展示更新说明，确认后自动下载并原地安装（不改变安装位置），完成后自动重启应用。
+          </p>
+        </section>
+
         <div className="text-[11.5px] text-[var(--ink-3)] px-1 pb-2">
-          RustMusic v0.1.0 · Rust + Tauri 2 + React · 引擎 rodio / symphonia ·
-          界面仅支持 Windows（架构上保留跨平台能力）
+          RustMusic {appVersion ? `v${appVersion}` : ""} · Rust + Tauri 2 + React ·
+          引擎 rodio / symphonia · 界面仅支持 Windows（架构上保留跨平台能力）
         </div>
       </div>
     </div>

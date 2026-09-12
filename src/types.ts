@@ -172,6 +172,20 @@ export interface SettingsPayload {
   cacheLimit: number;
   /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
   closeAction: "tray" | "exit";
+  /** 启动时自动检查 GitHub 更新（默认开启） */
+  autoUpdate: boolean;
+}
+
+/** GitHub 最新 release 的可安装更新信息 */
+export interface UpdateInfo {
+  /** 最新版本号（不含 v 前缀） */
+  version: string;
+  /** release notes（markdown 原文） */
+  notes: string;
+  assetName: string;
+  assetUrl: string;
+  assetSize: number;
+  publishedAt: string;
 }
 
 export interface UserPlaylistMeta {

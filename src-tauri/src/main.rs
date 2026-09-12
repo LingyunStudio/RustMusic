@@ -11,6 +11,7 @@ mod netease;
 mod qq;
 mod qrc;
 mod smtc;
+mod updater;
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -365,6 +366,13 @@ fn main() {
             commands::desktop_lyrics_open,
             commands::desktop_lyrics_close,
             commands::desktop_lyrics_unlock,
+            commands::auto_check_update,
+            commands::check_update,
+            commands::download_update,
+            commands::cancel_update_download,
+            commands::install_update,
+            commands::set_auto_update,
+            commands::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
