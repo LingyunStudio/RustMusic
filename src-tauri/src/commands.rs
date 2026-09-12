@@ -381,6 +381,17 @@ pub struct NeteasePlayReq {
     pub duration_ms: u64,
 }
 
+/// 音质标签（在线曲目播放栏徽标）：FLAC → 无损；≥320kbps → HQ；其余 → 标准
+fn quality_tag(ext: &str, br_kbps: i64) -> String {
+    if ext.eq_ignore_ascii_case("flac") {
+        "无损".to_string()
+    } else if br_kbps >= 320 {
+        "HQ".to_string()
+    } else {
+        "标准".to_string()
+    }
+}
+
 fn netease_cookie(state: &State<AppState>) -> Option<String> {
     let conn = state.db.lock();
     db::get_setting(&conn, "netease_music_u").filter(|s| !s.is_empty())
@@ -411,11 +422,7 @@ pub async fn netease_play(
         .ok_or_else(|| {
             "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string()
         })?;
-    let quality_label = if ext.eq_ignore_ascii_case("flac") {
-        "FLAC".to_string()
-    } else {
-        format!("{br}kbps")
-    };
+    let quality_label = quality_tag(&ext, br);
     // 记录到“最近播放”（在线曲目元数据轻量入库）
     {
         let conn = state.db.lock();
@@ -603,15 +610,7 @@ pub async fn qq_play(
     };
     let (url, ext) =
         crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality, track.vip)?;
-    let quality_label = if ext.eq_ignore_ascii_case("flac") {
-        "FLAC".to_string()
-    } else if ext.eq_ignore_ascii_case("mp3") && quality == "standard" {
-        "128kbps".to_string()
-    } else if ext.eq_ignore_ascii_case("mp3") {
-        "320kbps".to_string()
-    } else {
-        ext.to_uppercase()
-    };
+    let quality_label = quality_tag(&ext, if quality == "standard" { 128 } else { 320 });
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
     let cover = {
         let conn = state.db.lock();
