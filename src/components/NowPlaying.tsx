@@ -120,20 +120,23 @@ export default function NowPlaying() {
         const el = lineRefs.current[activeIdx];
         if (el) {
           el.classList.add("active");
-          el.style.color = "var(--ink)";
+          // 当前行文字色 = 「未唱」自定义色（空时回落主题正文色，CSS 变量即时生效）
+          el.style.color = "var(--lyric-unsung, var(--ink))";
           el.style.fontSize = "25px";
           el.style.fontWeight = "800";
           el.style.opacity = "1";
           el.style.filter = "none";
           el.style.transform = "scale(1)";
         }
-        // 周边行透明度/缩放（只在新行附近的几行，代价小）
+        // 周边行透明度/缩放（只在新行附近的几行，代价小）；下一句行用「下一句」色
         for (let i = 0; i < syncedLines.length; i++) {
           const r = lineRefs.current[i];
           if (!r || i === activeIdx) continue;
           const dist = Math.abs(i - activeIdx);
           r.style.opacity = String(Math.max(0.4, 0.75 - dist * 0.07));
           r.style.transform = `scale(${Math.max(0.94, 1 - dist * 0.015)})`;
+          r.style.color =
+            i === activeIdx + 1 ? "var(--lyric-next, var(--ink-2))" : "";
         }
         // 滚动到中心（只在行切换时触发一次，不逐帧滚动）
         const cur = lineRefs.current[activeIdx];

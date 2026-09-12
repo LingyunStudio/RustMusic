@@ -486,7 +486,8 @@ button:not(:active) > svg {
 .lyric-fill .lyric-fill-ov > span {
   display: inline-block;
   max-width: 100%;
-  color: var(--accent-strong);
+  /* 已唱染色：设置页「播放页配色」的自定义色优先，未自定义时跟随强调色 */
+  color: var(--lyric-sung, var(--accent-strong));
   clip-path: inset(0 calc(100% - var(--fill, 0%)) 0 0);
 }
 

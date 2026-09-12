@@ -64,6 +64,68 @@ export function saveDesktopLyricsColors(c: DesktopLyricsColors) {
   localStorage.setItem(DLYRICS_COLOR_KEY, JSON.stringify(c));
 }
 
+// ---------- 播放页歌词配色 ----------
+// 三色为空字符串时表示"跟随主题"：已唱跟强调色（--accent-strong），
+// 未唱跟正文色（--ink），下一句跟次级文字色（--ink-2）
+
+const LYRICS_COLOR_KEY = "rustmusic.lyrics.colors";
+
+export interface LyricPageColors {
+  sung: string; // 已唱（当前行卡拉OK 染色）
+  unsung: string; // 未唱（当前行文字）
+  next: string; // 下一句（即将演唱的一行）
+}
+
+export const LYRICS_EMPTY_COLORS: LyricPageColors = {
+  sung: "",
+  unsung: "",
+  next: "",
+};
+
+export function loadLyricsColors(): LyricPageColors {
+  try {
+    const raw = localStorage.getItem(LYRICS_COLOR_KEY);
+    if (!raw) return { ...LYRICS_EMPTY_COLORS };
+    const v = JSON.parse(raw) as Partial<LyricPageColors>;
+    return {
+      sung: typeof v.sung === "string" ? v.sung : "",
+      unsung: typeof v.unsung === "string" ? v.unsung : "",
+      next: typeof v.next === "string" ? v.next : "",
+    };
+  } catch {
+    return { ...LYRICS_EMPTY_COLORS };
+  }
+}
+
+export function saveLyricsColors(c: LyricPageColors) {
+  localStorage.setItem(LYRICS_COLOR_KEY, JSON.stringify(c));
+}
+
+/** 非空的自定义色写入 CSS 变量，空值移除（回落主题默认）。
+    播放页歌词的行内样式与染色层都引用这些变量，改完即时生效 */
+export function applyLyricsColors(c: LyricPageColors) {
+  const root = document.documentElement.style;
+  const entries: [string, string][] = [
+    ["--lyric-sung", c.sung],
+    ["--lyric-unsung", c.unsung],
+    ["--lyric-next", c.next],
+  ];
+  for (const [name, val] of entries) {
+    if (val) root.setProperty(name, val);
+    else root.removeProperty(name);
+  }
+}
+
+/** 三色的主题默认值（取色器回显用，可能为 hex 或 rgb() 文本） */
+export function themeLyricsDefaults(): LyricPageColors {
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    sung: cs.getPropertyValue("--accent-strong").trim(),
+    unsung: cs.getPropertyValue("--ink").trim(),
+    next: cs.getPropertyValue("--ink-2").trim(),
+  };
+}
+
 /** 解析自定义色 key（"custom:#RRGGBB"）为 hex；非法返回 null */
 export function parseCustomAccent(key: string): string | null {
   if (!key.startsWith(CUSTOM_KEY_PREFIX)) return null;

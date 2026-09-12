@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Folder,
   FolderOpen,
@@ -6,13 +6,20 @@ import {
   Headphones,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Settings as SettingsIcon,
   Trash2,
   X,
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
-import { ACCENTS, loadCustomAccentHex, parseCustomAccent, saveCustomAccentHex } from "../theme";
+import {
+  ACCENTS,
+  loadCustomAccentHex,
+  parseCustomAccent,
+  saveCustomAccentHex,
+  themeLyricsDefaults,
+} from "../theme";
 import { showUpdateDialog } from "../components/UpdateDialog";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
@@ -78,6 +85,8 @@ export default function SettingsView() {
   const unlockDesktopLyrics = useStore((s) => s.unlockDesktopLyrics);
   const dlyricsColors = useStore((s) => s.dlyricsColors);
   const setDlyricsColors = useStore((s) => s.setDlyricsColors);
+  const lyricsColors = useStore((s) => s.lyricsColors);
+  const setLyricsColors = useStore((s) => s.setLyricsColors);
   const clearCache = useStore((s) => s.clearCache);
   const cacheLimit = useStore((s) => s.cacheLimit);
   const setCacheLimit = useStore((s) => s.setCacheLimit);
@@ -93,6 +102,8 @@ export default function SettingsView() {
   const [deviceSwitching, setDeviceSwitching] = useState(false);
   // 自定义强调色（取色器当前值 / 回显上次选择）
   const [customHex, setCustomHex] = useState(loadCustomAccentHex);
+  // 播放页歌词三色的主题默认（已唱跟强调色，随主题/强调色变化重读）
+  const lyricThemeDefaults = useMemo(() => themeLyricsDefaults(), [theme, accent]);
   // 关于与更新
   const [appVersion, setAppVersion] = useState("");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -338,54 +349,34 @@ export default function SettingsView() {
 
           {/* 桌面歌词配色：已唱 / 未唱 / 下一句 */}
           <div className="flex items-center gap-4 mt-3 pl-0">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">歌词配色</span>
-            <div className="flex items-center gap-5">
-              {(
-                [
-                  { key: "sung", label: "已唱" },
-                  { key: "unsung", label: "未唱" },
-                  { key: "next", label: "下一句" },
-                ] as const
-              ).map((c) => {
-                // rgba() 字符串对原生取色器不可解析：取 rgb 值拼 #hex 回显
-                const raw = dlyricsColors[c.key];
-                const m = raw.match(
-                  /rgba?\((\d+),\s*(\d+),\s*(\d+)/
-                );
-                const hex = m
-                  ? `#${[m[1], m[2], m[3]]
-                      .map((v) => (+v).toString(16).padStart(2, "0"))
-                      .join("")}`
-                  : /^#[0-9a-fA-F]{6}$/.test(raw)
-                    ? raw
-                    : "#ffffff";
-                return (
-                  <label
-                    key={c.key}
-                    className="flex items-center gap-1.5 cursor-pointer"
-                    title={`${c.label}颜色（点击选择）`}
-                  >
-                    <span
-                      className="w-5 h-5 rounded-full inline-block"
-                      style={{
-                        background: hex,
-                        boxShadow: "0 0 0 1px var(--line), inset 0 0 0 1px rgba(0,0,0,0.06)",
-                      }}
-                    />
-                    <span className="text-[11.5px] text-[var(--ink-2)]">{c.label}</span>
-                    <input
-                      type="color"
-                      value={hex}
-                      onChange={(e) =>
-                        setDlyricsColors({ ...dlyricsColors, [c.key]: e.target.value })
-                      }
-                      className="w-0 h-0 opacity-0"
-                    />
-                  </label>
-                );
-              })}
-            </div>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">桌面歌词配色</span>
+            <LyricColorPickers
+              values={dlyricsColors}
+              onChange={(k, v) => setDlyricsColors({ ...dlyricsColors, [k]: v })}
+            />
           </div>
+
+          {/* 播放页歌词配色：空 = 跟随主题（已唱跟强调色），可一键恢复默认 */}
+          <div className="flex items-center gap-4 mt-3 pl-0">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放页配色</span>
+            <LyricColorPickers
+              values={lyricsColors}
+              defaults={lyricThemeDefaults}
+              onChange={(k, v) => setLyricsColors({ ...lyricsColors, [k]: v })}
+            />
+            <button
+              className="btn-ghost !py-1 !px-2 text-[11.5px]"
+              onClick={() => setLyricsColors({ sung: "", unsung: "", next: "" })}
+              title="清除自定义，恢复跟随主题（已唱跟强调色）"
+            >
+              <RotateCcw size={11} />
+              恢复默认
+            </button>
+          </div>
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+            已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。
+            播放页未自定义时跟随强调色与主题，改完立即生效。
+          </p>
         </section>
 
         {/* 音乐文件夹 */}
@@ -745,6 +736,63 @@ function VSlider({
         className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-2.5 rounded-full bg-white shadow"
         style={{ top: y }}
       />
+    </div>
+  );
+}
+
+/** 三色取色器组（桌面歌词 / 播放页歌词共用）。
+    values 为存储值，播放页允许空字符串（= 跟随主题，此时用 defaults 回显）；
+    rgba() 文本对原生取色器不可解析，统一转 #hex 回显 */
+function LyricColorPickers({
+  values,
+  defaults,
+  onChange,
+}: {
+  values: { sung: string; unsung: string; next: string };
+  defaults?: { sung: string; unsung: string; next: string };
+  onChange: (key: "sung" | "unsung" | "next", v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-5">
+      {(
+        [
+          { key: "sung", label: "已唱" },
+          { key: "unsung", label: "未唱" },
+          { key: "next", label: "下一句" },
+        ] as const
+      ).map((c) => {
+        const raw = values[c.key] || defaults?.[c.key] || "#ffffff";
+        const m = raw.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        const hex = m
+          ? `#${[m[1], m[2], m[3]]
+              .map((v) => (+v).toString(16).padStart(2, "0"))
+              .join("")}`
+          : /^#[0-9a-fA-F]{6}$/.test(raw)
+            ? raw
+            : "#ffffff";
+        return (
+          <label
+            key={c.key}
+            className="flex items-center gap-1.5 cursor-pointer"
+            title={`${c.label}颜色（点击选择）`}
+          >
+            <span
+              className="w-5 h-5 rounded-full inline-block"
+              style={{
+                background: hex,
+                boxShadow: "0 0 0 1px var(--line), inset 0 0 0 1px rgba(0,0,0,0.06)",
+              }}
+            />
+            <span className="text-[11.5px] text-[var(--ink-2)]">{c.label}</span>
+            <input
+              type="color"
+              value={hex}
+              onChange={(e) => onChange(c.key, e.target.value)}
+              className="w-0 h-0 opacity-0"
+            />
+          </label>
+        );
+      })}
     </div>
   );
 }
