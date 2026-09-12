@@ -563,6 +563,9 @@ pub struct QqPlayReq {
     pub media_mid: String,
     #[serde(default)]
     pub duration_ms: u64,
+    /// 搜索结果里的 VIP 标志，用于播放失败分类（权益不足 vs 真无版权）
+    #[serde(default)]
+    pub vip: bool,
 }
 
 fn qq_credential(state: &State<AppState>) -> Result<(String, String), String> {
@@ -598,7 +601,8 @@ pub async fn qq_play(
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
-    let (url, ext) = crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality)?;
+    let (url, ext) =
+        crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality, track.vip)?;
     let quality_label = if ext.eq_ignore_ascii_case("flac") {
         "FLAC".to_string()
     } else if ext.eq_ignore_ascii_case("mp3") && quality == "standard" {
@@ -829,6 +833,7 @@ pub async fn download_online(
                 &musicid,
                 &musickey,
                 &quality,
+                true,
             )?;
             (u, ext)
         }

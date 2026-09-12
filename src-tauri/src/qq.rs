@@ -395,12 +395,18 @@ fn find_credential(v: &serde_json::Value) -> Option<(String, String)> {
 }
 
 /// 按音质请求播放直链，从所选音质逐级回退；返回 (url, ext)
+///
+/// `vip`：前端缓存里该曲目的 VIP 标志（来自搜索结果的 pay.pay_play）。
+/// 用于失败分类——VIP 曲目拿不到链接一律按"权益不足"报错（登录/VIP 状态
+/// 变化后可恢复），绝不误报无版权；非 VIP 曲目在会话有效仍拿不到链接时
+/// 才判为无版权/下架。
 pub fn song_url(
     songmid: &str,
     media_mid: &str,
     musicid: &str,
     musickey: &str,
     quality: &str,
+    vip: bool,
 ) -> Result<(String, String), String> {
     // 前缀：M500=128k M800=320k F000=flac；无 media_mid 时按官方规则用 songmid 拼接
     let ladder: Vec<(&str, &str)> = match quality {
@@ -409,6 +415,8 @@ pub fn song_url(
         _ => vec![("M800", "mp3"), ("M500", "mp3")],
     };
     let mut last_resp = String::new();
+    // 所有尝试都返回 code==0（会话有效、接口无异常）但始终没有链接
+    let mut all_ok_but_no_url = true;
     for (prefix, ext) in ladder {
         let file_base = if media_mid.is_empty() {
             format!("{songmid}{songmid}")
@@ -434,6 +442,14 @@ pub fn song_url(
             &payload,
             Some(&credential_cookie(musicid, musickey)),
         )?;
+        // 104009 = 会话无效（未登录 / musickey 已过期）。
+        // 换音质也无法挽回，立即中止并让前端引导重新登录。
+        if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) == Some(104009) {
+            return Err("QQ 音乐登录已过期，请重新登录".into());
+        }
+        if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) != Some(0) {
+            all_ok_but_no_url = false;
+        }
         let purl = resp
             .pointer("/req_1/data/midurlinfo/0/purl")
             .and_then(|v| v.as_str())
@@ -458,10 +474,22 @@ pub fn song_url(
         }
         last_resp = serde_json::to_string(&resp).unwrap_or_default();
     }
-    Err(format!(
-        "该歌曲暂无可播放链接（可能需要 QQ 音乐 VIP 或版权受限）| {}",
-        last_resp.chars().take(120).collect::<String>()
-    ))
+    // 会话有效仍拿不到链接：按 VIP 标志分类——VIP 曲目是权益不足（可随
+    // 登录/会员状态恢复），非 VIP 曲目才是真无版权/下架（永久）。
+    Err(
+        if all_ok_but_no_url {
+            if vip {
+                "该曲目需要 QQ 音乐 VIP 权益（请确认已登录且会员状态有效）".into()
+            } else {
+                "该歌曲在 QQ 音乐无版权或已下架".into()
+            }
+        } else {
+            format!(
+                "该歌曲暂无可播放链接（接口异常，可稍后重试）| {}",
+                last_resp.chars().take(120).collect::<String>()
+            )
+        },
+    )
 }
 // ---------- 歌词（匿名可用，返回 base64 编码的 LRC） ----------
 

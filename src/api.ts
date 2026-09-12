@@ -73,6 +73,7 @@ export const api = {
     albumMid: string;
     mediaMid: string;
     durationMs: number;
+    vip: boolean;
   }) => invoke<void>("qq_play", { track }),
   qqLyric: (songmid: string) => invoke<LyricsPayload>("qq_lyric", { songmid }),
   qqQrCreate: () => invoke<{ qrsig: string; qr: string }>("qq_qr_create"),

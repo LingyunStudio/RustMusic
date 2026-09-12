@@ -736,14 +736,13 @@ export const useStore = create<Store>((set, get) => ({
     else if (get().playingSourceId != null) set({ playingSourceId: null });
 
     /** 播放失败统一处理：提示 + 按需标记不可用（列表置灰）+ 自动跳下一首。
-     *  只有疑似永久性失败（版权/VIP/下架/信息失效）才置灰；
-     *  网络错误/未登录等瞬时问题只跳过不标记，下次仍会尝试。
-     *  连环失败保护：一次连跳次数达到队列长度就停（全是坏链路时不再空转） */
+     *  只有真永久失败（无版权/下架/信息失效）才置灰；
+     *  VIP/权益不足随登录与会员状态可恢复，网络错误是瞬时的——都不标记，
+     *  下次仍会尝试。登录过期则整个队列都会失败：立即停止并提示重新登录，
+     *  不再连跳刷屏。 */
     const fail = (msg: string) => {
-      // 疑似永久性失败（版权/VIP/付费/下架/信息失效）才置灰；
-      // 网络错误/未登录等瞬时问题只跳过不标记。“未登录”显式排除。
-      const permanent =
-        /版权|VIP|付费|下架|失效|链接/.test(msg) && !/未登录|登录后/.test(msg);
+      const needRelogin = /登录已过期|请重新登录|未登录/.test(msg);
+      const permanent = !needRelogin && /无版权|下架|已失效|信息失效/.test(msg);
       const key = `${item.kind}:${item.id}`;
       set((s) => ({
         unavailable: permanent
@@ -755,6 +754,10 @@ export const useStore = create<Store>((set, get) => ({
         `跳过「${titleOfQueueItem(item, get())}」：${msg}`,
         "error"
       );
+      if (needRelogin) {
+        set({ playing: false });
+        return;
+      }
       if (get().failStreak < queue.length) {
         get().next(true);
       } else {
@@ -798,6 +801,7 @@ export const useStore = create<Store>((set, get) => ({
           albumMid: t.albumMid,
           mediaMid: t.mediaMid,
           durationMs: t.durationMs,
+          vip: t.vip ?? false,
         })
         .then(ok)
         .catch((e) => fail(String(e)));
@@ -1197,7 +1201,14 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   qqSetLogin(loggedIn, nickname) {
-    set({ qqLoggedIn: loggedIn, qqNickname: nickname });
+    set((s) => {
+      // 登录/退出都会改变曲目可用性：清除之前会话状态下做出的置灰标记，
+      // 让重新登录后的 VIP 曲目得以重试（修复"过期误标后永远不能播"）
+      const unavailable = Object.fromEntries(
+        Object.entries(s.unavailable).filter(([k]) => !k.startsWith("qq:"))
+      );
+      return { qqLoggedIn: loggedIn, qqNickname: nickname, unavailable };
+    });
   },
 
   async qqLogout() {
@@ -1431,7 +1442,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   neteaseSetLogin(loggedIn, nickname) {
-    set({ neteaseLoggedIn: loggedIn, neteaseNickname: nickname });
+    set((s) => {
+      const unavailable = Object.fromEntries(
+        Object.entries(s.unavailable).filter(([k]) => !k.startsWith("netease:"))
+      );
+      return { neteaseLoggedIn: loggedIn, neteaseNickname: nickname, unavailable };
+    });
   },
 
   async neteaseSyncLikes() {
