@@ -385,7 +385,8 @@ pub fn song_url(
                 .next()
                 .unwrap_or("mp3")
                 .to_lowercase();
-            let real_br = first.get("br").and_then(|b| b.as_i64()).unwrap_or(br);
+            // 接口返回的 br 单位是 bps（320000 = 320kbps），统一换算成 kbps 供音质显示
+            let real_br = first.get("br").and_then(|b| b.as_i64()).unwrap_or(br) / 1000;
             return Ok(Some((u, real_br, ext)));
         }
         last_hint = match item_code {
