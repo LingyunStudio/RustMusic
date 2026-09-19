@@ -25,6 +25,12 @@ pub async fn list_tracks(state: State<'_, AppState>) -> Result<Vec<TrackMeta>, S
     Ok(db::list_tracks(&conn))
 }
 
+/// 最近一次扫描进度快照（WebView 挂起期间 scan://progress 事件丢失，恢复后补发）
+#[tauri::command]
+pub async fn get_scan_state(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    Ok(state.scan_last.lock().clone())
+}
+
 #[tauri::command]
 pub async fn list_folders(state: State<'_, AppState>) -> Result<Vec<Folder>, String> {
     let conn = state.db.lock();

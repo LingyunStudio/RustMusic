@@ -172,6 +172,8 @@ export const api = {
   setEq: (gains: number[], enabled: boolean) =>
     invoke<void>("set_eq", { gains, enabled }),
   getSettings: () => invoke<SettingsPayload>("get_settings"),
+  /** 最近一次扫描进度快照（WebView 挂起恢复后补发用） */
+  getScanState: () => invoke<ScanState>("get_scan_state"),
   clearCache: () => invoke<number>("clear_cache"),
   cacheStats: () =>
     invoke<{ bytes: number; files: number }>("cache_stats"),

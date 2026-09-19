@@ -433,6 +433,20 @@ impl Engine {
         }
     }
 
+    /// WebView 挂起恢复后补发当前播放状态与进度（挂起期间发往前端的事件被丢弃）
+    pub fn resync_ui(&self) {
+        let playing =
+            !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        self.emit_state(playing);
+        let _ = self.app.emit(
+            "player://pos",
+            serde_json::json!({
+                "pos": self.pos_ms.load(Ordering::Relaxed),
+                "dur": self.dur_ms.load(Ordering::Relaxed),
+            }),
+        );
+    }
+
     fn notify_smtc(&self) {
         let info = self.current.read().clone();
         let playing =
@@ -755,16 +769,24 @@ fn download_to(app: &AppHandle, url: &str, dest: &Path) -> Result<(), String> {
             .map_err(|e| format!("写入缓存失败: {e}"))?;
         received += n as u64;
         if last_emit.elapsed() >= Duration::from_millis(300) {
-            last_emit = std::time::Instant::now();
-            let pct = if total > 0 {
-                (received as f64 / total as f64 * 100.0) as u64
-            } else {
-                0
-            };
-            let _ = app.emit(
-                "download://progress",
-                serde_json::json!({ "url": url, "received": received, "total": total, "pct": pct, "done": false }),
-            );
+            // WebView 挂起（托盘隐藏）时跳过进度推送：避免反复唤醒渲染进程。
+            // 恢复后前端 webview://resumed 兜底复位下载条
+            let suspended = app
+                .try_state::<crate::AppState>()
+                .map(|st| st.webview_suspended.load(Ordering::SeqCst))
+                .unwrap_or(false);
+            if !suspended {
+                last_emit = std::time::Instant::now();
+                let pct = if total > 0 {
+                    (received as f64 / total as f64 * 100.0) as u64
+                } else {
+                    0
+                };
+                let _ = app.emit(
+                    "download://progress",
+                    serde_json::json!({ "url": url, "received": received, "total": total, "pct": pct, "done": false }),
+                );
+            }
         }
     }
     drop(file);

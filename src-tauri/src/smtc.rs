@@ -8,7 +8,7 @@ use souvlaki::{
     MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
     SeekDirection,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::engine::TrackInfo;
 
@@ -67,10 +67,8 @@ fn run(app: AppHandle, rx: Receiver<SmtcMsg>) {
             MediaControlEvent::Raise => ("show", None),
             _ => return,
         };
-        let _ = ev_app.emit(
-            "media://control",
-            serde_json::json!({ "action": action, "value": value }),
-        );
+        // 统一走 media_control：WebView 挂起（托盘隐藏）时先唤醒再转发
+        crate::media_control(&ev_app, action, value);
     };
 
     let config = PlatformConfig {

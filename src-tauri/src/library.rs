@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 use lofty::prelude::*;
-use serde_json::json;
+
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
@@ -44,7 +44,12 @@ pub fn run_scan(app: AppHandle) {
     let prefixes: Vec<String> = folders.iter().map(|f| f.path.clone()).collect();
 
     let emit = |done: usize, total: usize, active: bool| {
-        let _ = app.emit("scan://progress", json!({ "done": done, "total": total, "active": active }));
+        let payload = serde_json::json!({ "done": done, "total": total, "active": active });
+        // 快照留给挂起恢复后的补发（webview://resumed → get_scan_state）
+        if let Some(st) = app.try_state::<AppState>() {
+            *st.scan_last.lock() = payload.clone();
+        }
+        let _ = app.emit("scan://progress", payload);
     };
 
     if folders.is_empty() {

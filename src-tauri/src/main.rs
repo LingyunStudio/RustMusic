@@ -13,8 +13,9 @@ mod qrc;
 mod smtc;
 mod updater;
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -25,6 +26,10 @@ pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
     pub engine: Mutex<Arc<engine::Engine>>,
     pub app_data: std::path::PathBuf,
+    /// 主窗口 WebView 是否处于挂起状态（托盘隐藏时 TrySuspend 回收渲染内存）
+    pub webview_suspended: AtomicBool,
+    /// 最近一次扫描进度快照（挂起期间 scan://progress 事件会丢，恢复后补发）
+    pub scan_last: Mutex<serde_json::Value>,
 }
 
 fn show_main(app: &AppHandle) {
@@ -33,6 +38,162 @@ fn show_main(app: &AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    resume_main_webview(app, true);
+}
+
+/// 挂起主窗口 WebView（WebView2 TrySuspend）：托盘隐藏时冻结并释放渲染进程内存。
+/// 音频由后端 rodio 播放，不依赖 WebView，挂起不影响播放。
+/// 桌面歌词开着时不挂起：悬浮窗的歌词/暂停状态依赖主 WebView 的推送。
+fn suspend_main_webview(app: &AppHandle) {
+    if app.get_webview_window("desktop-lyrics").is_some() {
+        return;
+    }
+    let st = app.state::<AppState>();
+    if st.webview_suspended.swap(true, Ordering::SeqCst) {
+        return; // 已挂起
+    }
+    drop(st);
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(e) = win.with_webview(|webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
+        use windows::core::Interface as _;
+        let controller = webview.controller();
+        unsafe {
+            let Ok(core) = controller.CoreWebView2() else {
+                eprintln!("[webview] CoreWebView2() 失败");
+                return;
+            };
+            let Ok(cwv3) = core.cast::<ICoreWebView2_3>() else {
+                eprintln!("[webview] cast ICoreWebView2_3 失败");
+                return;
+            };
+            // IsVisible=false 是 TrySuspend 的前置条件
+            let _ = controller.SetIsVisible(false);
+            let handler = webview2_com::TrySuspendCompletedHandler::create(Box::new(
+                |hr, ok| {
+                    eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
+                    Ok(())
+                },
+            ));
+            if let Err(e) = cwv3.TrySuspend(&handler) {
+                eprintln!("[webview] 挂起失败: {e}");
+            }
+        }
+    }) {
+        eprintln!("[webview] with_webview 失败: {e}");
+    }
+}
+
+/// 恢复主窗口 WebView。notify=true 时补发播放状态/进度并通知前端
+/// 刷新数据（挂起期间发往前端的事件都会被丢弃）。
+fn resume_main_webview(app: &AppHandle, notify: bool) {
+    {
+        let st = app.state::<AppState>();
+        if !st.webview_suspended.swap(false, Ordering::SeqCst) && !notify {
+            return;
+        }
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.with_webview(|webview| {
+            use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
+            use windows::core::Interface as _;
+            let controller = webview.controller();
+            unsafe {
+                let Ok(core) = controller.CoreWebView2() else {
+                    return;
+                };
+                let Ok(cwv3) = core.cast::<ICoreWebView2_3>() else {
+                    return;
+                };
+                let _ = cwv3.Resume();
+                let _ = controller.SetIsVisible(true);
+            }
+        });
+    }
+    if notify {
+        let app2 = app.clone();
+        std::thread::spawn(move || {
+            // 等 WebView 完全恢复后再补发，事件才不会被丢
+            std::thread::sleep(Duration::from_millis(250));
+            {
+                let st = app2.state::<AppState>();
+                st.engine.lock().resync_ui();
+            }
+            let _ = app2.emit("webview://resumed", serde_json::json!({}));
+        });
+    }
+}
+
+/// 统一的媒体控制转发（托盘/SMTC → 前端）。
+/// WebView 挂起中：先唤醒再延迟转发，控制恢复可用；窗口仍隐藏时稍后重新挂起。
+fn media_control(app: &AppHandle, action: &str, value: Option<f64>) {
+    if action == "show" {
+        show_main(app);
+        return;
+    }
+    let suspended = app
+        .state::<AppState>()
+        .webview_suspended
+        .load(Ordering::SeqCst);
+    if !suspended {
+        let _ = app.emit(
+            "media://control",
+            serde_json::json!({ "action": action, "value": value }),
+        );
+        return;
+    }
+    resume_main_webview(app, true);
+    let app2 = app.clone();
+    let action = action.to_string();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = app2.emit(
+            "media://control",
+            serde_json::json!({ "action": action, "value": value }),
+        );
+        schedule_resuspend(&app2);
+    });
+}
+
+/// 窗口仍隐藏时延迟重新挂起（短暂唤醒处理完托盘操作/换曲后回收内存）
+fn schedule_resuspend(app: &AppHandle) {
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(8));
+        let hidden = app2
+            .get_webview_window("main")
+            .map(|w| !w.is_visible().unwrap_or(false))
+            .unwrap_or(false);
+        if hidden {
+            suspend_main_webview(&app2);
+        }
+    });
+}
+
+/// 发送需要前端处理的事件。挂起中可丢的事件（如进度帧）直接跳过；
+/// 必须处理的事件（如“播完自动切歌”）先唤醒 WebView 再延迟投递。
+fn emit_to_frontend(app: &AppHandle, event: &str, payload: serde_json::Value, wake: bool) {
+    let suspended = app
+        .state::<AppState>()
+        .webview_suspended
+        .load(Ordering::SeqCst);
+    if !suspended {
+        let _ = app.emit(event, payload);
+        return;
+    }
+    if !wake {
+        return;
+    }
+    resume_main_webview(app, true);
+    let app2 = app.clone();
+    let event = event.to_string();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = app2.emit(&event, payload);
+        schedule_resuspend(&app2);
+    });
 }
 
 /// 监听系统默认输出设备变化（耳机插入/拔出、切换默认设备）：
@@ -100,15 +261,9 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, ev| match ev.id().as_ref() {
             "show" => show_main(app),
-            "pp" => {
-                let _ = app.emit("media://control", serde_json::json!({ "action": "toggle" }));
-            }
-            "prev" => {
-                let _ = app.emit("media://control", serde_json::json!({ "action": "prev" }));
-            }
-            "next" => {
-                let _ = app.emit("media://control", serde_json::json!({ "action": "next" }));
-            }
+            "pp" => media_control(app, "toggle", None),
+            "prev" => media_control(app, "prev", None),
+            "next" => media_control(app, "next", None),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -157,13 +312,12 @@ fn monitor(app: AppHandle) {
         if active && !paused {
             if last_pos_emit.elapsed() >= std::time::Duration::from_millis(250) {
                 last_pos_emit = std::time::Instant::now();
-                let _ = app.emit(
-                    "player://pos",
-                    serde_json::json!({
-                        "pos": eng.pos_ms.load(Ordering::Relaxed),
-                        "dur": eng.dur_ms.load(Ordering::Relaxed),
-                    }),
-                );
+                let payload = serde_json::json!({
+                    "pos": eng.pos_ms.load(Ordering::Relaxed),
+                    "dur": eng.dur_ms.load(Ordering::Relaxed),
+                });
+                // WebView 挂起时进度帧可丢（恢复后由 resync 补发），不值得唤醒
+                emit_to_frontend(&app, "player://pos", payload, false);
             }
             // 同步系统媒体浮窗（SMTC）进度，每秒刷新一次
             if last_smtc.elapsed() >= std::time::Duration::from_secs(1) {
@@ -182,7 +336,8 @@ fn monitor(app: AppHandle) {
             && !rebuilding
             && !switching
         {
-            let _ = app.emit("player://ended", serde_json::json!({}));
+            // 队列/循环逻辑在前端：挂起中也要唤醒投递，否则托盘播放不连续
+            emit_to_frontend(&app, "player://ended", serde_json::json!({}), true);
         }
         was_active = active || rebuilding || switching;
     }
@@ -196,6 +351,18 @@ fn main() {
             // 只拦主窗口——桌面歌词窗口的关闭是正常功能（先存几何再关），
             // 退出路径（托盘退出）走的 app.exit，不触发 CloseRequested。
             if window.label() == "main" {
+                // 安全网：窗口获得焦点时若仍挂起（外部 ShowWindow 等绕过托盘
+                // 的显示路径），恢复 WebView 并补发状态，避免白屏/冻结界面
+                if let tauri::WindowEvent::Focused(true) = event {
+                    let app = window.app_handle();
+                    let suspended = app
+                        .state::<AppState>()
+                        .webview_suspended
+                        .load(Ordering::SeqCst);
+                    if suspended {
+                        resume_main_webview(app, true);
+                    }
+                }
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     let app = window.app_handle();
                     let action = {
@@ -206,6 +373,8 @@ fn main() {
                     if action == "tray" {
                         api.prevent_close();
                         let _ = window.hide();
+                        // 隐藏到托盘：挂起 WebView 回收渲染内存（音频不受影响）
+                        suspend_main_webview(window.app_handle());
                     } else {
                         // exit：显式退出——托盘图标存在时默认关闭可能仅移除窗口，
                         // 进程会以无窗口状态残留在托盘
@@ -282,6 +451,8 @@ fn main() {
                 db: Mutex::new(conn),
                 engine: Mutex::new(eng),
                 app_data: app_data.clone(),
+                webview_suspended: AtomicBool::new(false),
+                scan_last: Mutex::new(serde_json::json!({ "active": false, "done": 0, "total": 0 })),
             });
 
             let mhandle = handle.clone();
@@ -366,6 +537,7 @@ fn main() {
             commands::desktop_lyrics_open,
             commands::desktop_lyrics_close,
             commands::desktop_lyrics_unlock,
+            commands::get_scan_state,
             commands::auto_check_update,
             commands::check_update,
             commands::download_update,

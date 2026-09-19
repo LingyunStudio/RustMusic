@@ -468,6 +468,25 @@ export const useStore = create<Store>((set, get) => ({
 
     unbinds.push(await listenEvent("player://ended", () => get().next(true)));
 
+    // 主窗口隐藏到托盘时 WebView 会被挂起（后端 TrySuspend 回收渲染内存），
+    // 挂起期间发往前端的事件全部丢失：恢复后刷新一遍数据收敛状态
+    unbinds.push(
+      await listenEvent("webview://resumed", () => {
+        const s = get();
+        s.refreshTracks();
+        s.refreshFolders();
+        s.refreshPlaylists();
+        s.refreshRecentOnline();
+        s.refreshCacheBytes();
+        // 扫描进度以快照为准；下载完成事件若丢失则复位下载条
+        api
+          .getScanState()
+          .then((scan) => set({ scan }))
+          .catch(() => {});
+        set({ download: null });
+      })
+    );
+
     unbinds.push(
       await listenEvent<{ action: string; value?: number }>("media://control", (p) =>
         get().applyMediaControl(p.action, p.value)
