@@ -2,6 +2,7 @@ import { ListMusic, Pause, Play, Trash2, X } from "lucide-react";
 import { useStore } from "../store";
 import { fmtTime } from "../utils";
 import CoverImg from "./CoverImg";
+import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import type { QueueItem } from "../types";
 
 function queueLabel(item: QueueItem): { title: string; artist: string; cover?: string } {
@@ -59,6 +60,10 @@ export default function QueuePanel() {
 
   const upcoming = queue.slice(qIndex + 1);
 
+  // 队列可达全库规模（“播放全部”）：窗口化渲染，只挂可视区行
+  const ROW_H = 48;
+  const win = useVirtualWindow(queue.length, ROW_H);
+
   return (
     // 窗口级浮层（与音量弹出/右键菜单同语言：glass-strong + 圆角 + 浮起阴影）：
     // 悬挂在播放条上方右侧，不挤占内容区布局——侧栏挤位会把窄页面的
@@ -82,11 +87,17 @@ export default function QueuePanel() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2.5 py-1.5">
+      <div
+        ref={win.containerRef}
+        onScroll={win.onScroll}
+        className="flex-1 overflow-y-auto px-2.5 py-1.5"
+      >
         {queue.length === 0 && (
           <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">队列是空的</div>
         )}
-        {queue.map((item, i) => {
+        <div style={{ height: win.start * ROW_H }} aria-hidden />
+        {queue.slice(win.start, win.end).map((item, k) => {
+          const i = win.start + k;
           const { title, artist, cover } = queueLabel(item);
           const active = i === qIndex;
           const dead = unavailable[`${item.kind}:${item.id}`] != null;
@@ -94,7 +105,7 @@ export default function QueuePanel() {
             <div
               key={`${item.kind}-${item.id}-${i}`}
               style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-              className={`anim-row group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer transition-colors ${
+              className={`${i < 24 ? "anim-row" : ""} group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer transition-colors ${
                 active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
               } ${dead ? "opacity-45" : ""}`}
               title={dead ? `无法播放：${unavailable[`${item.kind}:${item.id}`]}` : undefined}
@@ -139,6 +150,7 @@ export default function QueuePanel() {
             </div>
           );
         })}
+        <div style={{ height: Math.max(0, queue.length - win.end) * ROW_H }} aria-hidden />
       </div>
 
       {queue.length > 0 && (

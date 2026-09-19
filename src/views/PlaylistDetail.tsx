@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { useDragList } from "../hooks/useDragList";
+import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { ConfirmModal } from "../components/Dialogs";
 import { clampMenuPos, fmtTime, matchSearch } from "../utils";
 import CoverImg from "../components/CoverImg";
@@ -146,6 +147,14 @@ export default function PlaylistDetail({ id }: { id: number }) {
     reorderPlaylist(pl.id, rows.map((e) => e.rowid));
   });
 
+  // 窗口化：超长列表（导入的在线歌单可达上千首）只渲染可视区行。
+  // useDragList 依赖“行 = 滚动容器全部直接子元素”，窗口化时拖拽不可用——
+  // 常规规模（≤阈值）保持原样（拖拽可用），超过阈值才切换
+  const ROW_H = 60;
+  const WINDOW_THRESHOLD = 500;
+  const windowed = list.length > WINDOW_THRESHOLD;
+  const win = useVirtualWindow(list.length, ROW_H);
+
   if (!pl) {
     return (
       <div className="flex-1 flex items-center justify-center text-[var(--ink-2)]">
@@ -180,7 +189,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
           <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
             {list.length} 首曲目
-            {list.length > 0 && (
+            {list.length > 0 && !windowed && (
               <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
             )}
           </div>
@@ -231,8 +240,14 @@ export default function PlaylistDetail({ id }: { id: number }) {
               列表里还没有歌曲（可在在线曲库右键添加）
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[62px]">
-              {list.map((r, i) => {
+            <div
+              ref={win.containerRef}
+              onScroll={win.onScroll}
+              className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[62px]"
+            >
+              <div style={{ height: (windowed ? win.start : 0) * ROW_H }} aria-hidden />
+              {(windowed ? list.slice(win.start, win.end) : list).map((r, k) => {
+                const i = windowed ? win.start + k : k;
                 const active =
                   current != null &&
                   current.kind === r.kind &&
@@ -248,9 +263,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 return (
                   <div
                     key={r.entry.rowid}
-                    {...rowProps(i)}
+                    {...(windowed ? {} : rowProps(i))}
                     style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                    className={`anim-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
+                    className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
                       active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
                     } ${dead ? "opacity-45" : ""}`}
                     title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
@@ -402,6 +417,12 @@ export default function PlaylistDetail({ id }: { id: number }) {
                   </div>
                 );
               })}
+              <div
+                style={{
+                  height: Math.max(0, (windowed ? list.length - win.end : 0)) * ROW_H,
+                }}
+                aria-hidden
+              />
             </div>
           )}
         </div>

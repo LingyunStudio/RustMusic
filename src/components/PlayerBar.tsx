@@ -13,13 +13,113 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import Slider from "./Slider";
 import { activeLyricText, fmtTime } from "../utils";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+
+/** 左侧文案：未打开播放页时显示当前歌词行（随 pos 换行，溢出走 marquee），否则曲名。
+ *  pos 是 250ms 一帧的高频更新——隔离在这个小组件里，播放条主体不再每帧重渲染 */
+function TrackTitleLyric() {
+  const pos = useStore((s) => s.pos);
+  const lyrics = useStore((s) => s.lyrics);
+  const current = useStore((s) => s.current);
+  const nowPlayingOpen = useStore((s) => s.nowPlayingOpen);
+  const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
+
+  // 播放栏歌词：当前行（未打开播放页时也加载并展示）。
+  // 是否滚动不再靠字宽估算，而是渲染后实测：容器 scrollWidth > clientWidth 即滚。
+  const activeLyric = (() => {
+    if (nowPlayingOpen) return null;
+    const text = activeLyricText(lyrics, pos);
+    return text == null ? null : { text };
+  })();
+
+  // 实测溢出：文字真实宽度超出可视宽度时启用 marquee（下一帧测，本帧可能未布局）
+  const lyricWrapRef = useRef<HTMLDivElement>(null);
+  const [lyricOverflow, setLyricOverflow] = useState(false);
+  const overflowText = activeLyric?.text;
+  useEffect(() => {
+    const el = lyricWrapRef.current;
+    if (!el || overflowText == null) {
+      setLyricOverflow(false);
+      return;
+    }
+    requestAnimationFrame(() => {
+      const e2 = lyricWrapRef.current;
+      if (e2) setLyricOverflow(e2.scrollWidth > e2.clientWidth + 1);
+    });
+  }, [overflowText]);
+
+  if (!current) return null;
+  return activeLyric != null ? (
+    <div
+      ref={lyricWrapRef}
+      className={`text-[13px] font-medium text-[var(--accent-strong)] cursor-pointer overflow-hidden whitespace-nowrap ${
+        lyricOverflow ? "marquee-wrap" : ""
+      }`}
+      onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
+      title="点击展开播放页"
+    >
+      {lyricOverflow ? (
+        <span
+          className="marquee-inner"
+          style={{
+            ["--dur" as string]: `${Math.max(
+              9,
+              activeLyric.text.length * 0.55
+            )}s`,
+          }}
+        >
+          {activeLyric.text}
+          <span className="inline-block w-14" />
+          {activeLyric.text}
+          <span className="inline-block w-14" />
+        </span>
+      ) : (
+        <span className="inline-block">{activeLyric.text}</span>
+      )}
+    </div>
+  ) : (
+    <div
+      className="text-[13.5px] font-semibold text-[var(--ink)] truncate cursor-pointer hover:text-[var(--accent-strong)] transition-colors"
+      onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
+    >
+      {current.title}
+    </div>
+  );
+}
+
+/** 中部进度区：时间 + 滑块。pos/dur 的高频订阅隔离于此 */
+function Playhead({ fallbackTotal }: { fallbackTotal: number }) {
+  const pos = useStore((s) => s.pos);
+  const dur = useStore((s) => s.dur);
+  const seek = useStore((s) => s.seek);
+  const total = dur || fallbackTotal || 0;
+  return (
+    <div className="w-full max-w-[540px] flex items-center gap-3">
+      <span className="text-[11px] text-[var(--ink-3)] tabular-nums w-9 text-right">
+        {fmtTime(pos)}
+      </span>
+      <Slider
+        value={pos}
+        max={total || 1}
+        onChange={(v) => useStore.setState({ pos: v, scrubbing: true })}
+        onCommit={(v) => {
+          useStore.setState({ scrubbing: true });
+          seek(v);
+        }}
+        className="flex-1"
+      />
+      <span className="text-[11px] text-[var(--ink-3)] tabular-nums w-9">
+        {fmtTime(total)}
+      </span>
+    </div>
+  );
+}
 
 /** 竖向音量弹出条（点击音量图标显示，离开自动收起） */
 function VolumePopover({
@@ -83,8 +183,8 @@ function VolumePopover({
 export default function PlayerBar({ centered = false }: { centered?: boolean }) {
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
-  const pos = useStore((s) => s.pos);
-  const dur = useStore((s) => s.dur);
+  // pos/dur/lyrics 的高频订阅已隔离到 TrackTitleLyric / Playhead：
+  // 主体只订阅低频状态，250ms 一帧的进度更新不再重渲染整个播放条
   const volume = useStore((s) => s.volume);
   const speed = useStore((s) => s.speed);
   const repeat = useStore((s) => s.repeat);
@@ -101,12 +201,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
   const likedOnline = useStore((s) => s.likedOnline);
   const recentOnline = useStore((s) => s.recentOnline);
   const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
-  const lyrics = useStore((s) => s.lyrics);
-  const nowPlayingOpenFlag = useStore((s) => s.nowPlayingOpen);
   const togglePlay = useStore((s) => s.togglePlay);
   const next = useStore((s) => s.next);
   const prev = useStore((s) => s.prev);
-  const seek = useStore((s) => s.seek);
   const setVolume = useStore((s) => s.setVolume);
   const setSpeed = useStore((s) => s.setSpeed);
   const setRepeat = useStore((s) => s.setRepeat);
@@ -115,32 +212,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
   const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
   const setQueueOpen = useStore((s) => s.setQueueOpen);
 
-  const total = dur || current?.durationMs || 0;
   const VolIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
-  // 播放栏歌词：当前行（未打开播放页时也加载并展示）。
-  // 是否滚动不再靠字宽估算，而是渲染后实测：容器 scrollWidth > clientWidth 即滚。
-  const activeLyric = useMemo(() => {
-    if (nowPlayingOpenFlag) return null;
-    const text = activeLyricText(lyrics, pos);
-    if (text == null) return null;
-    return { text };
-  }, [nowPlayingOpenFlag, lyrics, pos]);
-
-  // 实测溢出：文字真实宽度超出可视宽度时启用 marquee
-  const lyricWrapRef = useRef<HTMLDivElement>(null);
-  const [lyricOverflow, setLyricOverflow] = useState(false);
-  useEffect(() => {
-    const el = lyricWrapRef.current;
-    if (!el || !activeLyric) {
-      setLyricOverflow(false);
-      return;
-    }
-    // 需要在下一帧测：本帧文字可能还没布局
-    requestAnimationFrame(() => {
-      const e2 = lyricWrapRef.current;
-      if (e2) setLyricOverflow(e2.scrollWidth > e2.clientWidth + 1);
-    });
-  }, [activeLyric?.text]);
 
   const [volOpen, setVolOpen] = useState(false);
   const volBtnRef = useRef<HTMLButtonElement>(null);
@@ -199,42 +271,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 </div>
               </button>
               <div className="min-w-0">
-                {activeLyric != null ? (
-                  <div
-                    ref={lyricWrapRef}
-                    className={`text-[13px] font-medium text-[var(--accent-strong)] cursor-pointer overflow-hidden whitespace-nowrap ${
-                      lyricOverflow ? "marquee-wrap" : ""
-                    }`}
-                    onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
-                    title="点击展开播放页"
-                  >
-                    {lyricOverflow ? (
-                      <span
-                        className="marquee-inner"
-                        style={{
-                          ["--dur" as string]: `${Math.max(
-                            9,
-                            activeLyric.text.length * 0.55
-                          )}s`,
-                        }}
-                      >
-                        {activeLyric.text}
-                        <span className="inline-block w-14" />
-                        {activeLyric.text}
-                        <span className="inline-block w-14" />
-                      </span>
-                    ) : (
-                      <span className="inline-block">{activeLyric.text}</span>
-                    )}
-                  </div>
-                ) : (
-                  <div
-                    className="text-[13.5px] font-semibold text-[var(--ink)] truncate cursor-pointer hover:text-[var(--accent-strong)] transition-colors"
-                    onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
-                  >
-                    {current.title}
-                  </div>
-                )}
+                <TrackTitleLyric />
                 <div className="text-[12px] text-[var(--ink-3)] truncate mt-1 flex items-center gap-2">
                   <span className="truncate">{current.artist}</span>
                   {current.quality && (
@@ -368,24 +405,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               {repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
             </button>
           </div>
-          <div className="w-full max-w-[540px] flex items-center gap-3">
-            <span className="text-[11px] text-[var(--ink-3)] tabular-nums w-9 text-right">
-              {fmtTime(pos)}
-            </span>
-            <Slider
-              value={pos}
-              max={total || 1}
-              onChange={(v) => useStore.setState({ pos: v, scrubbing: true })}
-              onCommit={(v) => {
-                useStore.setState({ scrubbing: true });
-                seek(v);
-              }}
-              className="flex-1"
-            />
-            <span className="text-[11px] text-[var(--ink-3)] tabular-nums w-9">
-              {fmtTime(total)}
-            </span>
-          </div>
+          <Playhead fallbackTotal={current?.durationMs ?? 0} />
         </div>
 
         {/* 右侧控制 */}

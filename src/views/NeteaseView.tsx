@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
+import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import type { NeteaseTrack, QqSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
@@ -116,6 +117,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   }, [source, neteaseResults, qqResults]);
 
   const submit = () => (source === "netease" ? neteaseSearch(kw) : qqSearch(kw));
+
+  // 搜索结果随“加载更多”无上限增长：窗口化渲染（行高 60px 恒定）
+  const ROW_H = 60;
+  const win = useVirtualWindow(rows.length, ROW_H);
 
   const playRow = (i: number) => {
     if (source === "netease") playNetease(neteaseResults, i);
@@ -256,7 +261,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <span className="text-right">操作</span>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[90px]">
+          <div
+            ref={win.containerRef}
+            onScroll={win.onScroll}
+            className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[90px]"
+          >
             {searching && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
@@ -300,7 +309,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               </div>
             )}
 
-            {rows.map((t, i) => {
+            <div style={{ height: win.start * ROW_H }} aria-hidden />
+            {rows.slice(win.start, win.end).map((t, k) => {
+              const i = win.start + k;
               const active =
                 current?.kind === t.kind &&
                 (t.kind === "qq"
@@ -313,7 +324,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 <div
                   key={`${t.kind}-${t.id}`}
                   style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                  className={`anim-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
+                  className={`${i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
                     active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
                   }`}
                   onDoubleClick={() => playRow(i)}
@@ -457,6 +468,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               );
             })}
 
+            <div style={{ height: Math.max(0, rows.length - win.end) * ROW_H }} aria-hidden />
             {hasMore && (
               <div className="flex justify-center pt-1 pb-2">
                 <button

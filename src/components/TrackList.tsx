@@ -1,8 +1,9 @@
 import { Ban, Heart, ListMusic, MoreHorizontal, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
 import { useDragList } from "../hooks/useDragList";
+import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import type { PlaylistEntryMeta, TrackMeta } from "../types";
 import { clampMenuPos, fmtTime, refineMenuPos, trackArtist, trackTitle } from "../utils";
 import CoverImg from "./CoverImg";
@@ -38,6 +39,16 @@ export type SortKey = "manual" | "title" | "artist" | "album" | "duration" | "ad
 type MergedRow =
   | { type: "local"; t: TrackMeta }
   | { type: "online"; e: PlaylistEntryMeta };
+
+/** 统一行描述：i = 播放下标（本地在 tracks / 在线在 onlineEntries 里），
+ *  idxNum = 显示序号（归并模式下 = 归并序列位置） */
+type RowEntry =
+  | { type: "local"; t: TrackMeta; i: number; idxNum: number }
+  | { type: "online"; e: PlaylistEntryMeta; i: number; idxNum: number };
+
+const ROW_H = 64;
+/** 入场交错动画只给首屏行：窗口化后滚动新挂载的行不再重播 rowIn */
+const ANIM_ROWS = 24;
 
 export default function TrackList({
   tracks,
@@ -113,6 +124,63 @@ export default function TrackList({
     if (dragSortable && onDragReorder) onDragReorder(from, to);
   });
   setEnabled(!!dragSortable && !!onDragReorder);
+
+  // 拖拽模式下退回全量渲染：useDragList 依赖“行 = 滚动容器全部直接子元素”
+  // 直接读写 DOM，与窗口化互斥（手动排序是低频编辑态，临时全量可接受）
+  const dragMode = !!dragSortable && !!onDragReorder;
+
+  // 播放下标映射：归并序列回填原列表下标，消掉渲染期的 indexOf O(n²)
+  const localIndexById = useMemo(() => {
+    const m = new Map<number, number>();
+    tracks.forEach((t, i) => {
+      if (!m.has(t.id)) m.set(t.id, i);
+    });
+    return m;
+  }, [tracks]);
+  const onlineIndexByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    onlineEntries.forEach((e, k) => {
+      const key = `${e.kind}-${e.onlineId ?? ""}`;
+      if (!m.has(key)) m.set(key, k);
+    });
+    return m;
+  }, [onlineEntries]);
+
+  // 统一行序列（归并模式用 mergedRows，否则 tracks + onlineEntries 拼接）
+  const rows = useMemo<RowEntry[]>(() => {
+    if (hasMerged) {
+      return (mergedRows as MergedRow[]).map((row, p) =>
+        row.type === "local"
+          ? {
+              type: "local" as const,
+              t: row.t,
+              i: localIndexById.get(row.t.id) ?? 0,
+              idxNum: p,
+            }
+          : {
+              type: "online" as const,
+              e: row.e,
+              i: onlineIndexByKey.get(`${row.e.kind}-${row.e.onlineId ?? ""}`) ?? 0,
+              idxNum: p,
+            }
+      );
+    }
+    return [
+      ...tracks.map((t, i) => ({ type: "local" as const, t, i, idxNum: i })),
+      ...onlineEntries.map((e, k) => ({
+        type: "online" as const,
+        e,
+        i: k,
+        idxNum: tracks.length + k,
+      })),
+    ];
+  }, [hasMerged, mergedRows, tracks, onlineEntries, localIndexById, onlineIndexByKey]);
+
+  // 窗口化：DOM 只保留可视区 ± overscan 行（拖拽模式下计算了但不用）
+  const win = useVirtualWindow(rows.length, ROW_H);
+  const renderRow = (r: RowEntry) =>
+    r.type === "local" ? renderLocal(r.t, r.i, r.idxNum) : renderOnline(r.e, r.i, r.idxNum);
+
   if (!tracks.length && !onlineEntries.length && !hasMerged) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-5 anim-fade">
@@ -144,12 +212,14 @@ export default function TrackList({
 
   const renderLocal = (t: TrackMeta, i: number, idxNum: number) => {
     const active = current?.kind === "track" && current.id === t.id;
+    // 窗口化下滚动新挂载的行不重播入场动画（只有首屏行交错浮现）
+    const animCls = dragMode || idxNum < ANIM_ROWS ? "anim-row" : "";
     return (
       <div
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`anim-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
           active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
         }`}
         onDoubleClick={() => playTracks(tracks, i)}
@@ -269,7 +339,7 @@ export default function TrackList({
     );
   };
 
-  const renderOnline = (e: PlaylistEntryMeta, _i: number, idxNum: number) => {
+  const renderOnline = (e: PlaylistEntryMeta, i: number, idxNum: number) => {
     const active =
       current?.kind === e.kind &&
       (e.kind === "qq"
@@ -278,18 +348,17 @@ export default function TrackList({
     // 播放失败（无版权/下架）：整行置灰 + 无版权标记
     const failKey = e.kind === "qq" ? `qq:${e.onlineId}` : `netease:${e.onlineId}`;
     const dead = unavailable[failKey] != null;
+    const animCls = dragMode || idxNum < ANIM_ROWS ? "anim-row" : "";
     return (
       <div
         key={`online-${e.kind}-${e.onlineId}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`anim-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
           active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
         } ${dead ? "opacity-45" : ""}`}
-        onDoubleClick={() =>
-          playEntries(onlineEntries, Math.max(0, onlineEntries.indexOf(e)))
-        }
+        onDoubleClick={() => playEntries(onlineEntries, Math.max(0, i))}
         onContextMenu={(ev) => {
           ev.preventDefault();
           setOnlineMenu({ x: ev.clientX, y: ev.clientY, entry: e });
@@ -309,9 +378,7 @@ export default function TrackList({
             className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
               active ? "text-[var(--accent)]" : "bg-[var(--accent)] text-[var(--accent-on)]"
             }`}
-            onClick={() =>
-              playEntries(onlineEntries, Math.max(0, onlineEntries.indexOf(e)))
-            }
+            onClick={() => playEntries(onlineEntries, Math.max(0, i))}
             title="播放"
           >
             <Play size={14} className="fill-current ml-px" />
@@ -413,21 +480,22 @@ export default function TrackList({
 
   return (
     <>
-      <div className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 pt-2.5 pb-[90px]" : "px-5 pb-[62px]"}`}>
-      {hasMerged
-        ? (mergedRows as MergedRow[]).map((row, i) =>
-            row.type === "local"
-              ? renderLocal(row.t, tracks.indexOf(row.t), i)
-              : renderOnline(row.e, onlineEntries.indexOf(row.e), i)
-          )
-        : (
-          <>
-            {tracks.map((t, i) => renderLocal(t, i, i))}
-            {onlineEntries.map((e, k) =>
-              renderOnline(e, k, tracks.length + k)
-            )}
-          </>
-        )}
+      <div
+        ref={win.containerRef}
+        onScroll={win.onScroll}
+        className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 pt-2.5 pb-[90px]" : "px-5 pb-[62px]"}`}
+      >
+      {dragMode ? (
+        // 拖拽模式：全量渲染（useDragList 直接按 container.children 顺序读写 DOM）
+        rows.map(renderRow)
+      ) : (
+        // 窗口化：上下 spacer 撑起总高度，DOM 只有可视区 ± overscan 行
+        <>
+          <div style={{ height: win.start * ROW_H }} aria-hidden />
+          {rows.slice(win.start, win.end).map(renderRow)}
+          <div style={{ height: Math.max(0, rows.length - win.end) * ROW_H }} aria-hidden />
+        </>
+      )}
       </div>
 
       {/* 在线条目右键菜单（Portal 到 body：fixed 定位的包含块必须是视口；

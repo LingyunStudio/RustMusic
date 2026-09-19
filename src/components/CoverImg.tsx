@@ -25,6 +25,10 @@ export default function CoverImg({ src, seed, className = "", iconSize = 18 }: C
         src={url}
         alt=""
         draggable={false}
+        // lazy：不在可视区附近的封面不发起加载（长列表滚动时按需解码，
+        // 渲染进程的图片缓存不再随曲库规模线性增长）
+        loading="lazy"
+        decoding="async"
         onError={() => setErr(true)}
         className={`object-cover bg-[var(--shade)] ${className}`}
       />

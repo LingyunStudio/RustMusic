@@ -281,7 +281,10 @@ function titleOfQueueItem(
   return caches.sources.find((s) => s.id === item.id)?.title ?? `音源 #${item.id}`;
 }
 
-/** 推一帧歌词/进度给桌面歌词窗口（事件式，窗口不存在时 emit 静默无副作用） */
+/** 推一帧歌词/进度给桌面歌词窗口（事件式，窗口不存在时 emit 静默无副作用）。
+ *  歌词行数组只在变化时随帧携带（逐字歌词可达几十 KB，250ms 一帧全量序列化
+ *  是持续的 GC 压力）；歌词窗口对缺失的 lines 字段沿用上一次的值。 */
+let lastPushedLines: unknown = undefined; // undefined = 尚未推过（下次必带 lines）
 async function pushDesktopLyrics(
   s: Pick<
     Store,
@@ -290,17 +293,23 @@ async function pushDesktopLyrics(
 ) {
   if (!s.desktopLyricsOn) return;
   try {
+    const lines = s.lyrics?.lines ?? null;
+    const includeLines = lines !== lastPushedLines;
+    lastPushedLines = lines;
     const { emit } = await import("@tauri-apps/api/event");
-    emit("dlyrics://push", {
-      lines: s.lyrics?.lines ?? null,
-      synced: s.lyrics?.synced ?? false,
-      pos: s.pos,
-      dur: s.dur,
-      playing: s.playing,
-      title: s.current?.title ?? "",
-      artist: s.current?.artist ?? "",
-      colors: s.dlyricsColors ?? loadDesktopLyricsColors(),
-    });
+    emit(
+      "dlyrics://push",
+      {
+        ...(includeLines ? { lines } : {}),
+        synced: s.lyrics?.synced ?? false,
+        pos: s.pos,
+        dur: s.dur,
+        playing: s.playing,
+        title: s.current?.title ?? "",
+        artist: s.current?.artist ?? "",
+        colors: s.dlyricsColors ?? loadDesktopLyricsColors(),
+      } as Record<string, unknown>
+    );
   } catch {
     // 桌面歌词窗口未开/已关：忽略
   }
@@ -426,9 +435,18 @@ export const useStore = create<Store>((set, get) => ({
                 ? `qq-${p.qid}`
                 : null;
         if (key) get().loadLyricsByKey(key);
-        // 换曲开播：在线曲目更新“最近播放”（本地曲目由 refreshTracks 的 lastPlayed 体现）
+        // 换曲开播：在线曲目更新“最近播放”；本地曲目只在本地更新单条的
+        // lastPlayed/playCount（后端 record_play 已在开播时落库）——
+        // 不再全量拉取曲目列表（大曲库下每首歌一次全量 IPC + 整表重渲染）
         if (isFreshStart && p.kind !== "track") get().refreshRecentOnline();
-        if (isFreshStart && p.kind === "track") get().refreshTracks();
+        if (isFreshStart && p.kind === "track" && p.id != null) {
+          const now = Math.floor(Date.now() / 1000);
+          set((s) => ({
+            tracks: s.tracks.map((t) =>
+              t.id === p.id ? { ...t, lastPlayed: now, playCount: t.playCount + 1 } : t
+            ),
+          }));
+        }
         // 播放/暂停/停止的即时同步：暂停后 pos 事件停发，
         // 不在这里推一帧的话桌面歌词会一直按旧 playing 状态外推
         pushDesktopLyrics(get());
@@ -940,6 +958,8 @@ export const useStore = create<Store>((set, get) => ({
     try {
       await api.desktopLyricsOpen();
       set({ desktopLyricsOn: true, desktopLyricsLock: false });
+      // 窗口是全新的（没有历史帧可沿用）：强制下一帧携带完整歌词
+      lastPushedLines = undefined;
       // 立即推一帧当前状态（窗口加载完成可能晚于这次推送，靠后续 pos 事件补）
       pushDesktopLyrics(get());
       get().toast("桌面歌词已开启（L 键切换）", "info");

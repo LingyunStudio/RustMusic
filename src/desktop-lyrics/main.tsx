@@ -14,7 +14,9 @@ import { lyricLineProgress } from "../utils";
 import "../index.css";
 
 interface PushPayload {
-  lines: LyricLine[] | null;
+  /** 歌词行；缺省 = 与上一帧相同（主窗口只在歌词变化时携带，
+   *  避免 250ms 一帧全量序列化逐字歌词） */
+  lines?: LyricLine[] | null;
   synced: boolean;
   pos: number;
   dur: number;
@@ -72,7 +74,8 @@ function DesktopLyrics() {
       return listen<PushPayload>("dlyrics://push", (e) => {
         posAtRef.current = performance.now();
         posRef.current = e.payload.pos;
-        setData(e.payload);
+        // 合并而非替换：lines 缺省时沿用上一帧（主窗口瘦身推送）
+        setData((prev) => ({ ...prev, ...e.payload }));
       });
     }).then((u) => {
       if (disposed) u?.();
