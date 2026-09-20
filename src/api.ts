@@ -77,6 +77,18 @@ export const api = {
     vip: boolean;
   }) => invoke<void>("qq_play", { track }),
   qqLyric: (songmid: string) => invoke<LyricsPayload>("qq_lyric", { songmid }),
+  kugouSearch: (keyword: string, page: number) =>
+    invoke<{ songs: import("./types").KgSong[] }>("kugou_search", { keyword, page }),
+  kugouPlay: (track: {
+    hash: string;
+    title: string;
+    artist: string;
+    album: string;
+    cover: string;
+    durationMs: number;
+    vip: boolean;
+  }) => invoke<void>("kugou_play", { track }),
+  kugouLyric: (hash: string) => invoke<LyricsPayload>("kugou_lyric", { hash }),
   qqQrCreate: () => invoke<{ qrsig: string; qr: string }>("qq_qr_create"),
   qqQrCheck: (qrsig: string) =>
     invoke<{ status: string; nickname?: string }>("qq_qr_check", { qrsig }),
@@ -135,6 +147,8 @@ export const api = {
     invoke<Record<string, number>>("get_manual_order", { list }),
   reorderPlaylist: (playlistId: number, rowids: number[]) =>
     invoke<void>("reorder_playlist", { playlistId, rowids }),
+  reorderPlaylists: (ids: number[]) =>
+    invoke<void>("reorder_playlists", { ids }),
   neteaseUserPlaylists: () =>
     invoke<UserPlaylistMeta[]>("netease_user_playlists"),
   neteaseImportPlaylist: (remotePid: number, name: string) =>

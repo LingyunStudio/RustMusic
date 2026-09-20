@@ -69,8 +69,12 @@ function DesktopLyrics() {
   useEffect(() => {
     let disposed = false;
     let un: (() => void) | undefined;
-    import("@tauri-apps/api/event").then(({ listen }) => {
+    import("@tauri-apps/api/event").then(({ listen, emit }) => {
       if (disposed) return;
+      // 监听就绪后向主窗口上报：主窗口此前按“歌词未变化不携带 lines”瘦身
+      // 推送的帧，本窗口可能一条都没收到（创建初期/重开），握手后强制
+      // 补推一帧全量状态，避免整首歌卡在“纯音乐”
+      void emit("dlyrics://ready");
       return listen<PushPayload>("dlyrics://push", (e) => {
         posAtRef.current = performance.now();
         posRef.current = e.payload.pos;

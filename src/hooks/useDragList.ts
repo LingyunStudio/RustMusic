@@ -132,7 +132,11 @@ export function useDragList(onSubmit: (from: number, to: number) => void) {
       if (!enabledRef.current) return; // 该列表未开启拖拽（非手动排序视图等）
       const container = row.parentElement;
       if (!container) return;
-      const rows = Array.from(container.children) as HTMLElement[];
+      // 行 = 容器直接子元素中未标记 data-drag-skip 的部分：虚拟窗口的
+      // 上下占位 div 也是子元素，不打标记会把行索引整体顶偏（拖错行）
+      const rows = (Array.from(container.children) as HTMLElement[]).filter(
+        (el) => !el.hasAttribute("data-drag-skip")
+      );
       const tops = rows.map((r) => r.offsetTop);
       const rowH = tops.length > 1 ? tops[1] - tops[0] : row.offsetHeight;
       if (rowH <= 0 || !tops.length) return;

@@ -6,6 +6,8 @@ interface InputModalProps {
   title: string;
   placeholder?: string;
   confirmText?: string;
+  /** 打开时的预填值（重命名用）；不传为空 */
+  initialValue?: string;
   onClose: () => void;
   onConfirm: (value: string) => void;
 }
@@ -15,12 +17,14 @@ export function InputModal({
   title,
   placeholder,
   confirmText = "确定",
+  initialValue,
   onClose,
   onConfirm,
 }: InputModalProps) {
   const [value, setValue] = useState("");
   useEffect(() => {
-    if (open) setValue("");
+    if (open) setValue(initialValue ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const submit = () => {

@@ -39,6 +39,16 @@ function queueLabel(item: QueueItem): { title: string; artist: string; cover?: s
       };
     return { title: `QQ音乐 #${item.id}`, artist: "在线曲库" };
   }
+  if (item.kind === "kugou") {
+    const t = s.kugouCache[item.id];
+    if (t)
+      return {
+        title: t.name,
+        artist: t.singer || "酷狗",
+        cover: t.cover || undefined,
+      };
+    return { title: `酷狗 #${item.id}`, artist: "在线曲库" };
+  }
   const src = s.sources.find((x) => x.id === item.id);
   return {
     title: src?.title || src?.url.split("/").pop() || "在线音源",

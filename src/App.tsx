@@ -16,9 +16,12 @@ import SettingsView from "./views/SettingsView";
 import OnlineLibraryView from "./views/NeteaseView";
 import { coverSrc } from "./api";
 import { extractColor } from "./utils";
+import { skinUri } from "./skins";
 
 function DynamicBackdrop() {
   const cover = useStore((s) => s.current?.cover);
+  const skin = useStore((s) => s.skin);
+  const skinUrl = skinUri(skin);
   // http 封面直接用原始 URL，本地路径才走 asset 协议
   const url = cover
     ? cover.startsWith("http://") || cover.startsWith("https://")
@@ -57,21 +60,36 @@ function DynamicBackdrop() {
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {/* 暖色底 */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 120% 100% at 50% -20%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%)",
-        }}
-      />
-      {/* 封面主色微光（低饱和、低调） */}
+      {/* 底层：皮肤背景图（启用时替代默认渐变底），或主题默认氛围 */}
+      {skinUrl ? (
+        <>
+          <div
+            className="absolute inset-0 transition-all duration-500"
+            style={{
+              backgroundImage: skinUrl,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          />
+          {/* 主题纱：暗色压暗 / 浅色洗成粉彩，保证前景文字可读 */}
+          <div className="absolute inset-0" style={{ background: "var(--skin-scrim)" }} />
+        </>
+      ) : (
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 120% 100% at 50% -20%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%)",
+          }}
+        />
+      )}
+      {/* 封面主色微光（低饱和、低调；皮肤上保留，让壁纸跟着音乐呼吸） */}
       <div
         className="absolute -top-64 left-[12%] w-[820px] h-[640px] transition-colors duration-1000"
         style={{
           background:
             "radial-gradient(ellipse at center, var(--glow) 0%, transparent 60%)",
-          opacity: 0.16,
+          opacity: skinUrl ? 0.09 : 0.16,
           filter: "blur(90px)",
         }}
       />
@@ -80,7 +98,7 @@ function DynamicBackdrop() {
         style={{
           background:
             "radial-gradient(ellipse at center, var(--blob-warm) 0%, transparent 62%)",
-          opacity: 0.18,
+          opacity: skinUrl ? 0.1 : 0.18,
           filter: "blur(100px)",
         }}
       />
@@ -215,6 +233,7 @@ export default function App() {
               {view === "sources" && <SourcesView />}
               {view === "netease" && <OnlineLibraryView source="netease" />}
               {view === "qq" && <OnlineLibraryView source="qq" />}
+              {view === "kugou" && <OnlineLibraryView source="kugou" />}
               {view === "settings" && <SettingsView />}
             </div>
           </main>

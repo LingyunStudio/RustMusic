@@ -33,7 +33,7 @@ export interface Folder {
 
 export interface PlaylistEntryMeta {
   rowid: number;
-  kind: "local" | "netease" | "qq";
+  kind: "local" | "netease" | "qq" | "kugou";
   trackId: number | null;
   onlineId: string | null;
   title: string;
@@ -62,6 +62,8 @@ export interface Playlist {
    *  重复导入时按它合并进已有列表 */
   remoteKind?: string;
   remotePid?: string;
+  /** 原始导入名：改名后仍能认出来源（重导入合并 + 界面提示用） */
+  originName?: string;
 }
 
 export interface SourceItem {
@@ -91,7 +93,7 @@ export interface LyricsPayload {
 
 export interface TrackInfo {
   id: number | null;
-  kind: "track" | "url" | "netease" | "qq";
+  kind: "track" | "url" | "netease" | "qq" | "kugou";
   path: string;
   title: string;
   artist: string;
@@ -100,6 +102,7 @@ export interface TrackInfo {
   durationMs: number;
   nid?: number | null;
   qid?: string | null;
+  kgid?: string | null;
   quality?: string | null;
 }
 
@@ -111,6 +114,17 @@ export interface QqSong {
   albumMid: string;
   mediaMid: string;
   durationMs: number;
+  vip: boolean;
+}
+
+export interface KgSong {
+  /** 歌曲 hash（酷狗唯一曲目标识） */
+  id: string;
+  name: string;
+  singer: string;
+  album: string;
+  durationMs: number;
+  cover: string;
   vip: boolean;
 }
 
@@ -136,11 +150,11 @@ export interface CurrentTrack extends TrackInfo {
 
 export type RepeatMode = "off" | "all" | "one";
 
-export type QueueItemKind = "track" | "url" | "netease" | "qq";
+export type QueueItemKind = "track" | "url" | "netease" | "qq" | "kugou";
 
 export type QueueItem =
   | { kind: "track" | "netease" | "url"; id: number }
-  | { kind: "qq"; id: string };
+  | { kind: "qq" | "kugou"; id: string };
 
 export type ViewName =
   | "library"
@@ -149,6 +163,7 @@ export type ViewName =
   | "sources"
   | "netease"
   | "qq"
+  | "kugou"
   | "settings"
   | "playlist";
 

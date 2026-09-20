@@ -5,6 +5,7 @@ import {
   Heart,
   ListMusic,
   MoreHorizontal,
+  Pencil,
   Play,
   Shuffle,
   Trash2,
@@ -13,7 +14,7 @@ import {
 import { useStore } from "../store";
 import { useDragList } from "../hooks/useDragList";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
-import { ConfirmModal } from "../components/Dialogs";
+import { ConfirmModal, InputModal } from "../components/Dialogs";
 import { clampMenuPos, fmtTime, matchSearch } from "../utils";
 import CoverImg from "../components/CoverImg";
 import Modal from "../components/Modal";
@@ -52,6 +53,17 @@ type DetailRow =
       cover: string;
       durationMs: number;
       liked: boolean;
+    }
+  | {
+      entry: PlaylistEntryMeta;
+      kind: "kugou";
+      id: string;
+      name: string;
+      artist: string;
+      album: string;
+      cover: string;
+      durationMs: number;
+      liked: boolean;
     };
 
 export default function PlaylistDetail({ id }: { id: number }) {
@@ -75,9 +87,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
     null
   );
   const reorderPlaylist = useStore((s) => s.reorderPlaylist);
+  const renamePlaylist = useStore((s) => s.renamePlaylist);
 
   const pl = playlists.find((p) => p.id === id);
   const unavailable = useStore((s) => s.unavailable);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const list = useMemo<DetailRow[]>(() => {
     if (!pl) return [];
@@ -113,6 +127,14 @@ export default function PlaylistDetail({ id }: { id: number }) {
             kind: "netease",
             id: Number(e.onlineId ?? 0),
             liked: !!savedOnline[`netease-${e.onlineId}`],
+          };
+        }
+        if (e.kind === "kugou") {
+          return {
+            ...base,
+            kind: "kugou",
+            id: e.onlineId ?? "",
+            liked: !!savedOnline[`kugou-${e.onlineId}`],
           };
         }
         return {
@@ -187,6 +209,17 @@ export default function PlaylistDetail({ id }: { id: number }) {
         <div className="min-w-0 flex-1">
           <div className="text-[11px] text-[var(--ink-2)] tracking-wider mb-1">播放列表</div>
           <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
+          {/* 改名后保留原始导入名，来源一目了然（重导入也按它兜底认出） */}
+          {pl.originName && pl.originName !== pl.name && (
+            <div className="text-[11.5px] text-[var(--ink-3)] mt-1 truncate">
+              导入名「{pl.originName}」
+              {pl.remoteKind && (
+                <span className="ml-1">
+                  · 来源{pl.remoteKind === "netease" ? "网易云" : "QQ 音乐"}
+                </span>
+              )}
+            </div>
+          )}
           <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
             {list.length} 首曲目
             {list.length > 0 && !windowed && (
@@ -211,6 +244,13 @@ export default function PlaylistDetail({ id }: { id: number }) {
               随机
             </button>
             <button
+              className="btn-secondary"
+              onClick={() => setRenameOpen(true)}
+            >
+              <Pencil size={13} />
+              重命名
+            </button>
+            <button
               className="btn-secondary !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)]"
               onClick={() => setConfirmDel(true)}
             >
@@ -232,6 +272,15 @@ export default function PlaylistDetail({ id }: { id: number }) {
         确定删除播放列表「{pl.name}」？列表中的曲目不会被删除。
       </ConfirmModal>
 
+      <InputModal
+        open={renameOpen}
+        title="重命名播放列表"
+        initialValue={pl.name}
+        confirmText="重命名"
+        onClose={() => setRenameOpen(false)}
+        onConfirm={(name) => void renamePlaylist(pl.id, name)}
+      />
+
       {/* 底边界抬到播放条上方，留 4px 空隙（播放条总占位 64+16+4=84px） */}
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -245,7 +294,12 @@ export default function PlaylistDetail({ id }: { id: number }) {
               onScroll={win.onScroll}
               className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[62px]"
             >
-              <div style={{ height: (windowed ? win.start : 0) * ROW_H }} aria-hidden />
+              {/* 虚拟窗口占位（data-drag-skip：不参与长按拖拽的行枚举） */}
+              <div
+                style={{ height: (windowed ? win.start : 0) * ROW_H }}
+                aria-hidden
+                data-drag-skip
+              />
               {(windowed ? list.slice(win.start, win.end) : list).map((r, k) => {
                 const i = windowed ? win.start + k : k;
                 const active =
@@ -316,7 +370,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
                           {r.kind !== "track" && (
                             <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1">
                               <Cloud size={9} />
-                              {r.kind === "netease" ? "网易云" : "QQ音乐"}
+                              {r.kind === "netease"
+                                ? "网易云"
+                                : r.kind === "kugou"
+                                  ? "酷狗"
+                                  : "QQ音乐"}
                             </span>
                           )}
                           {r.kind !== "track" && r.entry.vip && !dead && (
@@ -422,6 +480,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                   height: Math.max(0, (windowed ? list.length - win.end : 0)) * ROW_H,
                 }}
                 aria-hidden
+                data-drag-skip
               />
             </div>
           )}

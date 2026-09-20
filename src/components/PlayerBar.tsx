@@ -146,7 +146,7 @@ function VolumePopover({
         className="absolute bottom-[48px] right-0 z-[61] w-11 rounded-2xl p-2 flex justify-center"
         style={{
           background: "var(--bar-glass)",
-          backdropFilter: "blur(8px)",
+          backdropFilter: "blur(var(--bar-blur, 8px))",
           border: "1px solid var(--bar-line)",
           boxShadow: "var(--bar-shadow)",
         }}
@@ -242,8 +242,8 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
         }`}
         style={{
           background: "var(--bar-glass)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
+          backdropFilter: "blur(var(--bar-blur, 16px))",
+          WebkitBackdropFilter: "blur(var(--bar-blur, 16px))",
           border: "1px solid var(--bar-line)",
           boxShadow: "var(--bar-shadow)",
         }}

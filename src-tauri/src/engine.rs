@@ -33,6 +33,9 @@ pub struct TrackInfo {
     pub nid: Option<i64>,
     #[serde(default)]
     pub qid: Option<String>,
+    /// 酷狗曲目 hash（酷狗在线曲库）
+    #[serde(default)]
+    pub kgid: Option<String>,
     /// 播放音质描述（如 "320kbps" / "FLAC"），来自取链接响应
     #[serde(default)]
     pub quality: Option<String>,
@@ -524,6 +527,7 @@ impl Engine {
         let key = match (info.kind.as_str(), info.nid, info.qid.as_deref()) {
             ("netease", Some(nid), _) => format!("net-{nid}-{q}"),
             ("qq", _, Some(qid)) => format!("qq-{qid}-{q}"),
+            ("kugou", _, Some(kgid)) => format!("kug-{kgid}-{q}"),
             // 自定义在线音源没有稳定 ID，仍按 URL 哈希
             _ => {
                 use std::hash::{Hash, Hasher};

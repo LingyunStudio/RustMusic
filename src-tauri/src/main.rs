@@ -4,6 +4,7 @@ mod commands;
 mod db;
 mod engine;
 mod eq;
+mod kugou;
 mod library;
 mod lyrics;
 mod models;
@@ -480,6 +481,10 @@ fn main() {
             commands::create_playlist,
             commands::delete_playlist,
             commands::rename_playlist,
+            commands::reorder_playlists,
+            commands::kugou_search,
+            commands::kugou_play,
+            commands::kugou_lyric,
             commands::add_to_playlist,
             commands::remove_from_playlist,
             commands::list_sources,

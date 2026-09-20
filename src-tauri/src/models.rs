@@ -80,6 +80,10 @@ pub struct Playlist {
     pub remote_kind: String,
     #[serde(default)]
     pub remote_pid: String,
+    /// 原始导入名（导入时的远程歌单名）：改名后仍能认出来源，
+    /// 界面提示 + 重导入按名兜底匹配用
+    #[serde(default)]
+    pub origin_name: String,
 }
 
 #[derive(Serialize, Clone, Debug)]

@@ -37,6 +37,20 @@
   --play-btn-bg: #f3ede3;
   --play-btn-on: #241505;
   color-scheme: dark;
+  /* 皮肤纱（每套皮肤由 JS 注入各自的 --skin-scrim-dark/-light，按主题取用）：
+     深色主题压暗保证浅色文字可读 */
+  --skin-scrim-dark: linear-gradient(
+    180deg,
+    rgba(12, 10, 18, 0.16) 0%,
+    rgba(12, 10, 18, 0.3) 55%,
+    rgba(12, 10, 18, 0.45) 100%
+  );
+  --skin-scrim-light: linear-gradient(
+    180deg,
+    rgba(252, 252, 254, 0.6) 0%,
+    rgba(252, 252, 254, 0.7) 100%
+  );
+  --skin-scrim: var(--skin-scrim-dark);
 }
 
 /* ---------- 液态玻璃浅色主题 ----------
@@ -70,6 +84,8 @@ html[data-theme="light"] {
   --play-btn-bg: #ffffff;
   --play-btn-on: #2b3546;
   color-scheme: light;
+  /* 浅色主题：取用该皮肤的"提亮纱"，把背景洗成柔和粉彩保证深色文字可读 */
+  --skin-scrim: var(--skin-scrim-light);
 }
 
 /* 默认强调色（琥珀），启动时 JS 会覆盖为用户选择 */
@@ -391,6 +407,40 @@ button:not(:active) > svg {
 .glass-sheen {
   background-size: 220% 220%;
   animation: glassSheen 9s ease-in-out infinite;
+}
+
+/* ---------- 皮肤启用时（html[data-skin="on"]）----------
+   壁纸可读性由每套皮肤各自的双主题纱保证；玻璃底色按主题加一层
+   轻薄 veil 提供局部对比（深色场景几乎无感，明亮场景补足文字对比），
+   整体仍远比默认皮肤透明 */
+
+html[data-skin="on"] {
+  --glass-bg: rgba(16, 13, 22, 0.16);
+  --bar-glass: rgba(16, 13, 22, 0.28);
+  --bar-blur: 9px;
+}
+
+html[data-theme="light"][data-skin="on"] {
+  --glass-bg: rgba(255, 255, 255, 0.3);
+  --bar-glass: rgba(255, 255, 255, 0.38);
+}
+
+html[data-skin="on"] .glass {
+  backdrop-filter: blur(9px) saturate(1.12);
+  -webkit-backdrop-filter: blur(9px) saturate(1.12);
+}
+
+html[data-theme="light"][data-skin="on"] .glass {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.16) 24%,
+      rgba(255, 255, 255, 0.07) 50%,
+      rgba(255, 255, 255, 0.18) 78%,
+      rgba(255, 255, 255, 0.46) 100%
+    ),
+    rgba(255, 255, 255, 0.14);
 }
 
 /* 强调色光标跟随侧栏按钮（选中指示条弹性进入） */

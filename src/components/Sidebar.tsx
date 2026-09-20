@@ -6,16 +6,23 @@ import {
   Library,
   ListMusic,
   Loader2,
+  Music2,
+  Palette,
+  Pencil,
   Plus,
   Radio,
   Settings,
   DiscAlbum,
 } from "lucide-react";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useStore } from "../store";
 import Logo from "./Logo";
+import SkinPicker from "./SkinPicker";
 import { InputModal } from "./Dialogs";
 import CoverImg from "./CoverImg";
+import { clampMenuPos } from "../utils";
+import { useDragList } from "../hooks/useDragList";
 import type { ViewName } from "../types";
 
 const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
@@ -24,6 +31,7 @@ const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
   { key: "recent", label: "最近播放", icon: Clock3 },
   { key: "netease", label: "网易云", icon: Cloud },
   { key: "qq", label: "QQ音乐", icon: DiscAlbum },
+  { key: "kugou", label: "酷狗", icon: Music2 },
   { key: "sources", label: "在线音源", icon: Radio },
 ];
 
@@ -35,7 +43,24 @@ export default function Sidebar() {
   const scan = useStore((s) => s.scan);
   const tracks = useStore((s) => s.tracks);
   const likedOnline = useStore((s) => s.likedOnline);
+  const reorderPlaylists = useStore((s) => s.reorderPlaylists);
+  const renamePlaylist = useStore((s) => s.renamePlaylist);
   const [plModalOpen, setPlModalOpen] = useState(false);
+  // 播放列表右键菜单 / 重命名弹窗
+  const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(
+    null
+  );
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(
+    null
+  );
+  const [skinOpen, setSkinOpen] = useState(false);
+  // 长按拖动排序：行序列 = 本地 state 的播放列表顺序
+  const { rowProps } = useDragList((from, to) => {
+    const ids = playlists.map((p) => p.id);
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    void reorderPlaylists(ids);
+  });
 
   // 计数 = 本地喜欢 + 在线喜欢（与“我喜欢”视图显示的内容一致）
   const likedCount = tracks.filter((t) => t.liked).length + likedOnline.length;
@@ -118,27 +143,41 @@ export default function Sidebar() {
         </div>
 
         <div className="flex flex-col gap-1">
-          {playlists.map((p) => {
+          {playlists.map((p, i) => {
             const active = view === "playlist" && viewParam === p.id;
+            const originTip =
+              p.originName && p.originName !== p.name
+                ? `原名：${p.originName}（长按可拖动排序）`
+                : "长按可拖动排序";
             return (
-              <button
-                key={p.id}
-                onClick={() => setView("playlist", p.id)}
-                className={`nav-item h-10 pl-4 pr-3 rounded-xl flex items-center gap-3 text-[13px] transition-all ${
-                  active
-                    ? "bg-[var(--shade-strong)] text-[var(--ink)]"
-                    : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
-                }`}
-              >
-                <ListMusic
-                  size={15}
-                  className={active ? "text-[var(--accent)]" : "text-[var(--ink-3)]"}
-                />
-                <span className="truncate">{p.name}</span>
-                <span className="ml-auto text-[11.5px] text-[var(--ink-3)] tabular-nums">
-                  {p.entries.length}
-                </span>
-              </button>
+              <div key={p.id} {...rowProps(i)}>
+                {/* 整行原是 button：会被 useDragList 的“行内控件不触发拖拽”
+                    保护拦掉，故行容器用 div，点击行为由内层承接 */}
+                <div
+                  role="button"
+                  tabIndex={-1}
+                  title={originTip}
+                  onClick={() => setView("playlist", p.id)}
+                  onContextMenu={(ev) => {
+                    ev.preventDefault();
+                    setMenu({ x: ev.clientX, y: ev.clientY, id: p.id });
+                  }}
+                  className={`nav-item h-10 pl-4 pr-3 rounded-xl flex items-center gap-3 text-[13px] transition-all cursor-pointer ${
+                    active
+                      ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                >
+                  <ListMusic
+                    size={15}
+                    className={active ? "text-[var(--accent)]" : "text-[var(--ink-3)]"}
+                  />
+                  <span className="truncate">{p.name}</span>
+                  <span className="ml-auto text-[11.5px] text-[var(--ink-3)] tabular-nums">
+                    {p.entries.length}
+                  </span>
+                </div>
+              </div>
             );
           })}
           {!playlists.length && (
@@ -163,18 +202,35 @@ export default function Sidebar() {
           </div>
         )}
 
-        <button
-          onClick={() => setView("settings")}
-          className={`nav-item h-11 px-4 rounded-xl flex items-center gap-3.5 text-[13.5px] transition-all ${
-            view === "settings"
-              ? "bg-[var(--shade-strong)] text-[var(--ink)]"
-              : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
-          }`}
-        >
-          <Settings size={17} strokeWidth={1.9} />
-          设置
-        </button>
+        {/* 设置 + 皮肤：同一行，皮肤在设置右侧 */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setView("settings")}
+            className={`nav-item flex-1 min-w-0 h-11 px-4 rounded-xl flex items-center gap-3.5 text-[13.5px] transition-all ${
+              view === "settings"
+                ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+            }`}
+          >
+            <Settings size={17} strokeWidth={1.9} />
+            设置
+          </button>
+          <button
+            onClick={() => setSkinOpen(true)}
+            title="皮肤"
+            className={`nav-item h-11 px-3.5 rounded-xl flex items-center gap-2 text-[13.5px] shrink-0 transition-all ${
+              skinOpen
+                ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+            }`}
+          >
+            <Palette size={17} strokeWidth={1.9} />
+            皮肤
+          </button>
+        </div>
       </div>
+
+      <SkinPicker open={skinOpen} onClose={() => setSkinOpen(false)} />
 
       <InputModal
         open={plModalOpen}
@@ -184,6 +240,44 @@ export default function Sidebar() {
         onClose={() => setPlModalOpen(false)}
         onConfirm={(name) => useStore.getState().createPlaylist(name)}
       />
+
+      <InputModal
+        open={renaming != null}
+        title="重命名播放列表"
+        initialValue={renaming?.name}
+        confirmText="重命名"
+        onClose={() => setRenaming(null)}
+        onConfirm={(name) => {
+          if (renaming) void renamePlaylist(renaming.id, name);
+        }}
+      />
+
+      {/* 播放列表右键菜单（Portal 到 body：fixed 才相对视口） */}
+      {menu &&
+        createPortal(
+          <div
+            className="fixed z-[75] w-[150px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
+            style={(() => {
+              const p = clampMenuPos(menu.x, menu.y, 150, 80);
+              return { left: p.x, top: p.y };
+            })()}
+            onMouseDown={(ev) => ev.stopPropagation()}
+            onMouseLeave={() => setMenu(null)}
+          >
+            <button
+              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+              onClick={() => {
+                const pl = playlists.find((p) => p.id === menu.id);
+                if (pl) setRenaming({ id: pl.id, name: pl.name });
+                setMenu(null);
+              }}
+            >
+              <Pencil size={13} className="text-[var(--ink-3)]" />
+              重命名
+            </button>
+          </div>,
+          document.body
+        )}
     </aside>
   );
 }

@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS playlists (
   name TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT 0,
   remote_kind TEXT NOT NULL DEFAULT '',
-  remote_pid TEXT NOT NULL DEFAULT ''
+  remote_pid TEXT NOT NULL DEFAULT '',
+  origin_name TEXT NOT NULL DEFAULT '',
+  sort_pos INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS playlist_tracks (
   playlist_id INTEGER NOT NULL,
@@ -149,6 +151,25 @@ pub fn migrate(conn: &Connection) {
         "playlists",
         "remote_pid",
         "ALTER TABLE playlists ADD COLUMN remote_pid TEXT NOT NULL DEFAULT ''",
+    );
+    // 播放列表的原始导入名：改名后仍能知道它来自哪个远程歌单（重导入合并、
+    // 界面提示用）
+    add_column_if_missing(
+        conn,
+        "playlists",
+        "origin_name",
+        "ALTER TABLE playlists ADD COLUMN origin_name TEXT NOT NULL DEFAULT ''",
+    );
+    // 播放列表手动排序位（侧边栏长按拖动调序）：旧行回填为 id，保持原顺序
+    add_column_if_missing(
+        conn,
+        "playlists",
+        "sort_pos",
+        "ALTER TABLE playlists ADD COLUMN sort_pos INTEGER NOT NULL DEFAULT 0",
+    );
+    let _ = conn.execute(
+        "UPDATE playlists SET sort_pos = id WHERE sort_pos = 0",
+        [],
     );
     // playlist_tracks 旧主键 (playlist_id, track_id) 会吞掉同列表的多个在线条目
     // （track_id 恒为 0），检测旧结构并重建为 (playlist_id, kind, online_id, track_id)
@@ -464,7 +485,8 @@ pub fn record_play(conn: &Connection, id: i64) {
 
 pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
     let mut stmt = match conn.prepare(
-        "SELECT id, name, created_at, remote_kind, remote_pid FROM playlists ORDER BY id",
+        "SELECT id, name, created_at, remote_kind, remote_pid, origin_name
+         FROM playlists ORDER BY sort_pos, id",
     ) {
         Ok(s) => s,
         Err(_) => return vec![],
@@ -480,6 +502,7 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
                 created_at: r.get(2)?,
                 remote_kind: r.get(3)?,
                 remote_pid: r.get(4)?,
+                origin_name: r.get(5)?,
             })
         })
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
@@ -515,15 +538,16 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
 
 pub fn create_playlist(conn: &Connection, name: &str) -> Result<i64, String> {
     conn.execute(
-        "INSERT INTO playlists(name, created_at) VALUES(?1, ?2)",
+        "INSERT INTO playlists(name, created_at, sort_pos)
+         VALUES(?1, ?2, COALESCE((SELECT MAX(sort_pos) FROM playlists), 0) + 1)",
         params![name, now_secs()],
     )
     .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
 
-/// 按远程歌单标识找本地播放列表（重复导入合并用）；
-/// 旧版本导入的列表没存远程 id，退化为同名匹配
+/// 按远程歌单标识找本地播放列表（重复导入合并用）：
+/// 优先远程 id；旧版本导入的列表没存远程 id，退化为同名/原始名匹配
 pub fn find_playlist_by_remote(
     conn: &Connection,
     kind: &str,
@@ -542,8 +566,12 @@ pub fn find_playlist_by_remote(
     if by_remote.is_some() {
         return by_remote;
     }
+    // 同名或原始名匹配（origin_name = 导入时记录的远程歌单名，
+    // 列表被改名后仍能靠它认出）
     conn.query_row(
-        "SELECT id FROM playlists WHERE name = ?1 AND remote_kind = '' ORDER BY id LIMIT 1",
+        "SELECT id FROM playlists
+         WHERE remote_kind = '' AND (name = ?1 OR (origin_name != '' AND origin_name = ?1))
+         ORDER BY id LIMIT 1",
         params![name],
         |r| r.get(0),
     )
@@ -560,13 +588,42 @@ pub fn set_playlist_remote(conn: &Connection, id: i64, kind: &str, remote_pid: &
     );
 }
 
+/// 补全播放列表的原始导入名（已设置过的不覆盖：用户改名后原值仍在）
+pub fn set_playlist_origin(conn: &Connection, id: i64, name: &str) {
+    if name.is_empty() {
+        return;
+    }
+    let _ = conn.execute(
+        "UPDATE playlists SET origin_name = ?2 WHERE id = ?1 AND origin_name = ''",
+        params![id, name],
+    );
+}
+
 pub fn delete_playlist(conn: &Connection, id: i64) {
     let _ = conn.execute("DELETE FROM playlists WHERE id = ?1", params![id]);
     let _ = conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?1", params![id]);
 }
 
+/// 重命名播放列表。远程导入的列表若还没记录原始导入名，先以当前名
+///（即当初的导入名）回填 origin_name，再写入新名——改名不影响重导入合并。
 pub fn rename_playlist(conn: &Connection, id: i64, name: &str) {
-    let _ = conn.execute("UPDATE playlists SET name = ?2 WHERE id = ?1", params![id, name]);
+    let _ = conn.execute(
+        "UPDATE playlists SET
+           origin_name = CASE WHEN origin_name = '' AND remote_pid != '' THEN name ELSE origin_name END,
+           name = ?2
+         WHERE id = ?1",
+        params![id, name],
+    );
+}
+
+/// 播放列表手动排序：按传入的 id 序列重写 sort_pos（1 起）
+pub fn reorder_playlists(conn: &Connection, ids: &[i64]) {
+    for (i, id) in ids.iter().enumerate() {
+        let _ = conn.execute(
+            "UPDATE playlists SET sort_pos = ?1 WHERE id = ?2",
+            params![(i + 1) as i64, id],
+        );
+    }
 }
 
 pub fn add_online_to_playlist(

@@ -250,6 +250,14 @@ pub async fn rename_playlist(
     Ok(())
 }
 
+/// 播放列表手动排序（侧边栏长按拖动）：按 id 序列重写 sort_pos
+#[tauri::command]
+pub async fn reorder_playlists(state: State<'_, AppState>, ids: Vec<i64>) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::reorder_playlists(&conn, &ids);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn add_to_playlist(
     state: State<'_, AppState>,
@@ -340,6 +348,7 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
         duration_ms: (meta.duration * 1000.0) as u64,
         nid: None,
         qid: None,
+        kgid: None,
         quality: (!local_quality.is_empty()).then_some(local_quality),
     };
     engine_clone(&state).play_file(info)
@@ -366,6 +375,7 @@ pub async fn play_source(state: State<'_, AppState>, id: i64) -> Result<(), Stri
         duration_ms: 0,
         nid: None,
         qid: None,
+        kgid: None,
         quality: None,
     };
     engine_clone(&state).play_url(item.url, info)
@@ -457,6 +467,7 @@ pub async fn netease_play(
         duration_ms: track.duration_ms,
         nid: Some(track.id),
         qid: None,
+        kgid: None,
         quality: Some(quality_label),
     };
     let _ = app; // 事件由引擎发出
@@ -643,6 +654,7 @@ pub async fn qq_play(
         duration_ms: track.duration_ms,
         nid: None,
         qid: Some(track.songmid.clone()),
+        kgid: None,
         quality: Some(quality_label),
     };
     // 记录到“最近播放”（在线曲目元数据轻量入库）
@@ -683,6 +695,91 @@ pub async fn qq_lyric(state: State<'_, AppState>, songmid: String) -> Result<Lyr
     Ok(LyricsPayload { synced: p.synced, lines: p.lines })
 }
 
+// ---------- 酷狗音乐在线曲库（匿名，免登录） ----------
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KgPlayReq {
+    pub hash: String,
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub cover: String,
+    #[serde(default)]
+    pub duration_ms: u64,
+    /// 搜索结果里的付费标志，用于播放失败分类
+    #[serde(default)]
+    pub vip: bool,
+}
+
+#[tauri::command]
+pub async fn kugou_search(
+    keyword: String,
+    page: Option<i64>,
+) -> Result<serde_json::Value, String> {
+    let songs = crate::kugou::search(&keyword, page.unwrap_or(1))?;
+    Ok(json!({ "songs": songs }))
+}
+
+#[tauri::command]
+pub async fn kugou_play(state: State<'_, AppState>, track: KgPlayReq) -> Result<(), String> {
+    let (url, ext) = crate::kugou::song_url(&track.hash, track.vip)?;
+    let quality_label = quality_tag(&ext, 128);
+    // 封面：数据库存的完整 URL 优先（收藏/最近播放已入库），缺失用搜索带的
+    let cover = {
+        let conn = state.db.lock();
+        db::get_online_cover(&conn, "kugou", &track.hash).unwrap_or_default()
+    };
+    let cover = if cover.is_empty() { track.cover.clone() } else { cover };
+    let info = TrackInfo {
+        id: None,
+        kind: "kugou".into(),
+        path: String::new(),
+        title: track.title.clone(),
+        artist: track.artist.clone(),
+        album: track.album.clone(),
+        cover: cover.clone(),
+        duration_ms: track.duration_ms,
+        nid: None,
+        qid: None,
+        kgid: Some(track.hash.clone()),
+        quality: Some(quality_label),
+    };
+    // 记录到“最近播放”（在线曲目元数据轻量入库）
+    {
+        let conn = state.db.lock();
+        db::record_play_online(
+            &conn,
+            "kugou",
+            &track.hash,
+            &track.title,
+            &track.artist,
+            &track.album,
+            &cover,
+            track.duration_ms as i64,
+            "",
+            track.vip,
+        );
+    }
+    engine_clone(&state).play_url(url, info)
+}
+
+#[tauri::command]
+pub async fn kugou_lyric(state: State<'_, AppState>, hash: String) -> Result<LyricsPayload, String> {
+    // 入库时已记录的酷狗歌词直接走远端；本地缓存散布在播放缓存之外，简化为直取
+    let _ = &state;
+    let text = crate::kugou::lyric(&hash)?;
+    let text = match text {
+        Some(t) if !t.is_empty() => t,
+        _ => return Ok(LyricsPayload { synced: false, lines: vec![] }),
+    };
+    let p = lyrics::parse(&text);
+    Ok(LyricsPayload { synced: p.synced, lines: p.lines })
+}
+
 #[tauri::command]
 pub async fn qq_qr_create() -> Result<serde_json::Value, String> {
     let (qrsig, qr) = crate::qq::qr_create()?;
@@ -700,6 +797,10 @@ pub async fn qq_qr_check(
             let conn = state.db.lock();
             db::set_setting(&conn, "qq_musicid", musicid);
             db::set_setting(&conn, "qq_musickey", musickey);
+            // 拉取“我喜欢/收藏”夹需要加密 uin（登录响应里带，错过就没了）
+            if let Some(euin) = &r.encrypt_uin {
+                db::set_setting(&conn, "qq_encrypt_uin", euin);
+            }
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "qq_nickname", nick);
             }
@@ -721,6 +822,7 @@ pub async fn qq_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
     db::set_setting(&conn, "qq_musicid", "");
     db::set_setting(&conn, "qq_musickey", "");
+    db::set_setting(&conn, "qq_encrypt_uin", "");
     db::set_setting(&conn, "qq_nickname", "");
     Ok(())
 }
@@ -843,6 +945,7 @@ pub async fn download_online(
             )?;
             (u, ext)
         }
+        "kugou" => crate::kugou::song_url(&req.id, true)?,
         _ => return Err("未知音源类型".into()),
     };
 
@@ -1234,6 +1337,8 @@ pub async fn netease_import_playlist(
             None => db::create_playlist(&conn, &name)?,
         };
         db::set_playlist_remote(&conn, pid, "netease", &remote_pid.to_string());
+        // 记录原始导入名：改名后重导入仍能认出（配合 remote id 兜底）
+        db::set_playlist_origin(&conn, pid, &name);
         let mut added = 0i64;
         for t in &songs {
             db::upsert_online_track(
@@ -1275,7 +1380,12 @@ pub async fn qq_import_playlist(
     name: String,
 ) -> Result<(i64, i64), String> {
     let (musicid, musickey) = qq_credential(&state)?;
-    let songs = crate::qq::playlist_tracks(remote_pid, &musicid, &musickey)?;
+    let stored_euin = {
+        let conn = state.db.lock();
+        db::get_setting(&conn, "qq_encrypt_uin").unwrap_or_default()
+    };
+    let songs =
+        crate::qq::playlist_tracks(remote_pid, &musicid, &musickey, &crate::qq::encrypt_uin_of(&musicid, &stored_euin))?;
     let (list_id, added) = {
         let conn = state.db.lock();
         let pid = match db::find_playlist_by_remote(
@@ -1288,6 +1398,8 @@ pub async fn qq_import_playlist(
             None => db::create_playlist(&conn, &name)?,
         };
         db::set_playlist_remote(&conn, pid, "qq", &remote_pid.to_string());
+        // 记录原始导入名：改名后重导入仍能认出（配合 remote id 兜底）
+        db::set_playlist_origin(&conn, pid, &name);
         let mut added = 0i64;
         for t in &songs {
             db::upsert_online_track(

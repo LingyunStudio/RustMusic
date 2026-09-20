@@ -364,7 +364,12 @@ pub fn song_url(
         let resp = weapi_post("/weapi/song/enhance/player/url", &payload, music_u)?;
         let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         if code != 200 {
-            return Err(format!("获取播放链接失败（code {code}）"));
+            // 301/302 = cookie 失效：给出与“未登录”同类的文案，前端据此停止
+            // 自动跳下一首（否则整个队列会逐首失败、连跳刷屏）
+            return Err(match code {
+                301 | 302 => "网易云登录已过期，请重新登录".into(),
+                _ => format!("获取播放链接失败（code {code}）"),
+            });
         }
         let first = resp
             .pointer("/data/0")
@@ -470,29 +475,51 @@ pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
         .ok_or_else(|| "响应中缺少账号 ID".into())
 }
 
-/// 获取登录账号的歌单列表
+/// 获取登录账号的歌单列表（分页拉全：只取一页的话，超过 60 个歌单的
+/// 账号看不到后面的；“我喜欢的音乐”排在第一个，永远在列表里）
 pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
-    let payload = serde_json::json!({ "uid": uid.to_string(), "offset": "0", "limit": "60" }).to_string();
-    let resp = weapi_post("/weapi/user/playlist", &payload, Some(music_u))?;
-    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-    if code != 200 {
-        return Err(format!("获取歌单列表失败（code {code}）"));
-    }
+    const PAGE: i64 = 60;
     let mut out = Vec::new();
-    if let Some(list) = resp.pointer("/playlist").and_then(|v| v.as_array()) {
+    let mut seen = std::collections::HashSet::new();
+    let mut offset = 0i64;
+    loop {
+        let payload = serde_json::json!({
+            "uid": uid.to_string(),
+            "offset": offset.to_string(),
+            "limit": PAGE.to_string(),
+        })
+        .to_string();
+        let resp = weapi_post("/weapi/user/playlist", &payload, Some(music_u))?;
+        let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+        if code != 200 {
+            return Err(format!("获取歌单列表失败（code {code}）"));
+        }
+        let list = resp
+            .pointer("/playlist")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let got = list.len() as i64;
         for p in list {
             let id = p.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
             let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let count = p.get("trackCount").and_then(|v| v.as_i64()).unwrap_or(0);
-            if id != 0 && !name.is_empty() {
+            if id != 0 && !name.is_empty() && seen.insert(id) {
                 out.push(crate::models::UserPlaylistMeta { id, name, track_count: count });
             }
         }
+        if got < PAGE || out.len() >= 2000 {
+            break;
+        }
+        offset += PAGE;
     }
     Ok(out)
 }
 
-/// 获取歌单内的全部歌曲（明文 API v6，字段与搜索一致）
+/// 获取歌单内的全部歌曲（明文 API v6，字段与搜索一致）。
+/// v6 详情的 tracks 数组最多只给 1000 条，超出部分（常见于“我喜欢的音乐”
+/// 这类大歌单）按 trackIds 用 v3 song/detail 分批补全，最终严格按
+/// trackIds 顺序输出。
 pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> {
     let url = format!(
         "https://music.163.com/api/v6/playlist/detail?id={pid}&n=1000&csrf_token="
@@ -513,24 +540,82 @@ pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> 
     if code != 200 {
         return Err(format!("获取歌单详情失败（code {code}）"));
     }
-    let mut out = Vec::new();
-    if let Some(list) = v.pointer("/playlist/trackIds").and_then(|x| x.as_array()) {
-        // trackIds 全量；详情在 playlist/tracks（可能截断）——用统一归一化解析
+    let parse_song = |t: &serde_json::Value| -> Option<NetSong> {
+        serde_json::from_value::<NetSong>(t.clone()).ok()
+    };
+    // 详情先归并到 map：v6 的 playlist/tracks（前 1000 条）优先，零请求
+    let mut by_id: std::collections::HashMap<i64, NetSong> = std::collections::HashMap::new();
+    if let Some(tracks) = v.pointer("/playlist/tracks").and_then(|x| x.as_array()) {
+        for t in tracks {
+            if let Some(song) = parse_song(t) {
+                by_id.insert(song.id, song);
+            }
+        }
+    }
+    let ids: Vec<i64> = v
+        .pointer("/playlist/trackIds")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t.get("id").and_then(|v| v.as_i64()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        // 无 trackIds 的旧响应形状：直接按 tracks 顺序返回
+        let mut out = Vec::new();
         if let Some(tracks) = v.pointer("/playlist/tracks").and_then(|x| x.as_array()) {
             for t in tracks {
-                if let Ok(song) = serde_json::from_value::<NetSong>(t.clone()) {
+                if let Some(song) = parse_song(t) {
                     out.push(song);
                 }
             }
         }
-        if out.len() < list.len() {
-            // tracks 被截断时按 trackIds 计数提示（v6 通常一次性给全）
-            eprintln!(
-                "[netease] playlist {pid}: got {} tracks, ids {}",
-                out.len(),
-                list.len()
-            );
+        return Ok(out);
+    }
+    // 缺失的详情分批补全（单批 200 个 id，URL/负载都不会过长；
+    // 失败只记日志，已有的部分照常导入）
+    let missing: Vec<i64> = ids.iter().copied().filter(|id| !by_id.contains_key(id)).collect();
+    for chunk in missing.chunks(200) {
+        let c = chunk
+            .iter()
+            .map(|id| format!(r#"{{"id":{id}}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let ids = chunk.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+        let payload = serde_json::json!({ "c": format!("[{c}]"), "ids": format!("[{ids}]"), "csrf_token": "" })
+            .to_string();
+        let resp = match weapi_post("/weapi/v3/song/detail", &payload, Some(music_u)) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[netease] playlist {pid}: song/detail chunk failed: {e}");
+                continue;
+            }
+        };
+        if resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0) != 200 {
+            continue;
         }
+        if let Some(songs) = resp.pointer("/songs").and_then(|x| x.as_array()) {
+            for t in songs {
+                if let Some(song) = parse_song(t) {
+                    by_id.insert(song.id, song);
+                }
+            }
+        }
+    }
+    // 按 trackIds 顺序输出（直接收集 v6 tracks 会截断；顺序以 trackIds 为准）
+    let mut out = Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Some(song) = by_id.remove(id) {
+            out.push(song);
+        }
+    }
+    if out.len() < ids.len() {
+        eprintln!(
+            "[netease] playlist {pid}: {} of {} tracks resolved（其余已失效/无详情）",
+            out.len(),
+            ids.len()
+        );
     }
     Ok(out)
 }

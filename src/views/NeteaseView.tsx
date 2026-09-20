@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import {
   Cloud,
   Heart,
+  Info,
+  ListPlus,
   LogOut,
   MoreHorizontal,
   Play,
@@ -17,7 +19,7 @@ import type { NeteaseTrack, QqSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
 
-type Source = "netease" | "qq";
+type Source = "netease" | "qq" | "kugou";
 
 interface OnlineRow {
   kind: Source;
@@ -38,6 +40,7 @@ const qqCover = (albumMid: string) =>
 
 export default function OnlineLibraryView({ source }: { source: Source }) {
   const qqPage = useStore((s) => s.qqPage);
+  const kugouPage = useStore((s) => s.kugouPage);
   const neteaseResults = useStore((s) => s.neteaseResults);
   const neteaseSearching = useStore((s) => s.neteaseSearching);
   const neteaseSearched = useStore((s) => s.neteaseSearched);
@@ -45,6 +48,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const qqResults = useStore((s) => s.qqResults);
   const qqSearching = useStore((s) => s.qqSearching);
   const qqSearched = useStore((s) => s.qqSearched);
+  const kugouResults = useStore((s) => s.kugouResults);
+  const kugouSearching = useStore((s) => s.kugouSearching);
+  const kugouSearched = useStore((s) => s.kugouSearched);
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
   const savedOnline = useStore((s) => s.savedOnline);
@@ -54,9 +60,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const neteaseLiked = useStore((s) => s.neteaseLiked);
   const playNetease = useStore((s) => s.playNetease);
   const playQq = useStore((s) => s.playQq);
+  const playKugou = useStore((s) => s.playKugou);
   const playNext = useStore((s) => s.playNext);
   const addToQueue = useStore((s) => s.addToQueue);
   const neteaseSearch = useStore((s) => s.neteaseSearch);
+  const kugouSearch = useStore((s) => s.kugouSearch);
   const qqSearch = useStore((s) => s.qqSearch);
   const neteaseLoggedIn = useStore((s) => s.neteaseLoggedIn);
   const neteaseNickname = useStore((s) => s.neteaseNickname);
@@ -68,6 +76,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const createPlaylist = useStore((s) => s.createPlaylist);
   const importNeteasePlaylist = useStore((s) => s.importNeteasePlaylist);
   const importQqPlaylist = useStore((s) => s.importQqPlaylist);
+  const importAllPlaylists = useStore((s) => s.importAllPlaylists);
   const toast = useStore((s) => s.toast);
 
   const [kw, setKw] = useState("");
@@ -82,12 +91,35 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     { id: number; name: string; trackCount: number }[] | null
   >(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{
+    done: number;
+    total: number;
+    name: string;
+  } | null>(null);
 
-  const searching = source === "netease" ? neteaseSearching : qqSearching;
-  const searched = source === "netease" ? neteaseSearched : qqSearched;
-  const loggedIn = source === "netease" ? neteaseLoggedIn : qqLoggedIn;
-  const nickname = source === "netease" ? neteaseNickname : qqNickname;
-  const sourceName = source === "netease" ? "网易云" : "QQ 音乐";
+  const searching =
+    source === "netease"
+      ? neteaseSearching
+      : source === "qq"
+        ? qqSearching
+        : kugouSearching;
+  const searched =
+    source === "netease"
+      ? neteaseSearched
+      : source === "qq"
+        ? qqSearched
+        : kugouSearched;
+  // 酷狗匿名可用，无需登录
+  const loggedIn =
+    source === "netease" ? neteaseLoggedIn : source === "qq" ? qqLoggedIn : true;
+  const nickname =
+    source === "netease"
+      ? neteaseNickname
+      : source === "qq"
+        ? qqNickname
+        : "免费畅听";
+  const sourceName =
+    source === "netease" ? "网易云" : source === "qq" ? "QQ 音乐" : "酷狗";
 
   const rows: OnlineRow[] = useMemo(() => {
     if (source === "netease") {
@@ -103,6 +135,19 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         mediaMid: "",
       }));
     }
+    if (source === "kugou") {
+      return kugouResults.map((t) => ({
+        kind: "kugou" as const,
+        id: t.id,
+        name: t.name,
+        artist: t.singer,
+        album: t.album,
+        cover: t.cover,
+        durationMs: t.durationMs,
+        vip: t.vip,
+        mediaMid: "",
+      }));
+    }
     return qqResults.map((t: QqSong) => ({
       kind: "qq" as const,
       id: t.id,
@@ -114,9 +159,14 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       vip: t.vip,
       mediaMid: t.mediaMid,
     }));
-  }, [source, neteaseResults, qqResults]);
+  }, [source, neteaseResults, qqResults, kugouResults]);
 
-  const submit = () => (source === "netease" ? neteaseSearch(kw) : qqSearch(kw));
+  const submit = () =>
+    source === "netease"
+      ? neteaseSearch(kw)
+      : source === "qq"
+        ? qqSearch(kw)
+        : kugouSearch(kw);
 
   // 搜索结果随“加载更多”无上限增长：窗口化渲染（行高 60px 恒定）
   const ROW_H = 60;
@@ -124,6 +174,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   const playRow = (i: number) => {
     if (source === "netease") playNetease(neteaseResults, i);
+    else if (source === "kugou") playKugou(kugouResults, i);
     else playQq(qqResults, i);
   };
 
@@ -134,6 +185,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       else if (action === "next")
         playNext({ kind: "netease", id: row.id as number });
       else addToQueue({ kind: "netease", id: row.id as number });
+    } else if (row.kind === "kugou") {
+      const idx = kugouResults.findIndex((t) => t.id === row.id);
+      if (action === "play") playKugou(kugouResults, Math.max(0, idx));
+      else if (action === "next")
+        playNext({ kind: "kugou", id: row.id as string });
+      else addToQueue({ kind: "kugou", id: row.id as string });
     } else {
       const idx = qqResults.findIndex((t) => t.id === row.id);
       if (action === "play") playQq(qqResults, Math.max(0, idx));
@@ -145,7 +202,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const hasMore =
     source === "netease"
       ? rows.length < neteaseTotal
-      : rows.length > 0 && rows.length === 30 * qqPage;
+      : source === "kugou"
+        ? rows.length > 0 && rows.length === 30 * kugouPage
+        : rows.length > 0 && rows.length === 30 * qqPage;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -178,7 +237,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 onChange={(e) => setKw(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder={
-                  source === "netease" ? "搜索网易云曲库…" : "搜索 QQ 音乐曲库…"
+                  source === "netease"
+                    ? "搜索网易云曲库…"
+                    : source === "qq"
+                      ? "搜索 QQ 音乐曲库…"
+                      : "搜索酷狗曲库…"
                 }
                 className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
               />
@@ -197,9 +260,18 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             </button>
           </div>
 
-          {/* 登录状态 */}
+          {/* 登录状态（酷狗免登录） */}
           <div className="shrink-0 flex flex-col items-end gap-2 mb-1">
-            {loggedIn ? (
+            {source === "kugou" ? (
+              <span
+                className="chip text-[var(--ink-2)]"
+                style={{ background: "var(--shade)" }}
+                title="酷狗暂不支持登录：免费曲目可直接播放，标有 VIP 的曲目暂时无法播放"
+              >
+                <Info size={13} />
+                登录暂未支持 · 仅非 VIP 曲目可播
+              </span>
+            ) : loggedIn ? (
               <>
                 <span
                   className="chip text-[var(--accent-strong)]"
@@ -316,9 +388,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 current?.kind === t.kind &&
                 (t.kind === "qq"
                   ? current.qid === t.id
-                  : t.kind === "netease"
-                    ? current.nid === t.id
-                    : false);
+                  : t.kind === "kugou"
+                    ? current.kgid === t.id
+                    : t.kind === "netease"
+                      ? current.nid === t.id
+                      : false);
               const saved = !!savedOnline[`${t.kind}-${t.id}`];
               return (
                 <div
@@ -475,7 +549,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   className="btn-secondary !py-1.5 !px-4"
                   disabled={searching}
                   onClick={() =>
-                    source === "netease" ? neteaseSearch(kw, true) : qqSearch(kw, true)
+                    source === "netease"
+                      ? neteaseSearch(kw, true)
+                      : source === "kugou"
+                        ? kugouSearch(kw, true)
+                        : qqSearch(kw, true)
                   }
                 >
                   {searching ? <Loader2 size={13} className="animate-spin" /> : null}
@@ -630,30 +708,77 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             <Loader2 size={15} className="animate-spin" /> 获取中…
           </div>
         ) : (
-          <div className="flex flex-col gap-1.5 max-h-[320px] overflow-y-auto">
-            {importList.map((p) => (
-              <button
-                key={p.id}
-                disabled={importing}
-                className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
-                onClick={async () => {
-                  setImporting(true);
-                  if (source === "netease") await importNeteasePlaylist(p.id, p.name);
-                  else await importQqPlaylist(p.id, p.name);
-                  setImporting(false);
-                  setImportOpen(false);
-                }}
-              >
-                <span className="truncate">{p.name}</span>
-                <span className="text-[11px] text-[var(--ink-2)] shrink-0 ml-3">
-                  {p.trackCount} 首
-                </span>
-              </button>
-            ))}
-            {!importList.length && (
-              <div className="text-[12.5px] text-[var(--ink-2)] py-2">账号下没有歌单</div>
+          <>
+            {importList.length > 1 && (
+              <>
+                {/* 与列表行同构的低调样式：accent 图标+文字，右侧计数，行下加分隔线 */}
+                <button
+                  disabled={importing}
+                  className="h-10 px-3 rounded-lg text-left text-[13px] hover:bg-[var(--shade)] flex items-center justify-between transition-colors disabled:opacity-60"
+                  onClick={async () => {
+                    if (importing || !importList.length) return;
+                    setImporting(true);
+                    // 逐个导入，弹窗内实时显示进度；结束后由 store 统一
+                    // 刷新列表并汇总提示（含失败个数）
+                    // 酷狗无登录态、导入入口不渲染，这里只会是 netease/qq
+                    await importAllPlaylists(
+                      source === "kugou" ? "netease" : source,
+                      importList,
+                      setImportProgress
+                    );
+                    setImporting(false);
+                    setImportProgress(null);
+                    setImportOpen(false);
+                  }}
+                >
+                  {importProgress ? (
+                    <span className="flex items-center gap-2 text-[var(--ink-2)] min-w-0">
+                      <Loader2 size={14} className="animate-spin shrink-0 text-[var(--accent)]" />
+                      <span className="truncate">
+                        正在导入 {importProgress.done + 1}/{importProgress.total}
+                        ：「{importProgress.name}」
+                      </span>
+                    </span>
+                  ) : (
+                    <>
+                      <span className="flex items-center gap-2 text-[var(--accent)] font-medium">
+                        <ListPlus size={15} />
+                        全部导入
+                      </span>
+                      <span className="text-[11px] text-[var(--ink-3)] shrink-0 ml-3">
+                        共 {importList.length} 个歌单
+                      </span>
+                    </>
+                  )}
+                </button>
+                <div className="border-b border-[var(--line)] mb-2" aria-hidden />
+              </>
             )}
-          </div>
+            <div className="flex flex-col gap-1.5 max-h-[320px] overflow-y-auto">
+              {importList.map((p) => (
+                <button
+                  key={p.id}
+                  disabled={importing}
+                  className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors disabled:opacity-50"
+                  onClick={async () => {
+                    setImporting(true);
+                    if (source === "netease") await importNeteasePlaylist(p.id, p.name);
+                    else await importQqPlaylist(p.id, p.name);
+                    setImporting(false);
+                    setImportOpen(false);
+                  }}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span className="text-[11px] text-[var(--ink-2)] shrink-0 ml-3">
+                    {p.trackCount} 首
+                  </span>
+                </button>
+              ))}
+              {!importList.length && (
+                <div className="text-[12.5px] text-[var(--ink-2)] py-2">账号下没有歌单</div>
+              )}
+            </div>
+          </>
         )}
         <div className="text-[10.5px] text-[var(--ink-3)] mt-3 leading-relaxed">
           导入的歌单以在线条目保存：播放时按账号权益实时获取播放链接，不占用本地磁盘。

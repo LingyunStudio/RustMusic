@@ -401,7 +401,7 @@ export default function TrackList({
                 {e.title}
               </span>
               <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0">
-                {e.kind === "netease" ? "网易云" : "QQ音乐"}
+                {e.kind === "netease" ? "网易云" : e.kind === "kugou" ? "酷狗" : "QQ音乐"}
               </span>
               {e.vip && !dead && (
                 <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--accent-weak)] text-[var(--accent-strong)] font-bold shrink-0">
