@@ -3370,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "rustmusic"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -3398,6 +3398,8 @@ dependencies = [
  "tauri-plugin-dialog",
  "ureq",
  "walkdir",
+ "webview2-com",
+ "windows 0.61.3",
 ]
 
 [[package]]
