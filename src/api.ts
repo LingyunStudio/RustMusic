@@ -8,6 +8,7 @@ import type {
   UpdateInfo,
   UserPlaylistMeta,
   PlayState,
+  PlayStateSnapshot,
   ScanState,
   SettingsPayload,
   SourceItem,
@@ -177,6 +178,7 @@ export const api = {
   playTrack: (id: number) => invoke<void>("play_track", { id }),
   playSource: (id: number) => invoke<void>("play_source", { id }),
   playPause: () => invoke<void>("play_pause"),
+  getPlayState: () => invoke<PlayStateSnapshot | null>("get_play_state"),
   pause: () => invoke<void>("pause"),
   resume: () => invoke<void>("resume"),
   stop: () => invoke<void>("stop"),
@@ -197,6 +199,7 @@ export const api = {
   desktopLyricsOpen: () => invoke<void>("desktop_lyrics_open"),
   desktopLyricsClose: () => invoke<void>("desktop_lyrics_close"),
   desktopLyricsUnlock: () => invoke<void>("desktop_lyrics_unlock"),
+  desktopLyricsIsOpen: () => invoke<boolean>("desktop_lyrics_is_open"),
 };
 
 export { convertFileSrc };

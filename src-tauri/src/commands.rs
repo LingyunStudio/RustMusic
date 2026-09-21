@@ -1453,6 +1453,15 @@ pub async fn play_pause(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// 当前播放状态快照（含进度）。WebView 挂起恢复窗口期的事件推送可能丢失，
+/// 前端恢复后主动拉取本命令做权威同步，不依赖任何固定延迟的补发。
+#[tauri::command]
+pub async fn get_play_state(
+    state: State<'_, AppState>,
+) -> Result<Option<crate::engine::PlayStateSnapshot>, String> {
+    Ok(engine_clone(&state).snapshot())
+}
+
 #[tauri::command]
 pub async fn pause(state: State<'_, AppState>) -> Result<(), String> {
     engine_clone(&state).pause();
@@ -1728,7 +1737,11 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
             })
             .unwrap_or((120.0, 640.0))
     };
-    // "x,y,w,h" 四元组（逻辑像素）
+    // "x,y,w,h" 四元组（逻辑像素）。
+    // 注意：几何里存的是“歌词区高度”；实际窗口还要加上顶部 40px 的
+    // 控制条预留区（前端常驻，不 hover 时全透明）——打开加、关闭减，
+    // 保证歌词区始终是用户设定的高度，控制条不挤占歌词空间
+    const CTRL_STRIP: f64 = 40.0;
     let saved = {
         let st = app.state::<AppState>();
         let conn = st.db.lock();
@@ -1746,8 +1759,8 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
         });
     let builder = WebviewWindowBuilder::new(&app, "desktop-lyrics", WebviewUrl::App(url.into()))
         .title("桌面歌词")
-        .inner_size(ww, hh)
-        .position(x, y)
+        .inner_size(ww, hh + CTRL_STRIP)
+        .position(x, (y - CTRL_STRIP).max(0.0))
         .decorations(false)
         .transparent(true)
         // WebView2 透明：alpha=0 的背景色是 Windows 下真正穿透的关键
@@ -1765,16 +1778,19 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
 /// 关闭桌面歌词窗口（无窗口时静默成功）；关闭前把位置尺寸存进设置表
 #[tauri::command]
 pub async fn desktop_lyrics_close(app: AppHandle) -> Result<(), String> {
+    // 与 desktop_lyrics_open 对应：窗口高度含 40px 控制条预留区，
+    // 保存几何时减掉，保证下次打开歌词区高度不变
+    const CTRL_STRIP: f64 = 40.0;
     if let Some(w) = app.get_webview_window("desktop-lyrics") {
         // 几何持久化（逻辑像素四元组）
         let scale = w.scale_factor().unwrap_or(1.0);
         if let (Ok(pos), Ok(size)) = (w.outer_position(), w.inner_size()) {
             let geom = format!(
                 "{},{},{},{}",
-                pos.x as f64 / scale,
-                pos.y as f64 / scale,
+                (pos.x as f64 / scale),
+                (pos.y as f64 / scale) + CTRL_STRIP,
                 size.width as f64 / scale,
-                size.height as f64 / scale
+                ((size.height as f64 / scale) - CTRL_STRIP).max(70.0)
             );
             let st = app.state::<AppState>();
             let conn = st.db.lock();
@@ -1793,6 +1809,13 @@ pub async fn desktop_lyrics_unlock(app: AppHandle) -> Result<(), String> {
         let _ = w.set_ignore_cursor_events(false);
     }
     Ok(())
+}
+
+/// 桌面歌词窗口是否还开着。主窗口挂起期间歌词窗口可能被直接关闭
+///（关闭事件丢失），恢复后查询本命令校准“词”按钮状态
+#[tauri::command]
+pub async fn desktop_lyrics_is_open(app: AppHandle) -> Result<bool, String> {
+    Ok(app.get_webview_window("desktop-lyrics").is_some())
 }
 
 // ---------- 自动更新（GitHub Release） ----------

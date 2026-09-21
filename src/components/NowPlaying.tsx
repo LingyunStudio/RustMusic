@@ -88,7 +88,11 @@ export default function NowPlaying() {
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const a = anchorRef.current;
-      const posNow = a.pos + (performance.now() - a.at);
+      // 外推封顶在曲目时长：托盘挂起恢复后锚点时间戳涵盖整段挂起时长，
+      // 不封顶的话进度/歌词会瞬间冲到很远（表现为“没声音但歌词狂飙”）
+      const dur = useStore.getState().dur;
+      const raw = a.pos + (performance.now() - a.at);
+      const posNow = dur > 0 ? Math.min(raw, dur) : raw;
 
       // 当前行二分（行数据是排好序的）
       let activeIdx = -1;

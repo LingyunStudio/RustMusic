@@ -34,12 +34,32 @@ pub struct AppState {
 }
 
 fn show_main(app: &AppHandle) {
+    let was_suspended = app
+        .state::<AppState>()
+        .webview_suspended
+        .load(Ordering::SeqCst);
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
         let _ = w.unminimize();
-        let _ = w.set_focus();
+        if !was_suspended {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
     }
-    resume_main_webview(app, true);
+    if was_suspended {
+        // 先恢复 WebView（Resume + SetIsVisible(true)），再延迟显示窗口：
+        // 恢复后的前几帧合成器/毛玻璃背景/封面图需要重新采样渲染，
+        // 直接 show 会看到 1~2 帧过渡画面（闪屏）。等渲染稳定后再显示，
+        // 过渡帧发生在窗口不可见期间，用户看不到。
+        resume_main_webview(app, true);
+        let app2 = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            if let Some(w) = app2.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        });
+    }
 }
 
 /// 挂起主窗口 WebView（WebView2 TrySuspend）：托盘隐藏时冻结并释放渲染进程内存。
@@ -527,6 +547,7 @@ fn main() {
             commands::set_close_action,
             commands::extract_cover_palette,
             commands::play_pause,
+            commands::get_play_state,
             commands::pause,
             commands::resume,
             commands::stop,
@@ -542,6 +563,7 @@ fn main() {
             commands::desktop_lyrics_open,
             commands::desktop_lyrics_close,
             commands::desktop_lyrics_unlock,
+            commands::desktop_lyrics_is_open,
             commands::get_scan_state,
             commands::auto_check_update,
             commands::check_update,

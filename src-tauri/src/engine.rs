@@ -53,6 +53,16 @@ pub struct PlayState {
     pub seq: u64,
 }
 
+/// 播放状态快照（含进度）：WebView 挂起恢复后前端主动拉取，
+/// 作为恢复窗口期事件推送可能丢失时的权威同步手段
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayStateSnapshot {
+    #[serde(flatten)]
+    pub state: PlayState,
+    pub pos: u64,
+}
+
 /// 输出设备信息（前端下拉用）
 #[derive(Clone, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -308,10 +318,16 @@ impl Engine {
     }
 
     pub fn resume(&self) {
-        let sink = self.sink.read();
-        if sink.empty() {
+        // 曲目已自然播完（托盘隐藏期间"播完"事件可能丢失）：重启当前曲目，
+        // 否则播放按钮会永远无响应（早期 return 既不播放也不发状态）
+        if self.sink.read().empty() {
+            let info = self.current.read().clone();
+            if let Some(info) = info {
+                let _ = self.play_file(info);
+            }
             return;
         }
+        let sink = self.sink.read();
         sink.play();
         drop(sink);
         self.user_paused.store(false, Ordering::Relaxed);
@@ -321,7 +337,8 @@ impl Engine {
     }
 
     pub fn toggle(&self) {
-        if self.user_paused.load(Ordering::Relaxed) {
+        // sink 已空（停止/自然播完）时"播放"应重启当前曲目而不是走 pause 早退
+        if self.user_paused.load(Ordering::Relaxed) || self.sink.read().empty() {
             self.resume();
         } else {
             self.pause();
@@ -441,13 +458,31 @@ impl Engine {
         let playing =
             !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
         self.emit_state(playing);
-        let _ = self.app.emit(
-            "player://pos",
-            serde_json::json!({
-                "pos": self.pos_ms.load(Ordering::Relaxed),
-                "dur": self.dur_ms.load(Ordering::Relaxed),
-            }),
-        );
+        // 进度帧只在真实播放中补发：引擎空闲时补发 pos(0,0) 会触发前端
+        // pos 事件的“playing 自愈”，托盘往返后按钮凭空变成“播放中”
+        if playing {
+            let _ = self.app.emit(
+                "player://pos",
+                serde_json::json!({
+                    "pos": self.pos_ms.load(Ordering::Relaxed),
+                    "dur": self.dur_ms.load(Ordering::Relaxed),
+                }),
+            );
+        }
+    }
+
+    /// 播放状态快照（引擎空闲但播过歌时也返回，playing=false）
+    pub fn snapshot(&self) -> Option<PlayStateSnapshot> {
+        let info = self.current.read().clone()?;
+        let playing = !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        Some(PlayStateSnapshot {
+            state: PlayState {
+                info,
+                playing,
+                seq: self.play_seq.load(Ordering::Relaxed),
+            },
+            pos: self.pos_ms.load(Ordering::Relaxed),
+        })
     }
 
     fn notify_smtc(&self) {

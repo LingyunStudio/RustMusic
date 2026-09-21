@@ -125,8 +125,11 @@ function DesktopLyrics() {
     return () => cancelAnimationFrame(raf);
   }, [data.playing]);
 
-  const posNow =
+  // 外推封顶在曲目时长：主窗口 WebView 挂起期间推送中断、恢复后锚点时间戳
+  // 涵盖了整段挂起时长，不封顶的话进度会瞬间冲到很远（表现为“没声音但歌词狂飙”）
+  const rawPos =
     data.pos + (data.playing ? performance.now() - posAtRef.current : 0);
+  const posNow = data.dur > 0 ? Math.min(rawPos, data.dur) : rawPos;
 
   const syncedLines = (data.lines ?? []).filter(
     (l) => l.timeMs != null && l.text.trim()
@@ -162,12 +165,18 @@ function DesktopLyrics() {
 
   const close = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
+    const { emit } = await import("@tauri-apps/api/event");
+    // 通知主窗口同步“词”按钮状态（主窗口可见时即时不等查询）
+    await emit("dlyrics://closed", {});
     await invoke("desktop_lyrics_close");
   };
   const toggleLock = async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const { emit } = await import("@tauri-apps/api/event");
     const next = !locked;
     await getCurrentWindow().setIgnoreCursorEvents(next);
+    // 同步锁定状态给主窗口（“词”按钮提示/行为依赖）
+    await emit("dlyrics://lock", { locked: next });
     // 锁定后鼠标穿透，mouseleave 不会再触发：必须同步清掉 hover，
     // 否则半透明底和控制条会永久残留
     if (next) setHover(false);
@@ -191,7 +200,7 @@ function DesktopLyrics() {
     // 全窗拖拽热区（含歌词上方空白）；hover 才浮现半透明底与控制条
     <div
       data-tauri-drag-region
-      className="h-full w-full flex flex-col justify-center select-none relative transition-colors duration-200"
+      className="h-full w-full flex flex-col select-none relative transition-colors duration-200"
       style={{
         background: hover ? "rgba(16, 12, 8, 0.42)" : "transparent",
         backdropFilter: hover ? "blur(10px)" : undefined,
@@ -200,15 +209,23 @@ function DesktopLyrics() {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* 播放控制条（hover 时浮现，顶行居中） */}
-      {!locked && hover && (
-        <div
-          className="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-1.5 py-1 rounded-2xl"
-          style={{
-            background: "rgba(20, 16, 12, 0.55)",
-            border: "1px solid rgba(255,255,255,0.16)",
-          }}
-        >
+      {/* 控制条常驻预留区（40px，不 hover 时完全透明）：hover 时按钮出现在
+          这里，与歌词完全分离。预留区永远存在，歌词位置锁定不动——
+          不做任何异步窗口尺寸操作（无失败模式，也不会闪）。
+          pointer-events-none：整行空白处穿透到底层 drag-region 可长按拖拽 */}
+      <div
+        className="shrink-0 flex items-center justify-center z-10 pointer-events-none"
+        style={{ height: 40 }}
+      >
+        {!locked && hover && (
+          <div
+            data-tauri-drag-region
+            className="flex items-center gap-0.5 px-1.5 py-1 rounded-2xl pointer-events-auto"
+            style={{
+              background: "rgba(20, 16, 12, 0.55)",
+              border: "1px solid rgba(255,255,255,0.16)",
+            }}
+          >
           <button
             className="text-[15px] w-8 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
             style={{ color: "rgba(255,255,255,0.85)" }}
@@ -258,8 +275,9 @@ function DesktopLyrics() {
           >
             ✕
           </button>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* 右下角缩放手柄 */}
       {!locked && (
@@ -280,8 +298,11 @@ function DesktopLyrics() {
       )}
 
       {/* 歌词主体（pointer-events-none：点击穿透到父层 drag-region，
-          全区任意位置可拖；控制条/手柄单独恢复交互） */}
-      <div className="flex flex-col items-center gap-1.5 px-6 pointer-events-none">
+          全区任意位置可拖；控制条/手柄单独恢复交互）。
+          flex-1 居中：控制条出现时歌词在剩余空间内居中；
+          overflow-hidden：窗口较矮时歌词宁可裁剪也不向上溢出压住控制条 */}
+      <div className="flex-1 min-h-0 flex flex-col justify-center overflow-hidden pointer-events-none">
+        <div className="flex flex-col items-center gap-1.5 px-6 pointer-events-none">
         {data.synced && active ? (
           <>
             <div
@@ -345,6 +366,7 @@ function DesktopLyrics() {
             {idleText}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

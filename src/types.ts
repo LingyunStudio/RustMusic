@@ -143,6 +143,11 @@ export interface PlayState extends TrackInfo {
   seq?: number;
 }
 
+/** 播放状态快照（含进度）：WebView 挂起恢复后前端主动拉取用 */
+export interface PlayStateSnapshot extends PlayState {
+  pos: number;
+}
+
 export interface CurrentTrack extends TrackInfo {
   liked: boolean;
   quality?: string | null;
