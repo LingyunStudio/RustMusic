@@ -103,6 +103,9 @@ pub struct Engine {
     device_pref: RwLock<Option<String>>,
     /// WASAPI 独占模式开关（设置项；切换后下一首生效）
     exclusive_enabled: AtomicBool,
+    /// 独占会话建立后置位：共享模式的输出流会被系统标记失效，
+    /// 回退/切回共享模式播放前需重建输出流
+    shared_broken: AtomicBool,
     /// 活跃的独占播放会话（共享模式播放时为 None）
     excl: RwLock<Option<wasapi_out::ExclusiveCtl>>,
 }
@@ -155,6 +158,7 @@ impl Engine {
             smtc,
             device_pref: RwLock::new(None),
             exclusive_enabled: AtomicBool::new(false),
+            shared_broken: AtomicBool::new(false),
             excl: RwLock::new(None),
         })
     }
@@ -183,6 +187,20 @@ impl Engine {
         sink.pause();
         let leaked_handle: &'static OutputStreamHandle = Box::leak(Box::new(handle));
         Ok((leaked_handle, sink))
+    }
+
+    /// 重建共享模式输出流与 Sink（独占会话跑过之后共享流已失效时调用）
+    fn rebuild_shared_output(&self) {
+        match Self::build_output(self.device_pref.read().as_deref()) {
+            Ok((handle, sink)) => {
+                let mut old = self.sink.write();
+                old.stop();
+                *old = sink;
+                *self.out.write() = handle;
+                eprintln!("[engine] 共享输出流已重建");
+            }
+            Err(e) => eprintln!("[engine] 重建共享输出流失败: {e}"),
+        }
     }
 
     /// 当前使用的输出设备名
@@ -295,6 +313,10 @@ impl Engine {
                 }
             }
         }
+        // 独占会话会使共享输出流失效（设备被独占期间系统标记不可用），先重建
+        if self.shared_broken.swap(false, Ordering::Relaxed) {
+            self.rebuild_shared_output();
+        }
         let file = File::open(&info.path).map_err(|e| format!("打开文件失败: {e}"))?;
         let src = Decoder::new(BufReader::new(file))
             .map_err(|e| format!("无法解码该音频文件: {e}"))?
@@ -338,6 +360,7 @@ impl Engine {
                 Err(_) => return Err("独占模式初始化超时".into()),
             }
             *self.excl.write() = Some(ctl);
+            self.shared_broken.store(true, Ordering::Relaxed);
             self.sink.read().clear();
             self.pos_ms.store(skip_ms, Ordering::Relaxed);
             self.dur_ms

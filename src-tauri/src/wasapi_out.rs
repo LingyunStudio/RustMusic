@@ -15,6 +15,21 @@ use rodio::Source;
 use wasapi::{
     initialize_mta, BufferFlags, DeviceCollection, Direction, SampleType, ShareMode, WaveFormat,
 };
+use windows51::core::Error as WinError;
+
+/// AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED
+const AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED: i32 = 0x8889_000Au32 as i32;
+
+/// 把 wasapi/windows 错误转成安全描述。
+/// 切勿对这类错误调用 Display/message()：AUDCLNT 错误码没有系统消息模板，
+/// FormatMessageW 返回空指针会触发 UB 检查直接闪退（0x01.8 之前的闪退根因）。
+fn wasapi_err(what: &str, e: &(dyn std::error::Error + 'static)) -> String {
+    if let Some(we) = e.downcast_ref::<WinError>() {
+        format!("{what}（HRESULT 0x{:08X}）", we.code().0 as u32)
+    } else {
+        what.to_string()
+    }
+}
 
 /// 会话控制句柄：引擎据此暂停 / 终止独占播放线程
 #[derive(Clone)]
@@ -70,7 +85,6 @@ where
 struct FmtSpec {
     kind: SampleKind,
     bytes_per_sample: usize,
-    channels: usize,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -93,16 +107,6 @@ struct LinearResampler {
 }
 
 impl LinearResampler {
-    fn new(step: f64) -> Self {
-        Self {
-            step,
-            pos: 0.0,
-            prev: None,
-            cur: None,
-            done: false,
-        }
-    }
-
     /// 从源拉取一帧（ch 个采样）；源耗尽返回 None
     fn pull(src: &mut dyn Iterator<Item = f32>, ch: usize) -> Option<Vec<f32>> {
         let mut f = Vec::with_capacity(ch);
@@ -205,7 +209,7 @@ fn pick_device(pref: Option<&str>) -> Result<wasapi::Device, String> {
         eprintln!("[wasapi] 未找到输出设备「{name}」，回退系统默认");
     }
     wasapi::get_default_device(&Direction::Render)
-        .map_err(|e| format!("没有可用的音频输出设备: {e}"))
+        .map_err(|e| wasapi_err("没有可用的音频输出设备", e.as_ref()))
 }
 
 /// 会话主流程：设备/格式协商 → 回传初始化结果 → 事件驱动喂采样 → 源耗尽退出
@@ -225,7 +229,7 @@ where
         let device = pick_device(params.device_pref.as_deref())?;
         let mut audio_client = device
             .get_iaudioclient()
-            .map_err(|e| format!("获取音频客户端失败: {e}"))?;
+            .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
 
         // 格式协商：优先源文件原生采样率（位深从高到低），全部拒绝则
         // 退到设备混合采样率（此时启用线性重采样）
@@ -257,7 +261,6 @@ where
                             SampleKind::I32
                         },
                         bytes_per_sample: 0,
-                        channels: ch,
                     },
                     1.0,
                 ));
@@ -282,7 +285,6 @@ where
                                 SampleKind::I32
                             },
                             bytes_per_sample: 0,
-                            channels: ch,
                         },
                         // 输出帧率 = 设备率；输入消耗 = 源率 × 倍速
                         (params.src_rate as f64) / (dev_rate as f64),
@@ -299,10 +301,10 @@ where
         // 处理 AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED 的重试
         let (def_period, min_period) = audio_client
             .get_periods()
-            .map_err(|e| format!("独占模式获取周期失败: {e}"))?;
+            .map_err(|e| wasapi_err("独占模式获取周期失败", e.as_ref()))?;
         let mut desired_period = audio_client
             .calculate_aligned_period_near(3 * min_period / 2, Some(128), &wave_fmt)
-            .map_err(|e| format!("独占模式计算周期失败: {e}"))?;
+            .map_err(|e| wasapi_err("独占模式计算周期失败", e.as_ref()))?;
         for attempt in 0..3 {
             match audio_client.initialize_client(
                 &wave_fmt,
@@ -313,10 +315,13 @@ where
             ) {
                 Ok(()) => break,
                 Err(e) => {
-                    let msg = format!("{e}");
-                    let aligned = msg.contains("0x8889000A") || msg.contains("BUFFER_SIZE_NOT_ALIGNED");
+                    let code = e
+                        .downcast_ref::<WinError>()
+                        .map(|we| we.code().0)
+                        .unwrap_or(0);
+                    let aligned = code == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED;
                     if !aligned || attempt == 2 {
-                        return Err(format!("独占模式初始化失败: {e}"));
+                        return Err(wasapi_err("独占模式初始化失败", e.as_ref()));
                     }
                     // 按文档流程取下一个对齐缓冲大小后重建客户端再试
                     let buffersize = audio_client.get_bufferframecount().unwrap_or(0);
@@ -326,7 +331,7 @@ where
                     );
                     audio_client = device
                         .get_iaudioclient()
-                        .map_err(|e| format!("获取音频客户端失败: {e}"))?;
+                        .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
                     audio_client
                         .initialize_client(
                             &wave_fmt,
@@ -335,7 +340,7 @@ where
                             &ShareMode::Exclusive,
                             false,
                         )
-                        .map_err(|e| format!("独占模式初始化失败: {e}"))?;
+                        .map_err(|e| wasapi_err("独占模式初始化失败", e.as_ref()))?;
                     break;
                 }
             }
@@ -362,10 +367,10 @@ where
 
         let h_event = audio_client
             .set_get_eventhandle()
-            .map_err(|e| format!("独占模式创建事件失败: {e}"))?;
+            .map_err(|e| wasapi_err("独占模式创建事件失败", e.as_ref()))?;
         let render = audio_client
             .get_audiorenderclient()
-            .map_err(|e| format!("独占模式获取渲染端失败: {e}"))?;
+            .map_err(|e| wasapi_err("独占模式获取渲染端失败", e.as_ref()))?;
         audio_client
             .start_stream()
             .map_err(|e| {
