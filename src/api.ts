@@ -175,6 +175,8 @@ export const api = {
   neteasePersonalFm: () =>
     invoke<{ songs: NeteaseTrack[] }>("netease_personal_fm"),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
+  setWasapiExclusive: (enabled: boolean) =>
+    invoke<void>("set_wasapi_exclusive", { enabled }),
   setCloseAction: (action: string) => invoke<void>("set_close_action", { action }),
   setAutoUpdate: (enabled: boolean) => invoke<void>("set_auto_update", { enabled }),
   // ---------- 自动更新（GitHub Release） ----------

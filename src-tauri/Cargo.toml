@@ -33,6 +33,7 @@ sha1 = "0.10"
 hex = "0.4"
 num-bigint = "0.4"
 rand = "0.8"
+wasapi = "0.14"
 qrcode = { version = "0.14", default-features = false, features = ["image"] }
 filetime = "0.2"
 

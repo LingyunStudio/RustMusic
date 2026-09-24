@@ -73,6 +73,8 @@ export default function SettingsView() {
   const closeAction = useStore((s) => s.closeAction);
   const setCloseAction = useStore((s) => s.setCloseAction);
   const autoUpdate = useStore((s) => s.autoUpdate);
+  const wasapiExclusive = useStore((s) => s.wasapiExclusive);
+  const setWasapiExclusive = useStore((s) => s.setWasapiExclusive);
   const setAutoUpdate = useStore((s) => s.setAutoUpdate);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -571,6 +573,30 @@ export default function SettingsView() {
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
             跟随系统默认时，插入耳机等设备热插拔会自动切换并从当前进度续播；固定设备则始终使用所选设备。
+          </p>
+          <div className="flex items-center gap-4 mt-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">独占模式</span>
+            <button
+              className={`relative w-10 h-[22px] rounded-full transition-colors ${
+                wasapiExclusive ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
+              }`}
+              onClick={() => setWasapiExclusive(!wasapiExclusive)}
+              title={wasapiExclusive ? "关闭 WASAPI 独占模式" : "开启 WASAPI 独占模式"}
+            >
+              <span
+                className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
+                  wasapiExclusive ? "left-[21px]" : "left-[3px]"
+                }`}
+              />
+            </button>
+            <span className="text-[11.5px] text-[var(--ink-3)]">
+              绕过系统混音器直连声卡（WASAPI Exclusive）
+            </span>
+          </div>
+          <p className="text-[11.5px] text-[var(--ink-3)] mt-2 leading-relaxed">
+            WASAPI
+            独占模式下，应用将独占声卡、绕过 Windows
+            音量混音器：采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质。注意：独占播放期间其它应用将暂时无法发声；若声卡不支持当前采样率或系统禁用了独占授权，该曲目会自动回退普通模式播放；均衡器与音量在独占模式下仍有效；开关切换后下一首生效。
           </p>
         </section>
 

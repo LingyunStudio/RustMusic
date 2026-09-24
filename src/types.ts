@@ -265,6 +265,8 @@ export interface SettingsPayload {
   closeAction: "tray" | "exit";
   /** 启动时自动检查 GitHub 更新（默认开启） */
   autoUpdate: boolean;
+  /** WASAPI 独占模式（默认关闭；切换后下一首生效） */
+  wasapiExclusive: boolean;
 }
 
 /** GitHub 最新 release 的可安装更新信息 */

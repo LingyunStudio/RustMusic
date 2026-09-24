@@ -1488,6 +1488,19 @@ pub async fn qq_import_playlist(
     Ok((list_id, added))
 }
 
+/// WASAPI 独占模式开关（切换后下一首生效）
+#[tauri::command]
+pub async fn set_wasapi_exclusive(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::set_setting(&conn, "wasapi_exclusive", if enabled { "true" } else { "false" });
+    drop(conn);
+    state.engine.lock().set_exclusive_enabled(enabled);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn set_play_quality(state: State<'_, AppState>, quality: String) -> Result<(), String> {
     if !matches!(quality.as_str(), "standard" | "high" | "lossless") {
@@ -1605,6 +1618,9 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
     let auto_update = db::get_setting(&conn, "auto_update")
         .map(|s| s != "false")
         .unwrap_or(true);
+    let wasapi_exclusive = db::get_setting(&conn, "wasapi_exclusive")
+        .map(|s| s == "true")
+        .unwrap_or(false);
     Ok(SettingsPayload {
         volume,
         speed,
@@ -1614,6 +1630,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
         cache_limit,
         close_action,
         auto_update,
+        wasapi_exclusive,
     })
 }
 

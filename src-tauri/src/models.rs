@@ -136,6 +136,8 @@ pub struct SettingsPayload {
     pub close_action: String,
     /// 启动时自动检查 GitHub 更新（默认开启）
     pub auto_update: bool,
+    /// WASAPI 独占模式（默认关闭；切换后下一首生效）
+    pub wasapi_exclusive: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]

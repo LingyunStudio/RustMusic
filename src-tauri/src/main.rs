@@ -13,6 +13,7 @@ mod qq;
 mod qrc;
 mod smtc;
 mod updater;
+mod wasapi_out;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -456,6 +457,11 @@ fn main() {
             )?;
             let eng = Arc::new(eng);
 
+            // 恢复 WASAPI 独占模式设置（默认关闭）
+            eng.set_exclusive_enabled(
+                db::get_setting(&conn, "wasapi_exclusive").as_deref() == Some("true"),
+            );
+
             // 恢复保存的输出设备偏好（空 = 跟随系统默认）
             {
                 let pref = db::get_setting(&conn, "output_device")
@@ -551,6 +557,7 @@ fn main() {
             commands::netease_random_playlist,
             commands::netease_daily_recommend,
             commands::netease_personal_fm,
+            commands::set_wasapi_exclusive,
             commands::set_play_quality,
             commands::set_close_action,
             commands::extract_cover_palette,

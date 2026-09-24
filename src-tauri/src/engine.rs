@@ -15,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::eq::{EqShared, EqSource};
+use crate::wasapi_out;
 use crate::smtc::SmtcMsg;
 
 #[derive(Clone, Serialize, Debug)]
@@ -88,8 +89,8 @@ pub struct Engine {
     /// start() 换曲瞬间（clear 与 append 之间）置位，避免 monitor 误判"播完"
     pub switching: Arc<AtomicBool>,
     pub current: Arc<RwLock<Option<TrackInfo>>>,
-    volume: AtomicU32,
-    speed: AtomicU32,
+    volume: Arc<AtomicU32>,
+    speed: Arc<AtomicU32>,
     play_seq: AtomicU64,
     want_url: Arc<RwLock<Option<String>>>,
     /// 正在后台下载的 URL 集合，防止同一 URL 并发下载写坏缓存文件
@@ -100,6 +101,10 @@ pub struct Engine {
     smtc: Sender<SmtcMsg>,
     /// 用户指定的输出设备名（None = 跟随系统默认，设备热插拔时自动切换）
     device_pref: RwLock<Option<String>>,
+    /// WASAPI 独占模式开关（设置项；切换后下一首生效）
+    exclusive_enabled: AtomicBool,
+    /// 活跃的独占播放会话（共享模式播放时为 None）
+    excl: RwLock<Option<wasapi_out::ExclusiveCtl>>,
 }
 
 impl Engine {
@@ -140,8 +145,8 @@ impl Engine {
             rebuilding: Arc::new(AtomicBool::new(false)),
             switching: Arc::new(AtomicBool::new(false)),
             current: Arc::new(RwLock::new(None)),
-            volume: AtomicU32::new(volume.to_bits()),
-            speed: AtomicU32::new(speed.to_bits()),
+            volume: Arc::new(AtomicU32::new(volume.to_bits())),
+            speed: Arc::new(AtomicU32::new(speed.to_bits())),
             play_seq: AtomicU64::new(0),
             want_url: Arc::new(RwLock::new(None)),
             downloading: RwLock::new(HashSet::new()),
@@ -149,6 +154,8 @@ impl Engine {
             cache_limit: AtomicU64::new(cache_limit),
             smtc,
             device_pref: RwLock::new(None),
+            exclusive_enabled: AtomicBool::new(false),
+            excl: RwLock::new(None),
         })
     }
 
@@ -200,6 +207,23 @@ impl Engine {
 
     /// 切换输出设备：重建输出流与 Sink，当前曲目从进度处无缝续播
     pub fn switch_output_device(self: &Arc<Self>, name: Option<&str>) -> Result<(), String> {
+        // 独占模式：按新设备重建独占会话
+        if self.excl_active() {
+            self.set_device_preference(name);
+            self.rebuilding.store(true, Ordering::Relaxed);
+            let result = (|| -> Result<(), String> {
+                let info = self
+                    .current
+                    .read()
+                    .clone()
+                    .ok_or("当前没有正在播放的曲目")?;
+                let pos = self.pos_ms.load(Ordering::Relaxed);
+                let was_paused = self.user_paused.load(Ordering::Relaxed);
+                self.rebuild_exclusive_at(&info, pos, was_paused)
+            })();
+            self.rebuilding.store(false, Ordering::Relaxed);
+            return result;
+        }
         // 重建期间 monitor 会因 sink 短暂为空误判"播完"，借用 rebuilding 标志屏蔽
         self.rebuilding.store(true, Ordering::Relaxed);
         let result = (|| -> Result<(), String> {
@@ -262,11 +286,103 @@ impl Engine {
 
     pub fn play_file(&self, info: TrackInfo) -> Result<(), String> {
         *self.want_url.write() = None;
+        // WASAPI 独占模式（可选）：协商失败自动回退共享模式
+        if self.exclusive_enabled.load(Ordering::Relaxed) {
+            match self.start_exclusive(&info, 0) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    eprintln!("[engine] WASAPI 独占模式不可用，本次回退共享模式: {e}");
+                }
+            }
+        }
         let file = File::open(&info.path).map_err(|e| format!("打开文件失败: {e}"))?;
         let src = Decoder::new(BufReader::new(file))
             .map_err(|e| format!("无法解码该音频文件: {e}"))?
             .convert_samples::<f32>();
         self.start(src, info)
+    }
+
+    /// 启动 WASAPI 独占播放会话（skip_ms 用于 seek/重建时跳过开头）。
+    /// 初始化在会话线程完成，此处阻塞等待协商结果（最多 3s）；
+    /// 失败时采样源已被会话线程取走，由调用方重新解码回退共享模式。
+    fn start_exclusive(&self, info: &TrackInfo, skip_ms: u64) -> Result<(), String> {
+        self.rebuilding.store(true, Ordering::Relaxed);
+        let result = (|| -> Result<(), String> {
+            // 终止旧会话
+            if let Some(ctl) = self.excl.read().as_ref() {
+                ctl.stop.store(true, Ordering::Relaxed);
+            }
+            *self.excl.write() = None;
+            let file = File::open(&info.path).map_err(|e| format!("打开文件失败: {e}"))?;
+            let src = Decoder::new(BufReader::new(file))
+                .map_err(|e| format!("无法解码该音频文件: {e}"))?
+                .convert_samples::<f32>()
+                .skip_duration(Duration::from_millis(skip_ms));
+            let wrapped = EqSource::with_base(
+                src,
+                self.eq.clone(),
+                self.pos_ms.clone(),
+                skip_ms as f64,
+            );
+            let params = wasapi_out::ExclusiveParams {
+                device_pref: self.device_pref.read().clone(),
+                channels: wrapped.channels() as usize,
+                src_rate: wrapped.sample_rate(),
+                volume_bits: self.volume.clone(),
+                speed_bits: self.speed.clone(),
+            };
+            let (ctl, rx) = wasapi_out::spawn_exclusive_session(wrapped, params)?;
+            match rx.recv_timeout(Duration::from_secs(3)) {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return Err(e),
+                Err(_) => return Err("独占模式初始化超时".into()),
+            }
+            *self.excl.write() = Some(ctl);
+            self.sink.read().clear();
+            self.pos_ms.store(skip_ms, Ordering::Relaxed);
+            self.dur_ms
+                .store(info.duration_ms, Ordering::Relaxed);
+            self.user_paused.store(false, Ordering::Relaxed);
+            self.stopped.store(false, Ordering::Relaxed);
+            Ok(())
+        })();
+        self.rebuilding.store(false, Ordering::Relaxed);
+        if result.is_ok() {
+            let info = info.clone();
+            *self.current.write() = Some(info.clone());
+            self.notify_smtc();
+            let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
+            let _ = self.app.emit(
+                "player://state",
+                PlayState { playing: true, info, seq },
+            );
+        }
+        result
+    }
+
+    /// 重建独占会话（seek / 倍速 / 设备切换时），保持暂停状态
+    fn rebuild_exclusive_at(
+        &self,
+        info: &TrackInfo,
+        ms: u64,
+        was_paused: bool,
+    ) -> Result<(), String> {
+        let result = self.start_exclusive(info, ms);
+        if result.is_ok() {
+            if let Some(ctl) = self.excl.read().as_ref() {
+                ctl.paused.store(was_paused, Ordering::Relaxed);
+            }
+            self.user_paused.store(was_paused, Ordering::Relaxed);
+        }
+        result
+    }
+
+    fn excl_active(&self) -> bool {
+        self.excl
+            .read()
+            .as_ref()
+            .map(|c| c.active.load(Ordering::Relaxed))
+            .unwrap_or(false)
     }
 
     fn start<S>(&self, src: S, info: TrackInfo) -> Result<(), String>
@@ -306,6 +422,15 @@ impl Engine {
     }
 
     pub fn pause(&self) {
+        if self.excl_active() {
+            if let Some(ctl) = self.excl.read().as_ref() {
+                ctl.paused.store(true, Ordering::Relaxed);
+            }
+            self.user_paused.store(true, Ordering::Relaxed);
+            self.notify_smtc();
+            self.emit_state(false);
+            return;
+        }
         let sink = self.sink.read();
         if sink.empty() {
             return;
@@ -320,6 +445,16 @@ impl Engine {
     pub fn resume(&self) {
         // 曲目已自然播完（托盘隐藏期间"播完"事件可能丢失）：重启当前曲目，
         // 否则播放按钮会永远无响应（早期 return 既不播放也不发状态）
+        if self.excl_active() {
+            if let Some(ctl) = self.excl.read().as_ref() {
+                ctl.paused.store(false, Ordering::Relaxed);
+            }
+            self.user_paused.store(false, Ordering::Relaxed);
+            self.stopped.store(false, Ordering::Relaxed);
+            self.notify_smtc();
+            self.emit_state(true);
+            return;
+        }
         if self.sink.read().empty() {
             let info = self.current.read().clone();
             if let Some(info) = info {
@@ -338,6 +473,14 @@ impl Engine {
 
     pub fn toggle(&self) {
         // sink 已空（停止/自然播完）时"播放"应重启当前曲目而不是走 pause 早退
+        if self.excl_active() {
+            if self.user_paused.load(Ordering::Relaxed) {
+                self.resume();
+            } else {
+                self.pause();
+            }
+            return;
+        }
         if self.user_paused.load(Ordering::Relaxed) || self.sink.read().empty() {
             self.resume();
         } else {
@@ -346,6 +489,18 @@ impl Engine {
     }
 
     pub fn stop(&self) {
+        if self.excl_active() {
+            if let Some(ctl) = self.excl.read().as_ref() {
+                ctl.stop.store(true, Ordering::Relaxed);
+                ctl.active.store(false, Ordering::Relaxed);
+            }
+            self.user_paused.store(false, Ordering::Relaxed);
+            self.stopped.store(true, Ordering::Relaxed);
+            self.pos_ms.store(0, Ordering::Relaxed);
+            self.notify_smtc();
+            self.emit_state(false);
+            return;
+        }
         let sink = self.sink.read();
         sink.stop();
         drop(sink);
@@ -357,6 +512,16 @@ impl Engine {
     }
 
     pub fn seek(&self, ms: u64) -> Result<(), String> {
+        // 独占模式：解码器在会话线程内，seek 走会话重建（同 FLAC 策略）
+        if self.excl_active() {
+            let info = self
+                .current
+                .read()
+                .clone()
+                .ok_or("当前没有正在播放的曲目")?;
+            let was_paused = self.user_paused.load(Ordering::Relaxed);
+            return self.rebuild_exclusive_at(&info, ms, was_paused);
+        }
         let sink = self.sink.read();
         if sink.empty() {
             return Err("当前没有正在播放的曲目".into());
@@ -431,6 +596,15 @@ impl Engine {
     pub fn set_speed(&self, v: f32) {
         let v = v.clamp(0.5, 2.0);
         self.speed.store(v.to_bits(), Ordering::Relaxed);
+        // 独占模式：倍速通过重建会话（重采样比）应用，从当前进度续播
+        if self.excl_active() {
+            if let Some(info) = self.current.read().clone() {
+                let pos = self.pos_ms.load(Ordering::Relaxed);
+                let was_paused = self.user_paused.load(Ordering::Relaxed);
+                let _ = self.rebuild_exclusive_at(&info, pos, was_paused);
+            }
+            return;
+        }
         self.sink.read().set_speed(v);
     }
 
@@ -441,7 +615,20 @@ impl Engine {
     // ---------- 状态查询 ----------
 
     pub fn is_active(&self) -> bool {
-        !self.sink.read().empty()
+        self.excl_active() || !self.sink.read().empty()
+    }
+
+    /// 当前是否处于"正在播放"（供状态事件 / SMTC / 快照统一取用）
+    fn now_playing(&self) -> bool {
+        !self.user_paused.load(Ordering::Relaxed)
+            && (self.excl_active() || !self.sink.read().empty())
+    }
+
+    /// WASAPI 独占模式开关（设置项；切换后下一首生效）
+    pub fn set_exclusive_enabled(&self, enabled: bool) {
+        self.exclusive_enabled
+            .store(enabled, Ordering::Relaxed);
+        eprintln!("[engine] WASAPI 独占模式 = {}", if enabled { "开" } else { "关" });
     }
 
     fn emit_state(&self, playing: bool) {
@@ -455,8 +642,7 @@ impl Engine {
 
     /// WebView 挂起恢复后补发当前播放状态与进度（挂起期间发往前端的事件被丢弃）
     pub fn resync_ui(&self) {
-        let playing =
-            !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        let playing = self.now_playing();
         self.emit_state(playing);
         // 进度帧只在真实播放中补发：引擎空闲时补发 pos(0,0) 会触发前端
         // pos 事件的“playing 自愈”，托盘往返后按钮凭空变成“播放中”
@@ -474,7 +660,7 @@ impl Engine {
     /// 播放状态快照（引擎空闲但播过歌时也返回，playing=false）
     pub fn snapshot(&self) -> Option<PlayStateSnapshot> {
         let info = self.current.read().clone()?;
-        let playing = !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        let playing = self.now_playing();
         Some(PlayStateSnapshot {
             state: PlayState {
                 info,
@@ -487,8 +673,7 @@ impl Engine {
 
     fn notify_smtc(&self) {
         let info = self.current.read().clone();
-        let playing =
-            !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        let playing = self.now_playing();
         let _ = self.smtc.send(SmtcMsg::Update {
             info,
             playing,
@@ -501,8 +686,7 @@ impl Engine {
         if self.current.read().is_none() {
             return;
         }
-        let playing =
-            !self.user_paused.load(Ordering::Relaxed) && !self.sink.read().empty();
+        let playing = self.now_playing();
         let _ = self.smtc.send(SmtcMsg::Position {
             playing,
             pos_ms: self.pos_ms.load(Ordering::Relaxed),
