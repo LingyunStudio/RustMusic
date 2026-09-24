@@ -113,8 +113,7 @@ fn zzc_sign(text: &str) -> Result<String, String> {
     let part2 = pick(&P2);
     let mut part3 = Vec::with_capacity(20);
     for (i, v) in SV.iter().enumerate() {
-        let b = u8::from_str_radix(&hash[i * 2..i * 2 + 2], 16)
-            .map_err(|e| e.to_string())?;
+        let b = u8::from_str_radix(&hash[i * 2..i * 2 + 2], 16).map_err(|e| e.to_string())?;
         part3.push(v ^ b);
     }
     let b64: String = base64::engine::general_purpose::STANDARD
@@ -137,7 +136,8 @@ fn musicu_signed(
         chrono_now_ms(),
         sign
     );
-    let mut req = http_agent().post(&url)
+    let mut req = http_agent()
+        .post(&url)
         .set("Content-Type", "application/json")
         .set("Referer", "https://y.qq.com/")
         .set("User-Agent", UA)
@@ -167,7 +167,8 @@ fn chrono_now_ms() -> u128 {
 }
 
 fn plain_get(url: &str, referer: &str) -> Result<String, String> {
-    http_agent().get(url)
+    http_agent()
+        .get(url)
         .set("Referer", referer)
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
@@ -277,8 +278,7 @@ pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, Strin
             };
             if resp.get("code").and_then(|c| c.as_i64()) == Some(0) {
                 if let Some(list) = resp.pointer("/data/song/list").and_then(|v| v.as_array()) {
-                    let out: Vec<QqSong> =
-                        list.iter().filter_map(song_from_search_json).collect();
+                    let out: Vec<QqSong> = list.iter().filter_map(song_from_search_json).collect();
                     if !out.is_empty() {
                         return Ok(out);
                     }
@@ -306,14 +306,16 @@ pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, Strin
         }
     });
     if let Ok(resp) = musicu_signed(&payload, None) {
-        let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        let code = resp
+            .pointer("/req_1/code")
+            .and_then(|c| c.as_i64())
+            .unwrap_or(-1);
         if code == 0 {
             if let Some(list) = resp
                 .pointer("/req_1/data/body/song/list")
                 .and_then(|v| v.as_array())
             {
-                let out: Vec<QqSong> =
-                    list.iter().filter_map(song_from_search_json).collect();
+                let out: Vec<QqSong> = list.iter().filter_map(song_from_search_json).collect();
                 if !out.is_empty() {
                     return Ok(out);
                 }
@@ -373,7 +375,10 @@ fn find_credential(v: &serde_json::Value) -> Option<(String, String)> {
                     .or_else(|| x.as_i64().map(|n| n.to_string()))
             })
         };
-        if let (Some(id), Some(key)) = (get("musicid").or_else(|| get("str_musicid")), get("musickey")) {
+        if let (Some(id), Some(key)) = (
+            get("musicid").or_else(|| get("str_musicid")),
+            get("musickey"),
+        ) {
             if !id.is_empty() && !key.is_empty() {
                 return Some((id, key));
             }
@@ -438,10 +443,7 @@ pub fn song_url(
                 }
             }
         });
-        let resp = musicu_signed(
-            &payload,
-            Some(&credential_cookie(musicid, musickey)),
-        )?;
+        let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
         // 104009 = 会话无效（未登录 / musickey 已过期）。
         // 换音质也无法挽回，立即中止并让前端引导重新登录。
         if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) == Some(104009) {
@@ -476,20 +478,18 @@ pub fn song_url(
     }
     // 会话有效仍拿不到链接：按 VIP 标志分类——VIP 曲目是权益不足（可随
     // 登录/会员状态恢复），非 VIP 曲目才是真无版权/下架（永久）。
-    Err(
-        if all_ok_but_no_url {
-            if vip {
-                "该曲目需要 QQ 音乐 VIP 权益（请确认已登录且会员状态有效）".into()
-            } else {
-                "该歌曲在 QQ 音乐无版权或已下架".into()
-            }
+    Err(if all_ok_but_no_url {
+        if vip {
+            "该曲目需要 QQ 音乐 VIP 权益（请确认已登录且会员状态有效）".into()
         } else {
-            format!(
-                "该歌曲暂无可播放链接（接口异常，可稍后重试）| {}",
-                last_resp.chars().take(120).collect::<String>()
-            )
-        },
-    )
+            "该歌曲在 QQ 音乐无版权或已下架".into()
+        }
+    } else {
+        format!(
+            "该歌曲暂无可播放链接（接口异常，可稍后重试）| {}",
+            last_resp.chars().take(120).collect::<String>()
+        )
+    })
 }
 // ---------- 歌词（匿名可用，返回 base64 编码的 LRC） ----------
 
@@ -519,11 +519,7 @@ pub fn lyric(songmid: &str) -> Result<Option<String>, String> {
 /// 逐字歌词（QRC）：musicu 的 PlayLyricInfo 模块，需登录凭证。
 /// lyric 字段为 hex 编码的 QQ 魔改 Triple-DES + zlib + XML 数据，
 /// 解密提取 LyricContent 后转换为增强 LRC；无逐字数据返回 None 回落行级。
-pub fn lyric_qrc(
-    songmid: &str,
-    musicid: &str,
-    musickey: &str,
-) -> Result<Option<String>, String> {
+pub fn lyric_qrc(songmid: &str, musicid: &str, musickey: &str) -> Result<Option<String>, String> {
     let payload = serde_json::json!({
         "comm": {"uin": musicid, "format": "json", "ct": 19, "cv": 0},
         "req_1": {
@@ -560,7 +556,9 @@ pub fn lyric_qrc(
         .pointer("/req_1/data/lyric")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
-    let Some(encoded) = encoded else { return Ok(None) };
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
     // 解密失败（格式变化等）时返回 None，调用方回落行级 LRC
     let xml = match crate::qrc::decrypt(encoded) {
         Ok(x) => x,
@@ -586,7 +584,8 @@ pub fn qr_create() -> Result<(String, String), String> {
         "https://ssl.ptlogin2.qq.com/ptqrshow?appid=716027609&e=2&l=M&s=3&d=72&v=4&t={}&daid=383&pt_3rd_aid=100497308",
         chrono_now_ms()
     );
-    let resp = http_agent().get(&url)
+    let resp = http_agent()
+        .get(&url)
         .set("Referer", "https://xui.ptlogin2.qq.com/")
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
@@ -619,7 +618,10 @@ fn extract_ptui_args(text: &str) -> Vec<String> {
         Some(i) => i + 7,
         None => return vec![],
     };
-    let end = text[start..].find(')').map(|i| start + i).unwrap_or(text.len());
+    let end = text[start..]
+        .find(')')
+        .map(|i| start + i)
+        .unwrap_or(text.len());
     let inner = &text[start..end];
     let mut args = Vec::new();
     let mut cur = String::new();
@@ -672,7 +674,11 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
         "https://ssl.ptlogin2.qq.com/ptqrlogin?u1=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump&ptqrtoken={token}&ptredirect=0&h=1&t=1&g=1&from_ui=1&ptlang=2052&action=0-0-{}&js_ver=20102616&js_type=1&pt_uistyle=40&aid=716027609&daid=383&pt_3rd_aid=100497308&has_onekey=1",
         chrono_now_ms()
     );
-    let text = plain_get_with_cookie(&url, "https://xui.ptlogin2.qq.com/", &format!("qrsig={qrsig}"))?;
+    let text = plain_get_with_cookie(
+        &url,
+        "https://xui.ptlogin2.qq.com/",
+        &format!("qrsig={qrsig}"),
+    )?;
     let args = extract_ptui_args(&text);
     let code_str = args.first().cloned().unwrap_or_default();
     let code: i64 = code_str.parse().unwrap_or(-1);
@@ -682,7 +688,13 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             67 => "scanned",
             _ => "waiting",
         };
-        return Ok(QqQrCheck { status: status.into(), nickname: None, musicid: None, musickey: None, encrypt_uin: None });
+        return Ok(QqQrCheck {
+            status: status.into(),
+            nickname: None,
+            musicid: None,
+            musickey: None,
+            encrypt_uin: None,
+        });
     }
 
     {
@@ -697,7 +709,8 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
         let check_sig_url = format!(
             "https://ssl.ptlogin2.graph.qq.com/check_sig?uin={uin}&pttype=1&service=ptqrlogin&nodirect=0&ptsigx={sigx}&s_url=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump&ptlang=2052&ptredirect=100&aid=716027609&daid=383&j_later=0&low_login_hour=0&regmaster=0&pt_login_type=3&pt_aid=0&pt_aaid=16&pt_light=0&pt_3rd_aid=100497308"
         );
-        let resp = no_redirect_agent().get(&check_sig_url)
+        let resp = no_redirect_agent()
+            .get(&check_sig_url)
             .set("Referer", "https://xui.ptlogin2.qq.com/")
             .set("User-Agent", UA)
             .timeout(TIMEOUT)
@@ -724,7 +737,8 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             chrono_now_ms(),
             rand_hex(16),
         );
-        let resp = no_redirect_agent().post("https://graph.qq.com/oauth2.0/authorize")
+        let resp = no_redirect_agent()
+            .post("https://graph.qq.com/oauth2.0/authorize")
             .set("Content-Type", "application/x-www-form-urlencoded")
             .set("Referer", "https://graph.qq.com/")
             .set("User-Agent", UA)
@@ -733,9 +747,8 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             .send_string(&form)
             .map_err(|e| format!("OAuth 授权失败: {e}"))?;
         let location = resp.header("Location").unwrap_or("").to_string();
-        let oauth_code = parse_query_param(&location, "code").ok_or_else(|| {
-            format!("OAuth 授权未返回 code（HTTP {}）", resp.status())
-        })?;
+        let oauth_code = parse_query_param(&location, "code")
+            .ok_or_else(|| format!("OAuth 授权未返回 code（HTTP {}）", resp.status()))?;
 
         // Step 3: QQLogin —— 用 code 换取播放凭证（musicid / musickey）
         // 先走签名通道（musics.fcg），失败再试明文通道（musicu.fcg）
@@ -807,11 +820,14 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
 fn rand_hex(len: usize) -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    (0..len).map(|_| format!("{:x}", rng.gen_range(0..16))).collect()
+    (0..len)
+        .map(|_| format!("{:x}", rng.gen_range(0..16)))
+        .collect()
 }
 
 fn plain_get_with_cookie(url: &str, referer: &str, cookie: &str) -> Result<String, String> {
-    http_agent().get(url)
+    http_agent()
+        .get(url)
         .set("Referer", referer)
         .set("User-Agent", UA)
         .set("Cookie", cookie)
@@ -822,9 +838,11 @@ fn plain_get_with_cookie(url: &str, referer: &str, cookie: &str) -> Result<Strin
         .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))
 }
 
-
 /// 用户创建的歌单列表
-pub fn user_playlists(musicid: &str, musickey: &str) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+pub fn user_playlists(
+    musicid: &str,
+    musickey: &str,
+) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
     let payload = serde_json::json!({
         "comm": {"ct": 19, "cv": 1859},
         "req_1": {
@@ -834,7 +852,10 @@ pub fn user_playlists(musicid: &str, musickey: &str) -> Result<Vec<crate::models
         }
     });
     let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
-    let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64()).unwrap_or(0);
+    let code = resp
+        .pointer("/req_1/code")
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0);
     if code != 0 {
         return Err(if code == 104009 {
             "QQ 音乐登录已过期，请重新登录".into()
@@ -843,7 +864,10 @@ pub fn user_playlists(musicid: &str, musickey: &str) -> Result<Vec<crate::models
         });
     }
     let mut out = Vec::new();
-    if let Some(list) = resp.pointer("/req_1/data/v_playlist").and_then(|v| v.as_array()) {
+    if let Some(list) = resp
+        .pointer("/req_1/data/v_playlist")
+        .and_then(|v| v.as_array())
+    {
         for p in list {
             // 响应为驼峰命名：tid / dirName / songNum（蛇形为兼容备选）
             let id = p
@@ -873,7 +897,11 @@ pub fn user_playlists(musicid: &str, musickey: &str) -> Result<Vec<crate::models
                 .unwrap_or(0);
             let id = if dir_id == 201 { 201 } else { id };
             if id != 0 && !name.is_empty() {
-                out.push(crate::models::UserPlaylistMeta { id, name, track_count: count });
+                out.push(crate::models::UserPlaylistMeta {
+                    id,
+                    name,
+                    track_count: count,
+                });
             }
         }
     }
@@ -994,7 +1022,10 @@ pub fn playlist_tracks(
             }
         });
         let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
-        let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64()).unwrap_or(0);
+        let code = resp
+            .pointer("/req_1/code")
+            .and_then(|c| c.as_i64())
+            .unwrap_or(0);
         if code != 0 {
             return Err(if code == 104009 {
                 "QQ 音乐登录已过期，请重新登录".into()
@@ -1020,7 +1051,11 @@ pub fn playlist_tracks(
         // 避免把同一批歌重复写入导入结果
         let first_mid = list
             .first()
-            .and_then(|t| t.get("mid").or_else(|| t.get("songmid")).and_then(|v| v.as_str()))
+            .and_then(|t| {
+                t.get("mid")
+                    .or_else(|| t.get("songmid"))
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .to_string();
         if !first_mid.is_empty() && first_mid == last_first_mid {
@@ -1122,7 +1157,12 @@ pub fn toplists() -> Result<Vec<QqToplist>, String> {
                     Some(serde_json::Value::Number(n)) => n.to_string(),
                     _ => String::new(),
                 };
-                out.push(QqToplist { id, title, pic, update_time });
+                out.push(QqToplist {
+                    id,
+                    title,
+                    pic,
+                    update_time,
+                });
             }
         }
     }
@@ -1195,10 +1235,7 @@ pub fn public_playlist_tracks(disstid: i64) -> Result<QqPublicPlaylist, String> 
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             creator = dir
-                .and_then(|d| {
-                    d.pointer("/creator/name")
-                        .or_else(|| d.get("host_nic"))
-                })
+                .and_then(|d| d.pointer("/creator/name").or_else(|| d.get("host_nic")))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
@@ -1219,7 +1256,14 @@ pub fn public_playlist_tracks(disstid: i64) -> Result<QqPublicPlaylist, String> 
         }
         begin += 100;
     }
-    Ok(QqPublicPlaylist { id: disstid, name, cover, listen_num, creator, songs })
+    Ok(QqPublicPlaylist {
+        id: disstid,
+        name,
+        cover,
+        listen_num,
+        creator,
+        songs,
+    })
 }
 
 /// 歌单广场（匿名）：热门分类按偏移取页，返回 (分类下歌单总数, 摘要列表)
@@ -1265,10 +1309,7 @@ fn plaza_page(sin: i64, ein: i64) -> Result<(i64, Vec<QqPublicPlaylist>), String
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                listen_num: p
-                    .get("listennum")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0),
+                listen_num: p.get("listennum").and_then(|v| v.as_i64()).unwrap_or(0),
                 creator: p
                     .pointer("/creator/name")
                     .and_then(|v| v.as_str())
@@ -1341,7 +1382,14 @@ mod tests {
     fn test_search_and_lyric() {
         let r = search("小情歌 苏打绿", 5, 1).expect("search failed");
         for s in &r {
-            println!("  [{}] {} - {} vip={} {}s", s.id, s.name, s.singer, s.vip, s.duration_ms / 1000);
+            println!(
+                "  [{}] {} - {} vip={} {}s",
+                s.id,
+                s.name,
+                s.singer,
+                s.vip,
+                s.duration_ms / 1000
+            );
         }
         assert!(!r.is_empty(), "search returned no songs");
         let any = &r[0];
@@ -1356,7 +1404,11 @@ mod tests {
     #[test]
     fn test_toplists_and_random() {
         let tops = toplists().expect("toplists failed");
-        println!("{} toplists, first: {:?}", tops.len(), tops.first().map(|t| (&t.id, &t.title)));
+        println!(
+            "{} toplists, first: {:?}",
+            tops.len(),
+            tops.first().map(|t| (&t.id, &t.title))
+        );
         assert!(!tops.is_empty(), "no toplists");
         let songs = toplist_tracks(tops[0].id).expect("toplist tracks failed");
         println!("top {} songs: {}", tops[0].title, songs.len());

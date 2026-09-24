@@ -42,7 +42,9 @@ pub struct UpdateInfo {
 fn version_tuple(v: &str) -> Vec<u64> {
     let v = v.trim().trim_start_matches(|c| c == 'v' || c == 'V');
     let v = v.split(['-', '+']).next().unwrap_or(v);
-    v.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect()
+    v.split('.')
+        .map(|p| p.parse::<u64>().unwrap_or(0))
+        .collect()
 }
 
 fn is_newer(latest: &str, current: &str) -> bool {
@@ -61,14 +63,19 @@ fn is_newer(latest: &str, current: &str) -> bool {
 fn pick_setup_asset(assets: &[serde_json::Value]) -> Option<(String, String, u64)> {
     let mut fallback = None;
     for a in assets {
-        let (Some(name), Some(url)) = (a["name"].as_str(), a["browser_download_url"].as_str()) else {
+        let (Some(name), Some(url)) = (a["name"].as_str(), a["browser_download_url"].as_str())
+        else {
             continue;
         };
         let lower = name.to_lowercase();
         if !lower.ends_with(".exe") {
             continue;
         }
-        let item = (name.to_string(), url.to_string(), a["size"].as_u64().unwrap_or(0));
+        let item = (
+            name.to_string(),
+            url.to_string(),
+            a["size"].as_u64().unwrap_or(0),
+        );
         if lower.contains("setup") {
             return Some(item);
         }
@@ -104,25 +111,33 @@ pub fn fetch_latest(current_version: &str) -> Result<Option<UpdateInfo>, String>
     let assets = release["assets"]
         .as_array()
         .ok_or_else(|| "发布信息缺少附件".to_string())?;
-    let (asset_name, asset_url, asset_size) = pick_setup_asset(assets).ok_or_else(|| {
-        format!(
-            "新版本 {tag} 未提供 Windows 安装包，请到 GitHub 发布页手动下载"
-        )
-    })?;
+    let (asset_name, asset_url, asset_size) = pick_setup_asset(assets)
+        .ok_or_else(|| format!("新版本 {tag} 未提供 Windows 安装包，请到 GitHub 发布页手动下载"))?;
 
     Ok(Some(UpdateInfo {
-        version: tag.trim().trim_start_matches(|c| c == 'v' || c == 'V').to_string(),
+        version: tag
+            .trim()
+            .trim_start_matches(|c| c == 'v' || c == 'V')
+            .to_string(),
         notes: release["body"].as_str().unwrap_or_default().to_string(),
         asset_name,
         asset_url,
         asset_size,
-        published_at: release["published_at"].as_str().unwrap_or_default().to_string(),
+        published_at: release["published_at"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
     }))
 }
 
 /// 下载安装包到临时目录，期间通过 `update://progress` 事件上报进度。
 /// 返回下载文件的完整路径。文件大小与 release 附件声明的 size 校验一致。
-pub fn download(app: &AppHandle, url: &str, name: &str, expected_size: u64) -> Result<PathBuf, String> {
+pub fn download(
+    app: &AppHandle,
+    url: &str,
+    name: &str,
+    expected_size: u64,
+) -> Result<PathBuf, String> {
     DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
     // 附件名固定为 RustMusic_*-setup.exe，仅允许常规文件名字符，避免拼进脚本出问题
     let safe_name: String = name
@@ -228,9 +243,7 @@ fn build_update_script(setup: &str, dir: &str, exe: &str) -> String {
 /// 3. 安装进程结束后重启应用，最后清理临时文件。用户取消 UAC 时也会重启旧版本。
 pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("获取程序路径失败：{e}"))?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "获取安装目录失败".to_string())?;
+    let dir = exe.parent().ok_or_else(|| "获取安装目录失败".to_string())?;
     if !setup.is_file() {
         return Err("安装包不存在，请重新下载".into());
     }
@@ -241,14 +254,22 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
         &exe.to_string_lossy(),
     );
 
-    let script_path = std::env::temp_dir().join(format!("rustmusic-update-{}.ps1", std::process::id()));
+    let script_path =
+        std::env::temp_dir().join(format!("rustmusic-update-{}.ps1", std::process::id()));
     std::fs::write(&script_path, format!("\u{feff}{script}"))
         .map_err(|e| format!("写入更新脚本失败：{e}"))?;
 
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     if let Err(e) = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+        ])
         .arg(&script_path)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()

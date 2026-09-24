@@ -41,7 +41,11 @@ pub fn parse(text: &str) -> Parsed {
         if times.is_empty() {
             // 无时间标签的内容行（纯文本歌词），元数据行内容通常带冒号被保留——仍展示无妨
             if !content.is_empty() {
-                out.push(LyricLine { time_ms: None, text: content, words: None });
+                out.push(LyricLine {
+                    time_ms: None,
+                    text: content,
+                    words: None,
+                });
             }
         } else {
             let adj = |t: u64| -> u64 {
@@ -50,7 +54,11 @@ pub fn parse(text: &str) -> Parsed {
             };
             let words = words.map(|ws| {
                 ws.into_iter()
-                    .map(|w| Word { start_ms: adj(w.0), end_ms: adj(w.1), text: w.2 })
+                    .map(|w| Word {
+                        start_ms: adj(w.0),
+                        end_ms: adj(w.1),
+                        text: w.2,
+                    })
                     .collect::<Vec<_>>()
             });
             for t in times {
@@ -82,7 +90,7 @@ fn parse_word_tags(s: &str) -> (String, Option<Vec<(u64, u64, String)>>) {
         if s[i..].starts_with('<') {
             if let Some((t, consumed)) = parse_time_prefix(&s[i + 1..]) {
                 let j = i + 1 + consumed; // '>' 之后
-                // 字文本：到下一个 '<' 为止
+                                          // 字文本：到下一个 '<' 为止
                 let k = s[j..].find('<').map(|p| j + p).unwrap_or(s.len());
                 let word = &s[j..k];
                 text.push_str(word);
@@ -233,7 +241,10 @@ mod tests {
         assert_eq!(l.text, "你好呀");
         let ws = l.words.as_ref().expect("words");
         assert_eq!(ws.len(), 3);
-        assert_eq!((ws[0].start_ms, ws[0].end_ms, ws[0].text.as_str()), (1000, 1500, "你"));
+        assert_eq!(
+            (ws[0].start_ms, ws[0].end_ms, ws[0].text.as_str()),
+            (1000, 1500, "你")
+        );
         assert_eq!((ws[1].start_ms, ws[1].end_ms), (1500, 2000));
         assert_eq!(ws[2].end_ms, 2600); // 末尾字 start+600 兜底
     }

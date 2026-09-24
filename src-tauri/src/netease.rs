@@ -71,8 +71,7 @@ fn rsa_encrypt_hex(input: &[u8]) -> Result<String, String> {
     rev.reverse();
     // 文本按十六进制字节解读为大整数，裸 RSA（无填充，与平台约定一致）
     let m_bytes = hex::decode(&hex::encode(&rev)).map_err(|e| e.to_string())?;
-    let e_bytes =
-        hex::decode(WEAPI_RSA_E_HEX).map_err(|e| format!("RSA 指数配置错误: {e}"))?;
+    let e_bytes = hex::decode(WEAPI_RSA_E_HEX).map_err(|e| format!("RSA 指数配置错误: {e}"))?;
     let n_bytes = hex::decode(WEAPI_RSA_N_HEX).map_err(|e| format!("RSA 模数配置错误: {e}"))?;
     let m = BigUint::from_bytes_be(&m_bytes);
     let e = BigUint::from_bytes_be(&e_bytes);
@@ -138,7 +137,11 @@ fn post_form(url: &str, body: &str, music_u: Option<&str>) -> Result<serde_json:
     })
 }
 
-fn weapi_post(path: &str, payload: &str, music_u: Option<&str>) -> Result<serde_json::Value, String> {
+fn weapi_post(
+    path: &str,
+    payload: &str,
+    music_u: Option<&str>,
+) -> Result<serde_json::Value, String> {
     let url = format!("https://music.163.com{path}");
     let body = weapi_body(payload)?;
     post_form(&url, &body, music_u)
@@ -243,7 +246,10 @@ pub fn search(
 ) -> Result<NetSearchResult, String> {
     let keyword = keyword.trim();
     if keyword.is_empty() {
-        return Ok(NetSearchResult { total: 0, songs: vec![] });
+        return Ok(NetSearchResult {
+            total: 0,
+            songs: vec![],
+        });
     }
     let payload = serde_json::json!({
         "s": keyword, "type": 1, "offset": offset,
@@ -464,8 +470,8 @@ pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
     let text = resp
         .into_string()
         .map_err(|e| format!("账号信息读取失败: {e}"))?;
-    let v: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("账号信息解析失败: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("账号信息解析失败: {e}"))?;
     let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(format!("账号信息获取失败（code {code}）"));
@@ -477,7 +483,10 @@ pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
 
 /// 获取登录账号的歌单列表（分页拉全：只取一页的话，超过 60 个歌单的
 /// 账号看不到后面的；“我喜欢的音乐”排在第一个，永远在列表里）
-pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+pub fn user_playlists(
+    uid: i64,
+    music_u: &str,
+) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
     const PAGE: i64 = 60;
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -502,10 +511,18 @@ pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::User
         let got = list.len() as i64;
         for p in list {
             let id = p.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-            let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = p
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let count = p.get("trackCount").and_then(|v| v.as_i64()).unwrap_or(0);
             if id != 0 && !name.is_empty() && seen.insert(id) {
-                out.push(crate::models::UserPlaylistMeta { id, name, track_count: count });
+                out.push(crate::models::UserPlaylistMeta {
+                    id,
+                    name,
+                    track_count: count,
+                });
             }
         }
         if got < PAGE || out.len() >= 2000 {
@@ -521,9 +538,7 @@ pub fn user_playlists(uid: i64, music_u: &str) -> Result<Vec<crate::models::User
 /// 这类大歌单）按 trackIds 用 v3 song/detail 分批补全，最终严格按
 /// trackIds 顺序输出。
 pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> {
-    let url = format!(
-        "https://music.163.com/api/v6/playlist/detail?id={pid}&n=1000&csrf_token="
-    );
+    let url = format!("https://music.163.com/api/v6/playlist/detail?id={pid}&n=1000&csrf_token=");
     let resp = ureq::get(&url)
         .set("Cookie", &cookie_header(Some(music_u)))
         .set("User-Agent", UA)
@@ -534,8 +549,12 @@ pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> 
     let text = resp
         .into_string()
         .map_err(|e| format!("歌单详情读取失败: {e}"))?;
-    let v: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("歌单详情解析失败: {e} | body: {}", text.chars().take(120).collect::<String>()))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "歌单详情解析失败: {e} | body: {}",
+            text.chars().take(120).collect::<String>()
+        )
+    })?;
     let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(format!("获取歌单详情失败（code {code}）"));
@@ -575,14 +594,22 @@ pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> 
     }
     // 缺失的详情分批补全（单批 200 个 id，URL/负载都不会过长；
     // 失败只记日志，已有的部分照常导入）
-    let missing: Vec<i64> = ids.iter().copied().filter(|id| !by_id.contains_key(id)).collect();
+    let missing: Vec<i64> = ids
+        .iter()
+        .copied()
+        .filter(|id| !by_id.contains_key(id))
+        .collect();
     for chunk in missing.chunks(200) {
         let c = chunk
             .iter()
             .map(|id| format!(r#"{{"id":{id}}}"#))
             .collect::<Vec<_>>()
             .join(",");
-        let ids = chunk.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+        let ids = chunk
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         let payload = serde_json::json!({ "c": format!("[{c}]"), "ids": format!("[{ids}]"), "csrf_token": "" })
             .to_string();
         let resp = match weapi_post("/weapi/v3/song/detail", &payload, Some(music_u)) {
@@ -631,11 +658,8 @@ pub fn qr_create() -> Result<(String, String), String> {
         .to_string();
 
     let text = format!("https://music.163.com/login?codekey={unikey}");
-    let code = qrcode::QrCode::with_error_correction_level(
-        text.as_bytes(),
-        qrcode::EcLevel::M,
-    )
-    .map_err(|e| format!("生成二维码失败: {e:?}"))?;
+    let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M)
+        .map_err(|e| format!("生成二维码失败: {e:?}"))?;
     let img = code
         .render::<image::Luma<u8>>()
         .quiet_zone(true)
@@ -682,8 +706,12 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
     let text = resp
         .into_string()
         .map_err(|e| format!("登录响应读取失败: {e}"))?;
-    let json: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("登录响应解析失败: {e} | body: {}", &text.chars().take(120).collect::<String>()))?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "登录响应解析失败: {e} | body: {}",
+            &text.chars().take(120).collect::<String>()
+        )
+    })?;
 
     let code = json.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     let status = match code {
@@ -694,7 +722,12 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
         _ => "waiting",
     };
     if status != "success" {
-        return Ok(QrCheckResult { status: status.into(), nickname: None, music_u: None, user_id: None });
+        return Ok(QrCheckResult {
+            status: status.into(),
+            nickname: None,
+            music_u: None,
+            user_id: None,
+        });
     }
     let music_u = set_cookies
         .iter()
@@ -711,7 +744,12 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
     if music_u.is_none() {
         return Err("登录成功但未取到登录凭证，请重试".into());
     }
-    Ok(QrCheckResult { status: "success".into(), nickname, music_u, user_id })
+    Ok(QrCheckResult {
+        status: "success".into(),
+        nickname,
+        music_u,
+        user_id,
+    })
 }
 
 /// 获取账号“我喜欢”列表的歌曲 ID
@@ -805,10 +843,7 @@ pub fn toplists() -> Result<Vec<NetToplist>, String> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                track_count: t
-                    .get("trackCount")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0),
+                track_count: t.get("trackCount").and_then(|v| v.as_i64()).unwrap_or(0),
             });
         }
     }
@@ -856,10 +891,7 @@ fn personalized_playlists(limit: i64) -> Result<Vec<NetRandomPlaylist>, String> 
                     .and_then(|x| x.as_str())
                     .unwrap_or("")
                     .to_string(),
-                play_count: p
-                    .get("playCount")
-                    .and_then(|x| x.as_f64())
-                    .unwrap_or(0.0) as i64,
+                play_count: p.get("playCount").and_then(|x| x.as_f64()).unwrap_or(0.0) as i64,
                 creator: p
                     .pointer("/creator/nickname")
                     .and_then(|x| x.as_str())
@@ -943,7 +975,11 @@ pub fn daily_recommend(music_u: &str) -> Result<Vec<NetSong>, String> {
         return Err("请先登录网易云账号".into());
     }
     let payload = serde_json::json!({ "csrf_token": "" }).to_string();
-    let resp = weapi_post("/weapi/v3/discovery/recommend/songs", &payload, Some(music_u))?;
+    let resp = weapi_post(
+        "/weapi/v3/discovery/recommend/songs",
+        &payload,
+        Some(music_u),
+    )?;
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(match code {
@@ -954,7 +990,11 @@ pub fn daily_recommend(music_u: &str) -> Result<Vec<NetSong>, String> {
     let songs = resp
         .pointer("/data/dailySongs")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|s| serde_json::from_value::<NetSong>(s.clone()).ok()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| serde_json::from_value::<NetSong>(s.clone()).ok())
+                .collect()
+        })
         .unwrap_or_default();
     Ok(songs)
 }
@@ -976,7 +1016,11 @@ pub fn personal_fm(music_u: &str) -> Result<Vec<NetSong>, String> {
     let songs = resp
         .get("data")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|s| serde_json::from_value::<NetSong>(s.clone()).ok()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| serde_json::from_value::<NetSong>(s.clone()).ok())
+                .collect()
+        })
         .unwrap_or_default();
     Ok(songs)
 }
@@ -1001,12 +1045,22 @@ mod tests {
         assert_eq!(real.len(), 3);
         // 配对规则：元组配它前面的紧邻文本段。行首 (1,270,0) 前无字 =
         // 起拍占位元组，跳过；“词”的真实区间是 (270,270) → 270~540
-        assert_eq!((real[0].start_ms, real[0].end_ms, real[0].text.as_str()), (270, 540, "词"));
-        assert_eq!((real[1].start_ms, real[1].end_ms, real[1].text.as_str()), (540, 810, "版"));
+        assert_eq!(
+            (real[0].start_ms, real[0].end_ms, real[0].text.as_str()),
+            (270, 540, "词")
+        );
+        assert_eq!(
+            (real[1].start_ms, real[1].end_ms, real[1].text.as_str()),
+            (540, 810, "版")
+        );
         // 尾巴字“名”：区间 = 前元组 end(540+270=810) → 行末(1+4890=4891→4.89 粒度)
-        assert_eq!((real[2].start_ms, real[2].end_ms, real[2].text.as_str()), (810, 4890, "名"));
+        assert_eq!(
+            (real[2].start_ms, real[2].end_ms, real[2].text.as_str()),
+            (810, 4890, "名")
+        );
         // 旧格式（每个字都带元组、无尾巴）依然兼容
-        let yrc2 = "[1450,2200]你(1450,300)好(1750,400)呀(2150,500)\n[3650,1800]再(3650,600)见(4250,1200)";
+        let yrc2 =
+            "[1450,2200]你(1450,300)好(1750,400)呀(2150,500)\n[3650,1800]再(3650,600)见(4250,1200)";
         let out2 = crate::lyrics::yrc_to_enhanced_lrc(yrc2).expect("yrc2 parsed");
         let p2 = crate::lyrics::parse(&out2);
         assert_eq!(p2.lines[1].text, "再见");
@@ -1024,7 +1078,12 @@ mod tests {
         for s in &r.songs {
             println!(
                 "  [{}] {} - {} (fee={}, dt={}ms, al={:?})",
-                s.id, s.name, s.artist_str(), s.fee, s.duration_ms(), s.album_name()
+                s.id,
+                s.name,
+                s.artist_str(),
+                s.fee,
+                s.duration_ms(),
+                s.album_name()
             );
         }
         assert!(!r.songs.is_empty(), "search returned no songs");
@@ -1039,15 +1098,27 @@ mod cover_lyric_tests {
     fn test_covers_and_lyric() {
         let r = search("晴天", 5, 0, None).expect("search failed");
         for s in &r.songs {
-            println!("  [{}] {} pic={:?}", s.id, s.name, s.al.pic_url.as_deref().map(|u| &u[..u.len().min(48)]));
+            println!(
+                "  [{}] {} pic={:?}",
+                s.id,
+                s.name,
+                s.al.pic_url.as_deref().map(|u| &u[..u.len().min(48)])
+            );
         }
-        assert!(r.songs.iter().any(|s| s.al.pic_url.is_some()), "no covers resolved");
+        assert!(
+            r.songs.iter().any(|s| s.al.pic_url.is_some()),
+            "no covers resolved"
+        );
 
         // 用有封面核对的第一首验证歌词（匿名即可拿大部分歌词）
         let any_id = r.songs[0].id;
         let lrc = lyric(any_id, None).expect("lyric failed");
         match &lrc {
-            Some(t) => println!("lyric[{}] first 80 chars: {}", any_id, &t.chars().take(80).collect::<String>()),
+            Some(t) => println!(
+                "lyric[{}] first 80 chars: {}",
+                any_id,
+                &t.chars().take(80).collect::<String>()
+            ),
             None => println!("lyric[{}]: none", any_id),
         }
     }
@@ -1062,7 +1133,11 @@ mod playlist_tests {
         // 匿名也能拿公开歌单（用云音乐官方示例歌单 ID）
         let r = playlist_tracks(60198, "");
         match r {
-            Ok(songs) => println!("got {} songs, first: {:?}", songs.len(), songs.first().map(|s| (&s.name, &s.ar))),
+            Ok(songs) => println!(
+                "got {} songs, first: {:?}",
+                songs.len(),
+                songs.first().map(|s| (&s.name, &s.ar))
+            ),
             Err(e) => println!("ERR: {e}"),
         }
     }
@@ -1070,13 +1145,22 @@ mod playlist_tests {
     #[test]
     fn test_toplists_and_random() {
         let tops = toplists().expect("toplists failed");
-        println!("{} toplists, first: {:?}", tops.len(), tops.first().map(|t| (&t.id, &t.name)));
+        println!(
+            "{} toplists, first: {:?}",
+            tops.len(),
+            tops.first().map(|t| (&t.id, &t.name))
+        );
         assert!(!tops.is_empty(), "no toplists");
         let songs = playlist_tracks(tops[0].id, "").expect("toplist tracks failed");
         println!("top {} songs: {}", tops[0].name, songs.len());
         assert!(!songs.is_empty(), "toplist returned no songs");
         let pl = random_playlist("").expect("random playlist failed");
-        println!("random playlist: {} by {} ({} songs)", pl.name, pl.creator, pl.songs.len());
+        println!(
+            "random playlist: {} by {} ({} songs)",
+            pl.name,
+            pl.creator,
+            pl.songs.len()
+        );
         assert!(!pl.songs.is_empty(), "random playlist returned no songs");
     }
 }

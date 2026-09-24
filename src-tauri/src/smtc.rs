@@ -19,10 +19,7 @@ pub enum SmtcMsg {
         pos_ms: u64,
     },
     /// 仅刷新系统浮窗播放进度（播放中由 monitor 周期发送，不重复设置元数据）
-    Position {
-        playing: bool,
-        pos_ms: u64,
-    },
+    Position { playing: bool, pos_ms: u64 },
 }
 
 /// 启动 SMTC（Windows 系统媒体传输控制）线程，返回消息发送端
@@ -93,7 +90,11 @@ fn run(app: AppHandle, rx: Receiver<SmtcMsg>) {
     let mut has_track = false;
     for msg in rx {
         match msg {
-            SmtcMsg::Update { info, playing, pos_ms } => {
+            SmtcMsg::Update {
+                info,
+                playing,
+                pos_ms,
+            } => {
                 has_track = info.is_some();
                 match info {
                     Some(i) => {
@@ -106,9 +107,13 @@ fn run(app: AppHandle, rx: Receiver<SmtcMsg>) {
                         });
                         let pos = MediaPosition(Duration::from_millis(pos_ms));
                         let _ = controls.set_playback(if playing {
-                            MediaPlayback::Playing { progress: Some(pos) }
+                            MediaPlayback::Playing {
+                                progress: Some(pos),
+                            }
                         } else {
-                            MediaPlayback::Paused { progress: Some(pos) }
+                            MediaPlayback::Paused {
+                                progress: Some(pos),
+                            }
                         });
                     }
                     None => {
@@ -121,9 +126,13 @@ fn run(app: AppHandle, rx: Receiver<SmtcMsg>) {
                 if has_track {
                     let pos = MediaPosition(Duration::from_millis(pos_ms));
                     let _ = controls.set_playback(if playing {
-                        MediaPlayback::Playing { progress: Some(pos) }
+                        MediaPlayback::Playing {
+                            progress: Some(pos),
+                        }
                     } else {
-                        MediaPlayback::Paused { progress: Some(pos) }
+                        MediaPlayback::Paused {
+                            progress: Some(pos),
+                        }
                     });
                 }
             }
@@ -143,10 +152,13 @@ fn cover_uri(p: &str, app: &AppHandle) -> Option<String> {
         let _ = std::fs::create_dir_all(&dir);
         let mut h = std::collections::hash_map::DefaultHasher::new();
         p.hash(&mut h);
-        let ext = if p.to_lowercase().contains(".png") { "png" } else { "jpg" };
+        let ext = if p.to_lowercase().contains(".png") {
+            "png"
+        } else {
+            "jpg"
+        };
         let dest = dir.join(format!("{:016x}.{ext}", h.finish()));
-        let missing = !dest.exists()
-            || dest.metadata().map(|m| m.len() == 0).unwrap_or(true);
+        let missing = !dest.exists() || dest.metadata().map(|m| m.len() == 0).unwrap_or(true);
         if missing {
             // 连接与读取分段超时，避免整体超时掐断大封面
             let agent = ureq::AgentBuilder::new()

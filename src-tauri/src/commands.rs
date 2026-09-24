@@ -1,6 +1,6 @@
-use std::io::{Read, Write};
-use serde_json::json;
 use lofty::prelude::*;
+use serde_json::json;
+use std::io::{Read, Write};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db;
@@ -57,7 +57,11 @@ pub async fn add_folder(
 }
 
 #[tauri::command]
-pub async fn remove_folder(state: State<'_, AppState>, app: AppHandle, id: i64) -> Result<(), String> {
+pub async fn remove_folder(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    id: i64,
+) -> Result<(), String> {
     {
         let conn = state.db.lock();
         db::remove_folder(&conn, id);
@@ -99,9 +103,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
 
 /// 枚举输出设备 + 当前生效的设备名
 #[tauri::command]
-pub async fn list_output_devices(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+pub async fn list_output_devices(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let engine = engine_clone(&state);
     let devices = engine.list_output_devices();
     Ok(json!({
@@ -121,11 +123,7 @@ pub async fn set_output_device(
     let pref = name.as_deref().filter(|s| !s.is_empty());
     engine.switch_output_device(pref)?;
     let conn = state.db.lock();
-    db::set_setting(
-        &conn,
-        "output_device",
-        pref.unwrap_or(""),
-    );
+    db::set_setting(&conn, "output_device", pref.unwrap_or(""));
     Ok(())
 }
 
@@ -183,7 +181,10 @@ pub async fn get_lyrics(
         if let Ok(text) = std::fs::read_to_string(&lrc_path) {
             let p = lyrics::parse(&text);
             if !p.lines.is_empty() {
-                return Ok(LyricsPayload { synced: p.synced, lines: p.lines });
+                return Ok(LyricsPayload {
+                    synced: p.synced,
+                    lines: p.lines,
+                });
             }
         }
     }
@@ -194,12 +195,18 @@ pub async fn get_lyrics(
             if let Some(text) = tag.get_string(&lofty::tag::ItemKey::Lyrics) {
                 let p = lyrics::parse(text);
                 if !p.lines.is_empty() {
-                    return Ok(LyricsPayload { synced: p.synced, lines: p.lines });
+                    return Ok(LyricsPayload {
+                        synced: p.synced,
+                        lines: p.lines,
+                    });
                 }
             }
         }
     }
-    Ok(LyricsPayload { synced: false, lines: vec![] })
+    Ok(LyricsPayload {
+        synced: false,
+        lines: vec![],
+    })
 }
 
 // ---------- 喜欢 / 统计 ----------
@@ -220,10 +227,7 @@ pub async fn list_playlists(state: State<'_, AppState>) -> Result<Vec<Playlist>,
 }
 
 #[tauri::command]
-pub async fn create_playlist(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<i64, String> {
+pub async fn create_playlist(state: State<'_, AppState>, name: String) -> Result<i64, String> {
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err("播放列表名称不能为空".into());
@@ -365,7 +369,11 @@ pub async fn play_source(state: State<'_, AppState>, id: i64) -> Result<(), Stri
         kind: "url".into(),
         path: String::new(),
         title: if item.title.is_empty() {
-            item.url.split('/').next_back().unwrap_or("在线音源").to_string()
+            item.url
+                .split('/')
+                .next_back()
+                .unwrap_or("在线音源")
+                .to_string()
         } else {
             item.title.clone()
         },
@@ -436,9 +444,7 @@ pub async fn netease_play(
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
     let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
-        .ok_or_else(|| {
-            "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string()
-        })?;
+        .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
     let quality_label = quality_tag(&ext, br);
     // 记录到“最近播放”（在线曲目元数据轻量入库）
     {
@@ -532,35 +538,37 @@ pub async fn netease_like_list(state: State<'_, AppState>) -> Result<Vec<i64>, S
 }
 
 #[tauri::command]
-pub async fn netease_like(
-    state: State<'_, AppState>,
-    id: i64,
-    like: bool,
-) -> Result<(), String> {
+pub async fn netease_like(state: State<'_, AppState>, id: i64, like: bool) -> Result<(), String> {
     let music_u = netease_cookie(&state).ok_or("未登录网易云账号")?;
     crate::netease::like(id, like, &music_u)
 }
 
 #[tauri::command]
-pub async fn netease_lyric(
-    state: State<'_, AppState>,
-    id: i64,
-) -> Result<LyricsPayload, String> {
+pub async fn netease_lyric(state: State<'_, AppState>, id: i64) -> Result<LyricsPayload, String> {
     let music_u = netease_cookie(&state);
     // 优先逐字歌词（yrc）：染色推进贴合实际演唱节奏；无则回落行级
     if let Ok(Some(enhanced)) = crate::netease::lyric_yrc(id, music_u.as_deref()) {
         let p = lyrics::parse(&enhanced);
         if p.synced {
-            return Ok(LyricsPayload { synced: p.synced, lines: p.lines });
+            return Ok(LyricsPayload {
+                synced: p.synced,
+                lines: p.lines,
+            });
         }
     }
     let lrc = crate::netease::lyric(id, music_u.as_deref())?;
     let text = lrc.unwrap_or_default();
     if text.is_empty() {
-        return Ok(LyricsPayload { synced: false, lines: vec![] });
+        return Ok(LyricsPayload {
+            synced: false,
+            lines: vec![],
+        });
     }
     let p = lyrics::parse(&text);
-    Ok(LyricsPayload { synced: p.synced, lines: p.lines })
+    Ok(LyricsPayload {
+        synced: p.synced,
+        lines: p.lines,
+    })
 }
 
 #[tauri::command]
@@ -608,26 +616,26 @@ fn qq_credential(state: &State<AppState>) -> Result<(String, String), String> {
 }
 
 #[tauri::command]
-pub async fn qq_search(
-    keyword: String,
-    page: Option<i64>,
-) -> Result<serde_json::Value, String> {
+pub async fn qq_search(keyword: String, page: Option<i64>) -> Result<serde_json::Value, String> {
     let songs = crate::qq::search(&keyword, 30, page.unwrap_or(1))?;
     Ok(json!({ "songs": songs }))
 }
 
 #[tauri::command]
-pub async fn qq_play(
-    state: State<'_, AppState>,
-    track: QqPlayReq,
-) -> Result<(), String> {
+pub async fn qq_play(state: State<'_, AppState>, track: QqPlayReq) -> Result<(), String> {
     let (musicid, musickey) = qq_credential(&state)?;
     let quality = {
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
-    let (url, ext) =
-        crate::qq::song_url(&track.songmid, &track.media_mid, &musicid, &musickey, &quality, track.vip)?;
+    let (url, ext) = crate::qq::song_url(
+        &track.songmid,
+        &track.media_mid,
+        &musicid,
+        &musickey,
+        &quality,
+        track.vip,
+    )?;
     let quality_label = quality_tag(&ext, if quality == "standard" { 128 } else { 320 });
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
     let cover = {
@@ -677,22 +685,34 @@ pub async fn qq_play(
 }
 
 #[tauri::command]
-pub async fn qq_lyric(state: State<'_, AppState>, songmid: String) -> Result<LyricsPayload, String> {
+pub async fn qq_lyric(
+    state: State<'_, AppState>,
+    songmid: String,
+) -> Result<LyricsPayload, String> {
     // 优先逐字歌词（QRC，需登录）；失败回落匿名行级接口
     if let Ok((musicid, musickey)) = qq_credential(&state) {
         if let Ok(Some(enhanced)) = crate::qq::lyric_qrc(&songmid, &musicid, &musickey) {
             let p = lyrics::parse(&enhanced);
             if p.synced {
-                return Ok(LyricsPayload { synced: p.synced, lines: p.lines });
+                return Ok(LyricsPayload {
+                    synced: p.synced,
+                    lines: p.lines,
+                });
             }
         }
     }
     let text = crate::qq::lyric(&songmid)?.unwrap_or_default();
     if text.is_empty() {
-        return Ok(LyricsPayload { synced: false, lines: vec![] });
+        return Ok(LyricsPayload {
+            synced: false,
+            lines: vec![],
+        });
     }
     let p = lyrics::parse(&text);
-    Ok(LyricsPayload { synced: p.synced, lines: p.lines })
+    Ok(LyricsPayload {
+        synced: p.synced,
+        lines: p.lines,
+    })
 }
 
 // ---------- 酷狗音乐在线曲库（匿名，免登录） ----------
@@ -716,10 +736,7 @@ pub struct KgPlayReq {
 }
 
 #[tauri::command]
-pub async fn kugou_search(
-    keyword: String,
-    page: Option<i64>,
-) -> Result<serde_json::Value, String> {
+pub async fn kugou_search(keyword: String, page: Option<i64>) -> Result<serde_json::Value, String> {
     let songs = crate::kugou::search(&keyword, page.unwrap_or(1))?;
     Ok(json!({ "songs": songs }))
 }
@@ -733,7 +750,11 @@ pub async fn kugou_play(state: State<'_, AppState>, track: KgPlayReq) -> Result<
         let conn = state.db.lock();
         db::get_online_cover(&conn, "kugou", &track.hash).unwrap_or_default()
     };
-    let cover = if cover.is_empty() { track.cover.clone() } else { cover };
+    let cover = if cover.is_empty() {
+        track.cover.clone()
+    } else {
+        cover
+    };
     let info = TrackInfo {
         id: None,
         kind: "kugou".into(),
@@ -768,16 +789,27 @@ pub async fn kugou_play(state: State<'_, AppState>, track: KgPlayReq) -> Result<
 }
 
 #[tauri::command]
-pub async fn kugou_lyric(state: State<'_, AppState>, hash: String) -> Result<LyricsPayload, String> {
+pub async fn kugou_lyric(
+    state: State<'_, AppState>,
+    hash: String,
+) -> Result<LyricsPayload, String> {
     // 入库时已记录的酷狗歌词直接走远端；本地缓存散布在播放缓存之外，简化为直取
     let _ = &state;
     let text = crate::kugou::lyric(&hash)?;
     let text = match text {
         Some(t) if !t.is_empty() => t,
-        _ => return Ok(LyricsPayload { synced: false, lines: vec![] }),
+        _ => {
+            return Ok(LyricsPayload {
+                synced: false,
+                lines: vec![],
+            })
+        }
     };
     let p = lyrics::parse(&text);
-    Ok(LyricsPayload { synced: p.synced, lines: p.lines })
+    Ok(LyricsPayload {
+        synced: p.synced,
+        lines: p.lines,
+    })
 }
 
 #[tauri::command]
@@ -881,9 +913,7 @@ pub async fn netease_daily_recommend(
 }
 
 #[tauri::command]
-pub async fn netease_personal_fm(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+pub async fn netease_personal_fm(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
     let songs = crate::netease::personal_fm(&music_u)?;
     Ok(json!({ "songs": songs }))
@@ -989,7 +1019,10 @@ pub async fn download_online(
     };
     let (url, ext) = match req.kind.as_str() {
         "netease" => {
-            let id: i64 = req.id.parse().map_err(|_| "网易云歌曲 ID 无效".to_string())?;
+            let id: i64 = req
+                .id
+                .parse()
+                .map_err(|_| "网易云歌曲 ID 无效".to_string())?;
             let music_u = netease_cookie(&state);
             let (u, _br, ext) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
                 .ok_or("该歌曲暂无可播放链接")?;
@@ -997,14 +1030,8 @@ pub async fn download_online(
         }
         "qq" => {
             let (musicid, musickey) = qq_credential(&state)?;
-            let (u, ext) = crate::qq::song_url(
-                &req.id,
-                &req.media_mid,
-                &musicid,
-                &musickey,
-                &quality,
-                true,
-            )?;
+            let (u, ext) =
+                crate::qq::song_url(&req.id, &req.media_mid, &musicid, &musickey, &quality, true)?;
             (u, ext)
         }
         "kugou" => crate::kugou::song_url(&req.id, true)?,
@@ -1017,7 +1044,11 @@ pub async fn download_online(
     let artist = sanitize_filename(&req.artist);
     let name = format!(
         "{} - {}.{}",
-        if artist.is_empty() { "Unknown" } else { &artist },
+        if artist.is_empty() {
+            "Unknown"
+        } else {
+            &artist
+        },
         sanitize_filename(&title),
         ext
     );
@@ -1032,7 +1063,9 @@ pub async fn download_online(
     // 分块读取并回报进度（download://progress 驱动进度条；无 content-length 时 pct 为 0）
     let dl = (|| -> Result<(), String> {
         loop {
-            let n = reader.read(&mut buf).map_err(|e| format!("下载失败: {e}"))?;
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| format!("下载失败: {e}"))?;
             if n == 0 {
                 break;
             }
@@ -1059,7 +1092,10 @@ pub async fn download_online(
     if let Err(e) = dl {
         // 已发过进度则先清掉进度条；错误提示由命令返回值统一 toast，避免重复弹窗
         if emitted {
-            let _ = app.emit("download://progress", json!({ "url": &title, "done": true }));
+            let _ = app.emit(
+                "download://progress",
+                json!({ "url": &title, "done": true }),
+            );
         }
         return Err(e);
     }
@@ -1079,7 +1115,14 @@ pub async fn download_online(
         "qq" => crate::qq::lyric(&req.id).ok().flatten(),
         _ => None,
     };
-    write_tags(&dest, &title, &req.artist, &req.album, &req.cover_url, lyrics.as_deref());
+    write_tags(
+        &dest,
+        &title,
+        &req.artist,
+        &req.album,
+        &req.cover_url,
+        lyrics.as_deref(),
+    );
 
     // 4) 解析入库 + 标记已下载 + 保存目录纳入扫描
     let mut track = crate::library::parse_track(&dest, &state.app_data).ok_or("解析歌曲失败")?;
@@ -1377,7 +1420,7 @@ pub async fn netease_user_playlists(
 pub async fn netease_import_playlist(
     state: State<'_, AppState>,
     remote_pid: i64, // 网易云歌单 ID
-    name: String, // 歌单名（前端传入；新建/同名匹配用）
+    name: String,    // 歌单名（前端传入；新建/同名匹配用）
 ) -> Result<(i64, i64), String> {
     let music_u = {
         let conn = state.db.lock();
@@ -1389,15 +1432,11 @@ pub async fn netease_import_playlist(
     let songs = crate::netease::playlist_tracks(remote_pid, &music_u)?;
     let (list_id, added) = {
         let conn = state.db.lock();
-        let pid = match db::find_playlist_by_remote(
-            &conn,
-            "netease",
-            &remote_pid.to_string(),
-            &name,
-        ) {
-            Some(id) => id,
-            None => db::create_playlist(&conn, &name)?,
-        };
+        let pid =
+            match db::find_playlist_by_remote(&conn, "netease", &remote_pid.to_string(), &name) {
+                Some(id) => id,
+                None => db::create_playlist(&conn, &name)?,
+            };
         db::set_playlist_remote(&conn, pid, "netease", &remote_pid.to_string());
         // 记录原始导入名：改名后重导入仍能认出（配合 remote id 兜底）
         db::set_playlist_origin(&conn, pid, &name);
@@ -1446,16 +1485,15 @@ pub async fn qq_import_playlist(
         let conn = state.db.lock();
         db::get_setting(&conn, "qq_encrypt_uin").unwrap_or_default()
     };
-    let songs =
-        crate::qq::playlist_tracks(remote_pid, &musicid, &musickey, &crate::qq::encrypt_uin_of(&musicid, &stored_euin))?;
+    let songs = crate::qq::playlist_tracks(
+        remote_pid,
+        &musicid,
+        &musickey,
+        &crate::qq::encrypt_uin_of(&musicid, &stored_euin),
+    )?;
     let (list_id, added) = {
         let conn = state.db.lock();
-        let pid = match db::find_playlist_by_remote(
-            &conn,
-            "qq",
-            &remote_pid.to_string(),
-            &name,
-        ) {
+        let pid = match db::find_playlist_by_remote(&conn, "qq", &remote_pid.to_string(), &name) {
             Some(id) => id,
             None => db::create_playlist(&conn, &name)?,
         };
@@ -1490,12 +1528,13 @@ pub async fn qq_import_playlist(
 
 /// WASAPI 独占模式开关（切换后下一首生效）
 #[tauri::command]
-pub async fn set_wasapi_exclusive(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<(), String> {
+pub async fn set_wasapi_exclusive(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     let conn = state.db.lock();
-    db::set_setting(&conn, "wasapi_exclusive", if enabled { "true" } else { "false" });
+    db::set_setting(
+        &conn,
+        "wasapi_exclusive",
+        if enabled { "true" } else { "false" },
+    );
     drop(conn);
     state.engine.lock().set_exclusive_enabled(enabled);
     Ok(())
@@ -1613,8 +1652,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
     let cache_limit: u64 = db::get_setting(&conn, "cache_limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2 * 1024 * 1024 * 1024);
-    let close_action =
-        db::get_setting(&conn, "close_action").unwrap_or_else(|| "tray".to_string());
+    let close_action = db::get_setting(&conn, "close_action").unwrap_or_else(|| "tray".to_string());
     let auto_update = db::get_setting(&conn, "auto_update")
         .map(|s| s != "false")
         .unwrap_or(true);
@@ -1658,10 +1696,7 @@ pub async fn cache_stats(state: State<'_, AppState>) -> Result<serde_json::Value
 
 /// 设置缓存上限（bytes，0 = 不限制）；超限立即 LRU 清理
 #[tauri::command]
-pub async fn set_cache_limit(
-    state: State<'_, AppState>,
-    bytes: u64,
-) -> Result<(), String> {
+pub async fn set_cache_limit(state: State<'_, AppState>, bytes: u64) -> Result<(), String> {
     {
         let conn = state.db.lock();
         db::set_setting(&conn, "cache_limit", &bytes.to_string());
@@ -1684,9 +1719,7 @@ pub async fn get_app_info(
 // ---------- 封面取色（服务端，绕过 QQ 封面域无 CORS 的限制） ----------
 
 #[tauri::command]
-pub async fn extract_cover_palette(
-    url: String,
-) -> Result<Vec<String>, String> {
+pub async fn extract_cover_palette(url: String) -> Result<Vec<String>, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Ok(vec![]);
     }
@@ -1711,7 +1744,11 @@ pub async fn extract_cover_palette(
     let mut buckets: std::collections::BTreeMap<i64, (f64, f64, f64, f64)> =
         std::collections::BTreeMap::new();
     for p in rgb.pixels() {
-        let (r, g, b) = (p[0] as f64 / 255.0, p[1] as f64 / 255.0, p[2] as f64 / 255.0);
+        let (r, g, b) = (
+            p[0] as f64 / 255.0,
+            p[1] as f64 / 255.0,
+            p[2] as f64 / 255.0,
+        );
         let max = r.max(g).max(b);
         let min = r.min(g).min(b);
         let lum = r * 0.3 + g * 0.6 + b * 0.1;
@@ -1950,12 +1987,10 @@ pub async fn download_update(
     size: u64,
 ) -> Result<String, String> {
     // 下载可能持续数分钟：放到阻塞线程池，避免占用异步运行时
-    tauri::async_runtime::spawn_blocking(move || {
-        updater::download(&app, &url, &name, size)
-    })
-    .await
-    .map_err(|e| format!("下载任务失败：{e}"))?
-    .map(|p| p.to_string_lossy().to_string())
+    tauri::async_runtime::spawn_blocking(move || updater::download(&app, &url, &name, size))
+        .await
+        .map_err(|e| format!("下载任务失败：{e}"))?
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 /// 取消进行中的下载

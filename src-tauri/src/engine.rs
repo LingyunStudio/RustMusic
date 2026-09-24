@@ -7,16 +7,16 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
-use parking_lot::RwLock;
 use lofty::prelude::*;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use parking_lot::RwLock;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::eq::{EqShared, EqSource};
-use crate::wasapi_out;
 use crate::smtc::SmtcMsg;
+use crate::wasapi_out;
 
 #[derive(Clone, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -128,9 +128,8 @@ impl Engine {
         if let Ok(rd) = std::fs::read_dir(&downloads_dir) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
-                let recognized = name.starts_with("net-")
-                    || name.starts_with("qq-")
-                    || name.starts_with("url-");
+                let recognized =
+                    name.starts_with("net-") || name.starts_with("qq-") || name.starts_with("url-");
                 if !recognized {
                     let _ = std::fs::remove_file(e.path());
                 }
@@ -166,9 +165,7 @@ impl Engine {
     /// 按设备偏好创建输出流与 Sink；None = 系统默认设备。
     /// cpal Stream 非 Send/Sync：泄漏保活整个进程周期（与旧实现一致），
     /// 设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
-    fn build_output(
-        pref: Option<&str>,
-    ) -> Result<(&'static OutputStreamHandle, Sink), String> {
+    fn build_output(pref: Option<&str>) -> Result<(&'static OutputStreamHandle, Sink), String> {
         let host = rodio::cpal::default_host();
         let device = match pref {
             Some(name) => host
@@ -345,12 +342,8 @@ impl Engine {
                 .map_err(|e| format!("无法解码该音频文件: {e}"))?
                 .convert_samples::<f32>()
                 .skip_duration(Duration::from_millis(skip_ms));
-            let wrapped = EqSource::with_base(
-                src,
-                self.eq.clone(),
-                self.pos_ms.clone(),
-                skip_ms as f64,
-            );
+            let wrapped =
+                EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), skip_ms as f64);
             let params = wasapi_out::ExclusiveParams {
                 device_pref: self.device_pref.read().clone(),
                 channels: wrapped.channels() as usize,
@@ -368,8 +361,7 @@ impl Engine {
             self.shared_broken.store(true, Ordering::Relaxed);
             self.sink.read().clear();
             self.pos_ms.store(skip_ms, Ordering::Relaxed);
-            self.dur_ms
-                .store(info.duration_ms, Ordering::Relaxed);
+            self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
             self.user_paused.store(false, Ordering::Relaxed);
             self.stopped.store(false, Ordering::Relaxed);
             Ok(())
@@ -382,7 +374,11 @@ impl Engine {
             let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
             let _ = self.app.emit(
                 "player://state",
-                PlayState { playing: true, info, seq },
+                PlayState {
+                    playing: true,
+                    info,
+                    seq,
+                },
             );
         }
         result
@@ -422,8 +418,7 @@ impl Engine {
         let diag_ch = wrapped.channels();
         let diag_dur = wrapped.total_duration();
         self.pos_ms.store(0, Ordering::Relaxed);
-        self.dur_ms
-            .store(info.duration_ms, Ordering::Relaxed);
+        self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
         // 换曲瞬间 sink 短暂为空，置位避免 monitor 采样到 empty 误判"播完"
         self.switching.store(true, Ordering::Relaxed);
         let sink = self.sink.read();
@@ -431,7 +426,11 @@ impl Engine {
         sink.append(wrapped);
         drop(sink);
         self.switching.store(false, Ordering::Relaxed);
-        sink_play_common(&self.sink, self.volume.load(Ordering::Relaxed), self.speed.load(Ordering::Relaxed));
+        sink_play_common(
+            &self.sink,
+            self.volume.load(Ordering::Relaxed),
+            self.speed.load(Ordering::Relaxed),
+        );
         self.user_paused.store(false, Ordering::Relaxed);
         self.stopped.store(false, Ordering::Relaxed);
         #[cfg(debug_assertions)]
@@ -444,7 +443,11 @@ impl Engine {
         let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
         let _ = self.app.emit(
             "player://state",
-            PlayState { playing: true, info, seq },
+            PlayState {
+                playing: true,
+                info,
+                seq,
+            },
         );
         Ok(())
     }
@@ -590,8 +593,7 @@ impl Engine {
             .map_err(|e| format!("重新解码失败: {e}"))?
             .convert_samples::<f32>()
             .skip_duration(Duration::from_millis(ms));
-        let wrapped =
-            EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64);
+        let wrapped = EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64);
         self.pos_ms.store(ms, Ordering::Relaxed);
         self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
         let sink = self.sink.read();
@@ -654,9 +656,11 @@ impl Engine {
 
     /// WASAPI 独占模式开关（设置项；切换后下一首生效）
     pub fn set_exclusive_enabled(&self, enabled: bool) {
-        self.exclusive_enabled
-            .store(enabled, Ordering::Relaxed);
-        eprintln!("[engine] WASAPI 独占模式 = {}", if enabled { "开" } else { "关" });
+        self.exclusive_enabled.store(enabled, Ordering::Relaxed);
+        eprintln!(
+            "[engine] WASAPI 独占模式 = {}",
+            if enabled { "开" } else { "关" }
+        );
     }
 
     fn emit_state(&self, playing: bool) {
@@ -709,7 +713,7 @@ impl Engine {
         });
     }
 
-/// 仅刷新系统媒体浮窗进度（播放中由 monitor 周期调用，不重复设置元数据）
+    /// 仅刷新系统媒体浮窗进度（播放中由 monitor 周期调用，不重复设置元数据）
     pub fn notify_smtc_pos(&self) {
         if self.current.read().is_none() {
             return;
@@ -769,7 +773,13 @@ impl Engine {
         let q = info
             .quality
             .as_deref()
-            .map(|q| if q.eq_ignore_ascii_case("flac") { "flac".to_string() } else { q.replace([' ', 'k'], "") })
+            .map(|q| {
+                if q.eq_ignore_ascii_case("flac") {
+                    "flac".to_string()
+                } else {
+                    q.replace([' ', 'k'], "")
+                }
+            })
             .unwrap_or_else(|| "d".into());
         let key = match (info.kind.as_str(), info.nid, info.qid.as_deref()) {
             ("netease", Some(nid), _) => format!("net-{nid}-{q}"),
@@ -875,9 +885,7 @@ impl Engine {
                     continue;
                 }
                 let Ok(meta) = e.metadata() else { continue };
-                let mtime = meta
-                    .modified()
-                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                 out.push((p, meta.len(), mtime));
             }
         }
@@ -1058,10 +1066,7 @@ fn download_to(app: &AppHandle, url: &str, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn db_lookup_source(
-    conn: &rusqlite::Connection,
-    url: &str,
-) -> Option<(i64, String)> {
+fn db_lookup_source(conn: &rusqlite::Connection, url: &str) -> Option<(i64, String)> {
     conn.query_row(
         "SELECT id, title FROM sources WHERE url = ?1",
         rusqlite::params![url],

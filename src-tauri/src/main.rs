@@ -93,12 +93,10 @@ fn suspend_main_webview(app: &AppHandle) {
             };
             // IsVisible=false 是 TrySuspend 的前置条件
             let _ = controller.SetIsVisible(false);
-            let handler = webview2_com::TrySuspendCompletedHandler::create(Box::new(
-                |hr, ok| {
-                    eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
-                    Ok(())
-                },
-            ));
+            let handler = webview2_com::TrySuspendCompletedHandler::create(Box::new(|hr, ok| {
+                eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
+                Ok(())
+            }));
             if let Err(e) = cwv3.TrySuspend(&handler) {
                 eprintln!("[webview] 挂起失败: {e}");
             }
@@ -246,9 +244,7 @@ fn device_watcher(app: AppHandle) {
         if let Some(pref) = eng.device_preference() {
             let still_there = rodio::cpal::default_host()
                 .output_devices()
-                .map(|mut ds| {
-                    ds.any(|d| d.name().ok().as_deref() == Some(pref.as_str()))
-                })
+                .map(|mut ds| ds.any(|d| d.name().ok().as_deref() == Some(pref.as_str())))
                 .unwrap_or(false);
             if still_there {
                 continue;
@@ -408,10 +404,7 @@ fn main() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
-            let app_data = handle
-                .path()
-                .app_data_dir()
-                .map_err(|e| e.to_string())?;
+            let app_data = handle.path().app_data_dir().map_err(|e| e.to_string())?;
             std::fs::create_dir_all(app_data.join("covers")).map_err(|e| e.to_string())?;
             std::fs::create_dir_all(app_data.join("downloads")).map_err(|e| e.to_string())?;
 
@@ -464,8 +457,7 @@ fn main() {
 
             // 恢复保存的输出设备偏好（空 = 跟随系统默认）
             {
-                let pref = db::get_setting(&conn, "output_device")
-                    .filter(|s| !s.is_empty());
+                let pref = db::get_setting(&conn, "output_device").filter(|s| !s.is_empty());
                 if let Some(name) = pref {
                     if let Err(e) = eng.switch_output_device(Some(&name)) {
                         // 设备已不存在：回落默认并在日志说明
@@ -479,7 +471,9 @@ fn main() {
                 engine: Mutex::new(eng),
                 app_data: app_data.clone(),
                 webview_suspended: AtomicBool::new(false),
-                scan_last: Mutex::new(serde_json::json!({ "active": false, "done": 0, "total": 0 })),
+                scan_last: Mutex::new(
+                    serde_json::json!({ "active": false, "done": 0, "total": 0 }),
+                ),
             });
 
             let mhandle = handle.clone();

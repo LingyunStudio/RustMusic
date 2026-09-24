@@ -547,4 +547,3 @@ fn format_timestamp(ms: i64) -> String {
     let hundredths = (ms % 1000) / 10;
     format!("{:02}:{:02}.{:02}", mins, secs, hundredths)
 }
-

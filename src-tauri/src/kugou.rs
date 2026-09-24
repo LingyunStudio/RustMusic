@@ -133,22 +133,18 @@ pub fn song_url(hash: &str, vip: bool) -> Result<(String, String), String> {
     if play_url.is_empty() {
         let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("");
         let privilege = v.get("privilege").and_then(|p| p.as_i64()).unwrap_or(0);
-        return Err(
-            if err.contains("付费") || privilege == 10 || vip {
-                "该曲目需要酷狗 VIP 或付费购买".into()
-            } else {
-                "该歌曲在酷狗暂无可播放链接（可能已下架）".into()
-            },
-        );
+        return Err(if err.contains("付费") || privilege == 10 || vip {
+            "该曲目需要酷狗 VIP 或付费购买".into()
+        } else {
+            "该歌曲在酷狗暂无可播放链接（可能已下架）".into()
+        });
     }
     // 直链一般无扩展名，从路径里找；找不到按 mp3（匿名直链恒为有损档）
     let path = play_url.split('?').next().unwrap_or("");
     let ext = path
         .rsplit('.')
         .next()
-        .filter(|e| {
-            e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric())
-        })
+        .filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric()))
         .unwrap_or("mp3")
         .to_lowercase();
     Ok((play_url, ext))
@@ -170,7 +166,10 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
         .ok_or_else(|| "no candidates".to_string());
     let (id, accesskey) = match cand {
         Ok(c) => (
-            c.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            c.get("id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
             c.get("accesskey")
                 .and_then(|x| x.as_str())
                 .unwrap_or("")

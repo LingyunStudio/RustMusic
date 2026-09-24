@@ -27,8 +27,7 @@ impl EqShared {
 
     pub fn set(&self, gains: [f32; 10], enabled: bool) {
         *self.gains.write() = gains;
-        self.enabled
-            .store(enabled, Ordering::Relaxed);
+        self.enabled.store(enabled, Ordering::Relaxed);
         self.version.fetch_add(1, Ordering::Relaxed);
     }
 }

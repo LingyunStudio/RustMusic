@@ -167,10 +167,7 @@ pub fn migrate(conn: &Connection) {
         "sort_pos",
         "ALTER TABLE playlists ADD COLUMN sort_pos INTEGER NOT NULL DEFAULT 0",
     );
-    let _ = conn.execute(
-        "UPDATE playlists SET sort_pos = id WHERE sort_pos = 0",
-        [],
-    );
+    let _ = conn.execute("UPDATE playlists SET sort_pos = id WHERE sort_pos = 0", []);
     // playlist_tracks 旧主键 (playlist_id, track_id) 会吞掉同列表的多个在线条目
     // （track_id 恒为 0），检测旧结构并重建为 (playlist_id, kind, online_id, track_id)
     let old_pk: Option<String> = conn
@@ -258,21 +255,29 @@ pub fn list_folders(conn: &Connection) -> Vec<Folder> {
         Err(_) => return vec![],
     };
     stmt.query_map([], |r| {
-        Ok(Folder { id: r.get(0)?, path: r.get(1)? })
+        Ok(Folder {
+            id: r.get(0)?,
+            path: r.get(1)?,
+        })
     })
     .map(|rows| rows.filter_map(|r| r.ok()).collect())
     .unwrap_or_default()
 }
 
 pub fn add_folder(conn: &Connection, path: &str) -> Result<i64, String> {
-    conn.execute("INSERT OR IGNORE INTO folders(path) VALUES(?1)", params![path])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR IGNORE INTO folders(path) VALUES(?1)",
+        params![path],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
 
 pub fn remove_folder(conn: &Connection, id: i64) {
     let path: Option<String> = conn
-        .query_row("SELECT path FROM folders WHERE id = ?1", params![id], |r| r.get(0))
+        .query_row("SELECT path FROM folders WHERE id = ?1", params![id], |r| {
+            r.get(0)
+        })
         .optional()
         .ok()
         .flatten();
@@ -345,34 +350,19 @@ pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, folder_prefixes
     let stale: Vec<String> = track_paths(conn)
         .into_iter()
         .map(|(p, _, _)| p)
-        .filter(|p| {
-            !seen.contains(p)
-                && folder_prefixes
-                    .iter()
-                    .any(|f| p.starts_with(f.as_str()))
-        })
+        .filter(|p| !seen.contains(p) && folder_prefixes.iter().any(|f| p.starts_with(f.as_str())))
         .collect();
     for p in &stale {
-        let _ = conn.execute(
-            "UPDATE tracks SET missing = 1 WHERE path = ?1",
-            params![p],
-        );
+        let _ = conn.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![p]);
     }
     // 目录重新添加/文件回归：复活对应记录
     let revived: Vec<String> = seen
         .iter()
-        .filter(|p| {
-            folder_prefixes
-                .iter()
-                .any(|f| p.starts_with(f.as_str()))
-        })
+        .filter(|p| folder_prefixes.iter().any(|f| p.starts_with(f.as_str())))
         .cloned()
         .collect();
     for p in &revived {
-        let _ = conn.execute(
-            "UPDATE tracks SET missing = 0 WHERE path = ?1",
-            params![p],
-        );
+        let _ = conn.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", params![p]);
     }
 }
 
@@ -451,9 +441,11 @@ pub fn get_track_path(conn: &Connection, id: i64) -> Option<String> {
 
 pub fn get_lrc_path(conn: &Connection, id: i64) -> Option<String> {
     let v: Option<String> = conn
-        .query_row("SELECT lrc_path FROM tracks WHERE id = ?1", params![id], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT lrc_path FROM tracks WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
         .optional()
         .ok()
         .flatten();
@@ -601,7 +593,10 @@ pub fn set_playlist_origin(conn: &Connection, id: i64, name: &str) {
 
 pub fn delete_playlist(conn: &Connection, id: i64) {
     let _ = conn.execute("DELETE FROM playlists WHERE id = ?1", params![id]);
-    let _ = conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?1", params![id]);
+    let _ = conn.execute(
+        "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+        params![id],
+    );
 }
 
 /// 重命名播放列表。远程导入的列表若还没记录原始导入名，先以当前名
@@ -661,12 +656,18 @@ pub fn remove_from_playlist(conn: &Connection, pid: i64, tid: i64) {
 // ---------- sources ----------
 
 pub fn list_sources(conn: &Connection) -> Vec<SourceItem> {
-    let mut stmt = match conn.prepare("SELECT id, url, title, created_at FROM sources ORDER BY id DESC") {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
+    let mut stmt =
+        match conn.prepare("SELECT id, url, title, created_at FROM sources ORDER BY id DESC") {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
     stmt.query_map([], |r| {
-        Ok(SourceItem { id: r.get(0)?, url: r.get(1)?, title: r.get(2)?, created_at: r.get(3)? })
+        Ok(SourceItem {
+            id: r.get(0)?,
+            url: r.get(1)?,
+            title: r.get(2)?,
+            created_at: r.get(3)?,
+        })
     })
     .map(|rows| rows.filter_map(|r| r.ok()).collect())
     .unwrap_or_default()
@@ -704,7 +705,10 @@ pub fn get_source(conn: &Connection, id: i64) -> Option<SourceItem> {
 }
 
 pub fn update_source_title(conn: &Connection, id: i64, title: &str) {
-    let _ = conn.execute("UPDATE sources SET title = ?2 WHERE id = ?1", params![id, title]);
+    let _ = conn.execute(
+        "UPDATE sources SET title = ?2 WHERE id = ?1",
+        params![id, title],
+    );
 }
 
 pub fn now_secs() -> i64 {
@@ -740,7 +744,18 @@ pub fn upsert_online_track(
 
 /// 记录在线曲目播放（未入库的自动补录元数据，供“最近播放”显示）；
 /// INSERT OR IGNORE：已存在（如之前收藏过）不覆盖其 vip/封面等元数据
-pub fn record_play_online(conn: &Connection, kind: &str, rid: &str, title: &str, artist: &str, album: &str, cover: &str, duration_ms: i64, media_mid: &str, vip: bool) {
+pub fn record_play_online(
+    conn: &Connection,
+    kind: &str,
+    rid: &str,
+    title: &str,
+    artist: &str,
+    album: &str,
+    cover: &str,
+    duration_ms: i64,
+    media_mid: &str,
+    vip: bool,
+) {
     let _ = conn.execute(
         "INSERT OR IGNORE INTO online_tracks(kind, rid, title, artist, album, cover, duration_ms, media_mid, vip)
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
@@ -863,7 +878,13 @@ pub fn playlist_entries(conn: &Connection, pid: i64) -> Vec<PlaylistEntryRow> {
 
 /// 追加条目到播放列表末尾；已存在（主键冲突）时跳过。
 /// 返回是否真的新增（导入合并时的“新增 N 首”计数用）
-pub fn add_playlist_entry(conn: &Connection, pid: i64, kind: &str, track_id: i64, online_id: &str) -> bool {
+pub fn add_playlist_entry(
+    conn: &Connection,
+    pid: i64,
+    kind: &str,
+    track_id: i64,
+    online_id: &str,
+) -> bool {
     let pos: i64 = conn
         .query_row(
             "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
@@ -880,7 +901,10 @@ pub fn add_playlist_entry(conn: &Connection, pid: i64, kind: &str, track_id: i64
 }
 
 pub fn remove_playlist_entry(conn: &Connection, rowid: i64) {
-    let _ = conn.execute("DELETE FROM playlist_tracks WHERE rowid = ?1", params![rowid]);
+    let _ = conn.execute(
+        "DELETE FROM playlist_tracks WHERE rowid = ?1",
+        params![rowid],
+    );
 }
 
 // ---------- 在线喜欢（轻量引用，不下载） ----------
@@ -1085,9 +1109,31 @@ mod migration_tests {
         )
         .unwrap();
         // 2) 旧库里的既有数据：导入过歌单的在线条目 + 本地曲目
-        upsert_online_track(&conn, "qq", "001Song", "歌 A", "歌手", "专辑", "http://c/1.jpg", 200000, "M001", true);
+        upsert_online_track(
+            &conn,
+            "qq",
+            "001Song",
+            "歌 A",
+            "歌手",
+            "专辑",
+            "http://c/1.jpg",
+            200000,
+            "M001",
+            true,
+        );
         add_online_to_playlist(&conn, 1, "qq", "001Song").unwrap();
-        upsert_online_track(&conn, "netease", "101Song", "歌 B", "歌手", "专辑", "http://c/2.jpg", 180000, "", false);
+        upsert_online_track(
+            &conn,
+            "netease",
+            "101Song",
+            "歌 B",
+            "歌手",
+            "专辑",
+            "http://c/2.jpg",
+            180000,
+            "",
+            false,
+        );
         add_online_to_playlist(&conn, 1, "netease", "101Song").unwrap();
 
         // 3) 升级（init 的 SCHEMA 是 CREATE IF NOT EXISTS，不会动旧表；migrate 负责补列）
@@ -1097,15 +1143,34 @@ mod migration_tests {
         // 4) 三条曾静默失败的查询路径必须恢复
         // 4a) 歌单条目（歌单导入后“歌曲信息没被导入”的读取路径）
         let entries = playlist_entries(&conn, 1);
-        assert_eq!(entries.len(), 2, "playlist_entries 应返回 2 条，实际 {entries:?}");
+        assert_eq!(
+            entries.len(),
+            2,
+            "playlist_entries 应返回 2 条，实际 {entries:?}"
+        );
         assert_eq!(entries[0].title, "歌 A");
         assert_eq!(entries[1].title, "歌 B");
         assert_eq!(entries[0].vip, true);
 
         // 4b) 最近播放（在线）：记录后必须读得回来
-        record_play_online(&conn, "qq", "001Song", "歌 A", "歌手", "专辑", "http://c/1.jpg", 200000, "M001", true);
+        record_play_online(
+            &conn,
+            "qq",
+            "001Song",
+            "歌 A",
+            "歌手",
+            "专辑",
+            "http://c/1.jpg",
+            200000,
+            "M001",
+            true,
+        );
         let recent = recent_online_list(&conn, 100);
-        assert_eq!(recent.len(), 1, "recent_online_list 应返回 1 条，实际 {recent:?}");
+        assert_eq!(
+            recent.len(),
+            1,
+            "recent_online_list 应返回 1 条，实际 {recent:?}"
+        );
         assert_eq!(recent[0].title, "歌 A");
         assert!(recent[0].last_played > 0);
 
@@ -1137,7 +1202,11 @@ mod migration_tests {
         assert!(cols.contains(&"last_played".to_string()));
         assert!(cols.contains(&"play_count".to_string()));
         let one: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='missing'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='missing'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(one, 1);
     }

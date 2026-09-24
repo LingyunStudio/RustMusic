@@ -3,8 +3,8 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use rayon::prelude::*;
 use lofty::prelude::*;
+use rayon::prelude::*;
 
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
@@ -12,7 +12,9 @@ use walkdir::WalkDir;
 use crate::db::{self, NewTrack};
 use crate::AppState;
 
-pub const AUDIO_EXTS: [&str; 9] = ["mp3", "flac", "wav", "ogg", "oga", "m4a", "aac", "mp4", "m4b"];
+pub const AUDIO_EXTS: [&str; 9] = [
+    "mp3", "flac", "wav", "ogg", "oga", "m4a", "aac", "mp4", "m4b",
+];
 
 pub fn is_audio(path: &Path) -> bool {
     path.extension()
