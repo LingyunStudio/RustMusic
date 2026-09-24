@@ -194,12 +194,20 @@ function SleepPopover({
   const remainMin = sleepAt
     ? Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))
     : null;
+  const [custom, setCustom] = useState("");
+  const applyCustom = () => {
+    const n = Math.round(Number(custom));
+    if (!isFinite(n) || n <= 0) return;
+    // 上限 24 小时，防止手滑输入超长值
+    onSet(Math.min(1440, n));
+    onClose();
+  };
   return (
     <>
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
-        className="absolute bottom-[48px] right-0 z-[61] w-[136px] rounded-2xl p-1.5 flex flex-col"
+        className="absolute bottom-[48px] right-0 z-[61] w-[168px] rounded-2xl p-1.5 flex flex-col"
         style={{
           background: "var(--bar-glass)",
           backdropFilter: "blur(var(--bar-blur, 8px))",
@@ -224,6 +232,27 @@ function SleepPopover({
             {m} 分钟后停止
           </button>
         ))}
+        {/* 自定义时长（分钟）：回车或点确定生效 */}
+        <div className="flex items-center gap-1 px-1 pt-1.5">
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && applyCustom()}
+            placeholder="自定义(分钟)"
+            className="w-full min-w-0 h-7 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-2 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+          />
+          <button
+            className="btn-secondary !py-1 !px-2 text-[11px] shrink-0 disabled:opacity-50"
+            onClick={applyCustom}
+            disabled={!custom.trim() || !isFinite(Number(custom)) || Number(custom) <= 0}
+            title="按输入的分钟数定时"
+          >
+            确定
+          </button>
+        </div>
         {sleepAt != null && (
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left"
