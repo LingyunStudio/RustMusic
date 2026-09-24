@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowLeft,
   Cloud,
   Heart,
   Info,
@@ -21,7 +22,7 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
-import type { NeteaseTrack, QqSong } from "../types";
+import type { KgSong, NeteaseTrack, QqSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
 
@@ -110,6 +111,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const importNeteasePlaylist = useStore((s) => s.importNeteasePlaylist);
   const importQqPlaylist = useStore((s) => s.importQqPlaylist);
   const importAllPlaylists = useStore((s) => s.importAllPlaylists);
+  const openDetailPage = useStore((s) => s.openDetailPage);
   const toast = useStore((s) => s.toast);
 
   const [kw, setKw] = useState("");
@@ -128,6 +130,22 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const [pickerRows, setPickerRows] = useState<OnlineRow[] | null>(null);
   const [batchMode, setBatchMode] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>(loadSearchHistory);
+
+  // ---------- 视图内导航历史（点歌手/专辑/搜索后可返回上一页） ----------
+  interface NavSnapshot {
+    rec: RecState | null;
+    kw: string;
+    neteaseResults: NeteaseTrack[];
+    neteaseTotal: number;
+    neteaseSearched: boolean;
+    qqResults: QqSong[];
+    qqSearched: boolean;
+    qqPage: number;
+    kugouResults: KgSong[];
+    kugouSearched: boolean;
+    kugouPage: number;
+  }
+  const [navStack, setNavStack] = useState<NavSnapshot[]>([]);
   const [qrSource, setQrSource] = useState<Source | null>(null);
   const [newPlName, setNewPlName] = useState("");
   const [importOpen, setImportOpen] = useState(false);
@@ -171,6 +189,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   // 失败只影响推荐入口，不打扰搜索主流程
   useEffect(() => {
     setRec(null);
+    setNavStack([]);
+    setSel(new Set());
+    setBatchMode(false);
     if (!recommendable) return;
     let dead = false;
     (async () => {
@@ -428,20 +449,46 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     });
   };
 
-  const submit = () => {
-    setRec(null);
+  // 发起搜索前快照当前视图（推荐内容 + 各源搜索结果），供返回按钮恢复
+  const snapshotNav = (): NavSnapshot => ({
+    rec,
+    kw,
+    neteaseResults,
+    neteaseTotal,
+    neteaseSearched,
+    qqResults,
+    qqSearched,
+    qqPage,
+    kugouResults,
+    kugouSearched,
+    kugouPage,
+  });
+  const pushNav = () => setNavStack((s) => [...s.slice(-9), snapshotNav()]);
+
+  const goBack = () => {
+    const prev = navStack[navStack.length - 1];
+    if (!prev) return;
+    setNavStack((s) => s.slice(0, -1));
+    setRec(prev.rec);
+    setKw(prev.kw);
     setSel(new Set());
-    rememberSearch(kw);
-    if (source === "netease") neteaseSearch(kw);
-    else if (source === "qq") qqSearch(kw);
-    else kugouSearch(kw);
+    useStore.setState({
+      neteaseResults: prev.neteaseResults,
+      neteaseTotal: prev.neteaseTotal,
+      neteaseSearched: prev.neteaseSearched,
+      qqResults: prev.qqResults,
+      qqSearched: prev.qqSearched,
+      qqPage: prev.qqPage,
+      kugouResults: prev.kugouResults,
+      kugouSearched: prev.kugouSearched,
+      kugouPage: prev.kugouPage,
+    });
   };
 
-  // 点歌手/专辑名：直接以该文本发起搜索（歌曲列表通用快捷操作）
-  const searchFor = (text: string) => {
-    const q = text.trim();
+  const submit = (query?: string) => {
+    const q = (typeof query === "string" ? query : kw).trim();
     if (!q) return;
-    setKw(q);
+    pushNav();
     setRec(null);
     setSel(new Set());
     rememberSearch(q);
@@ -556,8 +603,17 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             </div>
           </div>
 
-          {/* 搜索（与标题同行） */}
+          {/* 搜索（与标题同行）；有导航历史时显示返回按钮 */}
           <div className="flex items-center gap-2.5 flex-1 max-w-[520px] mb-1">
+            {navStack.length > 0 && (
+              <button
+                className="btn-ghost w-10 h-10 shrink-0"
+                onClick={goBack}
+                title="返回上一页"
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
             <div className="relative flex-1">
               <Search
                 size={14}
@@ -580,7 +636,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             </div>
             <button
               className="btn-primary h-10"
-              onClick={submit}
+              onClick={() => submit()}
               disabled={searching}
             >
               {searching ? (
@@ -909,7 +965,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                         style={{ background: "var(--shade)" }}
                         onClick={() => {
                           setKw(h);
-                          searchFor(h);
+                          submit(h);
                         }}
                         title={`搜索「${h}」`}
                       >
@@ -1049,9 +1105,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                         }`}
                         onClick={(ev) => {
                           ev.stopPropagation();
-                          searchFor(t.artist);
+                          openDetailPage("artist", t.artist);
                         }}
-                        title={`搜索：${t.artist || "未知艺术家"}`}
+                        title={`查看歌手：${t.artist || "未知艺术家"}`}
                       >
                         {t.artist || "未知艺术家"}
                       </button>
@@ -1062,9 +1118,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                     className="block text-left text-[12.5px] text-[var(--ink-3)] truncate max-w-full hover:text-[var(--accent-strong)] transition-colors"
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      searchFor(t.album);
+                      openDetailPage("album", t.album);
                     }}
-                    title={`搜索：${t.album || "未知专辑"}`}
+                    title={`查看专辑：${t.album || "未知专辑"}`}
                   >
                     {t.album || "未知专辑"}
                   </button>

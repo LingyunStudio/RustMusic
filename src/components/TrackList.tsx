@@ -38,6 +38,8 @@ interface TrackListProps {
     keys: Set<string>;
     onToggle: (key: string) => void;
   };
+  /** 点击歌手/专辑名回调（提供即启用可点击；资料库=填入本页搜索框） */
+  onMetaClick?: (field: "artist" | "album", text: string) => void;
 }
 
 export type SortKey = "manual" | "title" | "artist" | "album" | "duration" | "added";
@@ -66,6 +68,7 @@ export default function TrackList({
   dragSortable,
   onDragReorder,
   selection,
+  onMetaClick,
 }: TrackListProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [pickerFor, setPickerFor] = useState<TrackMeta | null>(null);
@@ -322,16 +325,42 @@ export default function TrackList({
                 </span>
               )}
             </div>
-            <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
+            <button
+              className={`block text-left text-[12px] truncate mt-1 max-w-full transition-colors ${
+                onMetaClick ? "hover:text-[var(--accent-strong)]" : ""
+              } ${active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"}`}
+              onClick={
+                onMetaClick
+                  ? (ev) => {
+                      ev.stopPropagation();
+                      onMetaClick("artist", trackArtist(t));
+                    }
+                  : undefined
+              }
+              title={onMetaClick ? `搜索：${trackArtist(t)}` : undefined}
+            >
               {trackArtist(t)}
-            </div>
+            </button>
           </div>
         </div>
 
         {/* 专辑 */}
-        <div className="text-[12.5px] text-[var(--ink-3)] truncate">
+        <button
+          className={`block text-left text-[12.5px] truncate max-w-full transition-colors ${
+            onMetaClick ? "hover:text-[var(--accent-strong)]" : ""
+          } text-[var(--ink-3)]`}
+          onClick={
+            onMetaClick
+              ? (ev) => {
+                  ev.stopPropagation();
+                  onMetaClick("album", t.album || "未知专辑");
+                }
+              : undefined
+          }
+          title={onMetaClick ? `搜索：${t.album || "未知专辑"}` : undefined}
+        >
           {t.album || "未知专辑"}
-        </div>
+        </button>
 
         {/* 格式 / 时长（与表头同列，右对齐） */}
         <div className="flex items-center justify-end gap-3">
@@ -488,14 +517,40 @@ export default function TrackList({
                 </span>
               )}
             </div>
-            <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
+            <button
+              className={`block text-left text-[12px] truncate mt-1 max-w-full transition-colors ${
+                onMetaClick ? "hover:text-[var(--accent-strong)]" : ""
+              } ${active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"}`}
+              onClick={
+                onMetaClick
+                  ? (ev) => {
+                      ev.stopPropagation();
+                      onMetaClick("artist", e.artist || "未知艺术家");
+                    }
+                  : undefined
+              }
+              title={onMetaClick ? `搜索：${e.artist || "未知艺术家"}` : undefined}
+            >
               {e.artist || "未知艺术家"}
-            </div>
+            </button>
           </div>
         </div>
-        <div className="text-[12.5px] text-[var(--ink-3)] truncate">
+        <button
+          className={`block text-left text-[12.5px] truncate max-w-full transition-colors ${
+            onMetaClick ? "hover:text-[var(--accent-strong)]" : ""
+          } text-[var(--ink-3)]`}
+          onClick={
+            onMetaClick
+              ? (ev) => {
+                  ev.stopPropagation();
+                  onMetaClick("album", e.album || "未知专辑");
+                }
+              : undefined
+          }
+          title={onMetaClick ? `搜索：${e.album || "未知专辑"}` : undefined}
+        >
           {e.album || "未知专辑"}
-        </div>
+        </button>
         <div className="flex items-center justify-end gap-3">
           <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider">
             在线

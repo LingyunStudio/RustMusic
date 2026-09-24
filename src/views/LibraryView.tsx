@@ -64,6 +64,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const createPlaylist = useStore((s) => s.createPlaylist);
   const playlists = useStore((s) => s.playlists);
   const toast = useStore((s) => s.toast);
+  const openDetailPage = useStore((s) => s.openDetailPage);
   // 批量多选：key 与 unavailable/手动排序一致（track:<id> / netease:<rid>…）
   const [batchMode, setBatchMode] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -614,6 +615,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               keys: sel,
               onToggle: toggleSelKey,
             }}
+            onMetaClick={(field, text) => openDetailPage(field, text)}
             emptyHint={
               mode === "library"
                 ? "资料库还是空的"

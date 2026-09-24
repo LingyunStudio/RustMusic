@@ -207,7 +207,9 @@ export type ViewName =
   | "qq"
   | "kugou"
   | "settings"
-  | "playlist";
+  | "playlist"
+  | "artist"
+  | "album";
 
 export interface ScanState {
   active: boolean;

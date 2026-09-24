@@ -62,6 +62,10 @@ interface Store {
 
   view: ViewName;
   viewParam: number;
+  /** 歌手/专辑详情页的名称（view = artist/album 时有效） */
+  detailName: string;
+  /** 详情页回退栈：openDetailPage 压入来源视图，popDetailPage 弹出恢复 */
+  viewHistory: { view: ViewName; viewParam: number; detailName: string }[];
   search: string;
   nowPlayingOpen: boolean;
   /** 播放页无边框全屏（隐藏系统任务栏；播放条隐藏、hover 唤起） */
@@ -130,6 +134,9 @@ interface Store {
   toast(msg: string, type?: Toast["type"]): number;
   dismissToast(id: number): void;
   setView(v: ViewName, param?: number): void;
+  /** 打开歌手/专辑详情页（聚合本地曲目与在线搜索结果），自带返回栈 */
+  openDetailPage(kind: "artist" | "album", name: string): void;
+  popDetailPage(): void;
   setSearch(s: string): void;
   setNowPlayingOpen(v: boolean): void;
   /** 切换无边框全屏（退出时同时收起播放页） */
@@ -479,6 +486,8 @@ export const useStore = create<Store>((set, get) => ({
 
   view: "library",
   viewParam: 0,
+  detailName: "",
+  viewHistory: [],
   search: "",
   nowPlayingOpen: false,
   fullscreen: false,
@@ -743,6 +752,35 @@ export const useStore = create<Store>((set, get) => ({
 
   setView(v, param = 0) {
     set({ view: v, viewParam: param, search: "" });
+  },
+
+  openDetailPage(kind, name) {
+    const nameTrim = name.trim();
+    if (!nameTrim || nameTrim === "未知艺术家" || nameTrim === "未知专辑") return;
+    set((s) => ({
+      view: kind,
+      viewParam: 0,
+      detailName: nameTrim,
+      search: "",
+      viewHistory: [
+        ...s.viewHistory.slice(-9),
+        // 记录 detailName：详情页可以嵌套跳转（歌手页→专辑页），返回时名字也要还原
+        { view: s.view, viewParam: s.viewParam, detailName: s.detailName },
+      ],
+    }));
+  },
+
+  popDetailPage() {
+    set((s) => {
+      const prev = s.viewHistory[s.viewHistory.length - 1];
+      if (!prev) return {};
+      return {
+        view: prev.view,
+        viewParam: prev.viewParam,
+        detailName: prev.detailName,
+        viewHistory: s.viewHistory.slice(0, -1),
+      };
+    });
   },
 
   setSearch(s) {

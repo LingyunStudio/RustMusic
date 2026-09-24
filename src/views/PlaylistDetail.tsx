@@ -70,6 +70,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const playlists = useStore((s) => s.playlists);
   const tracks = useStore((s) => s.tracks);
   const search = useStore((s) => s.search);
+  const openDetailPage = useStore((s) => s.openDetailPage);
   const playing = useStore((s) => s.playing);
   const playEntries = useStore((s) => s.playEntries);
   const entryToQueueItem = useStore((s) => s.entryToQueueItem);
@@ -226,7 +227,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-3">
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button className="btn-primary" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
               <Play size={13} className="fill-current" />
               播放全部
@@ -286,7 +287,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {list.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
-              列表里还没有歌曲（可在在线曲库右键添加）
+              {search
+                ? "没有匹配筛选的歌曲（点右侧 ✕ 清除筛选）"
+                : "列表里还没有歌曲（可在在线曲库右键添加）"}
             </div>
           ) : (
             <div
@@ -389,15 +392,29 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             </span>
                           )}
                         </div>
-                        <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
+                        <button
+                          className="block text-left text-[12px] text-[var(--ink-3)] truncate mt-1 max-w-full hover:text-[var(--accent-strong)] transition-colors"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            openDetailPage("artist", r.artist || "未知艺术家");
+                          }}
+                          title={`查看歌手：${r.artist || "未知艺术家"}`}
+                        >
                           {r.artist || "未知艺术家"}
-                        </div>
+                        </button>
                       </div>
                     </div>
 
-                    <div className="text-[12.5px] text-[var(--ink-3)] truncate">
+                    <button
+                      className="block text-left text-[12.5px] text-[var(--ink-3)] truncate max-w-full hover:text-[var(--accent-strong)] transition-colors"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        openDetailPage("album", r.album || "未知专辑");
+                      }}
+                      title={`查看专辑：${r.album || "未知专辑"}`}
+                    >
                       {r.album || "未知专辑"}
-                    </div>
+                    </button>
 
                     <div className="text-right text-[12.5px] text-[var(--ink-2)] tabular-nums">
                       {fmtTime(r.durationMs)}
