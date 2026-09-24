@@ -231,11 +231,13 @@ where
             .get_iaudioclient()
             .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
 
-        // 格式协商：优先源文件原生采样率（位深从高到低），全部拒绝则
-        // 退到设备混合采样率（此时启用线性重采样）
+        // 格式协商：IsFormatSupported 在独占模式下并不可靠（存在报告支持但
+        // Initialize 拒绝的情况），因此直接用 Initialize 逐一实测「格式 ×
+        // 通道掩码 × 周期」组合，任一成功即采用。候选顺序：源文件采样率
+        // 优先、设备混合采样率兜底（此时启用线性重采样）；位深从 24-in-32
+        // （声卡独占最普遍接受的格式）到 16 位。
         let ch = params.channels;
         let candidates: Vec<(usize, usize, SampleType)> = vec![
-            // 24-valid-in-32-container 是声卡独占模式最普遍接受的格式
             (32, 24, SampleType::Int),
             (32, 32, SampleType::Int),
             (24, 24, SampleType::Int),
@@ -246,188 +248,152 @@ where
             .get_mixformat()
             .map(|f| f.get_samplespersec())
             .unwrap_or(48_000);
-        let mut fmt: Option<(WaveFormat, FmtSpec, f64)> = None;
-        for &(store, valid, kind) in &candidates {
-            let wf = WaveFormat::new(store, valid, &kind, params.src_rate as usize, ch, None);
-            if let Ok(accepted) = audio_client.is_supported_exclusive_with_quirks(&wf) {
-                fmt = Some((
-                    accepted,
-                    FmtSpec {
-                        kind: if kind == SampleType::Float {
-                            SampleKind::F32
-                        } else if store == 16 {
-                            SampleKind::I16
-                        } else if store == 24 {
-                            SampleKind::I24
-                        } else {
-                            SampleKind::I32
-                        },
-                        bytes_per_sample: 0,
-                    },
-                    1.0,
-                ));
-                break;
-            }
-        }
-        // 记录最后一个被拒候选的 HRESULT 码：全部被拒时用于诊断
-        //（0x88890008=格式不支持，0x8889000E=系统/驱动禁用独占授权）
-        let mut last_code: Option<i32> = None;
-        if fmt.is_none() {
-            for &(store, valid, kind) in &candidates {
-                let wf = WaveFormat::new(store, valid, &kind, mix_rate as usize, ch, None);
-                match audio_client.is_supported_exclusive_with_quirks(&wf) {
-                    Ok(accepted) => {
-                        let dev_rate = accepted.get_samplespersec();
-                    fmt = Some((
-                        accepted,
-                        FmtSpec {
-                            kind: if kind == SampleType::Float {
-                                SampleKind::F32
-                            } else if store == 16 {
-                                SampleKind::I16
-                            } else if store == 24 {
-                                SampleKind::I24
-                            } else {
-                                SampleKind::I32
-                            },
-                            bytes_per_sample: 0,
-                        },
-                        // 输出帧率 = 设备率；输入消耗 = 源率 × 倍速
-                        (params.src_rate as f64) / (dev_rate as f64),
-                    ));
-                        break;
-                    }
-                    Err(e) => {
-                        last_code = e
-                            .downcast_ref::<WinError>()
-                            .map(|we| we.code().0);
-                    }
-                }
-            }
-        }
-        let (wave_fmt, mut fmt, rate_ratio) = fmt.ok_or_else(|| {
-            let code = last_code
-                .map(|c| format!("0x{:08X}", c as u32))
-                .unwrap_or_else(|| "未知".into());
-            format!(
-                "设备不支持独占模式的任何候选格式（{ch} 声道，最后错误 {code}）；                 常见原因：Windows 声音设置中该设备启用了「音频增强」或驱动禁用了独占授权"
-            )
-        })?;
-        let dev_rate = wave_fmt.get_samplespersec();
-
-        // 周期协商：独占模式对缓冲周期有对齐要求（部分设备还要求 128 字节
-        // 对齐），不同设备的可接受值不同。按候选周期逐一尝试，每个周期
-        // 配全新 client（失败后的 client 状态不可靠）；含 MS 文档的
-        // GetBufferSize 对齐重算流程。
         let (def_period, min_period) = audio_client
             .get_periods()
             .map_err(|e| wasapi_err("独占模式获取周期失败", e.as_ref()))?;
-        let aligned_near =
-            audio_client
-                .calculate_aligned_period_near(3 * min_period / 2, Some(128), &wave_fmt)
-                .map_err(|e| wasapi_err("独占模式计算周期失败", e.as_ref()))?;
-        let mut period_candidates: Vec<i64> =
-            vec![aligned_near, def_period, def_period * 2, min_period];
-        period_candidates.sort();
-        period_candidates.dedup();
+
+        let mut fmt_cands: Vec<(usize, usize, SampleType, u32)> = Vec::new();
+        for &(store, valid, kind) in &candidates {
+            fmt_cands.push((store, valid, kind, params.src_rate as u32));
+        }
+        if mix_rate != params.src_rate {
+            for &(store, valid, kind) in &candidates {
+                fmt_cands.push((store, valid, kind, mix_rate));
+            }
+        }
 
         let mut last_err: Option<String> = None;
-        let mut inited = false;
-        for &period in &period_candidates {
-            for attempt in 0..2 {
-                let mut client = device
-                    .get_iaudioclient()
-                    .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
-                match client.initialize_client(
-                    &wave_fmt,
-                    period,
-                    &Direction::Render,
-                    &ShareMode::Exclusive,
-                    false,
-                ) {
-                    Ok(()) => {
-                        audio_client = client;
-                        inited = true;
-                        break;
-                    }
-                    Err(e) => {
-                        let code = e
-                            .downcast_ref::<WinError>()
-                            .map(|we| we.code().0)
-                            .unwrap_or(0);
-                        last_err = Some(wasapi_err(
-                            &format!("独占模式初始化失败（周期 {period}）"),
-                            e.as_ref(),
-                        ));
-                        // BUFFER_SIZE_NOT_ALIGNED：按 MS 文档用 GetBufferSize
-                        // 的对齐值重算周期，同一 client 上再试一次
-                        if code == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED && attempt == 0 {
-                            if let Ok(bf) = client.get_bufferframecount() {
-                                if bf > 0 {
-                                    let p2 = wasapi::calculate_period_100ns(
-                                        bf as i64,
-                                        wave_fmt.get_samplespersec() as i64,
-                                    );
-                                    let mut client2 = device
-                                        .get_iaudioclient()
-                                        .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
-                                    match client2.initialize_client(
-                                        &wave_fmt,
-                                        p2,
-                                        &Direction::Render,
-                                        &ShareMode::Exclusive,
-                                        false,
-                                    ) {
-                                        Ok(()) => {
-                                            audio_client = client2;
-                                            inited = true;
+        let mut inited: Option<(WaveFormat, FmtSpec, f64)> = None;
+
+        'formats: for (store, valid, kind, rate) in fmt_cands {
+            // 通道掩码：默认掩码 → 零掩码（部分驱动的兼容性差异）
+            for mask in [None, Some(0u32)] {
+                let wf = WaveFormat::new(store, valid, &kind, rate as usize, ch, mask);
+                let blockalign = wf.get_blockalign() as usize;
+                // 周期候选：按该格式的对齐值、设备默认、最小周期
+                let mut periods: Vec<i64> = Vec::new();
+                if let Ok(p) = audio_client
+                    .calculate_aligned_period_near(3 * min_period / 2, Some(128), &wf)
+                {
+                    periods.push(p);
+                }
+                periods.push(def_period);
+                periods.push(min_period);
+                periods.dedup();
+
+                for &period in &periods {
+                    // 周期不同重试时用全新 client（失败后的 client 状态不可靠）
+                    for attempt in 0..2 {
+                        let mut client = device
+                            .get_iaudioclient()
+                            .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
+                        match client.initialize_client(
+                            &wf,
+                            period,
+                            &Direction::Render,
+                            &ShareMode::Exclusive,
+                            false,
+                        ) {
+                            Ok(()) => {
+                                let fmt_spec = FmtSpec {
+                                    kind: if kind == SampleType::Float {
+                                        SampleKind::F32
+                                    } else if valid == 16 {
+                                        SampleKind::I16
+                                    } else if valid == 24 && store == 32 {
+                                        SampleKind::I24In32
+                                    } else if valid == 24 {
+                                        SampleKind::I24
+                                    } else {
+                                        SampleKind::I32
+                                    },
+                                    bytes_per_sample: blockalign / ch.max(1),
+                                };
+                                let ratio = (params.src_rate as f64) / (rate as f64);
+                                audio_client = client;
+                                inited = Some((wf, fmt_spec, ratio));
+                                eprintln!(
+                                    "[wasapi] 独占格式就绪：{}Hz × {}ch，{} 字节/帧，有效 {} 位，周期 {}（100ns）",
+                                    rate, ch, blockalign, valid, period
+                                );
+                                break 'formats;
+                            }
+                            Err(e) => {
+                                let code = e
+                                    .downcast_ref::<WinError>()
+                                    .map(|we| we.code().0)
+                                    .unwrap_or(0);
+                                last_err = Some(wasapi_err(
+                                    &format!(
+                                        "独占模式初始化失败（{}Hz/{}位/周期 {}）",
+                                        rate, store, period
+                                    ),
+                                    e.as_ref(),
+                                ));
+                                // BUFFER_SIZE_NOT_ALIGNED：按 MS 文档用
+                                // GetBufferSize 的对齐值重算周期再试一次
+                                if code == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED && attempt == 0 {
+                                    if let Ok(bf) = client.get_bufferframecount() {
+                                        if bf > 0 {
+                                            let p2 = wasapi::calculate_period_100ns(
+                                                bf as i64,
+                                                rate as i64,
+                                            );
+                                            let mut client2 = device.get_iaudioclient().map_err(
+                                                |e| wasapi_err("获取音频客户端失败", e.as_ref()),
+                                            )?;
+                                            match client2.initialize_client(
+                                                &wf,
+                                                p2,
+                                                &Direction::Render,
+                                                &ShareMode::Exclusive,
+                                                false,
+                                            ) {
+                                                Ok(()) => {
+                                                    let fmt_spec = FmtSpec {
+                                                        kind: if kind == SampleType::Float {
+                                                            SampleKind::F32
+                                                        } else if valid == 16 {
+                                                            SampleKind::I16
+                                                        } else if valid == 24 && store == 32 {
+                                                            SampleKind::I24In32
+                                                        } else if valid == 24 {
+                                                            SampleKind::I24
+                                                        } else {
+                                                            SampleKind::I32
+                                                        },
+                                                        bytes_per_sample: blockalign
+                                                            / ch.max(1),
+                                                    };
+                                                    let ratio = (params.src_rate as f64)
+                                                        / (rate as f64);
+                                                    audio_client = client2;
+                                                    inited = Some((wf, fmt_spec, ratio));
+                                                    break 'formats;
+                                                }
+                                                Err(_) => {
+                                                    // client2 已释放，继续下一组合
+                                                }
+                                            }
                                         }
-                                        Err(_) => {
-                                            // client2 已释放，重建 client 继续下一周期
-                                            audio_client = device
-                                                .get_iaudioclient()
-                                                .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
-                                        }
-                                    }
-                                    if inited {
-                                        break;
                                     }
                                 }
+                                // 换下一个周期 / 掩码 / 格式
                             }
                         }
-                        // 非对齐错误或重试仍失败：换下一个候选周期
                     }
                 }
             }
-            if inited {
-                break;
-            }
-        }
-        if !inited {
-            audio_client = device
-                .get_iaudioclient()
-                .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
-            return Err(last_err
-                .unwrap_or_else(|| "独占模式初始化失败（无可用周期）".into()));
         }
 
-        let blockalign = wave_fmt.get_blockalign() as usize;
-        fmt.bytes_per_sample = blockalign / ch.max(1);
-        // 有效位宽决定采样转换方式（如 24-in-32）
-        let valid = wave_fmt.get_validbitspersample();
-        let stored = wave_fmt.get_bitspersample();
-        fmt.kind = match fmt.kind {
-            SampleKind::F32 => SampleKind::F32,
-            SampleKind::I16 => SampleKind::I16,
-            SampleKind::I24 => SampleKind::I24,
-            _ => {
-                if stored == 32 && valid == 24 {
-                    SampleKind::I24In32
-                } else {
-                    SampleKind::I32
-                }
-            }
-        };
+        let (wave_fmt, mut fmt, rate_ratio) = inited.ok_or_else(|| {
+            let detail = last_err.unwrap_or_else(|| "未知".into());
+            format!(
+                "设备不接受独占模式的任何格式/周期组合（{ch} 声道，最后错误：{detail}）；常见原因：Windows 声音设置中该设备启用了「音频增强」、驱动禁用了独占授权，或该设备（如蓝牙音频）本身不支持独占"
+            )
+        })?;
+        let dev_rate = wave_fmt.get_samplespersec();
+        let blockalign = fmt.bytes_per_sample * ch.max(1);
 
         let h_event = audio_client
             .set_get_eventhandle()
@@ -445,10 +411,10 @@ where
         // 初始化完成：立即回传结果（引擎据此决定独占或回退共享），随后进入喂采样循环
         let _ = tx.send(Ok(()));
         eprintln!(
-            "[wasapi] 独占播放：{}Hz × {}ch，{:.0} 字节/帧，重采样比 {:.3}",
+            "[wasapi] 独占播放：{}Hz × {}ch，{} 字节/帧，重采样比 {:.3}",
             dev_rate,
             ch,
-            blockalign as f64,
+            blockalign,
             rate_ratio,
         );
 
