@@ -13,12 +13,14 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc};
 
 use wasapi::{
-    initialize_mta, BufferFlags, DeviceCollection, Direction, SampleType, ShareMode, WaveFormat,
+    calculate_period_100ns, initialize_mta, BufferFlags, DeviceCollection, Direction, SampleType,
+    ShareMode, WaveFormat,
 };
 use windows51::core::Error as WinError;
 
-/// AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED
-const AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED: i32 = 0x8889_000Au32 as i32;
+/// AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED：周期未按驱动要求对齐，
+/// 触发文档规定的重算流程（失败后 GetBufferSize 返回对齐缓冲值）。
+const AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED: u32 = 0x8889_0019;
 
 /// 把 wasapi/windows 错误转成安全描述。
 /// 切勿对这类错误调用 Display/message()：AUDCLNT 错误码没有系统消息模板，
@@ -40,6 +42,22 @@ pub struct ExclusiveCtl {
     pub paused: Arc<AtomicBool>,
     /// 请求终止会话
     pub stop: Arc<AtomicBool>,
+    /// 线程已退出（音频客户端已释放、设备已交还系统）
+    pub exited: Arc<AtomicBool>,
+}
+
+/// 等待会话线程退出。必须在重建共享输出流之前调用：
+/// 设备被独占客户端占用期间，新的共享流打不开（表现为关独占后无声）。
+pub fn wait_session_exit(ctl: &ExclusiveCtl, timeout_ms: u64) -> bool {
+    ctl.stop.store(true, Ordering::Relaxed);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    while !ctl.exited.load(Ordering::Relaxed) {
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    true
 }
 
 /// 会话音频参数（采样源与设备无关的部分由引擎传入）
@@ -64,16 +82,20 @@ where
     let active = Arc::new(AtomicBool::new(true));
     let paused = Arc::new(AtomicBool::new(false));
     let stop = Arc::new(AtomicBool::new(false));
+    let exited = Arc::new(AtomicBool::new(false));
     let ctl = ExclusiveCtl {
         active: active.clone(),
         paused: paused.clone(),
         stop: stop.clone(),
+        exited: exited.clone(),
     };
     let (tx, rx) = mpsc::channel();
     let _handle = std::thread::Builder::new()
         .name("wasapi-exclusive".into())
         .spawn(move || {
             let result = run_session(src, params, active, paused, stop, tx.clone());
+            // 线程收尾：先标记退出（设备已随 audio_client 释放），再回传结果
+            exited.store(true, Ordering::Relaxed);
             let _ = tx.send(result);
         })
         .map_err(|e| format!("启动独占播放线程失败: {e}"))?;
@@ -216,6 +238,109 @@ fn pick_device(pref: Option<&str>) -> Result<wasapi::Device, String> {
         .map_err(|e| wasapi_err("没有可用的音频输出设备", e.as_ref()))
 }
 
+/// 关键 HRESULT 的可行动提示
+fn exclusive_hint(code: u32) -> Option<&'static str> {
+    match code {
+        // AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED
+        0x8889_000E => Some("系统禁用了独占授权：在声音设置中打开该设备的属性，关掉「音频增强」并允许应用程序独占控制此设备"),
+        // AUDCLNT_E_INVALID_STREAM_FLAG：实测部分驱动（蓝牙/网络音箱）对独占一律返回此码
+        0x8889_000A => Some("该设备驱动不支持独占模式（常见于蓝牙/网络音箱），请切换到其它输出设备"),
+        // AUDCLNT_E_UNSUPPORTED_FORMAT
+        0x8889_0008 => Some("设备不接受以上任何候选格式"),
+        // AUDCLNT_E_DEVICE_IN_USE
+        0x8889_000C => Some("设备正被其它程序以独占方式占用"),
+        // AUDCLNT_E_DEVICE_INVALIDATED
+        0x8889_0004 => Some("设备已失效（被拔出或已禁用）"),
+        _ => None,
+    }
+}
+
+fn wasapi_err_hint(what: &str, e: &(dyn std::error::Error + 'static)) -> String {
+    let code = e
+        .downcast_ref::<WinError>()
+        .map(|we| we.code().0 as u32);
+    let base = wasapi_err(what, e);
+    match code.and_then(exclusive_hint) {
+        Some(h) => format!("{base}；{h}"),
+        None => base,
+    }
+}
+
+/// 用指定格式与周期初始化独占客户端；周期未对齐（0x88890019）时执行
+/// 文档恢复流程：失败态客户端的 GetBufferSize 返回向上对齐的缓冲帧数，
+/// 换算成 100ns 周期后先同客户端重试，仍失败则按文档释放旧客户端、
+/// 换新客户端重试一次。两种结局都把可继续使用的客户端还给调用方。
+fn try_initialize(
+    device: &wasapi::Device,
+    mut client: wasapi::AudioClient,
+    fmt: &WaveFormat,
+    period: i64,
+    rate: i64,
+) -> Result<(WaveFormat, wasapi::AudioClient), (wasapi::AudioClient, String)> {
+    let init = |c: &mut wasapi::AudioClient, p: i64| {
+        c.initialize_client(fmt, p, &Direction::Render, &ShareMode::Exclusive, false)
+    };
+    let what = |p: i64| {
+        format!(
+            "独占初始化失败（{}Hz，周期 {:.2}ms）",
+            rate,
+            p as f64 / 10_000.0
+        )
+    };
+    match init(&mut client, period) {
+        Ok(()) => Ok((fmt.clone(), client)),
+        Err(e) => {
+            let code = e
+                .downcast_ref::<WinError>()
+                .map(|we| we.code().0 as u32)
+                .unwrap_or(0);
+            let first = wasapi_err_hint(&what(period), e.as_ref());
+            if code != AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
+                return Err((client, first));
+            }
+            let aligned = match client.get_bufferframecount() {
+                Ok(frames) => calculate_period_100ns(frames as i64, rate),
+                Err(e2) => {
+                    let msg = wasapi_err_hint(
+                        &format!("{first}；随后获取对齐缓冲也失败"),
+                        e2.as_ref(),
+                    );
+                    return Err((client, msg));
+                }
+            };
+            eprintln!(
+                "[wasapi] 周期未对齐（0x88890019），文档恢复：对齐周期 {aligned}（{:.2}ms）",
+                aligned as f64 / 10_000.0
+            );
+            match init(&mut client, aligned) {
+                Ok(()) => Ok((fmt.clone(), client)),
+                Err(_) => {
+                    // 文档步骤：释放旧客户端（drop）、取新客户端、重新 Initialize
+                    let mut fresh = match device.get_iaudioclient() {
+                        Ok(c) => c,
+                        Err(e3) => {
+                            let msg =
+                                wasapi_err_hint(&format!("{first}；重建客户端也失败"), e3.as_ref());
+                            return Err((client, msg));
+                        }
+                    };
+                    drop(client);
+                    match init(&mut fresh, aligned) {
+                        Ok(()) => Ok((fmt.clone(), fresh)),
+                        Err(e4) => {
+                            let msg = wasapi_err_hint(
+                                &format!("独占初始化失败（{}Hz，对齐周期 {aligned}）", rate),
+                                e4.as_ref(),
+                            );
+                            Err((fresh, msg))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// 会话主流程：设备/格式协商 → 回传初始化结果 → 事件驱动喂采样 → 源耗尽退出
 fn run_session<S>(
     mut src: S,
@@ -235,12 +360,14 @@ where
             .get_iaudioclient()
             .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
 
-        // 格式协商：同一客户端上依次尝试「格式 × 周期」。实证要点：
-        // 1. 必须用同一个客户端实例迭代周期——每个周期换全新客户端会被
-        //    驱动以 0x8889000A 一律拒绝（曾导致独占完全不可用）；
-        // 2. 初始化失败后同客户端可用其它周期再次 Initialize（已被实证）；
-        // 3. GetBufferSize 在未初始化的客户端上返回 NOT_INITIALIZED，
-        //    文档重算流程走不通，故不做该重试。
+        // 格式协商：同一客户端实例上依次尝试「格式 × 周期」。
+        // 实测要点（用原生 COM 调用逐设备实测得出）：
+        // 1. Initialize 必须使用 quirks 探测返回的格式——驱动接受普通
+        //    WAVEFORMATEX 变体时，用原 EXTENSIBLE 结构初始化会被拒；
+        // 2. 周期未按驱动要求对齐时返回 0x88890019，按文档流程恢复：
+        //    对该客户端调 GetBufferSize 拿「向上对齐」的缓冲帧数，
+        //    换算成 100ns 周期后重新 Initialize（必要时换新客户端）；
+        // 3. 每轮候选之间检查 stop，避免引擎超时放弃后线程仍继续抢设备。
         let ch = params.channels;
         let candidates: Vec<(usize, usize, SampleType)> = vec![
             (32, 24, SampleType::Int),
@@ -268,29 +395,36 @@ where
         }
 
         let mut last_err: Option<String> = None;
+        let mut probe_rejected = 0usize;
         let mut inited: Option<(WaveFormat, FmtSpec, f64)> = None;
 
         'formats: for (store, valid, kind, rate) in fmt_cands {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
             let wf = WaveFormat::new(store, valid, &kind, rate as usize, ch, None);
-            let blockalign = wf.get_blockalign() as usize;
-            // 关键：Initialize 之前必须先在同客户端上调用 IsFormatSupported
-            // 探测——缺失该调用时驱动会以 0x8889000A 拒绝所有周期（实证）。
-            // 探测失败说明该格式不被支持，换下一个候选。
             let accepted = match audio_client.is_supported_exclusive_with_quirks(&wf) {
                 Ok(f) => f,
-                Err(_) => continue,
+                Err(_) => {
+                    probe_rejected += 1;
+                    continue;
+                }
             };
+            let blockalign = accepted.get_blockalign() as usize;
             let valid_bits = accepted.get_validbitspersample();
+            let store_bits = accepted.get_bitspersample();
             let fmt_spec = FmtSpec {
                 kind: if accepted.get_subformat().unwrap_or(SampleType::Int)
                     == SampleType::Float
                 {
                     SampleKind::F32
-                } else if valid_bits == 16 {
+                } else if store_bits == 16 {
+                    // 普通 WAVEFORMATEX 变体的 wValidBitsPerSample 为 0，
+                    // 必须按存储位深判断（按 valid 判断会错落到 I32 造成乱码）
                     SampleKind::I16
-                } else if valid_bits == 24 && store == 32 {
+                } else if store_bits == 32 && valid_bits == 24 {
                     SampleKind::I24In32
-                } else if valid_bits == 24 {
+                } else if store_bits == 24 {
                     SampleKind::I24
                 } else {
                     SampleKind::I32
@@ -299,76 +433,43 @@ where
             };
             let ratio = (params.src_rate as f64) / (rate as f64);
 
-            // 周期候选：文档对齐规则（默认周期整数倍 + 128 字节对齐）优先，
-            // 随后默认/最小周期原值及其倍数、10ms
-            let mut periods: Vec<i64> = Vec::new();
-            for n in [1i64, 2, 3, 4] {
-                if let Ok(p) = audio_client.calculate_aligned_period_near(
-                    def_period * n,
-                    Some(128),
-                    &wf,
-                ) {
-                    periods.push(p);
-                }
-            }
-            if let Ok(p) = audio_client
-                .calculate_aligned_period_near(min_period, Some(128), &wf)
-            {
-                periods.push(p);
-            }
-            periods.push(def_period);
-            periods.push(min_period);
-            periods.push(min_period * 2);
-            periods.push(100_000); // 10ms
-            periods.sort();
-            periods.dedup();
-
-            for &period in &periods {
-                match audio_client.initialize_client(
-                    &wf,
-                    period,
-                    &Direction::Render,
-                    &ShareMode::Exclusive,
-                    false,
-                ) {
-                    Ok(()) => {
-                        inited = Some((wf, fmt_spec, ratio));
+            for &period in &[def_period, min_period] {
+                match try_initialize(&device, audio_client, &accepted, period, rate as i64) {
+                    Ok((final_fmt, client)) => {
+                        audio_client = client;
+                        inited = Some((final_fmt, fmt_spec, ratio));
                         eprintln!(
-                            "[wasapi] 独占格式就绪：源 {}Hz → 设备 {}Hz × {}ch，{} 字节/帧，有效 {} 位，周期 {}（100ns）",
-                            params.src_rate, rate, ch, blockalign, valid, period
+                            "[wasapi] 独占格式就绪：源 {}Hz → 设备 {}Hz × {}ch，{} 字节/帧，有效 {} 位",
+                            params.src_rate, rate, ch, blockalign, valid_bits
                         );
                         break 'formats;
                     }
-                    Err(e) => {
-                        let code = e
-                            .downcast_ref::<WinError>()
-                            .map(|we| we.code().0)
-                            .unwrap_or(0);
-                        eprintln!(
-                            "[wasapi] init 尝试：{}Hz/{}位/周期 {} → HRESULT 0x{:08X}",
-                            rate, store, period, code as u32
-                        );
-                        last_err = Some(wasapi_err(
-                            &format!(
-                                "独占模式初始化失败（{}Hz/{}位/周期 {}）",
-                                rate, store, period
-                            ),
-                            e.as_ref(),
-                        ));
-                        // 同客户端换下一个周期继续
+                    Err((client, err)) => {
+                        audio_client = client;
+                        last_err = Some(err);
                     }
                 }
             }
         }
 
-        let (wave_fmt, mut fmt, rate_ratio) = inited.ok_or_else(|| {
+        let (wave_fmt, fmt, rate_ratio) = inited.ok_or_else(|| {
+            // 所有候选都在探测阶段被拒：驱动不给独占任何格式，给出可行动提示
+            if probe_rejected > 0 && last_err.is_none() {
+                return format!(
+                    "设备拒绝了独占模式的全部候选格式（{ch} 声道）；该设备驱动不支持独占模式（常见于蓝牙/网络音箱），或系统禁用了独占授权，可切换到其它输出设备再试"
+                );
+            }
             let detail = last_err.unwrap_or_else(|| "未知".into());
-            format!(
-                "设备不接受独占模式的任何格式/周期组合（{ch} 声道，最后错误：{detail}）；常见原因：Windows 声音设置中该设备启用了「音频增强」、驱动禁用了独占授权，或该设备（如蓝牙音频）本身不支持独占"
-            )
+            format!("设备不接受独占模式的任何格式/周期组合（{ch} 声道）。{detail}")
         })?;
         let dev_rate = wave_fmt.get_samplespersec();
         let blockalign = fmt.bytes_per_sample * ch.max(1);
+
+        // 引擎可能在长时间协商期间已放弃（超时/切歌/关开关）：
+        // 此时不再占用设备，立即释放并退出
+        if stop.load(Ordering::Relaxed) {
+            return Ok(());
+        }
 
         let h_event = audio_client
             .set_get_eventhandle()
@@ -463,4 +564,118 @@ where
     // 无论成败，线程退出即会话结束
     active.store(false, Ordering::Relaxed);
     init_result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 无限静音源（测试手动停止，不依赖自然播完）
+    struct Silence {
+        rate: u32,
+        ch: u16,
+    }
+    impl Iterator for Silence {
+        type Item = f32;
+        fn next(&mut self) -> Option<f32> {
+            Some(0.0)
+        }
+    }
+    impl Source for Silence {
+        fn sample_rate(&self) -> u32 {
+            self.rate
+        }
+        fn channels(&self) -> u16 {
+            self.ch
+        }
+        fn current_frame_len(&self) -> Option<usize> {
+            None
+        }
+        fn total_duration(&self) -> Option<std::time::Duration> {
+            None
+        }
+    }
+
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+
+    fn try_start(device_name: &str, rate: u32) -> Result<ExclusiveCtl, String> {
+        let (ctl, rx) = spawn_exclusive_session(
+            Silence { rate, ch: 2 },
+            ExclusiveParams {
+                device_pref: Some(device_name.to_string()),
+                channels: 2,
+                src_rate: rate,
+                volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+                speed_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            },
+        )?;
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(Ok(())) => Ok(ctl),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err("初始化超时".into()),
+        }
+    }
+
+    /// 端到端验证（需要真实音频设备，默认忽略）：
+    /// cargo test --bin rustmusic exclusive_lifecycle_and_release -- --ignored --nocapture
+    ///
+    /// 1. 独占会话能在支持的设备上建立；
+    /// 2. 停止 + 等待线程退出后设备立刻交还系统（共享流能重新打开，
+    ///    对应"关闭独占后其它软件恢复出声"）；
+    /// 3. 释放后立即再开第二个独占会话不撞 DEVICE_IN_USE（切歌/重建场景）。
+    #[test]
+    #[ignore]
+    fn exclusive_lifecycle_and_release() {
+        let _ = initialize_mta();
+        let collection = DeviceCollection::new(&Direction::Render).unwrap();
+        let mut tested = false;
+        for dev in collection.into_iter().flatten() {
+            let name = dev.get_friendlyname().unwrap_or_default();
+            let ctl = match try_start(&name, 48_000) {
+                Ok(c) => c,
+                Err(e) => {
+                    println!("[跳过] {name}：{e}");
+                    continue;
+                }
+            };
+            println!("[独占建立] {name}");
+            tested = true;
+
+            // 播一小段后停止，等待线程退出并释放设备
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            assert!(wait_session_exit(&ctl, 2500), "会话线程未在 2.5s 内退出");
+            println!("[设备已释放]");
+
+            // 设备交还后共享流必须能打开（其它软件恢复出声的等价条件）
+            let host = rodio::cpal::default_host();
+            let cpal_dev = host
+                .output_devices()
+                .unwrap()
+                .find(|d| d.name().ok().as_deref() == Some(name.as_str()))
+                .expect("cpal 侧找不到同名设备");
+            rodio::OutputStream::try_from_device(&cpal_dev)
+                .expect("释放独占后共享输出流应能打开");
+            println!("[共享流可打开]");
+
+            // 释放后立即重建独占会话（切歌/倍速重建场景，不撞 DEVICE_IN_USE）
+            let ctl2 = try_start(&name, 48_000).expect("释放后重建独占会话失败");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            assert!(wait_session_exit(&ctl2, 2500));
+            println!("[重建独占 OK]");
+
+            // 44100Hz 内容：多数设备默认 48kHz，独占下常触发
+            // BUFFER_SIZE_NOT_ALIGNED（0x88890019），验证文档恢复流程可用
+            let ctl3 = try_start(&name, 44_100);
+            match ctl3 {
+                Ok(c) => {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    assert!(wait_session_exit(&c, 2500));
+                    println!("[44100Hz 独占 OK]");
+                }
+                Err(e) => println!("[44100Hz 不支持] {e}"),
+            }
+            println!();
+        }
+        assert!(tested, "没有找到支持独占模式的设备（本机可能都不支持）");
+    }
 }

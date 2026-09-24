@@ -332,9 +332,12 @@ impl Engine {
     fn start_exclusive(&self, info: &TrackInfo, skip_ms: u64) -> Result<(), String> {
         self.rebuilding.store(true, Ordering::Relaxed);
         let result = (|| -> Result<(), String> {
-            // 终止旧会话
-            if let Some(ctl) = self.excl.read().as_ref() {
-                ctl.stop.store(true, Ordering::Relaxed);
+            // 终止旧会话并等线程真正退出（设备随音频客户端释放）：
+            // 旧会话还占着设备时开新会话，Initialize 会全部撞上 DEVICE_IN_USE
+            if let Some(ctl) = self.excl.read().clone() {
+                if !wasapi_out::wait_session_exit(&ctl, 2500) {
+                    eprintln!("[engine] 旧独占会话未按时退出，继续尝试新会话");
+                }
             }
             *self.excl.write() = None;
             let file = File::open(&info.path).map_err(|e| format!("打开文件失败: {e}"))?;
@@ -352,12 +355,30 @@ impl Engine {
                 speed_bits: self.speed.clone(),
             };
             let (ctl, rx) = wasapi_out::spawn_exclusive_session(wrapped, params)?;
+            // 会话一创建就注册控制句柄：协商期间超时/切歌/关开关也能终止它，
+            // 防止孤儿线程晚一步拿到设备后无人可控（表现为其它软件一直无声）
+            *self.excl.write() = Some(ctl.clone());
             match rx.recv_timeout(Duration::from_secs(3)) {
                 Ok(Ok(())) => {}
-                Ok(Err(e)) => return Err(e),
-                Err(_) => return Err("独占模式初始化超时".into()),
+                Ok(Err(e)) => {
+                    // 会话已退出（结果在退出后才发出），设备已释放
+                    *self.excl.write() = None;
+                    return Err(e);
+                }
+                Err(_) => {
+                    // 协商超时：要求会话退出并等设备释放
+                    let released = wasapi_out::wait_session_exit(&ctl, 2500);
+                    if released {
+                        *self.excl.write() = None;
+                    } else {
+                        // 线程卡在驱动调用里：保留句柄以便后续继续尝试终止，
+                        // 并标记共享流可能失效（设备或被晚到的会话占用）
+                        eprintln!("[engine] 独占会话协商超时且未退出，保留控制句柄");
+                        self.shared_broken.store(true, Ordering::Relaxed);
+                    }
+                    return Err("独占模式初始化超时".into());
+                }
             }
-            *self.excl.write() = Some(ctl);
             self.shared_broken.store(true, Ordering::Relaxed);
             self.sink.read().clear();
             self.pos_ms.store(skip_ms, Ordering::Relaxed);
@@ -404,12 +425,22 @@ impl Engine {
     /// 停止独占会话并立即切回共享模式（从当前进度续播，保持暂停状态）。
     /// 用于关闭独占开关时立刻把设备还给系统混音器，恢复其它应用出声。
     pub fn stop_exclusive_resume_shared(self: &Arc<Self>) -> Result<(), String> {
+        // 没有活跃独占会话、共享流也未被破坏时无需动作：
+        // 避免反复拨动开关时无故重启共享播放链（当前曲目会跳一下）
+        if !self.excl_active() && !self.shared_broken.load(Ordering::Relaxed) {
+            return Ok(());
+        }
         let info = self.current.read().clone();
         let pos = self.pos_ms.load(Ordering::Relaxed);
         let was_paused = self.user_paused.load(Ordering::Relaxed);
-        if let Some(ctl) = self.excl.read().as_ref() {
-            ctl.stop.store(true, Ordering::Relaxed);
-            ctl.active.store(false, Ordering::Relaxed);
+        // 已手动停止：只交还设备、重建共享流，不重新开始播放
+        let was_stopped = self.stopped.load(Ordering::Relaxed);
+        // 必须先等会话线程退出、设备交还系统混音器，再重建共享输出流：
+        // 设备被独占期间新共享流打不开，会落得"关了独占还是无声"
+        if let Some(ctl) = self.excl.read().clone() {
+            if !wasapi_out::wait_session_exit(&ctl, 2500) {
+                eprintln!("[engine] 独占会话未按时退出，设备可能仍被占用");
+            }
         }
         *self.excl.write() = None;
         self.shared_broken.store(true, Ordering::Relaxed);
@@ -417,6 +448,9 @@ impl Engine {
         let result = (|| -> Result<(), String> {
             self.rebuild_shared_output();
             if let Some(info) = &info {
+                if was_stopped {
+                    return Ok(());
+                }
                 let file =
                     File::open(&info.path).map_err(|e| format!("打开文件失败: {e}"))?;
                 let src = Decoder::new(BufReader::new(file))
@@ -443,7 +477,7 @@ impl Engine {
         })();
         self.rebuilding.store(false, Ordering::Relaxed);
         self.notify_smtc();
-        self.emit_state(!was_paused && info.is_some());
+        self.emit_state(!was_paused && info.is_some() && !was_stopped);
         result
     }
 
