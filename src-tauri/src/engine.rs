@@ -310,6 +310,11 @@ impl Engine {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     eprintln!("[engine] WASAPI 独占模式不可用，本次回退共享模式: {e}");
+                    // 前端 toast 提示用户独占未生效（音量混音器仍在工作）
+                    let _ = self.app.emit(
+                        "player://exclusive-fallback",
+                        serde_json::json!({ "reason": e }),
+                    );
                 }
             }
         }

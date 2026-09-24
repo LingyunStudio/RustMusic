@@ -599,6 +599,13 @@ export const useStore = create<Store>((set, get) => ({
       await listenEvent("player://ended", () => get().next(true, true))
     );
 
+    // 独占模式协商失败回退共享模式时，明确告知用户（否则无声降级难以察觉）
+    unbinds.push(
+      await listenEvent<{ reason: string }>("player://exclusive-fallback", (p) => {
+        get().toast(`WASAPI 独占模式不可用，已自动回退普通模式：${p.reason}`, "error");
+      })
+    );
+
     // 看门狗：UI 认为在播放但引擎 3 秒没有进度事件（托盘挂起期间状态事件
     // 丢失、恢复补发也没送达等极端情况的兜底自愈），主动拉取权威快照纠正。
     // 正常播放中 pos 250ms 一帧，不会触发；拉取走 invoke 请求-响应，

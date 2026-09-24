@@ -235,6 +235,8 @@ where
         // 退到设备混合采样率（此时启用线性重采样）
         let ch = params.channels;
         let candidates: Vec<(usize, usize, SampleType)> = vec![
+            // 24-valid-in-32-container 是声卡独占模式最普遍接受的格式
+            (32, 24, SampleType::Int),
             (32, 32, SampleType::Int),
             (24, 24, SampleType::Int),
             (16, 16, SampleType::Int),
@@ -267,11 +269,15 @@ where
                 break;
             }
         }
+        // 记录最后一个被拒候选的 HRESULT 码：全部被拒时用于诊断
+        //（0x88890008=格式不支持，0x8889000E=系统/驱动禁用独占授权）
+        let mut last_code: Option<i32> = None;
         if fmt.is_none() {
             for &(store, valid, kind) in &candidates {
                 let wf = WaveFormat::new(store, valid, &kind, mix_rate as usize, ch, None);
-                if let Ok(accepted) = audio_client.is_supported_exclusive_with_quirks(&wf) {
-                    let dev_rate = accepted.get_samplespersec();
+                match audio_client.is_supported_exclusive_with_quirks(&wf) {
+                    Ok(accepted) => {
+                        let dev_rate = accepted.get_samplespersec();
                     fmt = Some((
                         accepted,
                         FmtSpec {
@@ -289,12 +295,24 @@ where
                         // 输出帧率 = 设备率；输入消耗 = 源率 × 倍速
                         (params.src_rate as f64) / (dev_rate as f64),
                     ));
-                    break;
+                        break;
+                    }
+                    Err(e) => {
+                        last_code = e
+                            .downcast_ref::<WinError>()
+                            .map(|we| we.code().0);
+                    }
                 }
             }
         }
-        let (wave_fmt, mut fmt, rate_ratio) = fmt
-            .ok_or_else(|| format!("设备不支持独占模式的任何候选格式（{ch} 声道）"))?;
+        let (wave_fmt, mut fmt, rate_ratio) = fmt.ok_or_else(|| {
+            let code = last_code
+                .map(|c| format!("0x{:08X}", c as u32))
+                .unwrap_or_else(|| "未知".into());
+            format!(
+                "设备不支持独占模式的任何候选格式（{ch} 声道，最后错误 {code}）；                 常见原因：Windows 声音设置中该设备启用了「音频增强」或驱动禁用了独占授权"
+            )
+        })?;
         let dev_rate = wave_fmt.get_samplespersec();
 
         // 周期对齐（部分设备如 Intel HDA 要求 128 字节对齐），按官方示例
