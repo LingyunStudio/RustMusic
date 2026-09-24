@@ -269,15 +269,30 @@ where
             for mask in [None, Some(0u32)] {
                 let wf = WaveFormat::new(store, valid, &kind, rate as usize, ch, mask);
                 let blockalign = wf.get_blockalign() as usize;
-                // 周期候选：按该格式的对齐值、设备默认、最小周期
+                // 周期候选：MS 文档（IAudioClient::Initialize 备注）要求独占
+                // 模式的周期必须是「设备默认周期的整数倍」且按 128 字节边界
+                // 对齐。注意不能拿最小周期当基数——它对齐后未必满足规则
+                //（如 20ms 默认周期在 44100Hz/8 字节帧下 = 7056 字节，
+                // 非 128 倍数，直接用必被 0x8889000A 拒绝）。
                 let mut periods: Vec<i64> = Vec::new();
-                if let Ok(p) =
-                    audio_client.calculate_aligned_period_near(3 * min_period / 2, Some(128), &wf)
+                for n in [1i64, 2, 3, 4] {
+                    if let Ok(p) = audio_client.calculate_aligned_period_near(
+                        def_period * n,
+                        Some(128),
+                        &wf,
+                    ) {
+                        periods.push(p);
+                    }
+                }
+                // 最小周期按同样规则对齐后兜底（低延迟场景）
+                if let Ok(p) = audio_client
+                    .calculate_aligned_period_near(min_period, Some(128), &wf)
                 {
                     periods.push(p);
                 }
                 periods.push(def_period);
                 periods.push(min_period);
+                periods.sort();
                 periods.dedup();
 
                 for &period in &periods {
