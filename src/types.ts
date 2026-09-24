@@ -227,6 +227,22 @@ export interface OnlineRecState {
 
 export type OnlineSource = "netease" | "qq" | "kugou";
 
+/** 在线曲库视图内导航快照（搜索/推荐切换前的完整状态），按源存 store，
+ *  跳转歌手/专辑页往返后依然可以逐步返回 */
+export interface OnlineNavSnapshot {
+  rec: OnlineRecState | null;
+  kw: string;
+  neteaseResults: NeteaseTrack[];
+  neteaseTotal: number;
+  neteaseSearched: boolean;
+  qqResults: QqSong[];
+  qqSearched: boolean;
+  qqPage: number;
+  kugouResults: KgSong[];
+  kugouSearched: boolean;
+  kugouPage: number;
+}
+
 export interface ScanState {
   active: boolean;
   done: number;

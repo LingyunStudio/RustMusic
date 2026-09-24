@@ -19,6 +19,7 @@ import {
 import { applySkin, loadSkin, saveSkin } from "./skins";
 import type {
   CurrentTrack,
+  OnlineNavSnapshot,
   OnlineRecState,
   OnlineSource,
   PlaylistEntryMeta,
@@ -71,6 +72,8 @@ interface Store {
   /** 在线曲库推荐视图（随便听听/榜单/每日推荐/私人FM），按源存放：
    *  放 store 里保证跳转歌手/专辑页后返回时还原当时的推荐列表 */
   onlineRec: Record<OnlineSource, OnlineRecState | null>;
+  /** 在线曲库视图内导航栈（搜索/推荐切换前快照），跳转详情页往返后仍可逐步返回 */
+  onlineNav: Record<OnlineSource, OnlineNavSnapshot[]>;
   /** 各源最近一次搜索词（返回在线曲库时还原搜索框） */
   lastKw: Record<OnlineSource, string>;
   search: string;
@@ -142,6 +145,10 @@ interface Store {
   dismissToast(id: number): void;
   setView(v: ViewName, param?: number): void;
   setOnlineRec(source: OnlineSource, rec: OnlineRecState | null): void;
+  pushOnlineNav(source: OnlineSource, snap: OnlineNavSnapshot): void;
+  /** 弹出栈顶快照；栈空返回 null */
+  popOnlineNav(source: OnlineSource): OnlineNavSnapshot | null;
+  clearOnlineNav(source: OnlineSource): void;
   setLastKw(source: OnlineSource, kw: string): void;
   /** 打开歌手/专辑详情页（聚合本地曲目与在线搜索结果），自带返回栈 */
   openDetailPage(kind: "artist" | "album", name: string): void;
@@ -498,6 +505,7 @@ export const useStore = create<Store>((set, get) => ({
   detailName: "",
   viewHistory: [],
   onlineRec: { netease: null, qq: null, kugou: null },
+  onlineNav: { netease: [], qq: [], kugou: [] },
   lastKw: { netease: "", qq: "", kugou: "" },
   search: "",
   nowPlayingOpen: false,
@@ -767,6 +775,29 @@ export const useStore = create<Store>((set, get) => ({
 
   setOnlineRec(source, rec) {
     set((s) => ({ onlineRec: { ...s.onlineRec, [source]: rec } }));
+  },
+
+  pushOnlineNav(source, snap) {
+    set((s) => ({
+      onlineNav: {
+        ...s.onlineNav,
+        [source]: [...s.onlineNav[source].slice(-9), snap],
+      },
+    }));
+  },
+
+  popOnlineNav(source) {
+    const stack = get().onlineNav[source];
+    if (!stack.length) return null;
+    const prev = stack[stack.length - 1];
+    set((s) => ({
+      onlineNav: { ...s.onlineNav, [source]: s.onlineNav[source].slice(0, -1) },
+    }));
+    return prev;
+  },
+
+  clearOnlineNav(source) {
+    set((s) => ({ onlineNav: { ...s.onlineNav, [source]: [] } }));
   },
 
   setLastKw(source, kw) {

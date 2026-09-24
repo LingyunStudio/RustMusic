@@ -22,7 +22,13 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
-import type { KgSong, NeteaseTrack, OnlineRecState, OnlineSource, QqSong } from "../types";
+import type {
+  KgSong,
+  NeteaseTrack,
+  OnlineNavSnapshot,
+  OnlineRecState,
+  QqSong,
+} from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
 
@@ -125,20 +131,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const [searchHistory, setSearchHistory] = useState<string[]>(loadSearchHistory);
 
   // ---------- 视图内导航历史（点歌手/专辑/搜索后可返回上一页） ----------
-  interface NavSnapshot {
-    rec: OnlineRecState | null;
-    kw: string;
-    neteaseResults: NeteaseTrack[];
-    neteaseTotal: number;
-    neteaseSearched: boolean;
-    qqResults: QqSong[];
-    qqSearched: boolean;
-    qqPage: number;
-    kugouResults: KgSong[];
-    kugouSearched: boolean;
-    kugouPage: number;
-  }
-  const [navStack, setNavStack] = useState<NavSnapshot[]>([]);
+  // 栈存 store（按源）：跳转歌手/专辑页往返后，之前的搜索历史依然可逐步返回
+  const navStack = useStore((s) => s.onlineNav[source]);
   const [qrSource, setQrSource] = useState<Source | null>(null);
   const [newPlName, setNewPlName] = useState("");
   const [importOpen, setImportOpen] = useState(false);
@@ -180,12 +174,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   // 推荐接口预取：榜单 chip 数据量小、匿名可拉，进视图静默加载；
   // 失败只影响推荐入口，不打扰搜索主流程。
-  // 注意：推荐内容（rec）按源存 store，切源不清空——跳转歌手/专辑页
-  // 返回时要还原当时的推荐列表
+  // 注意：此 effect 只在挂载时执行一次（App 对三个源是独立挂载的实例）。
+  // 不要在这里清导航栈/推荐内容——它们按源存 store，清掉会毁掉
+  // 「跳转歌手/专辑页 → 返回」的还原链（此前正是这个自毁导致无法返回）
   useEffect(() => {
-    setNavStack([]);
-    setSel(new Set());
-    setBatchMode(false);
     setKw(useStore.getState().lastKw[source] ?? "");
     if (!recommendable) return;
     let dead = false;
@@ -445,7 +437,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   };
 
   // 发起搜索前快照当前视图（推荐内容 + 各源搜索结果），供返回按钮恢复
-  const snapshotNav = (): NavSnapshot => ({
+  const snapshotNav = (): OnlineNavSnapshot => ({
     rec,
     kw,
     neteaseResults,
@@ -458,12 +450,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     kugouSearched,
     kugouPage,
   });
-  const pushNav = () => setNavStack((s) => [...s.slice(-9), snapshotNav()]);
+  const pushNav = () => useStore.getState().pushOnlineNav(source, snapshotNav());
 
   const goBack = () => {
-    const prev = navStack[navStack.length - 1];
+    const prev = useStore.getState().popOnlineNav(source);
     if (!prev) return;
-    setNavStack((s) => s.slice(0, -1));
     setRec(prev.rec);
     setKw(prev.kw);
     setSel(new Set());
