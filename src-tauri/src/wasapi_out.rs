@@ -235,11 +235,12 @@ where
             .get_iaudioclient()
             .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
 
-        // 格式协商：先用 is_supported_exclusive_with_quirks 找到该驱动接受的
-        // 格式——关键点：它可能返回「改写过的格式」（如 2 声道转成普通
-        // WAVEFORMATEX 结构），必须用返回的格式去 Initialize；直接传自建的
-        // WAVEFORMATEXTENSIBLE 会被部分驱动以 0x8889000A 一律拒绝。
-        // 周期则用 Initialize 实测多个候选（对齐值/默认/最小/10ms 等）。
+        // 格式协商：同一客户端上依次尝试「格式 × 周期」。实证要点：
+        // 1. 必须用同一个客户端实例迭代周期——每个周期换全新客户端会被
+        //    驱动以 0x8889000A 一律拒绝（曾导致独占完全不可用）；
+        // 2. 初始化失败后同客户端可用其它周期再次 Initialize（已被实证）；
+        // 3. GetBufferSize 在未初始化的客户端上返回 NOT_INITIALIZED，
+        //    文档重算流程走不通，故不做该重试。
         let ch = params.channels;
         let candidates: Vec<(usize, usize, SampleType)> = vec![
             (32, 24, SampleType::Int),
@@ -271,159 +272,80 @@ where
 
         'formats: for (store, valid, kind, rate) in fmt_cands {
             let wf = WaveFormat::new(store, valid, &kind, rate as usize, ch, None);
-            // quirks 探测：成功时返回驱动实际接受的格式（可能已改写）
-            let accepted = match audio_client.is_supported_exclusive_with_quirks(&wf) {
-                Ok(f) => f,
-                Err(e) => {
-                    last_err = Some(wasapi_err(
-                        &format!("格式探测（{rate}Hz/{store}位）"),
-                        e.as_ref(),
-                    ));
-                    continue;
-                }
-            };
-            let blockalign = accepted.get_blockalign() as usize;
-            let valid_bits = accepted.get_validbitspersample();
-            let store_bits = accepted.get_bitspersample();
-            let dev_rate = accepted.get_samplespersec();
+            let blockalign = wf.get_blockalign() as usize;
             let fmt_spec = FmtSpec {
-                kind: match accepted.get_subformat().unwrap_or(SampleType::Int) {
-                    SampleType::Float => SampleKind::F32,
-                    _ => {
-                        if valid_bits == 16 {
-                            SampleKind::I16
-                        } else if valid_bits == 24 && store_bits == 24 {
-                            SampleKind::I24
-                        } else if valid_bits == 24 && store_bits == 32 {
-                            SampleKind::I24In32
-                        } else {
-                            SampleKind::I32
-                        }
-                    }
+                kind: if kind == SampleType::Float {
+                    SampleKind::F32
+                } else if valid == 16 {
+                    SampleKind::I16
+                } else if valid == 24 && store == 32 {
+                    SampleKind::I24In32
+                } else if valid == 24 {
+                    SampleKind::I24
+                } else {
+                    SampleKind::I32
                 },
                 bytes_per_sample: blockalign / ch.max(1),
             };
-            let ratio = (params.src_rate as f64) / (dev_rate as f64);
+            let ratio = (params.src_rate as f64) / (rate as f64);
 
-            // 周期候选：按该格式对齐的默认周期倍数、最小周期对齐、10ms
+            // 周期候选：文档对齐规则（默认周期整数倍 + 128 字节对齐）优先，
+            // 随后默认/最小周期原值及其倍数、10ms
             let mut periods: Vec<i64> = Vec::new();
-            for n in [1i64, 2, 4] {
+            for n in [1i64, 2, 3, 4] {
                 if let Ok(p) = audio_client.calculate_aligned_period_near(
                     def_period * n,
                     Some(128),
-                    &accepted,
+                    &wf,
                 ) {
                     periods.push(p);
                 }
             }
-            if let Ok(p) =
-                audio_client.calculate_aligned_period_near(min_period, Some(128), &accepted)
+            if let Ok(p) = audio_client
+                .calculate_aligned_period_near(min_period, Some(128), &wf)
             {
                 periods.push(p);
             }
-            periods.push(100_000); // 10ms
             periods.push(def_period);
             periods.push(min_period);
+            periods.push(min_period * 2);
+            periods.push(100_000); // 10ms
             periods.sort();
             periods.dedup();
 
             for &period in &periods {
-                // 周期不同重试时用全新 client（失败后的 client 状态不可靠）
-                for attempt in 0..2 {
-                    let mut client = device
-                        .get_iaudioclient()
-                        .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
-                    match client.initialize_client(
-                        &accepted,
-                        period,
-                        &Direction::Render,
-                        &ShareMode::Exclusive,
-                        false,
-                    ) {
-                        Ok(()) => {
-                            audio_client = client;
-                            inited = Some((accepted, fmt_spec.clone(), ratio));
-                            eprintln!(
-                                "[wasapi] 独占格式就绪：源 {}Hz → 设备 {}Hz × {}ch，{} 字节/帧，有效 {} 位，周期 {}（100ns）",
-                                params.src_rate, dev_rate, ch, blockalign, valid_bits, period
-                            );
-                            break 'formats;
-                        }
-                        Err(e) => {
-                            let code = e
-                                .downcast_ref::<WinError>()
-                                .map(|we| we.code().0)
-                                .unwrap_or(0);
-                            eprintln!(
-                                "[wasapi] init 尝试：{}Hz/{}位/周期 {} → HRESULT 0x{:08X}",
-                                rate, store_bits, period, code as u32
-                            );
-                            last_err = Some(wasapi_err(
-                                &format!(
-                                    "独占模式初始化失败（{}Hz/{}位/周期 {}）",
-                                    rate, store_bits, period
-                                ),
-                                e.as_ref(),
-                            ));
-                            // BUFFER_SIZE_NOT_ALIGNED：按 MS 文档用
-                            // GetBufferSize 的对齐值重算周期再试一次
-                            if code == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED && attempt == 0 {
-                                match client.get_bufferframecount() {
-                                    Ok(bf) => {
-                                        eprintln!(
-                                            "[wasapi] GetBufferSize 对齐帧数 = {bf}"
-                                        );
-                                        if bf > 0 {
-                                            let p2 = wasapi::calculate_period_100ns(
-                                                bf as i64,
-                                                dev_rate as i64,
-                                            );
-                                            eprintln!("[wasapi] 对齐重试周期 = {p2}");
-                                            let mut client2 = device
-                                                .get_iaudioclient()
-                                                .map_err(|e| {
-                                                    wasapi_err("获取音频客户端失败", e.as_ref())
-                                                })?;
-                                            match client2.initialize_client(
-                                                &accepted,
-                                                p2,
-                                                &Direction::Render,
-                                                &ShareMode::Exclusive,
-                                                false,
-                                            ) {
-                                                Ok(()) => {
-                                                    audio_client = client2;
-                                                    inited = Some((
-                                                        accepted,
-                                                        fmt_spec.clone(),
-                                                        ratio,
-                                                    ));
-                                                    eprintln!(
-                                                        "[wasapi] 独占格式就绪（对齐重算）：设备 {}Hz，周期 {p2}",
-                                                        dev_rate
-                                                    );
-                                                    break 'formats;
-                                                }
-                                                Err(e2) => {
-                                                    eprintln!(
-                                                        "[wasapi] 对齐重试仍失败：{}",
-                                                        wasapi_err("初始化", e2.as_ref())
-                                                    );
-                                                    // client2 已释放，继续下一周期
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!(
-                                            "[wasapi] GetBufferSize 不可用（客户端未初始化）：{}",
-                                            wasapi_err("GetBufferSize", e.as_ref())
-                                        );
-                                    }
-                                }
-                            }
-                            // 换下一个周期
-                        }
+                match audio_client.initialize_client(
+                    &wf,
+                    period,
+                    &Direction::Render,
+                    &ShareMode::Exclusive,
+                    false,
+                ) {
+                    Ok(()) => {
+                        inited = Some((wf, fmt_spec, ratio));
+                        eprintln!(
+                            "[wasapi] 独占格式就绪：源 {}Hz → 设备 {}Hz × {}ch，{} 字节/帧，有效 {} 位，周期 {}（100ns）",
+                            params.src_rate, rate, ch, blockalign, valid, period
+                        );
+                        break 'formats;
+                    }
+                    Err(e) => {
+                        let code = e
+                            .downcast_ref::<WinError>()
+                            .map(|we| we.code().0)
+                            .unwrap_or(0);
+                        eprintln!(
+                            "[wasapi] init 尝试：{}Hz/{}位/周期 {} → HRESULT 0x{:08X}",
+                            rate, store, period, code as u32
+                        );
+                        last_err = Some(wasapi_err(
+                            &format!(
+                                "独占模式初始化失败（{}Hz/{}位/周期 {}）",
+                                rate, store, period
+                            ),
+                            e.as_ref(),
+                        ));
+                        // 同客户端换下一个周期继续
                     }
                 }
             }
