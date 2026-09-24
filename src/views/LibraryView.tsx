@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { Clock3, Heart, Library, MoveVertical, Play, Search, Shuffle, X } from "lucide-react";
+import {
+  Check,
+  Clock3,
+  Download,
+  Heart,
+  Library,
+  ListChecks,
+  ListPlus,
+  MoveVertical,
+  Play,
+  Search,
+  Shuffle,
+  X,
+} from "lucide-react";
 import { useStore } from "../store";
 import TrackList, { type SortKey } from "../components/TrackList";
+import Modal from "../components/Modal";
 import { matchSearch } from "../utils";
 import type { PlaylistEntryMeta, TrackMeta } from "../types";
 
@@ -42,6 +56,19 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const rowKeyOf = useStore((s) => s.rowKeyOf);
   const saveManualOrder = useStore((s) => s.saveManualOrder);
   const loadManualOrder = useStore((s) => s.loadManualOrder);
+  // 批量操作（本地 + 在线条目统一处理）
+  const addToPlaylist = useStore((s) => s.addToPlaylist);
+  const addOnlineToPlaylist = useStore((s) => s.addOnlineToPlaylist);
+  const addToQueue = useStore((s) => s.addToQueue);
+  const downloadOnline = useStore((s) => s.downloadOnline);
+  const createPlaylist = useStore((s) => s.createPlaylist);
+  const playlists = useStore((s) => s.playlists);
+  const toast = useStore((s) => s.toast);
+  // 批量多选：key 与 unavailable/手动排序一致（track:<id> / netease:<rid>…）
+  const [batchMode, setBatchMode] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [newPlName, setNewPlName] = useState("");
   // 默认排序“添加时间”（资料库=入库顺序；最近播放/我喜欢=列表时间，本地与在线归并）
   const [sortKey, setSortKey] = useState<SortKey>("added");
   const [dir, setDir] = useState<1 | -1>(-1);
@@ -143,13 +170,12 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   ) => {
     const ka = rowKeys(a, mode, sortKey);
     const kb = rowKeys(b, mode, sortKey);
-    // 手动排序时统一升序（序号小的在前）；未记录项用负时间戳天然“新的在前”
+    // 方向 dir 只在外层 rows.sort 处统一乘一次（此处再乘会变 dir²=1，
+    // 数字键永远升序、方向切换失效）；手动排序统一升序
     const d =
       typeof ka === "string" || typeof kb === "string"
         ? String(ka).localeCompare(String(kb), "zh")
-        : sortKey === "manual"
-          ? (ka as number) - (kb as number)
-          : dir * ((ka as number) - (kb as number));
+        : (ka as number) - (kb as number);
     if (d !== 0) return d;
     // 并列项：本地在前，保持稳定
     return a.type === b.type ? 0 : a.type === "local" ? -1 : 1;
@@ -260,6 +286,96 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     r.type === "local"
       ? rowKeyOf({ kind: "local", trackId: r.t.id })
       : rowKeyOf({ kind: r.e.kind, onlineId: r.e.onlineId });
+
+  // ---------- 批量操作（资料库=本地；我喜欢/最近播放=本地+在线归并行） ----------
+  const batchRows = useMemo(() => {
+    if (mode === "library")
+      return sortedTracks.map((t) => ({
+        key: `track:${t.id}`,
+        type: "local" as const,
+        t,
+      }));
+    return mergedRows.map((r) =>
+      r.type === "local"
+        ? { key: `track:${r.t.id}`, type: "local" as const, t: r.t }
+        : { key: `${r.e.kind}:${r.e.onlineId}`, type: "online" as const, e: r.e }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, sortedTracks, mergedRows]);
+  const selectedBatch = batchRows.filter((r) => sel.has(r.key));
+
+  const toggleSelKey = (key: string) =>
+    setSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const batchQueue = () => {
+    for (const r of selectedBatch) {
+      if (r.type === "local") addToQueue({ kind: "track", id: r.t.id });
+      else if (r.e.kind === "netease")
+        addToQueue({ kind: "netease", id: Number(r.e.onlineId) });
+      else
+        addToQueue({
+          kind: r.e.kind as "qq" | "kugou",
+          id: r.e.onlineId ?? "",
+        });
+    }
+    toast(`已把 ${selectedBatch.length} 首加入队列`, "success");
+    setSel(new Set());
+    setBatchMode(false);
+  };
+
+  const batchDownload = async () => {
+    const list = selectedBatch.filter((r) => r.type === "online");
+    if (!list.length) {
+      toast("所选曲目都是本地文件，无需下载", "info");
+      return;
+    }
+    setSel(new Set());
+    setBatchMode(false);
+    for (const r of list) {
+      try {
+        await downloadOnline({
+          kind: r.e.kind,
+          id: r.e.onlineId ?? "",
+          name: r.e.title,
+          artist: r.e.artist,
+          album: r.e.album,
+          cover: r.e.cover,
+          durationMs: Math.round(r.e.duration * 1000),
+          mediaMid: r.e.mediaMid ?? "",
+        });
+      } catch (e) {
+        toast(`下载「${r.e.title}」失败：${String(e)}`, "error");
+      }
+    }
+  };
+
+  const batchAddToPlaylist = async (pid: number) => {
+    for (const r of selectedBatch) {
+      if (r.type === "local") {
+        await addToPlaylist(pid, r.t.id);
+      } else {
+        await addOnlineToPlaylist(pid, {
+          kind: r.e.kind,
+          id: r.e.onlineId ?? "",
+          name: r.e.title,
+          artist: r.e.artist,
+          album: r.e.album,
+          cover: r.e.cover,
+          durationMs: Math.round(r.e.duration * 1000),
+          mediaMid: r.e.mediaMid ?? "",
+          vip: r.e.vip ?? false,
+        });
+      }
+    }
+    setPickerOpen(false);
+    setSel(new Set());
+    setBatchMode(false);
+  };
 
   const onDragReorder = (from: number, to: number) => {
     const rows = dragRows;
@@ -377,6 +493,18 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             {(sortedTracks.length > 0 || mergedEntries.length > 0) && (
               <>
                 <button
+                  className={`btn-secondary ${batchMode ? "!text-[var(--accent)]" : ""}`}
+                  disabled={manualActive}
+                  title={manualActive ? "手动排序模式下不可多选" : "批量选择：加入播放列表 / 队列 / 下载"}
+                  onClick={() => {
+                    setBatchMode(!batchMode);
+                    setSel(new Set());
+                  }}
+                >
+                  <ListChecks size={14} />
+                  批量选择
+                </button>
+                <button
                   className="btn-secondary"
                   onClick={() => playAll(true)}
                 >
@@ -432,13 +560,60 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               <span className="text-right">操作</span>
             </div>
           )}
+          {/* 批量操作栏：多选模式下显示 */}
+          {batchMode && (
+            <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[var(--line)] shrink-0 flex-wrap">
+              <span className="text-[12.5px] text-[var(--ink-2)] mr-1">
+                已选 {sel.size} 首
+              </span>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!sel.size}
+                onClick={() => setPickerOpen(true)}
+              >
+                <ListPlus size={13} />
+                加入播放列表
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!sel.size}
+                onClick={batchQueue}
+              >
+                <Play size={13} />
+                加入队列
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!sel.size}
+                onClick={batchDownload}
+              >
+                <Download size={13} />
+                下载到本地
+              </button>
+              <button
+                className="btn-ghost !py-1.5 !px-3 text-[12.5px]"
+                onClick={() => setSel(new Set())}
+                disabled={!sel.size}
+              >
+                清除选择
+              </button>
+              <span className="text-[11px] text-[var(--ink-3)] ml-auto">
+                点击行勾选 / 取消，再点"批量选择"退出
+              </span>
+            </div>
+          )}
           <TrackList
             tracks={sortedTracks}
             inCard
             onlineEntries={onlineEntries}
             mergedRows={mergedRows.length ? mergedRows : undefined}
-            dragSortable={manualActive}
+            dragSortable={manualActive && !batchMode}
             onDragReorder={manualActive ? onDragReorder : undefined}
+            selection={{
+              active: batchMode,
+              keys: sel,
+              onToggle: toggleSelKey,
+            }}
             emptyHint={
               mode === "library"
                 ? "资料库还是空的"
@@ -459,6 +634,58 @@ export default function LibraryView({ mode }: { mode: Mode }) {
           />
         </div>
       </div>
+
+      {/* 批量加入播放列表弹窗（本地 + 在线条目混合写入） */}
+      <Modal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        title={
+          selectedBatch.length > 1
+            ? `添加 ${selectedBatch.length} 首到播放列表`
+            : "添加到播放列表"
+        }
+        width={380}
+      >
+        <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
+          {playlists.map((p) => (
+            <button
+              key={p.id}
+              className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
+              onClick={() => batchAddToPlaylist(p.id)}
+            >
+              <span className="truncate">{p.name}</span>
+              <span className="text-[11px] text-[var(--ink-2)]">
+                {p.entries.length} 首
+              </span>
+            </button>
+          ))}
+          {!playlists.length && (
+            <div className="text-[12.5px] text-[var(--ink-2)] py-2">
+              还没有播放列表，在下方创建
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 mt-3">
+          <input
+            type="text"
+            value={newPlName}
+            onChange={(e) => setNewPlName(e.target.value)}
+            placeholder="新播放列表名称"
+            className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[13px] focus:border-[var(--line)] outline-none"
+          />
+          <button
+            className="btn-secondary"
+            onClick={async () => {
+              if (!newPlName.trim() || !selectedBatch.length) return;
+              const pid = await createPlaylist(newPlName.trim());
+              if (pid >= 0) await batchAddToPlaylist(pid);
+              setNewPlName("");
+            }}
+          >
+            创建并添加
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

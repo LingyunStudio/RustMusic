@@ -319,7 +319,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                     key={r.entry.rowid}
                     {...(windowed ? {} : rowProps(i))}
                     style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                    className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
+                    className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
                       active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
                     } ${dead ? "opacity-45" : ""}`}
                     title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}

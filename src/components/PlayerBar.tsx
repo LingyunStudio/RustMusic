@@ -9,6 +9,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Timer,
   Volume1,
   Volume2,
   VolumeX,
@@ -180,12 +181,73 @@ function VolumePopover({
   );
 }
 
+/** 定时停止弹出菜单（点击时钟图标显示，点击其他区域收起） */
+function SleepPopover({
+  sleepAt,
+  onSet,
+  onClose,
+}: {
+  sleepAt: number | null;
+  onSet: (min: number | null) => void;
+  onClose: () => void;
+}) {
+  const remainMin = sleepAt
+    ? Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))
+    : null;
+  return (
+    <>
+      {/* 点击其他区域收起 */}
+      <div className="fixed inset-0 z-[60]" onClick={onClose} />
+      <div
+        className="absolute bottom-[48px] right-0 z-[61] w-[136px] rounded-2xl p-1.5 flex flex-col"
+        style={{
+          background: "var(--bar-glass)",
+          backdropFilter: "blur(var(--bar-blur, 8px))",
+          border: "1px solid var(--bar-line)",
+          boxShadow: "var(--bar-shadow)",
+        }}
+      >
+        {remainMin != null && (
+          <div className="px-2.5 py-1 text-[11px] text-[var(--accent-strong)] font-semibold">
+            剩余约 {remainMin} 分钟
+          </div>
+        )}
+        {[15, 30, 45, 60, 90].map((m) => (
+          <button
+            key={m}
+            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+            onClick={() => {
+              onSet(m);
+              onClose();
+            }}
+          >
+            {m} 分钟后停止
+          </button>
+        ))}
+        {sleepAt != null && (
+          <button
+            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left"
+            onClick={() => {
+              onSet(null);
+              onClose();
+            }}
+          >
+            取消定时
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function PlayerBar({ centered = false }: { centered?: boolean }) {
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
   // pos/dur/lyrics 的高频订阅已隔离到 TrackTitleLyric / Playhead：
   // 主体只订阅低频状态，250ms 一帧的进度更新不再重渲染整个播放条
   const volume = useStore((s) => s.volume);
+  const sleepAt = useStore((s) => s.sleepAt);
+  const setSleepTimer = useStore((s) => s.setSleepTimer);
   const speed = useStore((s) => s.speed);
   const repeat = useStore((s) => s.repeat);
   const shuffle = useStore((s) => s.shuffle);
@@ -216,6 +278,8 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
 
   const [volOpen, setVolOpen] = useState(false);
   const volBtnRef = useRef<HTMLButtonElement>(null);
+  const lastVolRef = useRef(0.8);
+  const [sleepOpen, setSleepOpen] = useState(false);
 
   return (
     // 与右侧内容区（玻璃卡片）对齐：左偏移侧栏宽度、右边距与卡片外边距一致
@@ -347,6 +411,38 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   />
                 </button>
               )}
+              {current.kind === "kugou" && current.kgid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 shrink-0"
+                  onClick={() => {
+                    // vip 不在 current 里：从已入库的在线条目取兜底
+                    const entry = [...likedOnline, ...recentOnline].find(
+                      (e) => e.kind === "kugou" && e.onlineId === current.kgid
+                    );
+                    toggleLikeOnline({
+                      kind: "kugou",
+                      id: current.kgid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                      mediaMid: "",
+                      vip: entry?.vip ?? false,
+                    });
+                  }}
+                  title={savedOnline[`kugou-${current.kgid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      savedOnline[`kugou-${current.kgid}`]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -443,13 +539,24 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           >
             {speed}x
           </button>
-          {/* 音量：仅图标，点击弹出竖向音量条 */}
-          <div className="relative flex items-center">
+          {/* 音量：点击图标 = 静音切换（记住原音量），悬停弹出竖向音量条 */}
+          <div
+            className="relative flex items-center"
+            onMouseLeave={() => setVolOpen(false)}
+          >
             <button
               ref={volBtnRef}
               className={`btn-ghost w-9 h-9 shrink-0 ${volOpen ? "!text-[var(--accent)]" : ""}`}
-              onClick={() => setVolOpen((v) => !v)}
-              title={volume === 0 ? "取消静音" : "音量"}
+              onClick={() => {
+                if (volume > 0) {
+                  lastVolRef.current = volume;
+                  setVolume(0);
+                } else {
+                  setVolume(lastVolRef.current || 0.8);
+                }
+              }}
+              onMouseEnter={() => setVolOpen(true)}
+              title={volume === 0 ? "取消静音" : "静音"}
             >
               <VolIcon size={15} />
             </button>
@@ -458,6 +565,29 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 volume={volume}
                 onSet={setVolume}
                 onClose={() => setVolOpen(false)}
+              />
+            )}
+          </div>
+          {/* 定时停止：到点停引擎并复位 UI */}
+          <div className="relative flex items-center">
+            <button
+              className={`btn-ghost w-9 h-9 shrink-0 ${
+                sleepAt != null ? "!text-[var(--accent)]" : ""
+              }`}
+              onClick={() => setSleepOpen((v) => !v)}
+              title={
+                sleepAt != null
+                  ? `定时停止：剩余约 ${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))} 分钟`
+                  : "定时停止播放"
+              }
+            >
+              <Timer size={15} />
+            </button>
+            {sleepOpen && (
+              <SleepPopover
+                sleepAt={sleepAt}
+                onSet={setSleepTimer}
+                onClose={() => setSleepOpen(false)}
               />
             )}
           </div>

@@ -4,6 +4,7 @@ import {
   Cloud,
   Heart,
   Info,
+  ListChecks,
   ListPlus,
   LogOut,
   MoreHorizontal,
@@ -11,6 +12,11 @@ import {
   Search,
   ShieldCheck,
   Loader2,
+  Shuffle,
+  X,
+  Check,
+  Download,
+  History,
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
@@ -37,6 +43,33 @@ const qqCover = (albumMid: string) =>
   albumMid
     ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${albumMid}.jpg`
     : "";
+
+/** 推荐内容（随机歌单/榜单/每日推荐/私人FM）：与搜索结果同构，行渲染/操作完全复用 */
+interface RecState {
+  /** 来源：换一批按钮按来源刷新 */
+  origin: "random" | "top" | "daily" | "fm";
+  title: string;
+  cover: string;
+  subtitle: string;
+  /** 可整单收藏时：远程歌单 ID（netease 榜单/个性化歌单、QQ 公开歌单） */
+  playlistId?: number;
+  netease?: NeteaseTrack[];
+  qq?: QqSong[];
+}
+
+/** 在线搜索历史（localStorage，跨会话保留，最多 12 条） */
+const SEARCH_HISTORY_KEY = "rustmusic_search_history";
+const loadSearchHistory = (): string[] => {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list)
+      ? list.filter((x): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+};
 
 export default function OnlineLibraryView({ source }: { source: Source }) {
   const qqPage = useStore((s) => s.qqPage);
@@ -83,8 +116,19 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const [menu, setMenu] = useState<{ x: number; y: number; row: OnlineRow } | null>(
     null
   );
+  // 推荐态：随机歌单/榜单加载后接管列表展示，搜索时清空回到搜索态
+  const [rec, setRec] = useState<RecState | null>(null);
+  const [recLoading, setRecLoading] = useState(false);
+  const [toplists, setToplists] = useState<
+    { id: number; name: string; cover: string }[]
+  >([]);
+  // 批量选择：key = `${kind}-${id}`，与行渲染 key 一致
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  // 批量加入播放列表的待选行（非空时打开歌单选择弹窗）
+  const [pickerRows, setPickerRows] = useState<OnlineRow[] | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>(loadSearchHistory);
   const [qrSource, setQrSource] = useState<Source | null>(null);
-  const [pickerRow, setPickerRow] = useState<OnlineRow | null>(null);
   const [newPlName, setNewPlName] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [importList, setImportList] = useState<
@@ -120,8 +164,216 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         : "免费畅听";
   const sourceName =
     source === "netease" ? "网易云" : source === "qq" ? "QQ 音乐" : "酷狗";
+  // 随机推荐 / 榜单目前只接了网易云与 QQ（匿名接口），酷狗无此能力
+  const recommendable = source === "netease" || source === "qq";
+
+  // 推荐接口预取：榜单 chip 数据量小、匿名可拉，进视图静默加载；
+  // 失败只影响推荐入口，不打扰搜索主流程
+  useEffect(() => {
+    setRec(null);
+    if (!recommendable) return;
+    let dead = false;
+    (async () => {
+      try {
+        if (source === "netease") {
+          const r = await api.neteaseToplists();
+          if (!dead)
+            setToplists(
+              (r.toplists ?? []).map((t) => ({
+                id: t.id,
+                name: t.name,
+                cover: t.cover,
+              }))
+            );
+        } else {
+          const r = await api.qqToplists();
+          if (!dead)
+            setToplists(
+              (r.toplists ?? []).map((t) => ({
+                id: t.id,
+                name: t.title,
+                cover: t.pic,
+              }))
+            );
+        }
+      } catch {
+        /* 榜单入口拿不到就隐藏，不报错 */
+      }
+    })();
+    return () => {
+      dead = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
+
+  // 推荐曲目写入 store 缓存：与搜索结果一致，保证“下一首播放/加入队列”
+  // 在从未播放过的情况下也能解析出曲目信息
+  const cacheRecSongs = (r: RecState) => {
+    if (r.netease) {
+      useStore.setState((s) => ({
+        neteaseCache: {
+          ...s.neteaseCache,
+          ...Object.fromEntries(r.netease!.map((t) => [t.id, t])),
+        },
+      }));
+    } else if (r.qq) {
+      useStore.setState((s) => ({
+        qqCache: {
+          ...s.qqCache,
+          ...Object.fromEntries(r.qq!.map((t) => [t.id, t])),
+        },
+      }));
+    }
+  };
+
+  const loadRandom = async () => {
+    if (recLoading) return;
+    setRecLoading(true);
+    try {
+      if (source === "netease") {
+        const r = await api.neteaseRandomPlaylist();
+        const next: RecState = {
+          origin: "random",
+          title: r.name,
+          cover: r.cover,
+          subtitle: r.creator,
+          playlistId: r.id,
+          netease: r.songs,
+        };
+        cacheRecSongs(next);
+        setRec(next);
+      } else {
+        const r = await api.qqRandomPlaylist();
+        const next: RecState = {
+          origin: "random",
+          title: r.name,
+          cover: r.cover,
+          subtitle: r.creator,
+          playlistId: r.id,
+          qq: r.songs,
+        };
+        cacheRecSongs(next);
+        setRec(next);
+      }
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  const loadToplist = async (t: { id: number; name: string; cover: string }) => {
+    if (recLoading) return;
+    setRecLoading(true);
+    try {
+      const r =
+        source === "netease"
+          ? await api.neteaseToplistTracks(t.id)
+          : await api.qqToplistTracks(t.id);
+      const next: RecState =
+        source === "netease"
+          ? {
+              origin: "top",
+              title: t.name,
+              cover: t.cover,
+              subtitle: `${sourceName}官方榜单`,
+              // 网易云榜单 ID 即歌单 ID，可整单收藏
+              playlistId: t.id,
+              netease: r.songs as NeteaseTrack[],
+            }
+          : {
+              origin: "top",
+              title: t.name,
+              cover: t.cover,
+              subtitle: `${sourceName}官方榜单`,
+              qq: r.songs as QqSong[],
+            };
+      cacheRecSongs(next);
+      setRec(next);
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  // 每日推荐 / 私人 FM：仅网易云且已登录可用
+  const loadNeteaseFeed = async (
+    kind: "daily" | "fm",
+    loader: () => Promise<{ songs: NeteaseTrack[] }>
+  ) => {
+    if (recLoading) return;
+    if (!neteaseLoggedIn) {
+      toast("请先扫码登录网易云账号", "error");
+      return;
+    }
+    setRecLoading(true);
+    try {
+      const r = await loader();
+      const next: RecState =
+        kind === "daily"
+          ? {
+              origin: "daily",
+              title: "每日推荐",
+              cover: "",
+              subtitle: "根据你的听歌口味生成",
+              netease: r.songs,
+            }
+          : {
+              origin: "fm",
+              title: "私人 FM",
+              cover: "",
+              subtitle: "换个批次继续听",
+              netease: r.songs,
+            };
+      cacheRecSongs(next);
+      setRec(next);
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  // 把当前推荐歌单整单收藏为本地播放列表（复用导入合并逻辑，去重不乱序）
+  const saveRecPlaylist = async () => {
+    if (!rec?.playlistId || recLoading) return;
+    try {
+      if (source === "netease") await importNeteasePlaylist(rec.playlistId, rec.title);
+      else await importQqPlaylist(rec.playlistId, rec.title);
+    } catch (e) {
+      toast(String(e), "error");
+    }
+  };
 
   const rows: OnlineRow[] = useMemo(() => {
+    // 推荐态优先：随机歌单/榜单与搜索结果同构，行渲染与操作全部复用
+    if (rec?.netease) {
+      return rec.netease.map((t) => ({
+        kind: "netease" as const,
+        id: t.id,
+        name: t.name,
+        artist: t.ar.map((a) => a.name).join(" / "),
+        album: t.al?.name ?? "",
+        cover: t.al?.picUrl ?? "",
+        durationMs: t.dt,
+        vip: t.fee === 1,
+        mediaMid: "",
+      }));
+    }
+    if (rec?.qq) {
+      return rec.qq.map((t) => ({
+        kind: "qq" as const,
+        id: t.id,
+        name: t.name,
+        artist: t.singer,
+        album: t.album,
+        cover: qqCover(t.albumMid),
+        durationMs: t.durationMs,
+        vip: t.vip,
+        mediaMid: t.mediaMid,
+      }));
+    }
     if (source === "netease") {
       return neteaseResults.map((t: NeteaseTrack) => ({
         kind: "netease" as const,
@@ -159,52 +411,132 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       vip: t.vip,
       mediaMid: t.mediaMid,
     }));
-  }, [source, neteaseResults, qqResults, kugouResults]);
+  }, [rec, source, neteaseResults, qqResults, kugouResults]);
 
-  const submit = () =>
-    source === "netease"
-      ? neteaseSearch(kw)
-      : source === "qq"
-        ? qqSearch(kw)
-        : kugouSearch(kw);
+  // 记录搜索历史（去重置顶，最多 12 条，localStorage 跨会话）
+  const rememberSearch = (text: string) => {
+    const kwTrim = text.trim();
+    if (!kwTrim) return;
+    setSearchHistory((prev) => {
+      const next = [kwTrim, ...prev.filter((x) => x !== kwTrim)].slice(0, 12);
+      try {
+        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        /* 隐私模式等场景写不进就算了 */
+      }
+      return next;
+    });
+  };
+
+  const submit = () => {
+    setRec(null);
+    setSel(new Set());
+    rememberSearch(kw);
+    if (source === "netease") neteaseSearch(kw);
+    else if (source === "qq") qqSearch(kw);
+    else kugouSearch(kw);
+  };
+
+  // 点歌手/专辑名：直接以该文本发起搜索（歌曲列表通用快捷操作）
+  const searchFor = (text: string) => {
+    const q = text.trim();
+    if (!q) return;
+    setKw(q);
+    setRec(null);
+    setSel(new Set());
+    rememberSearch(q);
+    if (source === "netease") neteaseSearch(q);
+    else if (source === "qq") qqSearch(q);
+    else kugouSearch(q);
+  };
 
   // 搜索结果随“加载更多”无上限增长：窗口化渲染（行高 60px 恒定）
   const ROW_H = 60;
   const win = useVirtualWindow(rows.length, ROW_H);
 
   const playRow = (i: number) => {
+    if (rec) {
+      // 推荐态：队列 = 当前推荐列表（曲目信息已在加载时写入缓存）
+      if (rec.netease) playNetease(rec.netease, i);
+      else if (rec.qq) playQq(rec.qq, i);
+      return;
+    }
     if (source === "netease") playNetease(neteaseResults, i);
     else if (source === "kugou") playKugou(kugouResults, i);
     else playQq(qqResults, i);
   };
 
   const menuAction = (row: OnlineRow, action: "play" | "next" | "queue") => {
-    if (row.kind === "netease") {
-      const idx = neteaseResults.findIndex((t) => t.id === row.id);
-      if (action === "play") playNetease(neteaseResults, Math.max(0, idx));
-      else if (action === "next")
-        playNext({ kind: "netease", id: row.id as number });
-      else addToQueue({ kind: "netease", id: row.id as number });
-    } else if (row.kind === "kugou") {
-      const idx = kugouResults.findIndex((t) => t.id === row.id);
-      if (action === "play") playKugou(kugouResults, Math.max(0, idx));
-      else if (action === "next")
-        playNext({ kind: "kugou", id: row.id as string });
-      else addToQueue({ kind: "kugou", id: row.id as string });
-    } else {
-      const idx = qqResults.findIndex((t) => t.id === row.id);
-      if (action === "play") playQq(qqResults, Math.max(0, idx));
-      else if (action === "next") playNext({ kind: "qq", id: row.id as string });
-      else addToQueue({ kind: "qq", id: row.id as string });
+    if (action === "play") {
+      const idx = Math.max(
+        0,
+        rows.findIndex((t) => t.kind === row.kind && t.id === row.id)
+      );
+      playRow(idx);
+      return;
+    }
+    const q =
+      row.kind === "netease"
+        ? { kind: "netease" as const, id: row.id as number }
+        : { kind: row.kind as "qq" | "kugou", id: row.id as string };
+    if (action === "next") playNext(q);
+    else addToQueue(q);
+  };
+
+  // ---------- 批量操作（多选行 → 加入歌单 / 队列 / 下载） ----------
+  const selKeyOf = (row: OnlineRow) => `${row.kind}-${row.id}`;
+  const toggleSel = (row: OnlineRow) =>
+    setSel((prev) => {
+      const next = new Set(prev);
+      const k = selKeyOf(row);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  const selectedRows = rows.filter((r) => sel.has(selKeyOf(r)));
+
+  const batchQueue = () => {
+    for (const row of selectedRows) menuAction(row, "queue");
+    toast(`已把 ${selectedRows.length} 首加入队列`, "success");
+    setSel(new Set());
+    setBatchMode(false);
+  };
+
+  const batchDownload = async () => {
+    const list = [...selectedRows];
+    setSel(new Set());
+    setBatchMode(false);
+    for (const row of list) {
+      try {
+        await downloadOnline({
+          kind: row.kind,
+          id: row.id,
+          name: row.name,
+          artist: row.artist,
+          album: row.album,
+          cover: row.cover,
+          durationMs: row.durationMs,
+          mediaMid: row.mediaMid,
+        });
+      } catch (e) {
+        toast(`下载「${row.name}」失败：${String(e)}`, "error");
+      }
     }
   };
 
+  // 批量加入播放列表：弹出歌单选择（选择后逐条写入，store 内部按在线条目去重）
+  const batchAddToPlaylist = () => {
+    if (!selectedRows.length) return;
+    setPickerRows(selectedRows);
+  };
+
   const hasMore =
-    source === "netease"
+    !rec &&
+    (source === "netease"
       ? rows.length < neteaseTotal
       : source === "kugou"
         ? rows.length > 0 && rows.length === 30 * kugouPage
-        : rows.length > 0 && rows.length === 30 * qqPage;
+        : rows.length > 0 && rows.length === 30 * qqPage);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -257,6 +589,18 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 <Search size={13} />
               )}
               搜索
+            </button>
+            <button
+              className={`btn-ghost w-10 h-10 ${
+                batchMode ? "text-[var(--accent)]" : ""
+              }`}
+              onClick={() => {
+                setBatchMode(!batchMode);
+                setSel(new Set());
+              }}
+              title={batchMode ? "退出多选" : "批量选择：加入播放列表 / 队列 / 下载"}
+            >
+              <ListChecks size={17} />
             </button>
           </div>
 
@@ -324,6 +668,122 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       {/* 结果列表（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* 推荐横幅：随机歌单/榜单接管列表时的来源说明与操作 */}
+          {rec && (
+            <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--line)] shrink-0">
+              {rec.cover ? (
+                <img
+                  src={rec.cover}
+                  alt=""
+                  className="w-14 h-14 rounded-xl object-cover shadow-[var(--cover-shadow-sm)] shrink-0"
+                  draggable={false}
+                />
+              ) : (
+                <div
+                  className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center"
+                  style={{ background: "rgba(243,233,216,0.07)" }}
+                >
+                  <Shuffle size={18} className="text-[var(--ink-3)]" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-bold text-[var(--ink)] truncate">
+                  {rec.title}
+                </div>
+                <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
+                  {rec.subtitle ? `${rec.subtitle} · ` : ""}
+                  {rows.length} 首 · 双击播放，配合底部随机播放打乱顺序
+                </div>
+              </div>
+              <button
+                className="btn-secondary !py-1.5 !px-3 shrink-0"
+                onClick={() =>
+                  rec.origin === "daily"
+                    ? loadNeteaseFeed("daily", api.neteaseDailyRecommend)
+                    : rec.origin === "fm"
+                      ? loadNeteaseFeed("fm", api.neteasePersonalFm)
+                      : loadRandom()
+                }
+                disabled={recLoading}
+                title={
+                  rec.origin === "daily"
+                    ? "刷新每日推荐"
+                    : rec.origin === "fm"
+                      ? "换一批 FM 歌曲"
+                      : "随机换一个推荐歌单"
+                }
+              >
+                {recLoading ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Shuffle size={13} />
+                )}
+                换一批
+              </button>
+              {rec.playlistId != null && (
+                <button
+                  className="btn-secondary !py-1.5 !px-3 shrink-0"
+                  onClick={saveRecPlaylist}
+                  title="收藏这个歌单到本地播放列表（与已有列表合并去重）"
+                >
+                  <ListPlus size={13} />
+                  收藏歌单
+                </button>
+              )}
+              <button
+                className="btn-ghost w-8 h-8 shrink-0"
+                onClick={() => {
+                  setRec(null);
+                  setSel(new Set());
+                }}
+                title="退出推荐"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+          {/* 批量操作栏：多选模式下显示（选择数为 0 时只提示） */}
+          {batchMode && (
+            <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[var(--line)] shrink-0 flex-wrap">
+              <span className="text-[12.5px] text-[var(--ink-2)] mr-1">
+                已选 {sel.size} 首
+              </span>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!sel.size}
+                onClick={batchAddToPlaylist}
+              >
+                <ListPlus size={13} />
+                加入播放列表
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!sel.size}
+                onClick={batchQueue}
+              >
+                <Play size={13} />
+                加入队列
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!sel.size}
+                onClick={batchDownload}
+              >
+                <Download size={13} />
+                下载到本地
+              </button>
+              <button
+                className="btn-ghost !py-1.5 !px-3 text-[12.5px]"
+                onClick={() => setSel(new Set())}
+                disabled={!sel.size}
+              >
+                清除选择
+              </button>
+              <span className="text-[11px] text-[var(--ink-3)] ml-auto">
+                点击行勾选 / 取消，再点右上角图标退出
+              </span>
+            </div>
+          )}
           {rows.length > 0 && (
             <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
               <span className="text-center">序号</span>
@@ -349,8 +809,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 没有找到相关歌曲
               </div>
             )}
-            {!searched && !searching && (
-              <div className="flex flex-col items-center justify-center gap-4 pt-24 anim-fade">
+            {!searched && !searching && !rec && (
+              <div className="flex flex-col items-center justify-center gap-4 pt-16 anim-fade">
                 <div className="relative">
                   <div
                     className="absolute -inset-8 rounded-full"
@@ -378,6 +838,92 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   {sourceName}
                   免费曲目可直接播放；扫码登录自己的账号后按账号权益播放（含会员曲目）。请支持正版。
                 </div>
+                {recommendable && (
+                  <>
+                    <div className="flex items-center gap-2 mt-1">
+                      <button
+                        className="btn-primary h-9 !px-5"
+                        onClick={loadRandom}
+                        disabled={recLoading}
+                      >
+                        {recLoading ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Shuffle size={13} />
+                        )}
+                        随便听听
+                      </button>
+                      {source === "netease" && neteaseLoggedIn && (
+                        <>
+                          <button
+                            className="btn-secondary h-9 !px-4"
+                            onClick={() =>
+                              loadNeteaseFeed("daily", api.neteaseDailyRecommend)
+                            }
+                            disabled={recLoading}
+                            title="根据你的听歌口味每天更新（需登录）"
+                          >
+                            每日推荐
+                          </button>
+                          <button
+                            className="btn-secondary h-9 !px-4"
+                            onClick={() =>
+                              loadNeteaseFeed("fm", api.neteasePersonalFm)
+                            }
+                            disabled={recLoading}
+                            title="私人 FM，按批次换歌（需登录）"
+                          >
+                            私人 FM
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {toplists.length > 0 && (
+                      <div className="flex flex-wrap justify-center gap-1.5 max-w-[620px]">
+                        {toplists.map((t) => (
+                          <button
+                            key={t.id}
+                            className="chip text-[var(--ink-2)] hover:text-[var(--accent-strong)] transition-colors"
+                            style={{ background: "var(--shade)" }}
+                            disabled={recLoading}
+                            onClick={() => loadToplist(t)}
+                            title={`查看${sourceName}${t.name}`}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {searchHistory.length > 0 && (
+                  <div className="flex flex-wrap justify-center items-center gap-1.5 max-w-[620px] mt-1">
+                    <span className="flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
+                      <History size={12} />
+                      最近搜索
+                    </span>
+                    {searchHistory.slice(0, 8).map((h) => (
+                      <button
+                        key={h}
+                        className="chip text-[var(--ink-3)] hover:text-[var(--ink)] transition-colors max-w-[140px]"
+                        style={{ background: "var(--shade)" }}
+                        onClick={() => {
+                          setKw(h);
+                          searchFor(h);
+                        }}
+                        title={`搜索「${h}」`}
+                      >
+                        <span className="truncate">{h}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {rec && rows.length === 0 && recLoading && (
+              <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
+                <Loader2 size={15} className="animate-spin" />
+                正在挑选推荐内容…
               </div>
             )}
 
@@ -394,40 +940,69 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       ? current.nid === t.id
                       : false);
               const saved = !!savedOnline[`${t.kind}-${t.id}`];
+              const checked = sel.has(`${t.kind}-${t.id}`);
               return (
                 <div
                   key={`${t.kind}-${t.id}`}
                   style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                  className={`${i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-colors cursor-default ${
-                    active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+                  className={`${i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
+                    batchMode
+                      ? checked
+                        ? "bg-[var(--accent-weak)]"
+                        : "hover:bg-[var(--shade-hover)]"
+                      : active
+                        ? "bg-[var(--accent-weak)]"
+                        : "hover:bg-[var(--shade-hover)]"
                   }`}
-                  onDoubleClick={() => playRow(i)}
+                  onClick={
+                    batchMode
+                      ? (ev) => {
+                          ev.stopPropagation();
+                          toggleSel(t);
+                        }
+                      : undefined
+                  }
+                  onDoubleClick={() => !batchMode && playRow(i)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setMenu({ x: e.clientX, y: e.clientY, row: t });
                   }}
                 >
                   <div className="relative h-11 flex items-center justify-center">
-                    <span
-                      className={`text-[12.5px] tabular-nums transition-opacity ${
-                        active
-                          ? "text-[var(--accent)] font-bold opacity-100 group-hover:opacity-0"
-                          : "text-[var(--ink-3)] group-hover:opacity-0"
-                      }`}
-                    >
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <button
-                      className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
-                        active
-                          ? "text-[var(--accent)]"
-                          : "bg-[var(--accent)] text-[var(--accent-on)]"
-                      }`}
-                      onClick={() => playRow(i)}
-                      title="播放"
-                    >
-                      <Play size={14} className="fill-current ml-px" />
-                    </button>
+                    {batchMode ? (
+                      <span
+                        className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-colors ${
+                          checked
+                            ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
+                            : "border-[var(--line)] group-hover:border-[var(--accent)]"
+                        }`}
+                      >
+                        {checked && <Check size={13} strokeWidth={3} />}
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`text-[12.5px] tabular-nums transition-opacity ${
+                            active
+                              ? "text-[var(--accent)] font-bold opacity-100 group-hover:opacity-0"
+                              : "text-[var(--ink-3)] group-hover:opacity-0"
+                          }`}
+                        >
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <button
+                          className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
+                            active
+                              ? "text-[var(--accent)]"
+                              : "bg-[var(--accent)] text-[var(--accent-on)]"
+                          }`}
+                          onClick={() => playRow(i)}
+                          title="播放"
+                        >
+                          <Play size={14} className="fill-current ml-px" />
+                        </button>
+                      </>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-4 min-w-0">
@@ -468,15 +1043,31 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                           </span>
                         )}
                       </div>
-                      <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
+                      <button
+                        className={`block text-left text-[12px] truncate mt-1 max-w-full hover:text-[var(--accent-strong)] transition-colors ${
+                          active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"
+                        }`}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          searchFor(t.artist);
+                        }}
+                        title={`搜索：${t.artist || "未知艺术家"}`}
+                      >
                         {t.artist || "未知艺术家"}
-                      </div>
+                      </button>
                     </div>
                   </div>
 
-                  <div className="text-[12.5px] text-[var(--ink-3)] truncate">
+                  <button
+                    className="block text-left text-[12.5px] text-[var(--ink-3)] truncate max-w-full hover:text-[var(--accent-strong)] transition-colors"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      searchFor(t.album);
+                    }}
+                    title={`搜索：${t.album || "未知专辑"}`}
+                  >
                     {t.album || "未知专辑"}
-                  </div>
+                  </button>
 
                   <div className="text-right text-[12.5px] text-[var(--ink-2)] tabular-nums">
                     {fmtTime(t.durationMs)}
@@ -597,7 +1188,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
-              setPickerRow(menu.row);
+              setPickerRows([menu.row]);
               setMenu(null);
             }}
           >
@@ -644,11 +1235,15 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         document.body
       )}
 
-      {/* 添加到播放列表弹窗 */}
+      {/* 添加到播放列表弹窗（单行右键 / 批量多选共用） */}
       <Modal
-        open={!!pickerRow}
-        onClose={() => setPickerRow(null)}
-        title="添加到播放列表"
+        open={!!pickerRows}
+        onClose={() => setPickerRows(null)}
+        title={
+          pickerRows && pickerRows.length > 1
+            ? `添加 ${pickerRows.length} 首到播放列表`
+            : "添加到播放列表"
+        }
         width={380}
       >
         <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
@@ -657,8 +1252,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               key={p.id}
               className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
               onClick={async () => {
-                if (pickerRow) await addOnlineToPlaylist(p.id, pickerRow);
-                setPickerRow(null);
+                if (pickerRows) {
+                  for (const r of pickerRows) {
+                    await addOnlineToPlaylist(p.id, r);
+                  }
+                }
+                setPickerRows(null);
               }}
             >
               <span className="truncate">{p.name}</span>
@@ -684,11 +1283,15 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           <button
             className="btn-secondary"
             onClick={async () => {
-              if (!newPlName.trim() || !pickerRow) return;
+              if (!newPlName.trim() || !pickerRows?.length) return;
               const pid = await createPlaylist(newPlName.trim());
-              if (pid >= 0) await addOnlineToPlaylist(pid, pickerRow);
+              if (pid >= 0) {
+                for (const r of pickerRows) {
+                  await addOnlineToPlaylist(pid, r);
+                }
+              }
               setNewPlName("");
-              setPickerRow(null);
+              setPickerRows(null);
             }}
           >
             创建并添加

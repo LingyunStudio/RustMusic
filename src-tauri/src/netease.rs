@@ -749,6 +749,238 @@ pub fn like(id: i64, like: bool, music_u: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 榜单 / 随机推荐（匿名可用） ----------
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NetToplist {
+    pub id: i64,
+    pub name: String,
+    pub cover: String,
+    pub update_frequency: String,
+    pub track_count: i64,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct NetRandomPlaylist {
+    pub id: i64,
+    pub name: String,
+    pub cover: String,
+    pub play_count: i64,
+    pub creator: String,
+    pub songs: Vec<NetSong>,
+}
+
+/// 官方榜单列表（热歌榜/新歌榜/飙升榜等，明文 /api/toplist 匿名可用）。
+/// 榜单 ID 即歌单 ID，曲目可直接用 playlist_tracks 拉取。
+pub fn toplists() -> Result<Vec<NetToplist>, String> {
+    let resp = post_form("https://music.163.com/api/toplist", "", None)?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(format!("获取榜单列表失败（code {code}）"));
+    }
+    let mut out = Vec::new();
+    if let Some(list) = resp.get("list").and_then(|v| v.as_array()) {
+        for t in list {
+            let id = t.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = t
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if id == 0 || name.is_empty() {
+                continue;
+            }
+            out.push(NetToplist {
+                id,
+                name,
+                cover: t
+                    .get("coverImgUrl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                update_frequency: t
+                    .get("updateFrequency")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                track_count: t
+                    .get("trackCount")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// 个性化推荐歌单（明文 /api/personalized/playlist 匿名可用），随机歌单的素材池
+fn personalized_playlists(limit: i64) -> Result<Vec<NetRandomPlaylist>, String> {
+    let url = format!("https://music.163.com/api/personalized/playlist?limit={limit}");
+    let resp = ureq::get(&url)
+        .set("Cookie", &cookie_header(None))
+        .set("User-Agent", UA)
+        .set("Referer", "https://music.163.com/")
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| format!("推荐歌单请求失败: {e}"))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("推荐歌单响应读取失败: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("推荐歌单解析失败: {e}"))?;
+    if v.get("code").and_then(|c| c.as_i64()) != Some(200) {
+        return Err(format!(
+            "获取推荐歌单失败（code {}）",
+            v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1)
+        ));
+    }
+    let mut out = Vec::new();
+    if let Some(list) = v.pointer("/result").and_then(|x| x.as_array()) {
+        for p in list {
+            let id = p.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+            let name = p
+                .get("name")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            if id == 0 || name.is_empty() {
+                continue;
+            }
+            out.push(NetRandomPlaylist {
+                id,
+                name,
+                cover: p
+                    .get("picUrl")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                play_count: p
+                    .get("playCount")
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(0.0) as i64,
+                creator: p
+                    .pointer("/creator/nickname")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                songs: vec![],
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// 随机推荐歌单：优先从个性化推荐歌单里随机抽一个拉取曲目；个别歌单
+/// 失效/为空时换一个重试；全部失败回落官方榜单随机一张，最后用固定
+/// 榜单 ID 兜底（榜单 ID 即歌单 ID，playlist_tracks 匿名可拉）。
+pub fn random_playlist(music_u: &str) -> Result<NetRandomPlaylist, String> {
+    use rand::seq::SliceRandom;
+    let mut last_err = String::from("未能抽中可用歌单");
+    if let Ok(mut pool) = personalized_playlists(30) {
+        pool.shuffle(&mut rand::thread_rng());
+        for p in pool.iter().take(3) {
+            match playlist_tracks(p.id, music_u) {
+                Ok(songs) if !songs.is_empty() => {
+                    return Ok(NetRandomPlaylist {
+                        id: p.id,
+                        name: p.name.clone(),
+                        cover: p.cover.clone(),
+                        play_count: p.play_count,
+                        creator: p.creator.clone(),
+                        songs,
+                    });
+                }
+                Ok(_) => last_err = "抽中的歌单暂无曲目".into(),
+                Err(e) => last_err = e,
+            }
+        }
+    }
+    if let Ok(tops) = toplists() {
+        let usable: Vec<&NetToplist> = tops.iter().filter(|t| t.track_count > 0).collect();
+        if let Some(t) = usable.choose(&mut rand::thread_rng()) {
+            match playlist_tracks(t.id, music_u) {
+                Ok(songs) if !songs.is_empty() => {
+                    return Ok(NetRandomPlaylist {
+                        id: t.id,
+                        name: t.name.clone(),
+                        cover: t.cover.clone(),
+                        play_count: 0,
+                        creator: String::new(),
+                        songs,
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => last_err = e,
+            }
+        }
+    }
+    const FALLBACK: [(i64, &str); 4] = [
+        (3778678, "热歌榜"),
+        (3779629, "新歌榜"),
+        (19723756, "飙升榜"),
+        (25072823, "原创榜"),
+    ];
+    use rand::Rng;
+    let pick = FALLBACK[rand::thread_rng().gen_range(0..FALLBACK.len())];
+    let songs = playlist_tracks(pick.0, music_u)
+        .map_err(|e| format!("随机歌单获取失败：{last_err}；{e}"))?;
+    Ok(NetRandomPlaylist {
+        id: pick.0,
+        name: pick.1.to_string(),
+        cover: String::new(),
+        play_count: 0,
+        creator: String::new(),
+        songs,
+    })
+}
+
+/// 每日推荐歌曲（需登录）：/weapi/v3/discovery/recommend/songs，
+/// 按账号听歌口味生成，每天更新（约 30 首）
+pub fn daily_recommend(music_u: &str) -> Result<Vec<NetSong>, String> {
+    if music_u.is_empty() {
+        return Err("请先登录网易云账号".into());
+    }
+    let payload = serde_json::json!({ "csrf_token": "" }).to_string();
+    let resp = weapi_post("/weapi/v3/discovery/recommend/songs", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(match code {
+            301 | 302 => "网易云登录已过期，请重新登录".into(),
+            _ => format!("获取每日推荐失败（code {code}）"),
+        });
+    }
+    let songs = resp
+        .pointer("/data/dailySongs")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|s| serde_json::from_value::<NetSong>(s.clone()).ok()).collect())
+        .unwrap_or_default();
+    Ok(songs)
+}
+
+/// 私人 FM（需登录）：/weapi/v1/radio/get，每次返回一批推荐歌曲
+pub fn personal_fm(music_u: &str) -> Result<Vec<NetSong>, String> {
+    if music_u.is_empty() {
+        return Err("请先登录网易云账号".into());
+    }
+    let payload = serde_json::json!({ "csrf_token": "" }).to_string();
+    let resp = weapi_post("/weapi/v1/radio/get", &payload, Some(music_u))?;
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if code != 200 {
+        return Err(match code {
+            301 | 302 => "网易云登录已过期，请重新登录".into(),
+            _ => format!("获取私人 FM 失败（code {code}）"),
+        });
+    }
+    let songs = resp
+        .get("data")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|s| serde_json::from_value::<NetSong>(s.clone()).ok()).collect())
+        .unwrap_or_default();
+    Ok(songs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -833,5 +1065,18 @@ mod playlist_tests {
             Ok(songs) => println!("got {} songs, first: {:?}", songs.len(), songs.first().map(|s| (&s.name, &s.ar))),
             Err(e) => println!("ERR: {e}"),
         }
+    }
+
+    #[test]
+    fn test_toplists_and_random() {
+        let tops = toplists().expect("toplists failed");
+        println!("{} toplists, first: {:?}", tops.len(), tops.first().map(|t| (&t.id, &t.name)));
+        assert!(!tops.is_empty(), "no toplists");
+        let songs = playlist_tracks(tops[0].id, "").expect("toplist tracks failed");
+        println!("top {} songs: {}", tops[0].name, songs.len());
+        assert!(!songs.is_empty(), "toplist returned no songs");
+        let pl = random_playlist("").expect("random playlist failed");
+        println!("random playlist: {} by {} ({} songs)", pl.name, pl.creator, pl.songs.len());
+        assert!(!pl.songs.is_empty(), "random playlist returned no songs");
     }
 }

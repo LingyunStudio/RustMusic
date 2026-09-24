@@ -1,4 +1,4 @@
-import { Ban, Heart, ListMusic, MoreHorizontal, Play } from "lucide-react";
+import { Ban, Check, Heart, ListMusic, MoreHorizontal, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
@@ -32,6 +32,12 @@ interface TrackListProps {
   dragSortable?: boolean;
   /** 拖拽提交（from → to 都是渲染序列里的下标） */
   onDragReorder?: (from: number, to: number) => void;
+  /** 批量多选（由调用方持有选择状态；开启后点击行=勾选，双击播放停用） */
+  selection?: {
+    active: boolean;
+    keys: Set<string>;
+    onToggle: (key: string) => void;
+  };
 }
 
 export type SortKey = "manual" | "title" | "artist" | "album" | "duration" | "added";
@@ -59,6 +65,7 @@ export default function TrackList({
   emptyAction,
   dragSortable,
   onDragReorder,
+  selection,
 }: TrackListProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [pickerFor, setPickerFor] = useState<TrackMeta | null>(null);
@@ -212,6 +219,8 @@ export default function TrackList({
 
   const renderLocal = (t: TrackMeta, i: number, idxNum: number) => {
     const active = current?.kind === "track" && current.id === t.id;
+    const selKey = `track:${t.id}`;
+    const checked = !!selection?.active && selection.keys.has(selKey);
     // 窗口化下滚动新挂载的行不重播入场动画（只有首屏行交错浮现）
     const animCls = dragMode || idxNum < ANIM_ROWS ? "anim-row" : "";
     return (
@@ -219,37 +228,63 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
-          active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+          checked
+            ? "bg-[var(--accent-weak)]"
+            : active
+              ? "bg-[var(--accent-weak)]"
+              : "hover:bg-[var(--shade-hover)]"
         }`}
-        onDoubleClick={() => playTracks(tracks, i)}
+        onClick={
+          selection?.active
+            ? (ev) => {
+                ev.stopPropagation();
+                selection.onToggle(selKey);
+              }
+            : undefined
+        }
+        onDoubleClick={() => !selection?.active && playTracks(tracks, i)}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY, track: t });
         }}
       >
-        {/* 序号 / 播放 */}
+        {/* 序号 / 播放（批量多选时为勾选框） */}
         <div className="relative h-12 flex items-center justify-center">
-          <span
-            className={`text-[12.5px] tabular-nums transition-opacity ${
-              active
-                ? "text-[var(--accent)] font-bold"
-                : "text-[var(--ink-3)] group-hover:opacity-0"
-            }`}
-          >
-            {String(idxNum + 1).padStart(2, "0")}
-          </span>
-          <button
-            className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
-              active
-                ? "text-[var(--accent)]"
-                : "bg-[var(--play-btn-bg)] text-[var(--play-btn-on)] shadow-[0_2px_10px_rgba(0,0,0,0.18)]"
-            }`}
-            onClick={() => (active ? useStore.getState().togglePlay() : playTracks(tracks, i))}
-            title={active ? "播放 / 暂停" : "播放"}
-          >
-            <Play size={14} className="fill-current ml-px" />
-          </button>
+          {selection?.active ? (
+            <span
+              className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-colors ${
+                checked
+                  ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
+                  : "border-[var(--line)] group-hover:border-[var(--accent)]"
+              }`}
+            >
+              {checked && <Check size={13} strokeWidth={3} />}
+            </span>
+          ) : (
+            <>
+              <span
+                className={`text-[12.5px] tabular-nums transition-opacity ${
+                  active
+                    ? "text-[var(--accent)] font-bold"
+                    : "text-[var(--ink-3)] group-hover:opacity-0"
+                }`}
+              >
+                {String(idxNum + 1).padStart(2, "0")}
+              </span>
+              <button
+                className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
+                  active
+                    ? "text-[var(--accent)]"
+                    : "bg-[var(--play-btn-bg)] text-[var(--play-btn-on)] shadow-[0_2px_10px_rgba(0,0,0,0.18)]"
+                }`}
+                onClick={() => (active ? useStore.getState().togglePlay() : playTracks(tracks, i))}
+                title={active ? "播放 / 暂停" : "播放"}
+              >
+                <Play size={14} className="fill-current ml-px" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* 封面 + 标题 */}
@@ -340,14 +375,18 @@ export default function TrackList({
   };
 
   const renderOnline = (e: PlaylistEntryMeta, i: number, idxNum: number) => {
+    // active/failKey 按来源分派：qq 对 qid、kugou 对 kgid、netease 对 nid
+    //（此前 kugou 落入 netease 分支：播放不高亮、失败标记错前缀无法置灰）
     const active =
-      current?.kind === e.kind &&
-      (e.kind === "qq"
-        ? current.qid === e.onlineId
-        : current.nid === Number(e.onlineId));
-    // 播放失败（无版权/下架）：整行置灰 + 无版权标记
-    const failKey = e.kind === "qq" ? `qq:${e.onlineId}` : `netease:${e.onlineId}`;
+      e.kind === "qq"
+        ? current?.kind === "qq" && current.qid === e.onlineId
+        : e.kind === "kugou"
+          ? current?.kind === "kugou" && current.kgid === e.onlineId
+          : current?.kind === "netease" && current.nid === Number(e.onlineId);
+    // 播放失败（无版权/下架）：整行置灰 + 无版权标记（key 与 store unavailable 一致）
+    const failKey = `${e.kind}:${e.onlineId}`;
     const dead = unavailable[failKey] != null;
+    const checked = !!selection?.active && selection.keys.has(failKey);
     const animCls = dragMode || idxNum < ANIM_ROWS ? "anim-row" : "";
     return (
       <div
@@ -355,34 +394,56 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-colors duration-150 cursor-default ${
-          active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+          checked || active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
         } ${dead ? "opacity-45" : ""}`}
-        onDoubleClick={() => playEntries(onlineEntries, Math.max(0, i))}
+        onClick={
+          selection?.active
+            ? (ev) => {
+                ev.stopPropagation();
+                selection.onToggle(failKey);
+              }
+            : undefined
+        }
+        onDoubleClick={() => !selection?.active && playEntries(onlineEntries, Math.max(0, i))}
         onContextMenu={(ev) => {
           ev.preventDefault();
           setOnlineMenu({ x: ev.clientX, y: ev.clientY, entry: e });
         }}
       >
         <div className="relative h-12 flex items-center justify-center">
-          <span
-            className={`text-[12.5px] tabular-nums transition-opacity ${
-              active
-                ? "text-[var(--accent)] font-bold"
-                : "text-[var(--ink-3)] group-hover:opacity-0"
-            }`}
-          >
-            {String(idxNum + 1).padStart(2, "0")}
-          </span>
-          <button
-            className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
-              active ? "text-[var(--accent)]" : "bg-[var(--accent)] text-[var(--accent-on)]"
-            }`}
-            onClick={() => playEntries(onlineEntries, Math.max(0, i))}
-            title="播放"
-          >
-            <Play size={14} className="fill-current ml-px" />
-          </button>
+          {selection?.active ? (
+            <span
+              className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-colors ${
+                checked
+                  ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
+                  : "border-[var(--line)] group-hover:border-[var(--accent)]"
+              }`}
+            >
+              {checked && <Check size={13} strokeWidth={3} />}
+            </span>
+          ) : (
+            <>
+              <span
+                className={`text-[12.5px] tabular-nums transition-opacity ${
+                  active
+                    ? "text-[var(--accent)] font-bold"
+                    : "text-[var(--ink-3)] group-hover:opacity-0"
+                }`}
+              >
+                {String(idxNum + 1).padStart(2, "0")}
+              </span>
+              <button
+                className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
+                  active ? "text-[var(--accent)]" : "bg-[var(--accent)] text-[var(--accent-on)]"
+                }`}
+                onClick={() => playEntries(onlineEntries, Math.max(0, i))}
+                title="播放"
+              >
+                <Play size={14} className="fill-current ml-px" />
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-4 min-w-0">
           <CoverImg

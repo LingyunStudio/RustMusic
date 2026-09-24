@@ -137,6 +137,43 @@ export interface NeteaseTrack {
   fee: number;
 }
 
+/** QQ 官方榜单（musicToplist.Toplist GetAll） */
+export interface QqToplist {
+  id: number;
+  title: string;
+  pic: string;
+  updateTime: string;
+}
+
+/** 网易云官方榜单（榜单 ID 即歌单 ID） */
+export interface NetToplist {
+  id: number;
+  name: string;
+  cover: string;
+  updateFrequency: string;
+  trackCount: number;
+}
+
+/** QQ 随机公开歌单（歌单广场随机抽取） */
+export interface QqRandomPlaylist {
+  id: number;
+  name: string;
+  cover: string;
+  listenNum: number;
+  creator: string;
+  songs: QqSong[];
+}
+
+/** 网易云随机推荐歌单（个性化推荐池随机抽取，榜单兜底） */
+export interface NetRandomPlaylist {
+  id: number;
+  name: string;
+  cover: string;
+  playCount: number;
+  creator: string;
+  songs: NeteaseTrack[];
+}
+
 export interface PlayState extends TrackInfo {
   playing: boolean;
   /** 后端“开播代次”（每次换曲 +1），用于区分开播与暂停/恢复 */

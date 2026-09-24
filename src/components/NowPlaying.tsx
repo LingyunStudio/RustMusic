@@ -403,6 +403,37 @@ export default function NowPlaying() {
                   />
                 </button>
               )}
+              {current.kind === "kugou" && current.kgid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 !rounded-full glass"
+                  onClick={() => {
+                    const entry = [...likedOnline, ...recentOnline].find(
+                      (e) => e.kind === "kugou" && e.onlineId === current.kgid
+                    );
+                    toggleLikeOnline({
+                      kind: "kugou",
+                      id: current.kgid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                      mediaMid: "",
+                      vip: entry?.vip ?? false,
+                    });
+                  }}
+                  title={savedOnline[`kugou-${current.kgid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      savedOnline[`kugou-${current.kgid}`]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
+              )}
               {current.kind === "track" && (
                 <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
                   {current.album || "未知专辑"}

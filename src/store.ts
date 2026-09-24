@@ -151,11 +151,14 @@ interface Store {
   /** 在线条目（网易云/QQ/酷狗）转可播放的队列项；无元数据时返回 null */
   entryToQueueItem(e: PlaylistEntryMeta): QueueItem | null;
   togglePlay(): void;
-  next(auto?: boolean): void;
+  next(auto?: boolean, ended?: boolean): void;
   prev(): void;
   seek(ms: number): void;
   setScrubbing(v: boolean): void;
   setVolume(v: number): void;
+  /** 定时停止播放：min=null 取消；到点停止引擎并复位 UI */
+  sleepAt: number | null;
+  setSleepTimer(min: number | null): void;
   setSpeed(v: number): void;
   setRepeat(m: RepeatMode): void;
   toggleShuffle(): void;
@@ -292,6 +295,7 @@ interface Store {
 let toastSeq = 1;
 let unbinds: ListenerUnbind[] = [];
 let volumeTimer: ReturnType<typeof setTimeout> | null = null;
+let sleepTimerRef: ReturnType<typeof setTimeout> | null = null;
 /** 最近一次收到引擎进度帧的时间（看门狗判断引擎是否静默用） */
 let lastPosEventAt = 0;
 /** init 单例：React StrictMode 双挂载 / 并发调用时只注册一次事件监听 */
@@ -466,6 +470,7 @@ export const useStore = create<Store>((set, get) => ({
   qIndex: 0,
   history: [],
   volume: 0.8,
+  sleepAt: null,
   speed: 1,
   repeat: "off",
   shuffle: false,
@@ -558,7 +563,9 @@ export const useStore = create<Store>((set, get) => ({
       })
     );
 
-    unbinds.push(await listenEvent("player://ended", () => get().next(true)));
+    unbinds.push(
+      await listenEvent("player://ended", () => get().next(true, true))
+    );
 
     // 看门狗：UI 认为在播放但引擎 3 秒没有进度事件（托盘挂起期间状态事件
     // 丢失、恢复补发也没送达等极端情况的兜底自愈），主动拉取权威快照纠正。
@@ -1010,15 +1017,24 @@ export const useStore = create<Store>((set, get) => ({
         get().next(true);
       }
     };
-    // 开播成功则清零连跳计数（上一条失败提示留着自然消失）
-    const ok = () => set({ failStreak: 0, failToastId: null });
+    // 开播成功则清零连跳计数，并自愈清除本曲历史置灰标记
+    //（元数据后补/状态恢复后同一曲目仍可正常播放，kugou 等无登录态
+    // 刷新路径的来源也由此恢复；登录刷新的前缀清理只作兜底）
+    const ok = () =>
+      set((s) => {
+        const key = `${item.kind}:${item.id}`;
+        if (s.unavailable[key] == null)
+          return { failStreak: 0, failToastId: null };
+        const { [key]: _cleared, ...rest } = s.unavailable;
+        return { unavailable: rest, failStreak: 0, failToastId: null };
+      });
 
     if (item.kind === "track") {
       api.playTrack(item.id).then(ok).catch((e) => fail(String(e)));
     } else if (item.kind === "netease") {
       const t = get().neteaseCache[item.id];
       if (!t) {
-        fail("曲目信息已失效");
+        fail("曲目信息缺失，请重试");
         return;
       }
       api
@@ -1035,7 +1051,7 @@ export const useStore = create<Store>((set, get) => ({
     } else if (item.kind === "qq") {
       const t = get().qqCache[item.id];
       if (!t) {
-        fail("曲目信息已失效");
+        fail("曲目信息缺失，请重试");
         return;
       }
       api
@@ -1054,7 +1070,7 @@ export const useStore = create<Store>((set, get) => ({
     } else if (item.kind === "kugou") {
       const t = get().kugouCache[item.id];
       if (!t) {
-        fail("曲目信息已失效");
+        fail("曲目信息缺失，请重试");
         return;
       }
       api
@@ -1087,7 +1103,7 @@ export const useStore = create<Store>((set, get) => ({
     api.playPause().catch((e) => get().toast(String(e), "error"));
   },
 
-  next(auto = false) {
+  next(auto = false, ended = false) {
     const { queue, qIndex, repeat, shuffle, current } = get();
     if (!queue.length) return;
 
@@ -1121,8 +1137,10 @@ export const useStore = create<Store>((set, get) => ({
         idx = 0;
       } else {
         // 引擎可能仍在放换队列前的歌（在线播放失败场景），此时不能
-        // 把 playing/pos 一把清掉；引擎空闲时该分支本就是幂等复位
-        if (!get().playing) set({ playing: false, pos: 0 });
+        // 把 playing/pos 一把清掉；引擎空闲时该分支本就是幂等复位。
+        // ended=true 表示由"自然播完"事件驱动、引擎已空闲：立即复位，
+        // 不必等看门狗数秒后纠正（否则按钮卡"播放中"、进度冻结）
+        if (ended || !get().playing) set({ playing: false, pos: 0 });
         return;
       }
     }
@@ -1131,8 +1149,27 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   prev() {
-    const { queue, qIndex } = get();
+    const { queue, qIndex, shuffle, history } = get();
     if (!queue.length) return;
+    // shuffle：按播放历史回跳——history 是每次切歌记录的"来时的位置"，
+    // 逐个弹出直到找到可播项；历史耗尽再走常规回绕（此后 prev 继续回绕）
+    if (shuffle && history.length > 0) {
+      let h = [...history];
+      let guard = h.length;
+      while (guard-- > 0) {
+        const last = h[h.length - 1];
+        h = h.slice(0, -1);
+        const item = last >= 0 ? queue[last] : undefined;
+        if (
+          item &&
+          get().unavailable[`${item.kind}:${item.id}`] == null
+        ) {
+          set({ qIndex: last, history: h });
+          get().playQueueIndex(last);
+          return;
+        }
+      }
+    }
     // 直接切到上一曲（到列表头则回绕到最后一首），跳过已知失败项
     let idx = qIndex > 0 ? qIndex - 1 : queue.length - 1;
     let guard = queue.length;
@@ -1166,6 +1203,25 @@ export const useStore = create<Store>((set, get) => ({
     volumeTimer = setTimeout(() => {
       api.setVolume(vol).catch(() => {});
     }, 300);
+  },
+
+  setSleepTimer(min) {
+    if (sleepTimerRef) {
+      clearTimeout(sleepTimerRef);
+      sleepTimerRef = null;
+    }
+    if (min == null) {
+      set({ sleepAt: null });
+      return;
+    }
+    set({ sleepAt: Date.now() + min * 60000 });
+    sleepTimerRef = setTimeout(() => {
+      sleepTimerRef = null;
+      set({ sleepAt: null, playing: false, pos: 0 });
+      // 停引擎（后端会同步 SMTC 等）；失败也无害——UI 已复位
+      api.stop().catch(() => {});
+      get().toast("定时时间到，已停止播放", "info");
+    }, min * 60000);
   },
 
   setSpeed(v) {

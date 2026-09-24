@@ -158,6 +158,22 @@ export const api = {
     invoke<import("./types").UserPlaylistMeta[]>("qq_user_playlists"),
   qqImportPlaylist: (remotePid: number, name: string) =>
     invoke<[number, number]>("qq_import_playlist", { remotePid, name }),
+  qqToplists: () =>
+    invoke<{ toplists: import("./types").QqToplist[] }>("qq_toplists"),
+  qqToplistTracks: (topId: number) =>
+    invoke<{ songs: QqSong[] }>("qq_toplist_tracks", { topId }),
+  qqRandomPlaylist: () =>
+    invoke<import("./types").QqRandomPlaylist>("qq_random_playlist"),
+  neteaseToplists: () =>
+    invoke<{ toplists: import("./types").NetToplist[] }>("netease_toplists"),
+  neteaseToplistTracks: (topId: number) =>
+    invoke<{ songs: NeteaseTrack[] }>("netease_toplist_tracks", { topId }),
+  neteaseRandomPlaylist: () =>
+    invoke<import("./types").NetRandomPlaylist>("netease_random_playlist"),
+  neteaseDailyRecommend: () =>
+    invoke<{ songs: NeteaseTrack[] }>("netease_daily_recommend"),
+  neteasePersonalFm: () =>
+    invoke<{ songs: NeteaseTrack[] }>("netease_personal_fm"),
   setPlayQuality: (quality: string) => invoke<void>("set_play_quality", { quality }),
   setCloseAction: (action: string) => invoke<void>("set_close_action", { action }),
   setAutoUpdate: (enabled: boolean) => invoke<void>("set_auto_update", { enabled }),

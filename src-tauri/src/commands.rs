@@ -827,6 +827,68 @@ pub async fn qq_logout(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 榜单 / 随机推荐（网易云、QQ，匿名可用） ----------
+
+#[tauri::command]
+pub async fn qq_toplists() -> Result<serde_json::Value, String> {
+    let toplists = crate::qq::toplists()?;
+    Ok(json!({ "toplists": toplists }))
+}
+
+#[tauri::command]
+pub async fn qq_toplist_tracks(top_id: i64) -> Result<serde_json::Value, String> {
+    let songs = crate::qq::toplist_tracks(top_id)?;
+    Ok(json!({ "songs": songs }))
+}
+
+#[tauri::command]
+pub async fn qq_random_playlist() -> Result<crate::qq::QqPublicPlaylist, String> {
+    crate::qq::random_playlist()
+}
+
+#[tauri::command]
+pub async fn netease_toplists() -> Result<serde_json::Value, String> {
+    let toplists = crate::netease::toplists()?;
+    Ok(json!({ "toplists": toplists }))
+}
+
+/// 榜单曲目（榜单 ID 即歌单 ID，明文 v6 匿名可拉；登录后按权益取播放链接）
+#[tauri::command]
+pub async fn netease_toplist_tracks(
+    state: State<'_, AppState>,
+    top_id: i64,
+) -> Result<serde_json::Value, String> {
+    let music_u = netease_cookie(&state).unwrap_or_default();
+    let songs = crate::netease::playlist_tracks(top_id, &music_u)?;
+    Ok(json!({ "songs": songs }))
+}
+
+#[tauri::command]
+pub async fn netease_random_playlist(
+    state: State<'_, AppState>,
+) -> Result<crate::netease::NetRandomPlaylist, String> {
+    let music_u = netease_cookie(&state).unwrap_or_default();
+    crate::netease::random_playlist(&music_u)
+}
+
+#[tauri::command]
+pub async fn netease_daily_recommend(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
+    let songs = crate::netease::daily_recommend(&music_u)?;
+    Ok(json!({ "songs": songs }))
+}
+
+#[tauri::command]
+pub async fn netease_personal_fm(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
+    let songs = crate::netease::personal_fm(&music_u)?;
+    Ok(json!({ "songs": songs }))
+}
+
 // ---------- 在线歌曲收藏到本地 / 歌单导入 ----------
 
 #[derive(serde::Deserialize)]

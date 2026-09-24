@@ -13,6 +13,7 @@ import {
   Radio,
   Settings,
   DiscAlbum,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -45,6 +46,7 @@ export default function Sidebar() {
   const likedOnline = useStore((s) => s.likedOnline);
   const reorderPlaylists = useStore((s) => s.reorderPlaylists);
   const renamePlaylist = useStore((s) => s.renamePlaylist);
+  const deletePlaylist = useStore((s) => s.deletePlaylist);
   const [plModalOpen, setPlModalOpen] = useState(false);
   // 播放列表右键菜单 / 重命名弹窗
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(
@@ -53,6 +55,8 @@ export default function Sidebar() {
   const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(
     null
   );
+  // 右键删除二次确认：第一次点"删除"只置位，再点"确认删除"才真删
+  const [confirmDel, setConfirmDel] = useState<number | null>(null);
   const [skinOpen, setSkinOpen] = useState(false);
   // 长按拖动排序：行序列 = 本地 state 的播放列表顺序
   const { rowProps } = useDragList((from, to) => {
@@ -258,11 +262,14 @@ export default function Sidebar() {
           <div
             className="fixed z-[75] w-[150px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
             style={(() => {
-              const p = clampMenuPos(menu.x, menu.y, 150, 80);
+              const p = clampMenuPos(menu.x, menu.y, 150, 110);
               return { left: p.x, top: p.y };
             })()}
             onMouseDown={(ev) => ev.stopPropagation()}
-            onMouseLeave={() => setMenu(null)}
+            onMouseLeave={() => {
+              setMenu(null);
+              setConfirmDel(null);
+            }}
           >
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -275,6 +282,28 @@ export default function Sidebar() {
               <Pencil size={13} className="text-[var(--ink-3)]" />
               重命名
             </button>
+            {confirmDel === menu.id ? (
+              <button
+                className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left"
+                onClick={() => {
+                  void deletePlaylist(menu.id);
+                  setMenu(null);
+                  setConfirmDel(null);
+                }}
+                title="再次确认删除（歌单内条目一并移除）"
+              >
+                <Trash2 size={13} />
+                确认删除？
+              </button>
+            ) : (
+              <button
+                className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                onClick={() => setConfirmDel(menu.id)}
+              >
+                <Trash2 size={13} className="text-[var(--ink-3)]" />
+                删除
+              </button>
+            )}
           </div>,
           document.body
         )}
