@@ -273,14 +273,24 @@ where
         'formats: for (store, valid, kind, rate) in fmt_cands {
             let wf = WaveFormat::new(store, valid, &kind, rate as usize, ch, None);
             let blockalign = wf.get_blockalign() as usize;
+            // 关键：Initialize 之前必须先在同客户端上调用 IsFormatSupported
+            // 探测——缺失该调用时驱动会以 0x8889000A 拒绝所有周期（实证）。
+            // 探测失败说明该格式不被支持，换下一个候选。
+            let accepted = match audio_client.is_supported_exclusive_with_quirks(&wf) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            let valid_bits = accepted.get_validbitspersample();
             let fmt_spec = FmtSpec {
-                kind: if kind == SampleType::Float {
+                kind: if accepted.get_subformat().unwrap_or(SampleType::Int)
+                    == SampleType::Float
+                {
                     SampleKind::F32
-                } else if valid == 16 {
+                } else if valid_bits == 16 {
                     SampleKind::I16
-                } else if valid == 24 && store == 32 {
+                } else if valid_bits == 24 && store == 32 {
                     SampleKind::I24In32
-                } else if valid == 24 {
+                } else if valid_bits == 24 {
                     SampleKind::I24
                 } else {
                     SampleKind::I32
