@@ -315,55 +315,101 @@ where
         })?;
         let dev_rate = wave_fmt.get_samplespersec();
 
-        // 周期对齐（部分设备如 Intel HDA 要求 128 字节对齐），按官方示例
-        // 处理 AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED 的重试
+        // 周期协商：独占模式对缓冲周期有对齐要求（部分设备还要求 128 字节
+        // 对齐），不同设备的可接受值不同。按候选周期逐一尝试，每个周期
+        // 配全新 client（失败后的 client 状态不可靠）；含 MS 文档的
+        // GetBufferSize 对齐重算流程。
         let (def_period, min_period) = audio_client
             .get_periods()
             .map_err(|e| wasapi_err("独占模式获取周期失败", e.as_ref()))?;
-        let mut desired_period = audio_client
-            .calculate_aligned_period_near(3 * min_period / 2, Some(128), &wave_fmt)
-            .map_err(|e| wasapi_err("独占模式计算周期失败", e.as_ref()))?;
-        for attempt in 0..3 {
-            match audio_client.initialize_client(
-                &wave_fmt,
-                desired_period,
-                &Direction::Render,
-                &ShareMode::Exclusive,
-                false,
-            ) {
-                Ok(()) => break,
-                Err(e) => {
-                    let code = e
-                        .downcast_ref::<WinError>()
-                        .map(|we| we.code().0)
-                        .unwrap_or(0);
-                    let aligned = code == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED;
-                    if !aligned || attempt == 2 {
-                        return Err(wasapi_err("独占模式初始化失败", e.as_ref()));
+        let aligned_near =
+            audio_client
+                .calculate_aligned_period_near(3 * min_period / 2, Some(128), &wave_fmt)
+                .map_err(|e| wasapi_err("独占模式计算周期失败", e.as_ref()))?;
+        let mut period_candidates: Vec<i64> =
+            vec![aligned_near, def_period, def_period * 2, min_period];
+        period_candidates.sort();
+        period_candidates.dedup();
+
+        let mut last_err: Option<String> = None;
+        let mut inited = false;
+        for &period in &period_candidates {
+            for attempt in 0..2 {
+                let mut client = device
+                    .get_iaudioclient()
+                    .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
+                match client.initialize_client(
+                    &wave_fmt,
+                    period,
+                    &Direction::Render,
+                    &ShareMode::Exclusive,
+                    false,
+                ) {
+                    Ok(()) => {
+                        audio_client = client;
+                        inited = true;
+                        break;
                     }
-                    // 按文档流程取下一个对齐缓冲大小后重建客户端再试
-                    let buffersize = audio_client.get_bufferframecount().unwrap_or(0);
-                    desired_period = wasapi::calculate_period_100ns(
-                        buffersize as i64,
-                        wave_fmt.get_samplespersec() as i64,
-                    );
-                    audio_client = device
-                        .get_iaudioclient()
-                        .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
-                    audio_client
-                        .initialize_client(
-                            &wave_fmt,
-                            desired_period,
-                            &Direction::Render,
-                            &ShareMode::Exclusive,
-                            false,
-                        )
-                        .map_err(|e| wasapi_err("独占模式初始化失败", e.as_ref()))?;
-                    break;
+                    Err(e) => {
+                        let code = e
+                            .downcast_ref::<WinError>()
+                            .map(|we| we.code().0)
+                            .unwrap_or(0);
+                        last_err = Some(wasapi_err(
+                            &format!("独占模式初始化失败（周期 {period}）"),
+                            e.as_ref(),
+                        ));
+                        // BUFFER_SIZE_NOT_ALIGNED：按 MS 文档用 GetBufferSize
+                        // 的对齐值重算周期，同一 client 上再试一次
+                        if code == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED && attempt == 0 {
+                            if let Ok(bf) = client.get_bufferframecount() {
+                                if bf > 0 {
+                                    let p2 = wasapi::calculate_period_100ns(
+                                        bf as i64,
+                                        wave_fmt.get_samplespersec() as i64,
+                                    );
+                                    let mut client2 = device
+                                        .get_iaudioclient()
+                                        .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
+                                    match client2.initialize_client(
+                                        &wave_fmt,
+                                        p2,
+                                        &Direction::Render,
+                                        &ShareMode::Exclusive,
+                                        false,
+                                    ) {
+                                        Ok(()) => {
+                                            audio_client = client2;
+                                            inited = true;
+                                        }
+                                        Err(_) => {
+                                            // client2 已释放，重建 client 继续下一周期
+                                            audio_client = device
+                                                .get_iaudioclient()
+                                                .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
+                                        }
+                                    }
+                                    if inited {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        // 非对齐错误或重试仍失败：换下一个候选周期
+                    }
                 }
             }
+            if inited {
+                break;
+            }
         }
-        let _ = def_period;
+        if !inited {
+            audio_client = device
+                .get_iaudioclient()
+                .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
+            return Err(last_err
+                .unwrap_or_else(|| "独占模式初始化失败（无可用周期）".into()));
+        }
 
         let blockalign = wave_fmt.get_blockalign() as usize;
         fmt.bytes_per_sample = blockalign / ch.max(1);
