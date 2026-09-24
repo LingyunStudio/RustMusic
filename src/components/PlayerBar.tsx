@@ -122,14 +122,18 @@ function Playhead({ fallbackTotal }: { fallbackTotal: number }) {
   );
 }
 
-/** 竖向音量弹出条（点击音量图标显示，离开自动收起） */
+/** 竖向音量弹出条（点击音量图标显示，点击其他区域收起；顶部可静音） */
 function VolumePopover({
   volume,
   onSet,
+  muted,
+  onToggleMute,
   onClose,
 }: {
   volume: number;
   onSet: (v: number) => void;
+  muted: boolean;
+  onToggleMute: () => void;
   onClose: () => void;
 }) {
   const H = 140;
@@ -144,7 +148,7 @@ function VolumePopover({
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
-        className="absolute bottom-[48px] right-0 z-[61] w-11 rounded-2xl p-2 flex justify-center"
+        className="absolute bottom-[48px] right-0 z-[61] w-11 rounded-2xl p-2 flex flex-col items-center gap-1.5"
         style={{
           background: "var(--bar-glass)",
           backdropFilter: "blur(var(--bar-blur, 8px))",
@@ -152,6 +156,16 @@ function VolumePopover({
           boxShadow: "var(--bar-shadow)",
         }}
       >
+        {/* 静音切换：记忆静音前的音量 */}
+        <button
+          className="w-7 h-6 rounded-lg flex items-center justify-center text-[10px] font-semibold text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] transition-colors"
+          onClick={() => {
+            onToggleMute();
+          }}
+          title={muted ? "取消静音" : "静音"}
+        >
+          {muted ? "有声" : "静音"}
+        </button>
         <div
           className="relative w-1.5 rounded-full bg-[var(--shade-strong)] cursor-pointer touch-none"
           style={{ height: H }}
@@ -568,24 +582,13 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           >
             {speed}x
           </button>
-          {/* 音量：点击图标 = 静音切换（记住原音量），悬停弹出竖向音量条 */}
-          <div
-            className="relative flex items-center"
-            onMouseLeave={() => setVolOpen(false)}
-          >
+          {/* 音量：点击图标弹出音量条（弹窗内可静音，记住静音前的音量） */}
+          <div className="relative flex items-center">
             <button
               ref={volBtnRef}
               className={`btn-ghost w-9 h-9 shrink-0 ${volOpen ? "!text-[var(--accent)]" : ""}`}
-              onClick={() => {
-                if (volume > 0) {
-                  lastVolRef.current = volume;
-                  setVolume(0);
-                } else {
-                  setVolume(lastVolRef.current || 0.8);
-                }
-              }}
-              onMouseEnter={() => setVolOpen(true)}
-              title={volume === 0 ? "取消静音" : "静音"}
+              onClick={() => setVolOpen((v) => !v)}
+              title="音量"
             >
               <VolIcon size={15} />
             </button>
@@ -593,6 +596,15 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               <VolumePopover
                 volume={volume}
                 onSet={setVolume}
+                muted={volume === 0}
+                onToggleMute={() => {
+                  if (volume > 0) {
+                    lastVolRef.current = volume;
+                    setVolume(0);
+                  } else {
+                    setVolume(lastVolRef.current || 0.8);
+                  }
+                }}
                 onClose={() => setVolOpen(false)}
               />
             )}
