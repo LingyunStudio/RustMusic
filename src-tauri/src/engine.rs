@@ -401,6 +401,52 @@ impl Engine {
         result
     }
 
+    /// 停止独占会话并立即切回共享模式（从当前进度续播，保持暂停状态）。
+    /// 用于关闭独占开关时立刻把设备还给系统混音器，恢复其它应用出声。
+    pub fn stop_exclusive_resume_shared(self: &Arc<Self>) -> Result<(), String> {
+        let info = self.current.read().clone();
+        let pos = self.pos_ms.load(Ordering::Relaxed);
+        let was_paused = self.user_paused.load(Ordering::Relaxed);
+        if let Some(ctl) = self.excl.read().as_ref() {
+            ctl.stop.store(true, Ordering::Relaxed);
+            ctl.active.store(false, Ordering::Relaxed);
+        }
+        *self.excl.write() = None;
+        self.shared_broken.store(true, Ordering::Relaxed);
+        self.rebuilding.store(true, Ordering::Relaxed);
+        let result = (|| -> Result<(), String> {
+            self.rebuild_shared_output();
+            if let Some(info) = &info {
+                let file =
+                    File::open(&info.path).map_err(|e| format!("打开文件失败: {e}"))?;
+                let src = Decoder::new(BufReader::new(file))
+                    .map_err(|e| format!("无法解码该音频文件: {e}"))?
+                    .convert_samples::<f32>()
+                    .skip_duration(Duration::from_millis(pos));
+                let wrapped =
+                    EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), pos as f64);
+                {
+                    let sink = self.sink.read();
+                    sink.clear();
+                    sink.append(wrapped);
+                    sink.set_volume(f32::from_bits(self.volume.load(Ordering::Relaxed)));
+                    sink.set_speed(f32::from_bits(self.speed.load(Ordering::Relaxed)));
+                    if was_paused {
+                        sink.pause();
+                    } else {
+                        sink.play();
+                    }
+                }
+                self.stopped.store(false, Ordering::Relaxed);
+            }
+            Ok(())
+        })();
+        self.rebuilding.store(false, Ordering::Relaxed);
+        self.notify_smtc();
+        self.emit_state(!was_paused && info.is_some());
+        result
+    }
+
     fn excl_active(&self) -> bool {
         self.excl
             .read()

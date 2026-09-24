@@ -1529,14 +1529,20 @@ pub async fn qq_import_playlist(
 /// WASAPI 独占模式开关（切换后下一首生效）
 #[tauri::command]
 pub async fn set_wasapi_exclusive(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    let eng = state.engine.lock().clone();
+    eng.set_exclusive_enabled(enabled);
+    // 关闭独占时立即停止会话、把设备还给系统混音器，并从当前进度切回共享续播
+    if !enabled {
+        if let Err(e) = eng.stop_exclusive_resume_shared() {
+            eprintln!("[engine] 关闭独占切回共享失败: {e}");
+        }
+    }
     let conn = state.db.lock();
     db::set_setting(
         &conn,
         "wasapi_exclusive",
         if enabled { "true" } else { "false" },
     );
-    drop(conn);
-    state.engine.lock().set_exclusive_enabled(enabled);
     Ok(())
 }
 

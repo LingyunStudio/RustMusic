@@ -122,6 +122,11 @@ impl LinearResampler {
         }
         if self.cur.is_none() {
             self.cur = Some(Self::pull(src, ch)?);
+            // prev 必须有值：否则前几次插值会走“直接输出 cur”分支，
+            // 造成重复帧（听感为节奏错乱/倍速）
+            if let Some(c) = &self.cur {
+                self.prev = Some(c.clone());
+            }
         }
         while self.pos >= 1.0 {
             self.pos -= 1.0;
@@ -327,8 +332,8 @@ where
                                 audio_client = client;
                                 inited = Some((wf, fmt_spec, ratio));
                                 eprintln!(
-                                    "[wasapi] 独占格式就绪：{}Hz × {}ch，{} 字节/帧，有效 {} 位，周期 {}（100ns）",
-                                    rate, ch, blockalign, valid, period
+                                    "[wasapi] 独占格式就绪：源 {}Hz → 设备 {}Hz × {}ch，{} 字节/帧，有效 {} 位，周期 {}（100ns）",
+                                    params.src_rate, rate, ch, blockalign, valid, period
                                 );
                                 break 'formats;
                             }
@@ -456,6 +461,14 @@ where
             done: false,
         };
 
+        // 独占事件驱动模式的标准喂采样循环：每次事件写满整个缓冲区，
+        // 不查询 padding（部分驱动的独占 padding 语义不可靠，按空间写会
+        // 超量喂入，表现为进度条倍速 + 采样乱码）。
+        let buffer_frames = audio_client
+            .get_bufferframecount()
+            .map_err(|e| wasapi_err("独占模式获取缓冲大小失败", e.as_ref()))?
+            as usize;
+        eprintln!("[wasapi] 独占缓冲 = {buffer_frames} 帧/周期");
         loop {
             if stop.load(Ordering::Relaxed) {
                 break;
@@ -466,52 +479,43 @@ where
             if stop.load(Ordering::Relaxed) {
                 break;
             }
-            loop {
-                let space = match audio_client.get_available_space_in_frames() {
-                    Ok(s) => s as usize,
-                    Err(_) => break,
-                };
-                if space == 0 {
-                    break;
-                }
-                let mut bytes = Vec::with_capacity(space * blockalign);
-                if paused.load(Ordering::Relaxed) {
-                    // 暂停：写静音帧，不消耗采样源（进度冻结）
-                    bytes.extend(silence_bytes(space, blockalign));
-                    let _ = render.write_to_device(space, blockalign, &bytes, Some(silent_flags()));
-                } else {
-                    let volume = f32::from_bits(params.volume_bits.load(Ordering::Relaxed));
-                    let mut written = 0usize;
-                    let mut ended = false;
-                    for _ in 0..space {
-                        match resampler.next_frame(&mut src, ch) {
-                            Some(frame) => {
-                                append_frame(&mut bytes, &frame, &fmt, volume);
-                                written += 1;
-                            }
-                            None => {
-                                ended = true;
-                                break;
-                            }
-                        }
+            if paused.load(Ordering::Relaxed) {
+                // 暂停：写静音帧，不消耗采样源（进度冻结）
+                let z = silence_bytes(buffer_frames, blockalign);
+                let _ = render.write_to_device(
+                    buffer_frames,
+                    blockalign,
+                    &z,
+                    Some(silent_flags()),
+                );
+                continue;
+            }
+            let volume = f32::from_bits(params.volume_bits.load(Ordering::Relaxed));
+            let mut bytes = Vec::with_capacity(buffer_frames * blockalign);
+            let mut written = 0usize;
+            let mut ended = false;
+            for _ in 0..buffer_frames {
+                match resampler.next_frame(&mut src, ch) {
+                    Some(frame) => {
+                        append_frame(&mut bytes, &frame, &fmt, volume);
+                        written += 1;
                     }
-                    if written > 0 {
-                        bytes.truncate(written * blockalign);
-                        let _ = render.write_to_device(written, blockalign, &bytes, None);
-                    }
-                    if ended {
-                        // 余下缓冲填静音后退出
-                        let rest = space - written;
-                        if rest > 0 {
-                            let z = silence_bytes(rest, blockalign);
-                            let _ =
-                                render.write_to_device(rest, blockalign, &z, Some(silent_flags()));
-                        }
-                        audio_client.stop_stream().ok();
-                        active.store(false, Ordering::Relaxed);
-                        return Ok(());
+                    None => {
+                        ended = true;
+                        break;
                     }
                 }
+            }
+            // 源耗尽后余下缓冲填静音（保持缓冲完整），随后退出会话
+            if written < buffer_frames {
+                bytes
+                    .extend(silence_bytes(buffer_frames - written, blockalign));
+            }
+            let _ = render.write_to_device(buffer_frames, blockalign, &bytes, None);
+            if ended {
+                audio_client.stop_stream().ok();
+                active.store(false, Ordering::Relaxed);
+                return Ok(());
             }
         }
         audio_client.stop_stream().ok();
