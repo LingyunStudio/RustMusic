@@ -22,7 +22,7 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
-import type { KgSong, NeteaseTrack, QqSong } from "../types";
+import type { KgSong, NeteaseTrack, OnlineRecState, OnlineSource, QqSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
 
@@ -45,18 +45,8 @@ const qqCover = (albumMid: string) =>
     ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${albumMid}.jpg`
     : "";
 
-/** 推荐内容（随机歌单/榜单/每日推荐/私人FM）：与搜索结果同构，行渲染/操作完全复用 */
-interface RecState {
-  /** 来源：换一批按钮按来源刷新 */
-  origin: "random" | "top" | "daily" | "fm";
-  title: string;
-  cover: string;
-  subtitle: string;
-  /** 可整单收藏时：远程歌单 ID（netease 榜单/个性化歌单、QQ 公开歌单） */
-  playlistId?: number;
-  netease?: NeteaseTrack[];
-  qq?: QqSong[];
-}
+/** 推荐内容状态 OnlineRecState 定义在 types.ts / store：跳转歌手/专辑页后
+ *  返回时按源还原当时的推荐列表（此前存组件 state，跳转即丢） */
 
 /** 在线搜索历史（localStorage，跨会话保留，最多 12 条） */
 const SEARCH_HISTORY_KEY = "rustmusic_search_history";
@@ -114,12 +104,15 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const openDetailPage = useStore((s) => s.openDetailPage);
   const toast = useStore((s) => s.toast);
 
-  const [kw, setKw] = useState("");
+  const [kw, setKw] = useState(useStore.getState().lastKw[source] ?? "");
   const [menu, setMenu] = useState<{ x: number; y: number; row: OnlineRow } | null>(
     null
   );
-  // 推荐态：随机歌单/榜单加载后接管列表展示，搜索时清空回到搜索态
-  const [rec, setRec] = useState<RecState | null>(null);
+  // 推荐态：随机歌单/榜单加载后接管列表展示，搜索时清空回到搜索态。
+  // 存在 store（按源）：跳转歌手/专辑页再返回时还原当时的推荐列表
+  const rec = useStore((s) => s.onlineRec[source]);
+  const setRec = (r: OnlineRecState | null) =>
+    useStore.getState().setOnlineRec(source, r);
   const [recLoading, setRecLoading] = useState(false);
   const [toplists, setToplists] = useState<
     { id: number; name: string; cover: string }[]
@@ -133,7 +126,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   // ---------- 视图内导航历史（点歌手/专辑/搜索后可返回上一页） ----------
   interface NavSnapshot {
-    rec: RecState | null;
+    rec: OnlineRecState | null;
     kw: string;
     neteaseResults: NeteaseTrack[];
     neteaseTotal: number;
@@ -186,12 +179,14 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const recommendable = source === "netease" || source === "qq";
 
   // 推荐接口预取：榜单 chip 数据量小、匿名可拉，进视图静默加载；
-  // 失败只影响推荐入口，不打扰搜索主流程
+  // 失败只影响推荐入口，不打扰搜索主流程。
+  // 注意：推荐内容（rec）按源存 store，切源不清空——跳转歌手/专辑页
+  // 返回时要还原当时的推荐列表
   useEffect(() => {
-    setRec(null);
     setNavStack([]);
     setSel(new Set());
     setBatchMode(false);
+    setKw(useStore.getState().lastKw[source] ?? "");
     if (!recommendable) return;
     let dead = false;
     (async () => {
@@ -229,7 +224,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   // 推荐曲目写入 store 缓存：与搜索结果一致，保证“下一首播放/加入队列”
   // 在从未播放过的情况下也能解析出曲目信息
-  const cacheRecSongs = (r: RecState) => {
+  const cacheRecSongs = (r: OnlineRecState) => {
     if (r.netease) {
       useStore.setState((s) => ({
         neteaseCache: {
@@ -253,7 +248,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     try {
       if (source === "netease") {
         const r = await api.neteaseRandomPlaylist();
-        const next: RecState = {
+        const next: OnlineRecState = {
           origin: "random",
           title: r.name,
           cover: r.cover,
@@ -265,7 +260,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         setRec(next);
       } else {
         const r = await api.qqRandomPlaylist();
-        const next: RecState = {
+        const next: OnlineRecState = {
           origin: "random",
           title: r.name,
           cover: r.cover,
@@ -291,7 +286,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         source === "netease"
           ? await api.neteaseToplistTracks(t.id)
           : await api.qqToplistTracks(t.id);
-      const next: RecState =
+      const next: OnlineRecState =
         source === "netease"
           ? {
               origin: "top",
@@ -331,7 +326,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     setRecLoading(true);
     try {
       const r = await loader();
-      const next: RecState =
+      const next: OnlineRecState =
         kind === "daily"
           ? {
               origin: "daily",
@@ -492,6 +487,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     setRec(null);
     setSel(new Set());
     rememberSearch(q);
+    useStore.getState().setLastKw(source, q);
     if (source === "netease") neteaseSearch(q);
     else if (source === "qq") qqSearch(q);
     else kugouSearch(q);

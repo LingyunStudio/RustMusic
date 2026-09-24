@@ -19,6 +19,8 @@ import {
 import { applySkin, loadSkin, saveSkin } from "./skins";
 import type {
   CurrentTrack,
+  OnlineRecState,
+  OnlineSource,
   PlaylistEntryMeta,
   DownloadState,
   Folder,
@@ -66,6 +68,11 @@ interface Store {
   detailName: string;
   /** 详情页回退栈：openDetailPage 压入来源视图，popDetailPage 弹出恢复 */
   viewHistory: { view: ViewName; viewParam: number; detailName: string }[];
+  /** 在线曲库推荐视图（随便听听/榜单/每日推荐/私人FM），按源存放：
+   *  放 store 里保证跳转歌手/专辑页后返回时还原当时的推荐列表 */
+  onlineRec: Record<OnlineSource, OnlineRecState | null>;
+  /** 各源最近一次搜索词（返回在线曲库时还原搜索框） */
+  lastKw: Record<OnlineSource, string>;
   search: string;
   nowPlayingOpen: boolean;
   /** 播放页无边框全屏（隐藏系统任务栏；播放条隐藏、hover 唤起） */
@@ -134,6 +141,8 @@ interface Store {
   toast(msg: string, type?: Toast["type"]): number;
   dismissToast(id: number): void;
   setView(v: ViewName, param?: number): void;
+  setOnlineRec(source: OnlineSource, rec: OnlineRecState | null): void;
+  setLastKw(source: OnlineSource, kw: string): void;
   /** 打开歌手/专辑详情页（聚合本地曲目与在线搜索结果），自带返回栈 */
   openDetailPage(kind: "artist" | "album", name: string): void;
   popDetailPage(): void;
@@ -488,6 +497,8 @@ export const useStore = create<Store>((set, get) => ({
   viewParam: 0,
   detailName: "",
   viewHistory: [],
+  onlineRec: { netease: null, qq: null, kugou: null },
+  lastKw: { netease: "", qq: "", kugou: "" },
   search: "",
   nowPlayingOpen: false,
   fullscreen: false,
@@ -752,6 +763,14 @@ export const useStore = create<Store>((set, get) => ({
 
   setView(v, param = 0) {
     set({ view: v, viewParam: param, search: "" });
+  },
+
+  setOnlineRec(source, rec) {
+    set((s) => ({ onlineRec: { ...s.onlineRec, [source]: rec } }));
+  },
+
+  setLastKw(source, kw) {
+    set((s) => ({ lastKw: { ...s.lastKw, [source]: kw } }));
   },
 
   openDetailPage(kind, name) {

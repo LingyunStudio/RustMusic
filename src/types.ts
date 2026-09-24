@@ -211,6 +211,22 @@ export type ViewName =
   | "artist"
   | "album";
 
+/** 在线曲库"推荐视图"状态（随便听听/榜单/每日推荐/私人FM），按源存放：
+ *  存在 store 里保证跳转歌手/专辑页再返回时能还原当时的推荐列表 */
+export interface OnlineRecState {
+  /** 来源：换一批按钮按来源刷新 */
+  origin: "random" | "top" | "daily" | "fm";
+  title: string;
+  cover: string;
+  subtitle: string;
+  /** 可整单收藏时：远程歌单 ID（netease 榜单/个性化歌单、QQ 公开歌单） */
+  playlistId?: number;
+  netease?: NeteaseTrack[];
+  qq?: QqSong[];
+}
+
+export type OnlineSource = "netease" | "qq" | "kugou";
+
 export interface ScanState {
   active: boolean;
   done: number;
