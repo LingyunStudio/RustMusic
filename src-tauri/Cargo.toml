@@ -1,6 +1,6 @@
 [package]
 name = "rustmusic"
-version = "0.1.7"
+version = "0.1.8"
 description = "RustMusic - 精美的高性能音乐播放器"
 authors = ["RustMusic"]
 license = "Apache-2.0"
