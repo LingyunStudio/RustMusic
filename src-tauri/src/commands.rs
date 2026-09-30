@@ -1922,7 +1922,7 @@ pub async fn netease_personal_fm(state: State<'_, AppState>) -> Result<serde_jso
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineSaveReq {
-    pub kind: String, // netease | qq
+    pub kind: String, // netease | qq | kugou
     pub id: String,
     pub title: String,
     #[serde(default)]
@@ -1935,6 +1935,14 @@ pub struct OnlineSaveReq {
     pub duration_ms: u64,
     #[serde(default)]
     pub media_mid: String,
+    /// 酷狗各档质量 hash（搜索/榜单行自带；最近播放等存档行可缺省，
+    /// 缺省时按标题反查补齐）——下载音质 HQ/无损必需
+    #[serde(default)]
+    pub hq_hash: String,
+    #[serde(default)]
+    pub sq_hash: String,
+    #[serde(default)]
+    pub super_hash: String,
 }
 
 fn save_dir(state: &State<AppState>) -> std::path::PathBuf {
@@ -2036,8 +2044,14 @@ pub async fn download_online(
             let (token, userid) = kg_prepare(&state);
             // media_mid 列存的是专辑音频 ID（最近播放/歌单导入时写入）
             let album_audio_id = req.media_mid.parse().unwrap_or(0);
-            // 存档行只有 128 hash：按标题反查各档 hash，下载音质才能生效
-            let (hq, sq, sup) = kugou_hashes_enriched(&req.id, &title, "", "", "");
+            // 前端带来的各档 hash 优先；存档行没有时按标题反查补齐
+            let (hq, sq, sup) = kugou_hashes_enriched(
+                &req.id,
+                &title,
+                &req.hq_hash,
+                &req.sq_hash,
+                &req.super_hash,
+            );
             let (u, ext, _label) =
                 crate::kugou::song_url(&req.id, album_audio_id, 0, &hq, &sq, &sup, true, &token, &userid, &quality)?;
             (u, ext)

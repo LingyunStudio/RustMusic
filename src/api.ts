@@ -203,6 +203,9 @@ export const api = {
     coverUrl: string;
     durationMs: number;
     mediaMid: string;
+    hqHash?: string;
+    sqHash?: string;
+    superHash?: string;
   }) => invoke<string>("download_online", { req }),
   likedOnlineList: () =>
     invoke<import("./types").PlaylistEntryMeta[]>("liked_online_list"),

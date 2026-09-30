@@ -2281,6 +2281,9 @@ export const useStore = create<Store>((set, get) => ({
           coverUrl: row.cover,
           durationMs: row.durationMs,
           mediaMid: row.mediaMid ?? "",
+          hqHash: (row as { hqHash?: string }).hqHash,
+          sqHash: (row as { sqHash?: string }).sqHash,
+          superHash: (row as { superHash?: string }).superHash,
         });
         await get().refreshTracks();
         get().toast(`已下载到资料库：${name}`, "success");

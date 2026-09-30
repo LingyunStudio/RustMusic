@@ -1971,10 +1971,10 @@ fn test_kugou_download_quality_audit() {
     let userid = get("kg_userid");
     println!("token_len={} userid={}", token.len(), userid);
 
-    let songs = search("最长的电影 周杰伦", 1).expect("search failed");
+    let songs = search("说了再见 周杰伦", 1).expect("search failed");
     let s = songs
         .iter()
-        .find(|s| s.name.contains("最长的电影"))
+        .find(|s| s.name.contains("说了再见"))
         .expect("未找到目标歌曲");
     println!(
         "搜索到: {} - {} | 128hash={} hq={} sq={} super={}",
