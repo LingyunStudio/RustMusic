@@ -1,6 +1,6 @@
 [package]
 name = "rustmusic"
-version = "0.4.1"
+version = "0.4.2"
 description = "RustMusic - 精美的高性能音乐播放器"
 authors = ["RustMusic"]
 license = "Apache-2.0"
@@ -14,7 +14,7 @@ tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rodio = { version = "0.20", features = ["symphonia-mp3", "symphonia-aac", "symphonia-isomp4", "symphonia-vorbis", "symphonia-wav", "flac"] }
+rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-mp3", "symphonia-aac", "symphonia-isomp4", "symphonia-vorbis", "symphonia-wav", "flac"] }
 lofty = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 walkdir = "2"
@@ -22,7 +22,7 @@ rayon = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 ureq = { version = "2", features = ["json"] }
 percent-encoding = "2"
-symphonia = { version = "0.5", default-features = false, features = ["aac", "isomp4"] }
+symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "isomp4"] }
 souvlaki = "0.8"
 parking_lot = "0.12"
 base64 = "0.22"

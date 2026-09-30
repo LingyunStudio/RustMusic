@@ -10,7 +10,7 @@ use std::time::Duration;
 use lofty::prelude::*;
 use parking_lot::RwLock;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{Decoder, MixerDeviceSink, Player, Source};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -75,9 +75,9 @@ pub struct OutputDeviceInfo {
 }
 
 pub struct Engine {
-    /// 当前输出流 handle（cpal Stream 非 Send，泄漏保活；设备切换时重建）
-    out: RwLock<&'static OutputStreamHandle>,
-    sink: RwLock<Sink>,
+    /// 当前输出设备句柄（持有 cpal Stream 保活；设备切换时重建）
+    out: RwLock<&'static MixerDeviceSink>,
+    sink: RwLock<Player>,
     app: AppHandle,
     pub eq: Arc<EqShared>,
     pub pos_ms: Arc<AtomicU64>,
@@ -162,10 +162,10 @@ impl Engine {
         })
     }
 
-    /// 按设备偏好创建输出流与 Sink；None = 系统默认设备。
-    /// cpal Stream 非 Send/Sync：泄漏保活整个进程周期（与旧实现一致），
-    /// 设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
-    fn build_output(pref: Option<&str>) -> Result<(&'static OutputStreamHandle, Sink), String> {
+    /// 按设备偏好创建输出流与 Player；None = 系统默认设备。
+    /// MixerDeviceSink 持有 cpal Stream（非 Send）：泄漏保活整个进程周期
+    /// （与旧实现一致），设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
+    fn build_output(pref: Option<&str>) -> Result<(&'static MixerDeviceSink, Player), String> {
         let host = rodio::cpal::default_host();
         let device = match pref {
             Some(name) => host
@@ -177,13 +177,14 @@ impl Engine {
                 .default_output_device()
                 .ok_or("没有可用的音频输出设备")?,
         };
-        let (stream, handle) = rodio::OutputStream::try_from_device(&device)
-            .map_err(|e| format!("打开输出设备失败: {e}"))?;
-        let _leaked: &'static OutputStream = Box::leak(Box::new(stream));
-        let sink = rodio::Sink::try_new(&handle).map_err(|e| format!("创建播放通道失败: {e}"))?;
+        let leaked: &'static MixerDeviceSink = Box::leak(Box::new(
+            rodio::DeviceSinkBuilder::from_device(device)
+                .and_then(|b| b.open_stream())
+                .map_err(|e| format!("打开输出设备失败: {e}"))?,
+        ));
+        let sink = Player::connect_new(leaked.mixer());
         sink.pause();
-        let leaked_handle: &'static OutputStreamHandle = Box::leak(Box::new(handle));
-        Ok((leaked_handle, sink))
+        Ok((leaked, sink))
     }
 
     /// 重建共享模式输出流与 Sink（独占会话跑过之后共享流已失效时调用）
@@ -351,8 +352,8 @@ impl Engine {
                 EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), skip_ms as f64);
             let params = wasapi_out::ExclusiveParams {
                 device_pref: self.device_pref.read().clone(),
-                channels: wrapped.channels() as usize,
-                src_rate: wrapped.sample_rate(),
+                channels: wrapped.channels().get() as usize,
+                src_rate: wrapped.sample_rate().get(),
                 volume_bits: self.volume.clone(),
                 speed_bits: self.speed.clone(),
             };
@@ -640,8 +641,8 @@ impl Engine {
         let is_flac = info_opt
             .as_ref()
             .map(|i| {
-                // FLAC 与 fragmented MP4（B 站缓存/下载）解码器都不支持就地 seek：走重建
-                i.path.to_lowercase().ends_with(".flac") || is_fragmented_mp4(&i.path)
+                // FLAC 与 MP4 容器（symdec 源）解码器都不支持就地 seek：走重建
+                i.path.to_lowercase().ends_with(".flac") || is_mp4_container(&i.path)
             })
             .unwrap_or(false);
         if is_flac {
@@ -666,12 +667,12 @@ impl Engine {
         }
     }
 
-    /// FLAC / B 站 DASH 缓存专用：重开文件并丢弃到目标时长，重建播放链
+    /// FLAC / MP4 容器（m4a、B 站 DASH 缓存等）专用：重开文件并丢弃到目标时长，重建播放链
     fn rebuild_at(&self, info: &TrackInfo, ms: u64) -> Result<(), String> {
-        // fragmented MP4：按包时间戳跳转（demux 级，不解码）；
+        // MP4 容器：symdec 按包时间戳跳转（demux 级，不解码），瞬时完成；
         // rodio 的 skip_duration 对分帧流不生效，不能用它
-        let src: Box<dyn rodio::Source<Item = f32> + Send> =
-            if is_fragmented_mp4(&info.path) {
+        let src: Box<dyn rodio::Source + Send> =
+            if is_mp4_container(&info.path) {
                 Box::new(crate::symdec::SymphoniaSource::open_at(&info.path, ms)?)
             } else {
                 let file =
@@ -679,7 +680,6 @@ impl Engine {
                 Box::new(
                     Decoder::new(BufReader::new(file))
                         .map_err(|e| format!("重新解码失败: {e}"))?
-                        .convert_samples::<f32>()
                         .skip_duration(Duration::from_millis(ms)),
                 )
             };
@@ -1086,45 +1086,53 @@ fn probe_duration(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// 嗅探 MP4 族文件是否为 fragmented MP4（moov 携带 mvex，B 站 DASH 音频类）：
-/// rodio 的 symphonia 包装层对它初始化会 panic，必须走 symphonia 直连源。
-/// 不按扩展名预筛（缓存键扩展名取自 URL，可能任意）——直接读文件头 64KB，
-/// fMP4 的 moov 紧跟 ftyp，mvex 必在前部；普通 mp3/flac/m4a 没有 mvex
-fn is_fragmented_mp4(path: &str) -> bool {
+/// 嗅探文件是否为 MP4 容器（mp4/m4a/m4b、B 站 DASH 缓存均属此族）。
+/// MP4 族一律走 symphonia 直连源（symdec）：rodio 的包装层对多轨 MP4
+/// 会把视频轨帧数混进音轨时基算出错误总时长（0.22.2），且历史版本对
+/// MP4 初始化直接 panic；symdec 选轨/时长/seek 均正确。
+/// 不按扩展名预筛（缓存键扩展名取自 URL，可能任意）——直接看文件头，
+/// MP4 规范要求首 box 即 ftyp（偏移 4..8）。
+fn is_mp4_container(path: &str) -> bool {
     let Ok(mut f) = File::open(path) else {
         return false;
     };
-    let mut head = [0u8; 64 * 1024];
+    let mut head = [0u8; 8];
     let n = f.read(&mut head).unwrap_or(0);
-    head[..n].windows(4).any(|w| w == b"mvex")
+    n == 8 && head[4..8] == *b"ftyp"
 }
 
 /// start() 尾部的公共播放准备（新 Sink 后设置音量/速度并开播）
-fn sink_play_common(sink: &RwLock<Sink>, volume_bits: u32, speed_bits: u32) {
+fn sink_play_common(sink: &RwLock<Player>, volume_bits: u32, speed_bits: u32) {
     let s = sink.read();
     s.set_volume(f32::from_bits(volume_bits));
     s.set_speed(f32::from_bits(speed_bits));
     s.play();
 }
 
-/// 按文件类型打开可播放采样源：fMP4（B 站 DASH 缓存）走 symphonia 直连源
-///（rodio 的 symphonia 包装层对它初始化会 panic），其余走 rodio 解码。
-/// skip_ms：fMP4 按包 seek 瞬时定位，其余 skip_duration。
+/// 按文件类型打开可播放采样源：MP4 容器（m4a/mp4、B 站 DASH 缓存）走
+/// symphonia 直连源（symdec），其余（mp3/flac/wav/ogg 等）走 rodio 解码。
 fn open_playable_source(
     path: &str,
     skip_ms: u64,
-) -> Result<Box<dyn rodio::Source<Item = f32> + Send>, String> {
-    if is_fragmented_mp4(path) {
+) -> Result<Box<dyn rodio::Source + Send>, String> {
+    if is_mp4_container(path) {
         return Ok(Box::new(crate::symdec::SymphoniaSource::open_at(
             path, skip_ms,
         )?));
     }
     let file = File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
+    // MP4 族解码器初始化依赖文件总长 + 可寻址标记，缺失会直接失败；
+    // 常规格式二者同样成立（本地文件皆可寻址），seek/时长计算亦受益
+    let mut builder = Decoder::builder().with_seekable(true);
+    if let Ok(md) = file.metadata() {
+        builder = builder.with_byte_len(md.len());
+    }
+    let decoder = builder
+        .with_data(BufReader::new(file))
+        .build()
+        .map_err(|e| format!("无法解码该音频文件: {e}"))?;
     Ok(Box::new(
-        Decoder::new(BufReader::new(file))
-            .map_err(|e| format!("无法解码该音频文件: {e}"))?
-            .convert_samples::<f32>()
-            .skip_duration(Duration::from_millis(skip_ms)),
+        decoder.skip_duration(Duration::from_millis(skip_ms)),
     ))
 }
 

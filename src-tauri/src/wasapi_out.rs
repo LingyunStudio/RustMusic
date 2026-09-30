@@ -77,7 +77,7 @@ pub fn spawn_exclusive_session<S>(
     params: ExclusiveParams,
 ) -> Result<(ExclusiveCtl, mpsc::Receiver<Result<(), String>>), String>
 where
-    S: Source<Item = f32> + Send + 'static,
+    S: Source + Send + 'static,
 {
     let active = Arc::new(AtomicBool::new(true));
     let paused = Arc::new(AtomicBool::new(false));
@@ -351,7 +351,7 @@ fn run_session<S>(
     tx: mpsc::Sender<Result<(), String>>,
 ) -> Result<(), String>
 where
-    S: Source<Item = f32>,
+    S: Source,
 {
     let _ = initialize_mta();
     let init_result = (|| -> Result<(), String> {
@@ -582,13 +582,13 @@ mod tests {
         }
     }
     impl Source for Silence {
-        fn sample_rate(&self) -> u32 {
-            self.rate
+        fn sample_rate(&self) -> rodio::SampleRate {
+            rodio::SampleRate::new(self.rate).expect("rate > 0")
         }
-        fn channels(&self) -> u16 {
-            self.ch
+        fn channels(&self) -> rodio::ChannelCount {
+            rodio::ChannelCount::new(self.ch).expect("ch > 0")
         }
-        fn current_frame_len(&self) -> Option<usize> {
+        fn current_span_len(&self) -> Option<usize> {
             None
         }
         fn total_duration(&self) -> Option<std::time::Duration> {
@@ -653,7 +653,8 @@ mod tests {
                 .unwrap()
                 .find(|d| d.name().ok().as_deref() == Some(name.as_str()))
                 .expect("cpal 侧找不到同名设备");
-            rodio::OutputStream::try_from_device(&cpal_dev)
+            rodio::DeviceSinkBuilder::from_device(cpal_dev)
+                .and_then(|b| b.open_stream())
                 .expect("释放独占后共享输出流应能打开");
             println!("[共享流可打开]");
 

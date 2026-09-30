@@ -1330,7 +1330,7 @@ mod login_tests {
         use rodio::Source as _;
         let mut src =
             crate::symdec::SymphoniaSource::open(path.to_str().unwrap()).expect("打开失败");
-        let (sr, ch) = (src.sample_rate(), src.channels());
+        let (sr, ch) = (src.sample_rate().get(), src.channels().get());
         let mut n: u64 = 0;
         for s in src.by_ref() {
             let _ = s;

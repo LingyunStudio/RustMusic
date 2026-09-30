@@ -113,7 +113,7 @@ pub struct EqSource<S> {
     pos_ms: Arc<AtomicU64>,
 }
 
-impl<S: Source<Item = f32>> EqSource<S> {
+impl<S: Source> EqSource<S> {
     pub fn new(inner: S, shared: Arc<EqShared>, pos_ms: Arc<AtomicU64>) -> Self {
         Self::with_base(inner, shared, pos_ms, 0.0)
     }
@@ -125,8 +125,8 @@ impl<S: Source<Item = f32>> EqSource<S> {
         pos_ms: Arc<AtomicU64>,
         base_ms: f64,
     ) -> Self {
-        let channels = (inner.channels() as usize).max(1);
-        let sr = inner.sample_rate() as f64;
+        let channels = (u16::from(inner.channels()) as usize).max(1);
+        let sr = f64::from(u32::from(inner.sample_rate()));
         let mut s = Self {
             inner,
             channels,
@@ -161,7 +161,7 @@ impl<S: Source<Item = f32>> EqSource<S> {
     }
 }
 
-impl<S: Source<Item = f32>> Iterator for EqSource<S> {
+impl<S: Source> Iterator for EqSource<S> {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
@@ -189,17 +189,17 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
     }
 }
 
-impl<S: Source<Item = f32>> Source for EqSource<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
+impl<S: Source> Source for EqSource<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
     }
 
-    fn channels(&self) -> u16 {
-        self.channels as u16
+    fn channels(&self) -> rodio::ChannelCount {
+        rodio::ChannelCount::new(self.channels as u16).unwrap_or(rodio::ChannelCount::new(2).unwrap())
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sr as u32
+    fn sample_rate(&self) -> rodio::SampleRate {
+        rodio::SampleRate::new(self.sr as u32).unwrap_or(rodio::SampleRate::new(48000).unwrap())
     }
 
     fn total_duration(&self) -> Option<Duration> {

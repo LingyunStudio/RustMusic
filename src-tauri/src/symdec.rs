@@ -227,22 +227,22 @@ impl Iterator for SymphoniaSource {
 }
 
 impl rodio::Source for SymphoniaSource {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         let remaining = (self.buf.len() - self.idx.min(self.buf.len()))
             / self.channels.max(1) as usize;
         if self.eos && remaining == 0 {
-            None
+            Some(0)
         } else {
             Some(remaining)
         }
     }
 
-    fn channels(&self) -> u16 {
-        self.channels
+    fn channels(&self) -> rodio::ChannelCount {
+        rodio::ChannelCount::new(self.channels).unwrap_or(rodio::ChannelCount::new(2).unwrap())
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    fn sample_rate(&self) -> rodio::SampleRate {
+        rodio::SampleRate::new(self.sample_rate).unwrap_or(rodio::SampleRate::new(48000).unwrap())
     }
 
     fn total_duration(&self) -> Option<Duration> {
