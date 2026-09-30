@@ -118,6 +118,10 @@ impl SymphoniaSource {
         // seek：丢弃时间戳早于目标的包（纯 demux，不解码）
         if skip_ms > 0 {
             let mut landed_ms: Option<u64> = None;
+            // 最后一个见到的音频包位置：目标越过曲末时（跳包中途到 EOF），
+            // 位置必须落在真实音频内——否则引擎以幻影位置起播、随即 EOS，
+            // 被 monitor 误判成"自然播完"而自动切歌（表现为点进度条随机切歌）
+            let mut last_ms: Option<u64> = None;
             loop {
                 let ts = match src.format.next_packet() {
                     Ok(p) if p.track_id() == src.track_id => p.ts(),
@@ -131,6 +135,7 @@ impl SymphoniaSource {
                     .time_base
                     .map(|tb| ((ts as u128 * tb.numer as u128 * 1000) / tb.denom as u128) as u64)
                     .unwrap_or(u64::MAX);
+                last_ms = Some(ms);
                 if ms >= skip_ms {
                     landed_ms = Some(ms);
                     break;
@@ -138,7 +143,7 @@ impl SymphoniaSource {
             }
             // frames_out 按实际落点（首个保留包的时间戳）起算：
             // 引擎报告的播放位置才与真实音频位置对齐（理想 skip_ms 有偏差）
-            src.frames_out = match landed_ms {
+            src.frames_out = match landed_ms.or(last_ms) {
                 Some(ms) => ms * src.sample_rate as u64 / 1000,
                 None => skip_ms * src.sample_rate as u64 / 1000,
             };
