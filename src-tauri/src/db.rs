@@ -168,6 +168,20 @@ pub fn migrate(conn: &Connection) {
         "ALTER TABLE playlists ADD COLUMN sort_pos INTEGER NOT NULL DEFAULT 0",
     );
     let _ = conn.execute("UPDATE playlists SET sort_pos = id WHERE sort_pos = 0", []);
+    // 酷狗榜单时长单位修复：榜单接口的 duration_128 本就是毫秒，曾被误当秒
+    // 又乘 1000 入库（403000ms=6:43 的歌被存成 403000000ms=112 小时）。
+    // 真实歌长 ≤ ~10 分钟、误乘后 ≥ 30 分钟×1000，阈值 5_000_000（83 分钟）
+    // 两侧余量都足够；修正后的值必然低于阈值，重复执行幂等
+    match conn.execute(
+        "UPDATE online_tracks SET duration_ms = duration_ms / 1000
+         WHERE kind = 'kugou' AND duration_ms > 5000000",
+        [],
+    ) {
+        Ok(n) if n > 0 => {
+            eprintln!("[db] 已修正 {n} 条酷狗榜单的异常时长（毫秒被重复换算）");
+        }
+        _ => {}
+    }
     // playlist_tracks 旧主键 (playlist_id, track_id) 会吞掉同列表的多个在线条目
     // （track_id 恒为 0），检测旧结构并重建为 (playlist_id, kind, online_id, track_id)
     let old_pk: Option<String> = conn

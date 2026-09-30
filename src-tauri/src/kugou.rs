@@ -1129,13 +1129,13 @@ fn song_from_kmr(t: &serde_json::Value) -> Option<KgSong> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        // duration_128 单位是秒（搜索路径已 *1000），榜单接口同样要转毫秒
+        // duration_128 单位是毫秒（实测 403000 → 6:43），勿再换算；
+        // 搜索接口的 duration 才是秒（见 search_fallback 的 *1000）
         duration_ms: t
             .pointer("/audio_info/duration_128")
             .and_then(|v| v.as_i64())
             .unwrap_or(0)
-            .max(0) as u64
-            * 1000,
+            .max(0) as u64,
         cover,
         vip: false,
         album_audio_id: t.get("album_audio_id").and_then(|v| v.as_u64()).unwrap_or(0),
