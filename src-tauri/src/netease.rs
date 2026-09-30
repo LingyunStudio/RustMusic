@@ -345,7 +345,7 @@ fn enrich_covers(songs: &mut [NetSong], music_u: Option<&str>) {
     }
 }
 
-/// 按音质请求播放直链（weapi，需登录 cookie），从所选音质逐级回退
+/// 按音质请求播放直链（weapi v1，需登录 cookie），按 level 取流并逐级回退
 /// 返回 (url, br, ext)
 pub fn song_url(
     id: i64,
@@ -356,18 +356,21 @@ pub fn song_url(
     if music_u.is_none() {
         return Err("未登录网易云账号，无法获取播放链接，请先扫码登录".into());
     }
-    let ladder: Vec<i64> = match quality {
-        "lossless" => vec![999000, 320000, 128000],
-        "standard" => vec![128000],
-        _ => vec![320000, 128000],
+    // v1 接口按 level 取流：无损权益真实下发 flac（旧接口的 br 阶梯拿不到
+    // 无损档），权益不足时服务端降级并在响应 level 字段如实上报；
+    // 仍逐级回退到 standard 兜底
+    let levels: Vec<(&str, i64)> = match quality {
+        "lossless" => vec![("lossless", 999000), ("exhigh", 320000), ("standard", 128000)],
+        "standard" => vec![("standard", 128000)],
+        _ => vec![("exhigh", 320000), ("standard", 128000)],
     };
     let mut last_hint = String::from("该歌曲没有可播放的音频");
-    for br in ladder {
+    for (level, default_br) in levels {
         let payload = serde_json::json!({
-            "ids": format!("[{id}]"), "br": br, "csrf_token": ""
+            "ids": format!("[{id}]"), "level": level, "encodeType": "flac", "csrf_token": ""
         })
         .to_string();
-        let resp = weapi_post("/weapi/song/enhance/player/url", &payload, music_u)?;
+        let resp = weapi_post("/weapi/song/enhance/player/url/v1", &payload, music_u)?;
         let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         if code != 200 {
             // 301/302 = cookie 失效：给出与“未登录”同类的文案，前端据此停止
@@ -397,7 +400,11 @@ pub fn song_url(
                 .unwrap_or("mp3")
                 .to_lowercase();
             // 接口返回的 br 单位是 bps（320000 = 320kbps），统一换算成 kbps 供音质显示
-            let real_br = first.get("br").and_then(|b| b.as_i64()).unwrap_or(br) / 1000;
+            let real_br = first
+                .get("br")
+                .and_then(|b| b.as_i64())
+                .unwrap_or(default_br)
+                / 1000;
             return Ok(Some((u, real_br, ext)));
         }
         last_hint = match item_code {
@@ -1163,4 +1170,25 @@ mod playlist_tests {
         );
         assert!(!pl.songs.is_empty(), "random playlist returned no songs");
     }
+}
+
+/// 音质审计：无损设置下实际下发的码率/格式（需要网络 + 本机网易云登录）
+#[test]
+#[ignore]
+fn test_song_url_lossless_audit() {
+    let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("打开应用数据库失败");
+    let music_u: String = conn
+        .query_row("SELECT value FROM settings WHERE key='netease_music_u'", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or_default();
+    let (url, br, ext) = song_url(347230, Some(&music_u), "lossless")
+        .expect("song_url failed")
+        .expect("no url");
+    println!("✓ 网易云 lossless 实际下发: br={br}kbps ext={ext} url={}", &url[..url.len().min(70)]);
 }

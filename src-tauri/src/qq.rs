@@ -412,17 +412,17 @@ pub fn song_url(
     musickey: &str,
     quality: &str,
     vip: bool,
-) -> Result<(String, String), String> {
+) -> Result<(String, String, &'static str), String> {
     // 前缀：M500=128k M800=320k F000=flac；无 media_mid 时按官方规则用 songmid 拼接
-    let ladder: Vec<(&str, &str)> = match quality {
-        "lossless" => vec![("F000", "flac"), ("M800", "mp3"), ("M500", "mp3")],
-        "standard" => vec![("M500", "mp3")],
-        _ => vec![("M800", "mp3"), ("M500", "mp3")],
+    let ladder: Vec<(&str, &str, &'static str)> = match quality {
+        "lossless" => vec![("F000", "flac", "无损"), ("M800", "mp3", "HQ"), ("M500", "mp3", "标准")],
+        "standard" => vec![("M500", "mp3", "标准")],
+        _ => vec![("M800", "mp3", "HQ"), ("M500", "mp3", "标准")],
     };
     let mut last_resp = String::new();
     // 所有尝试都返回 code==0（会话有效、接口无异常）但始终没有链接
     let mut all_ok_but_no_url = true;
-    for (prefix, ext) in ladder {
+    for (prefix, ext, label) in ladder {
         let file_base = if media_mid.is_empty() {
             format!("{songmid}{songmid}")
         } else {
@@ -472,7 +472,7 @@ pub fn song_url(
                     .to_string();
                 format!("{}{}", sip, purl)
             };
-            return Ok((url, ext.to_string()));
+            return Ok((url, ext.to_string(), label));
         }
         last_resp = serde_json::to_string(&resp).unwrap_or_default();
     }
@@ -1422,4 +1422,31 @@ mod tests {
         );
         assert!(!pl.songs.is_empty(), "random playlist returned no songs");
     }
+}
+
+/// 音质审计：无损设置下实际下发的格式（需要网络 + 本机 QQ 登录）
+#[test]
+#[ignore]
+fn test_song_url_lossless_audit() {
+    let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("打开应用数据库失败");
+    let get = |k: &str| -> String {
+        conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap_or_default()
+    };
+    let songs = search("晴天", 1, 1).expect("search failed");
+    let s = songs.first().expect("no songs");
+    let songmid = &s.id;
+    let media_mid = &s.media_mid;
+    println!("试听: {} - {}", s.singer, s.name);
+    let (url, ext, label) =
+        song_url(songmid, media_mid, &get("qq_musicid"), &get("qq_musickey"), "lossless", s.vip)
+            .expect("song_url failed");
+    println!("✓ QQ lossless 实际下发: {label} .{ext} url={}", &url[..url.len().min(80)]);
 }

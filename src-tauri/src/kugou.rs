@@ -603,6 +603,34 @@ pub fn search(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
     Ok(songs)
 }
 
+/// 按 128 hash 反查各档质量 hash：最近播放/收藏/歌单等存档行只落库了
+/// 128 hash，播放/下载时补齐，音质设置（HQ/无损）才能生效。
+/// keyword 用歌曲标题，在 song_search_v2 结果里按 FileHash 精确匹配。
+pub fn quality_hashes_by_search(hash: &str, keyword: &str) -> Option<(String, String, String)> {
+    if hash.is_empty() || keyword.trim().is_empty() {
+        return None;
+    }
+    let url = format!(
+        "https://songsearch.kugou.com/song_search_v2?keyword={}&page=1&pagesize=30",
+        form_encode(keyword)
+    );
+    let v = get_json(&url, "https://www.kugou.com/", UA, "酷狗搜索增强").ok()?;
+    let list = v.pointer("/data/lists").and_then(|x| x.as_array())?;
+    let t = list.iter().find(|t| {
+        t.get("FileHash")
+            .and_then(|h| h.as_str())
+            .map(|h| h.eq_ignore_ascii_case(hash))
+            .unwrap_or(false)
+    })?;
+    let g = |k: &str| {
+        t.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_lowercase()
+    };
+    Some((g("HQFileHash"), g("SQFileHash"), g("SuperFileHash")))
+}
+
 /// 用 songsearch_v2 的结果按 hash 补充多音质 hash 与缺失封面
 fn enrich_from_songsearch(songs: &mut [KgSong], keyword: &str, page: i64) {
     let url = format!(
@@ -1875,5 +1903,27 @@ mod tests {
         assert!(!songs.is_empty());
         let pl = random_playlist().expect("random playlist failed");
         assert!(!pl.songs.is_empty());
+    }
+}
+
+/// 音质审计：按标题反查各档 hash（存档行只有 128 hash 时的补齐路径）
+#[test]
+#[ignore] // 需要网络
+fn test_quality_hashes_by_search_audit() {
+    // 验证 app 真实链路：搜索结果经 enrich_from_songsearch 补齐各档 hash
+    let songs = search("突然好想你", 1).expect("search failed");
+    let s = songs.first().expect("no songs");
+    println!(
+        "✓ 搜索链路 hash 补齐: hq={} sq={} super={}",
+        s.hq_hash.len(),
+        s.sq_hash.len(),
+        s.super_hash.len()
+    );
+    // 反查（存档行补齐用）：可能因同名多版本匹配失败，仅观察
+    match quality_hashes_by_search(&s.id, &s.name) {
+        Some((h, sq, sup)) => {
+            println!("✓ 反查成功: hq={} sq={} super={}", h.len(), sq.len(), sup.len())
+        }
+        None => println!("反查未命中（同名多版本，属已知局限）"),
     }
 }

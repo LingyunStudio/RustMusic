@@ -815,6 +815,13 @@ export const useStore = create<Store>((set, get) => ({
       })
     );
 
+    // 在线音质回退提示：设置档位未被账号权益满足时明确告知（否则静默降级）
+    unbinds.push(
+      await listenEvent<{ message: string }>("player://quality-fallback", (p) => {
+        get().toast(p.message, "info");
+      })
+    );
+
     // 看门狗：UI 认为在播放但引擎 3 秒没有进度事件（托盘挂起期间状态事件
     // 丢失、恢复补发也没送达等极端情况的兜底自愈），主动拉取权威快照纠正。
     // 正常播放中 pos 250ms 一帧，不会触发；拉取走 invoke 请求-响应，

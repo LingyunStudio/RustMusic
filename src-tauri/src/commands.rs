@@ -1142,6 +1142,54 @@ fn quality_tag(ext: &str, br_kbps: i64) -> String {
     }
 }
 
+/// 音质回退提示：设置的档位未被账号权益满足、实际下发更低档时告知用户
+/// （静默降级曾让"无损"设置实际播放 128k 而用户无从得知）
+fn notify_quality_fallback(
+    app: &AppHandle,
+    source: &str,
+    quality: &str,
+    actual_label: &str,
+    reason: &str,
+) {
+    if quality == "standard" {
+        return;
+    }
+    let wanted = match quality {
+        "lossless" => "无损",
+        "high" => "HQ",
+        _ => return,
+    };
+    if actual_label == wanted {
+        return;
+    }
+    let _ = app.emit(
+        "player://quality-fallback",
+        serde_json::json!({ "message": format!("{source}：当前以「{actual_label}」音质播放（{reason}）") }),
+    );
+}
+
+/// 酷狗存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查各档
+/// 质量 hash 补齐，否则 HQ/无损音质会静默塌缩到标准
+fn kugou_hashes_enriched(
+    hash: &str,
+    title: &str,
+    hq_hash: &str,
+    sq_hash: &str,
+    super_hash: &str,
+) -> (String, String, String) {
+    if !sq_hash.is_empty() && !hq_hash.is_empty() {
+        return (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string());
+    }
+    match crate::kugou::quality_hashes_by_search(hash, title) {
+        Some((h, s, sup)) => (
+            if hq_hash.is_empty() { h } else { hq_hash.to_string() },
+            if sq_hash.is_empty() { s } else { sq_hash.to_string() },
+            if super_hash.is_empty() { sup } else { super_hash.to_string() },
+        ),
+        None => (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string()),
+    }
+}
+
 fn netease_cookie(state: &State<AppState>) -> Option<String> {
     let conn = state.db.lock();
     db::get_setting(&conn, "netease_music_u").filter(|s| !s.is_empty())
@@ -1171,6 +1219,9 @@ pub async fn netease_play(
     let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
         .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
     let quality_label = quality_tag(&ext, br);
+    if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
+        notify_quality_fallback(&app, "网易云", &quality, &quality_label, "账号权益未含无损或该曲无更高音质");
+    }
     // 记录到“最近播放”（在线曲目元数据轻量入库）
     {
         let conn = state.db.lock();
@@ -1199,7 +1250,7 @@ pub async fn netease_play(
         nid: Some(track.id),
         qid: None,
         kgid: None,
-        quality: Some(quality_label),
+        quality: Some(quality_label.to_string()),
     };
     let _ = app; // 事件由引擎发出
     engine_clone(&state).play_url(url, info)
@@ -1347,13 +1398,13 @@ pub async fn qq_search(keyword: String, page: Option<i64>) -> Result<serde_json:
 }
 
 #[tauri::command]
-pub async fn qq_play(state: State<'_, AppState>, track: QqPlayReq) -> Result<(), String> {
+pub async fn qq_play(app: AppHandle, state: State<'_, AppState>, track: QqPlayReq) -> Result<(), String> {
     let (musicid, musickey) = qq_credential(&state)?;
     let quality = {
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
-    let (url, ext) = crate::qq::song_url(
+    let (url, ext, quality_label) = crate::qq::song_url(
         &track.songmid,
         &track.media_mid,
         &musicid,
@@ -1361,7 +1412,9 @@ pub async fn qq_play(state: State<'_, AppState>, track: QqPlayReq) -> Result<(),
         &quality,
         track.vip,
     )?;
-    let quality_label = quality_tag(&ext, if quality == "standard" { 128 } else { 320 });
+    if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
+        notify_quality_fallback(&app, "QQ 音乐", &quality, quality_label, "账号权益未含无损或该曲无 flac");
+    }
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
     let cover = {
         let conn = state.db.lock();
@@ -1388,7 +1441,7 @@ pub async fn qq_play(state: State<'_, AppState>, track: QqPlayReq) -> Result<(),
         nid: None,
         qid: Some(track.songmid.clone()),
         kgid: None,
-        quality: Some(quality_label),
+        quality: Some(quality_label.to_string()),
     };
     // 记录到“最近播放”（在线曲目元数据轻量入库）
     {
@@ -1526,24 +1579,44 @@ pub async fn kugou_search(keyword: String, page: Option<i64>) -> Result<serde_js
 }
 
 #[tauri::command]
-pub async fn kugou_play(state: State<'_, AppState>, track: KgPlayReq) -> Result<(), String> {
+pub async fn kugou_play(app: AppHandle, state: State<'_, AppState>, track: KgPlayReq) -> Result<(), String> {
     let quality = {
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
     let (token, userid) = kg_prepare(&state);
+    // 存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查补齐各档
+    // hash，否则 HQ/无损音质设置会静默塌缩到标准
+    let (hq_hash, sq_hash, super_hash) = kugou_hashes_enriched(
+        &track.hash,
+        &track.title,
+        &track.hq_hash,
+        &track.sq_hash,
+        &track.super_hash,
+    );
     let (url, _ext, quality_label) = crate::kugou::song_url(
         &track.hash,
         track.album_audio_id,
         track.album_id,
-        &track.hq_hash,
-        &track.sq_hash,
-        &track.super_hash,
+        &hq_hash,
+        &sq_hash,
+        &super_hash,
         track.vip,
         &token,
         &userid,
         &quality,
     )?;
+    notify_quality_fallback(
+        &app,
+        "酷狗",
+        &quality,
+        &quality_label,
+        if token.is_empty() {
+            "酷狗未登录，匿名通道仅提供标准音质"
+        } else {
+            "账号权益或接口风控限制了更高音质"
+        },
+    );
     // 封面：数据库存的完整 URL 优先（收藏/最近播放已入库），缺失用搜索带的
     let cover = {
         let conn = state.db.lock();
@@ -1566,7 +1639,7 @@ pub async fn kugou_play(state: State<'_, AppState>, track: KgPlayReq) -> Result<
         nid: None,
         qid: None,
         kgid: Some(track.hash.clone()),
-        quality: Some(quality_label),
+        quality: Some(quality_label.to_string()),
     };
     // 记录到“最近播放”（在线曲目元数据轻量入库；album_audio_id 存入
     // media_mid 列，恢复播放时能带全取链接参数）
@@ -1965,7 +2038,7 @@ pub async fn download_online(
         }
         "qq" => {
             let (musicid, musickey) = qq_credential(&state)?;
-            let (u, ext) =
+            let (u, ext, _label) =
                 crate::qq::song_url(&req.id, &req.media_mid, &musicid, &musickey, &quality, true)?;
             (u, ext)
         }
@@ -1973,8 +2046,10 @@ pub async fn download_online(
             let (token, userid) = kg_prepare(&state);
             // media_mid 列存的是专辑音频 ID（最近播放/歌单导入时写入）
             let album_audio_id = req.media_mid.parse().unwrap_or(0);
+            // 存档行只有 128 hash：按标题反查各档 hash，下载音质才能生效
+            let (hq, sq, sup) = kugou_hashes_enriched(&req.id, &title, "", "", "");
             let (u, ext, _label) =
-                crate::kugou::song_url(&req.id, album_audio_id, 0, "", "", "", true, &token, &userid, &quality)?;
+                crate::kugou::song_url(&req.id, album_audio_id, 0, &hq, &sq, &sup, true, &token, &userid, &quality)?;
             (u, ext)
         }
         "bilibili" => {
