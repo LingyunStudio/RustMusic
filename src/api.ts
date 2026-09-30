@@ -158,8 +158,11 @@ export const api = {
   kugouLogout: () => invoke<void>("kugou_logout"),
   kugouToplists: () =>
     invoke<{ toplists: import("./types").KgToplist[] }>("kugou_toplists"),
-  kugouToplistTracks: (topId: number) =>
-    invoke<{ songs: import("./types").KgSong[] }>("kugou_toplist_tracks", { topId }),
+  kugouToplistTracks: (topId: number, page: number) =>
+    invoke<{ songs: import("./types").KgSong[]; hasMore: boolean }>(
+      "kugou_toplist_tracks",
+      { topId, page },
+    ),
   kugouRandomPlaylist: () =>
     invoke<import("./types").KgPublicPlaylist>("kugou_random_playlist"),
   kugouPlaylistTracks: (id: string) =>
@@ -244,14 +247,14 @@ export const api = {
     invoke<[number, number]>("qq_import_playlist", { remotePid, name }),
   qqToplists: () =>
     invoke<{ toplists: import("./types").QqToplist[] }>("qq_toplists"),
-  qqToplistTracks: (topId: number) =>
-    invoke<{ songs: QqSong[] }>("qq_toplist_tracks", { topId }),
+  qqToplistTracks: (topId: number, page: number) =>
+    invoke<{ songs: QqSong[]; hasMore: boolean }>("qq_toplist_tracks", { topId, page }),
   qqRandomPlaylist: () =>
     invoke<import("./types").QqRandomPlaylist>("qq_random_playlist"),
   neteaseToplists: () =>
     invoke<{ toplists: import("./types").NetToplist[] }>("netease_toplists"),
-  neteaseToplistTracks: (topId: number) =>
-    invoke<{ songs: NeteaseTrack[] }>("netease_toplist_tracks", { topId }),
+  neteaseToplistTracks: (topId: number, page: number) =>
+    invoke<{ songs: NeteaseTrack[]; hasMore: boolean }>("netease_toplist_tracks", { topId, page }),
   neteaseRandomPlaylist: () =>
     invoke<import("./types").NetRandomPlaylist>("netease_random_playlist"),
   neteaseDailyRecommend: () =>

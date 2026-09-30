@@ -326,6 +326,10 @@ export interface OnlineRecState {
   title: string;
   cover: string;
   subtitle: string;
+  /** 榜单分页：榜单 ID + 已加载页码 + 是否还有更多（列表底部"加载更多"） */
+  topId?: number;
+  recPage?: number;
+  recHasMore?: boolean;
   /** 可整单收藏时：远程歌单 ID（netease 榜单/个性化歌单、QQ 公开歌单、
    *  酷狗 global_collection_id 字符串） */
   playlistId?: number | string;

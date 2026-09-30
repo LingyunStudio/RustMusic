@@ -1738,10 +1738,12 @@ pub async fn kugou_toplists() -> Result<serde_json::Value, String> {
 pub async fn kugou_toplist_tracks(
     state: State<'_, AppState>,
     top_id: i64,
+    page: Option<i64>,
 ) -> Result<serde_json::Value, String> {
     let _ = kg_prepare(&state);
-    let songs = crate::kugou::toplist_tracks(top_id)?;
-    Ok(json!({ "songs": songs }))
+    let page = page.unwrap_or(1).max(1);
+    let songs = crate::kugou::toplist_tracks(top_id, page)?;
+    Ok(json!({ "songs": songs, "hasMore": songs.len() as i64 >= 90 }))
 }
 
 #[tauri::command]
@@ -1867,9 +1869,10 @@ pub async fn qq_toplists() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn qq_toplist_tracks(top_id: i64) -> Result<serde_json::Value, String> {
-    let songs = crate::qq::toplist_tracks(top_id)?;
-    Ok(json!({ "songs": songs }))
+pub async fn qq_toplist_tracks(top_id: i64, page: Option<i64>) -> Result<serde_json::Value, String> {
+    let page = page.unwrap_or(1).max(1);
+    let songs = crate::qq::toplist_tracks(top_id, page)?;
+    Ok(json!({ "songs": songs, "hasMore": songs.len() as i64 >= 100 }))
 }
 
 #[tauri::command]
@@ -1888,10 +1891,19 @@ pub async fn netease_toplists() -> Result<serde_json::Value, String> {
 pub async fn netease_toplist_tracks(
     state: State<'_, AppState>,
     top_id: i64,
+    page: Option<i64>,
 ) -> Result<serde_json::Value, String> {
     let music_u = netease_cookie(&state).unwrap_or_default();
-    let songs = crate::netease::playlist_tracks(top_id, &music_u)?;
-    Ok(json!({ "songs": songs }))
+    let page = page.unwrap_or(1).max(1);
+    let pagesize = 100i64;
+    let all = crate::netease::playlist_tracks(top_id, &music_u)?;
+    let start = ((page - 1) * pagesize) as usize;
+    let songs = if start < all.len() {
+        all[start..((start + pagesize as usize).min(all.len()))].to_vec()
+    } else {
+        Vec::new()
+    };
+    Ok(json!({ "songs": songs, "hasMore": (start + songs.len()) < all.len() }))
 }
 
 #[tauri::command]

@@ -1122,45 +1122,33 @@ pub fn toplists() -> Result<Vec<KgToplist>, String> {
 
 /// 榜单曲目（网关 kmr 接口，匿名可调）。内部翻页拉全：榜单实际 100~500 首
 /// （TOP500 等），单页 30 只能给个零头；每页 90，封顶 20 页防异常死循环
-pub fn toplist_tracks(rankid: i64) -> Result<Vec<KgSong>, String> {
+pub fn toplist_tracks(rankid: i64, page: i64) -> Result<Vec<KgSong>, String> {
     let pagesize = 90i64;
-    let mut songs: Vec<KgSong> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for page in 1..=20i64 {
-        let body = serde_json::json!({
-            "show_portrait_mv": 1,
-            "show_type_total": 1,
-            "filter_original_remarks": 1,
-            "area_code": 1,
-            "pagesize": pagesize,
-            "rank_cid": 0,
-            "type": 1,
-            "page": page,
-            "rank_id": rankid,
-        });
-        let v = gateway_ex(
-            "/openapi/kmr/v2/rank/audio",
-            "",
-            &[],
-            Some(&body),
-            &[("kg-tid", "369")],
-        )
-        .map_err(|e| format!("获取榜单歌曲失败: {e}"))?;
-        let list = v
-            .pointer("/data/songlist")
-            .and_then(|x| x.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let got = list.len() as i64;
-        for s in list.iter().filter_map(song_from_kmr) {
-            if seen.insert(s.id.clone()) {
-                songs.push(s);
-            }
-        }
-        if got < pagesize {
-            break;
-        }
-    }
+    let body = serde_json::json!({
+        "show_portrait_mv": 1,
+        "show_type_total": 1,
+        "filter_original_remarks": 1,
+        "area_code": 1,
+        "pagesize": pagesize,
+        "rank_cid": 0,
+        "type": 1,
+        "page": page.max(1),
+        "rank_id": rankid,
+    });
+    let v = gateway_ex(
+        "/openapi/kmr/v2/rank/audio",
+        "",
+        &[],
+        Some(&body),
+        &[("kg-tid", "369")],
+    )
+    .map_err(|e| format!("获取榜单歌曲失败: {e}"))?;
+    let list = v
+        .pointer("/data/songlist")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut songs: Vec<KgSong> = list.iter().filter_map(song_from_kmr).collect();
     enrich_vip(&mut songs);
     Ok(songs)
 }

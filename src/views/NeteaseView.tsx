@@ -308,14 +308,23 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     }
   };
 
-  const loadToplist = async (t: { id: number; name: string; cover: string }) => {
+  const loadToplist = async (
+    t: { id: number; name: string; cover: string },
+    page = 1,
+  ) => {
     if (recLoading) return;
     setRecLoading(true);
     try {
+      const append = page > 1 && rec?.origin === "top" && rec.topId === t.id;
+      const merge = <T,>(old: T[] | undefined, add: T[]): T[] => [
+        ...(old ?? []),
+        ...add,
+      ];
       const next: OnlineRecState =
         source === "netease"
           ? await (async () => {
-              const r = await api.neteaseToplistTracks(t.id);
+              const r = await api.neteaseToplistTracks(t.id, page);
+              const prev = append ? rec : undefined;
               return {
                 origin: "top" as const,
                 title: t.name,
@@ -323,28 +332,39 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 subtitle: `${sourceName}官方榜单`,
                 // 网易云榜单 ID 即歌单 ID，可整单收藏
                 playlistId: t.id,
-                netease: r.songs as NeteaseTrack[],
+                topId: t.id,
+                recPage: page,
+                recHasMore: r.hasMore,
+                netease: merge(prev?.netease, r.songs as NeteaseTrack[]),
               };
             })()
           : source === "qq"
             ? await (async () => {
-                const r = await api.qqToplistTracks(t.id);
+                const r = await api.qqToplistTracks(t.id, page);
+                const prev = append ? rec : undefined;
                 return {
                   origin: "top" as const,
                   title: t.name,
                   cover: t.cover,
                   subtitle: `${sourceName}官方榜单`,
-                  qq: r.songs as QqSong[],
+                  topId: t.id,
+                  recPage: page,
+                  recHasMore: r.hasMore,
+                  qq: merge(prev?.qq, r.songs as QqSong[]),
                 };
               })()
             : await (async () => {
-                const r = await api.kugouToplistTracks(t.id);
+                const r = await api.kugouToplistTracks(t.id, page);
+                const prev = append ? rec : undefined;
                 return {
                   origin: "top" as const,
                   title: t.name,
                   cover: t.cover,
                   subtitle: `${sourceName}官方榜单`,
-                  kugou: r.songs,
+                  topId: t.id,
+                  recPage: page,
+                  recHasMore: r.hasMore,
+                  kugou: merge(prev?.kugou, r.songs),
                 };
               })();
       cacheRecSongs(next);
@@ -1243,7 +1263,25 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             })}
 
             <div style={{ height: Math.max(0, rows.length - win.end) * ROW_H }} aria-hidden />
-            {hasMore && (
+            {rec?.origin === "top" && rec.recHasMore && (
+              <div className="flex justify-center pt-1 pb-2">
+                <button
+                  className="btn-secondary !py-1.5 !px-4"
+                  disabled={recLoading}
+                  onClick={() =>
+                    rec.topId != null &&
+                    loadToplist(
+                      { id: rec.topId, name: rec.title, cover: rec.cover },
+                      (rec.recPage ?? 1) + 1,
+                    )
+                  }
+                >
+                  {recLoading ? <Loader2 size={13} className="animate-spin" /> : null}
+                  加载更多
+                </button>
+              </div>
+            )}
+            {hasMore && !rec && (
               <div className="flex justify-center pt-1 pb-2">
                 <button
                   className="btn-secondary !py-1.5 !px-4"

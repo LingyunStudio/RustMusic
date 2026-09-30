@@ -1170,13 +1170,15 @@ pub fn toplists() -> Result<Vec<QqToplist>, String> {
 }
 
 /// 榜单曲目（匿名可用），返回前 100 首
-pub fn toplist_tracks(top_id: i64) -> Result<Vec<QqSong>, String> {
+pub fn toplist_tracks(top_id: i64, page: i64) -> Result<Vec<QqSong>, String> {
+    let num = 100i64;
+    let offset = (page.max(1) - 1) * num;
     let payload = serde_json::json!({
         "comm": {"ct": 24, "cv": 0},
         "req_1": {
             "module": "music.musicToplist.Toplist",
             "method": "GetDetail",
-            "param": {"topId": top_id, "offset": 0, "num": 100}
+            "param": {"topId": top_id, "offset": offset, "num": num}
         }
     });
     let resp = musicu_plain(&payload)?;
