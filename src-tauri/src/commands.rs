@@ -1177,17 +1177,7 @@ fn kugou_hashes_enriched(
     sq_hash: &str,
     super_hash: &str,
 ) -> (String, String, String) {
-    if !sq_hash.is_empty() && !hq_hash.is_empty() {
-        return (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string());
-    }
-    match crate::kugou::quality_hashes_by_search(hash, title) {
-        Some((h, s, sup)) => (
-            if hq_hash.is_empty() { h } else { hq_hash.to_string() },
-            if sq_hash.is_empty() { s } else { sq_hash.to_string() },
-            if super_hash.is_empty() { sup } else { super_hash.to_string() },
-        ),
-        None => (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string()),
-    }
+    crate::kugou::enrich_hashes(hash, title, hq_hash, sq_hash, super_hash)
 }
 
 fn netease_cookie(state: &State<AppState>) -> Option<String> {

@@ -1440,8 +1440,12 @@ fn test_song_url_lossless_audit() {
         })
         .unwrap_or_default()
     };
-    let songs = search("晴天", 1, 1).expect("search failed");
-    let s = songs.first().expect("no songs");
+    let songs = search("风的来信", 1, 1).expect("search failed");
+    // 免费歌（非 VIP）走 320 档，VIP 歌在无权益时应明确报错——两种都验证
+    let s = songs
+        .iter()
+        .find(|s| !s.vip)
+        .expect("搜索结果无免费歌曲");
     let songmid = &s.id;
     let media_mid = &s.media_mid;
     println!("试听: {} - {}", s.singer, s.name);

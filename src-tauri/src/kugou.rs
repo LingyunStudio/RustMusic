@@ -603,6 +603,28 @@ pub fn search(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
     Ok(songs)
 }
 
+/// 存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查补齐各档，
+/// 已有值保持不变（engine/commands 的 HQ/无损取链前置步骤）
+pub fn enrich_hashes(
+    hash: &str,
+    title: &str,
+    hq_hash: &str,
+    sq_hash: &str,
+    super_hash: &str,
+) -> (String, String, String) {
+    if !sq_hash.is_empty() && !hq_hash.is_empty() {
+        return (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string());
+    }
+    match quality_hashes_by_search(hash, title) {
+        Some((h, s, sup)) => (
+            if hq_hash.is_empty() { h } else { hq_hash.to_string() },
+            if sq_hash.is_empty() { s } else { sq_hash.to_string() },
+            if super_hash.is_empty() { sup } else { super_hash.to_string() },
+        ),
+        None => (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string()),
+    }
+}
+
 /// 按 128 hash 反查各档质量 hash：最近播放/收藏/歌单等存档行只落库了
 /// 128 hash，播放/下载时补齐，音质设置（HQ/无损）才能生效。
 /// keyword 用歌曲标题，在 song_search_v2 结果里按 FileHash 精确匹配。
@@ -1926,4 +1948,60 @@ fn test_quality_hashes_by_search_audit() {
         }
         None => println!("反查未命中（同名多版本，属已知局限）"),
     }
+}
+
+/// 下载质量审计：完整复现 download_online 对酷狗的逻辑（搜索 → hash 补齐 →
+/// v5 按无损取链 → 探测实际文件大小），需要网络 + 本机酷狗登录
+#[test]
+#[ignore]
+fn test_kugou_download_quality_audit() {
+    let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("打开应用数据库失败");
+    let get = |k: &str| -> String {
+        conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap_or_default()
+    };
+    let token = get("kg_token");
+    let userid = get("kg_userid");
+    println!("token_len={} userid={}", token.len(), userid);
+
+    let songs = search("最长的电影 周杰伦", 1).expect("search failed");
+    let s = songs
+        .iter()
+        .find(|s| s.name.contains("最长的电影"))
+        .expect("未找到目标歌曲");
+    println!(
+        "搜索到: {} - {} | 128hash={} hq={} sq={} super={}",
+        s.singer,
+        s.name,
+        &s.id[..8],
+        s.hq_hash.len(),
+        s.sq_hash.len(),
+        s.super_hash.len()
+    );
+    // 下载路径：存档行无各档 hash，按标题反查补齐
+    let (hq, sq, sup) = enrich_hashes(&s.id, &s.name, &s.hq_hash, &s.sq_hash, &s.super_hash);
+    println!("补齐后: hq={} sq={} super={}", hq.len(), sq.len(), sup.len());
+    let (url, ext, label) = song_url(
+        &s.id, s.album_audio_id, s.album_id, &hq, &sq, &sup, s.vip, &token, &userid, "lossless",
+    )
+    .expect("song_url failed");
+    // 探测实际大小
+    let agent = ureq::AgentBuilder::new().build();
+    let resp = agent.head(&url).call();
+    let size = resp
+        .ok()
+        .and_then(|r| r.header("content-length").and_then(|v| v.parse::<u64>().ok()))
+        .unwrap_or(0);
+    println!("✓ 实际下发: {label} .{ext} 大小={}", bytes_mb(size));
+}
+
+fn bytes_mb(n: u64) -> String {
+    format!("{:.2} MB", n as f64 / 1048576.0)
 }
