@@ -302,8 +302,16 @@ impl Engine {
 
     pub fn play_file(&self, info: TrackInfo) -> Result<(), String> {
         *self.want_url.write() = None;
-        // 本地/完整缓存播放：清除流式下载关联（若有）
-        *self.active_streaming.write() = None;
+        // 本地/完整缓存播放：清除流式下载关联（若有）。
+        // 边下边播起播也走本函数——此时流式关联正是这首，保留供读取器使用
+        let keep_streaming = self
+            .active_streaming
+            .read()
+            .as_ref()
+            .map_or(false, |(p, _)| *p == info.path);
+        if !keep_streaming {
+            *self.active_streaming.write() = None;
+        }
         if self.exclusive_enabled.load(Ordering::Relaxed) {
             match self.start_exclusive(&info, 0) {
                 Ok(()) => return Ok(()),
@@ -337,13 +345,6 @@ impl Engine {
         if self.shared_broken.swap(false, Ordering::Relaxed) {
             self.rebuild_shared_output();
         }
-    }
-
-    /// 播放已打开的采样源（边下边播入口）：跳过独占尝试，
-    /// 预缓冲阶段数据未必连续可用，独占会话的协商/泵送不耐受阻塞读取。
-    fn play_source(&self, src: Box<dyn Source + Send>, info: TrackInfo) -> Result<(), String> {
-        self.ensure_shared_output();
-        self.start(src, info)
     }
 
     /// 按当前曲目打开采样源：若该曲目正由流式下载供数（边下边播），
@@ -1017,7 +1018,6 @@ impl Engine {
                     // 用户暂已切走：继续等下载完成（重新点播可在完成前再入本分支）
                     continue;
                 }
-                let total = shared.snapshot().1;
                 // 预缓冲达标：嗅探容器（此时文件头必然已落盘）
                 if let Ok(mut f) = std::fs::File::open(&shared.part) {
                     let mut head = [0u8; 8];
@@ -1028,47 +1028,22 @@ impl Engine {
                 } else {
                     break;
                 }
-                let open: Result<Box<dyn Source + Send>, String> = if shared.is_mp4() {
-                    crate::symdec::SymphoniaSource::open_streaming(Arc::clone(&shared), 0)
-                        .map(|s| Box::new(s) as Box<dyn Source + Send>)
-                } else {
-                    (|| {
-                        let mut builder = Decoder::builder().with_seekable(true);
-                        if total > 0 {
-                            builder = builder.with_byte_len(total);
-                        }
-                        let file = crate::streaming::StreamingFile::open(Arc::clone(&shared))
-                            .map_err(|e| format!("打开下载缓存失败: {e}"))?;
-                        let dec = builder
-                            .with_data(file)
-                            .build()
-                            .map_err(|e| format!("无法解码该音频文件: {e}"))?;
-                        Ok(Box::new(dec) as Box<dyn Source + Send>)
-                    })()
-                };
-                match open {
-                    Ok(src) => {
-                        let mut i = info.clone();
-                        i.path = cache.to_string_lossy().into_owned();
-                        // 先登记流式关联再置 started：下载线程据"流式仍在播这首"
-                        // 判断是否需要整段完成后兜底播放（跳歌后重播场景）
-                        *engine.active_streaming.write() =
-                            Some((i.path.clone(), Arc::clone(&shared)));
-                        started.store(true, Ordering::SeqCst);
-                        *engine.want_url.write() = None;
-                        if let Err(e) = engine.play_source(src, i) {
-                            let _ = engine.app.emit(
-                                "download://progress",
-                                serde_json::json!({
-                                    "url": url, "done": true,
-                                    "error": format!("播放失败：{e}")
-                                }),
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[engine] 流式起播失败，等待整段下载完成后播放: {e}");
-                    }
+                // 先登记流式关联再置 started：open_current_source 与下载线程的
+                // 兜底播放判断都依赖它。起播走 play_file 完整流程——
+                // 独占模式开启时同样能协商独占会话（读取越界阻塞由流读取器承担）
+                let mut i = info.clone();
+                i.path = cache.to_string_lossy().into_owned();
+                *engine.active_streaming.write() = Some((i.path.clone(), Arc::clone(&shared)));
+                started.store(true, Ordering::SeqCst);
+                *engine.want_url.write() = None;
+                if let Err(e) = engine.play_file(i) {
+                    let _ = engine.app.emit(
+                        "download://progress",
+                        serde_json::json!({
+                            "url": url, "done": true,
+                            "error": format!("播放失败：{e}")
+                        }),
+                    );
                 }
                 break;
             });
