@@ -603,11 +603,13 @@ pub fn search(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
     Ok(songs)
 }
 
-/// 存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查补齐各档，
-/// 已有值保持不变（engine/commands 的 HQ/无损取链前置步骤）
+/// 存档行（最近播放/收藏/歌单）只落库了 128 hash：按"标题+歌手"反查补齐
+/// 各档，已有值保持不变（engine/commands 的 HQ/无损取链前置步骤）。
+/// artist 为空时仅用标题——同名翻唱可能导致匹配不到原曲，调用方应尽量传入
 pub fn enrich_hashes(
     hash: &str,
     title: &str,
+    artist: &str,
     hq_hash: &str,
     sq_hash: &str,
     super_hash: &str,
@@ -615,7 +617,12 @@ pub fn enrich_hashes(
     if !sq_hash.is_empty() && !hq_hash.is_empty() {
         return (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string());
     }
-    match quality_hashes_by_search(hash, title) {
+    let keyword = if artist.trim().is_empty() {
+        title.to_string()
+    } else {
+        format!("{title} {artist}")
+    };
+    match quality_hashes_by_search(hash, &keyword) {
         Some((h, s, sup)) => (
             if hq_hash.is_empty() { h } else { hq_hash.to_string() },
             if sq_hash.is_empty() { s } else { sq_hash.to_string() },
@@ -627,10 +634,19 @@ pub fn enrich_hashes(
 
 /// 按 128 hash 反查各档质量 hash：最近播放/收藏/歌单等存档行只落库了
 /// 128 hash，播放/下载时补齐，音质设置（HQ/无损）才能生效。
-/// keyword 用歌曲标题，在 song_search_v2 结果里按 FileHash 精确匹配。
+/// keyword 必须含歌手名（只按标题搜会命中同名翻唱、匹配不到原曲行）。
+/// 主通道用 v3 搜索（结果自带 320hash/sqhash，且与存档 hash 同源），
+/// 按 FileHash 精确匹配；未命中再试 song_search_v2。
 pub fn quality_hashes_by_search(hash: &str, keyword: &str) -> Option<(String, String, String)> {
     if hash.is_empty() || keyword.trim().is_empty() {
         return None;
+    }
+    if let Ok(songs) = search_fallback(keyword, 1) {
+        if let Some(s) = songs.iter().find(|s| s.id.eq_ignore_ascii_case(hash)) {
+            if !s.hq_hash.is_empty() || !s.sq_hash.is_empty() {
+                return Some((s.hq_hash.clone(), s.sq_hash.clone(), s.super_hash.clone()));
+            }
+        }
     }
     let url = format!(
         "https://songsearch.kugou.com/song_search_v2?keyword={}&page=1&pagesize=30",
@@ -1971,10 +1987,10 @@ fn test_kugou_download_quality_audit() {
     let userid = get("kg_userid");
     println!("token_len={} userid={}", token.len(), userid);
 
-    let songs = search("说了再见 周杰伦", 1).expect("search failed");
+    let songs = search("晴天 周杰伦", 1).expect("search failed");
     let s = songs
         .iter()
-        .find(|s| s.name.contains("说了再见"))
+        .find(|s| s.name.contains("晴天") && s.singer.contains("周杰伦"))
         .expect("未找到目标歌曲");
     println!(
         "搜索到: {} - {} | 128hash={} hq={} sq={} super={}",
@@ -1986,20 +2002,43 @@ fn test_kugou_download_quality_audit() {
         s.super_hash.len()
     );
     // 下载路径：存档行无各档 hash，按标题反查补齐
-    let (hq, sq, sup) = enrich_hashes(&s.id, &s.name, &s.hq_hash, &s.sq_hash, &s.super_hash);
+    let (hq, sq, sup) = enrich_hashes(&s.id, &s.name, &s.singer, &s.hq_hash, &s.sq_hash, &s.super_hash);
     println!("补齐后: hq={} sq={} super={}", hq.len(), sq.len(), sup.len());
+    // 带真实 album_audio_id（修复后的下载路径）
     let (url, ext, label) = song_url(
         &s.id, s.album_audio_id, s.album_id, &hq, &sq, &sup, s.vip, &token, &userid, "lossless",
     )
     .expect("song_url failed");
-    // 探测实际大小
     let agent = ureq::AgentBuilder::new().build();
-    let resp = agent.head(&url).call();
-    let size = resp
+    let size = agent
+        .head(&url)
+        .call()
         .ok()
         .and_then(|r| r.header("content-length").and_then(|v| v.parse::<u64>().ok()))
         .unwrap_or(0);
-    println!("✓ 实际下发: {label} .{ext} 大小={}", bytes_mb(size));
+    println!("✓ 带 album_audio_id={}: {label} .{ext} 大小={}", s.album_audio_id, bytes_mb(size));
+    // 存档行场景（最近播放/收藏下载）：只有 128 hash，按"标题+歌手"反查补齐
+    let (hq2, sq2, sup2) = enrich_hashes(&s.id, &s.name, &s.singer, "", "", "");
+    println!(
+        "存档行反查（{} {}）: hq={} sq={} super={}",
+        s.name,
+        s.singer,
+        hq2.len(),
+        sq2.len(),
+        sup2.len()
+    );
+    match song_url(&s.id, 0, 0, &hq2, &sq2, &sup2, s.vip, &token, &userid, "lossless") {
+        Ok((url0, ext0, label0)) => {
+            let size0 = agent
+                .head(&url0)
+                .call()
+                .ok()
+                .and_then(|r| r.header("content-length").and_then(|v| v.parse::<u64>().ok()))
+                .unwrap_or(0);
+            println!("✓ 存档行反查后取链: {label0} .{ext0} 大小={}", bytes_mb(size0));
+        }
+        Err(e) => println!("✗ 存档行反查后取链仍失败（{e}）"),
+    }
 }
 
 fn bytes_mb(n: u64) -> String {

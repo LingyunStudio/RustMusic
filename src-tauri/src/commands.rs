@@ -1173,11 +1173,12 @@ fn notify_quality_fallback(
 fn kugou_hashes_enriched(
     hash: &str,
     title: &str,
+    artist: &str,
     hq_hash: &str,
     sq_hash: &str,
     super_hash: &str,
 ) -> (String, String, String) {
-    crate::kugou::enrich_hashes(hash, title, hq_hash, sq_hash, super_hash)
+    crate::kugou::enrich_hashes(hash, title, artist, hq_hash, sq_hash, super_hash)
 }
 
 fn netease_cookie(state: &State<AppState>) -> Option<String> {
@@ -1580,6 +1581,7 @@ pub async fn kugou_play(app: AppHandle, state: State<'_, AppState>, track: KgPla
     let (hq_hash, sq_hash, super_hash) = kugou_hashes_enriched(
         &track.hash,
         &track.title,
+        &track.artist,
         &track.hq_hash,
         &track.sq_hash,
         &track.super_hash,
@@ -1935,6 +1937,9 @@ pub struct OnlineSaveReq {
     pub duration_ms: u64,
     #[serde(default)]
     pub media_mid: String,
+    /// 酷狗专辑音频 ID（v5 取链必需；media_mid 列只在存档行有值）
+    #[serde(default)]
+    pub album_audio_id: u64,
     /// 酷狗各档质量 hash（搜索/榜单行自带；最近播放等存档行可缺省，
     /// 缺省时按标题反查补齐）——下载音质 HQ/无损必需
     #[serde(default)]
@@ -2042,12 +2047,17 @@ pub async fn download_online(
         }
         "kugou" => {
             let (token, userid) = kg_prepare(&state);
-            // media_mid 列存的是专辑音频 ID（最近播放/歌单导入时写入）
-            let album_audio_id = req.media_mid.parse().unwrap_or(0);
+            // 搜索行带 albumAudioId；存档行的 media_mid 列也存了它
+            let album_audio_id = if req.album_audio_id > 0 {
+                req.album_audio_id
+            } else {
+                req.media_mid.parse().unwrap_or(0)
+            };
             // 前端带来的各档 hash 优先；存档行没有时按标题反查补齐
             let (hq, sq, sup) = kugou_hashes_enriched(
                 &req.id,
                 &title,
+                &req.artist,
                 &req.hq_hash,
                 &req.sq_hash,
                 &req.super_hash,

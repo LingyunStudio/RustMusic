@@ -203,6 +203,7 @@ export const api = {
     coverUrl: string;
     durationMs: number;
     mediaMid: string;
+    albumAudioId?: number;
     hqHash?: string;
     sqHash?: string;
     superHash?: string;
