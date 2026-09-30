@@ -11,10 +11,9 @@ use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader};
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use symphonia::core::units::Time;
 
 /// 连续解码失败上限（超过即判定文件损坏，停止产出样本）
 const MAX_DECODE_ERRORS: u32 = 3;
@@ -46,15 +45,29 @@ impl SymphoniaSource {
         Self::open_at(path, 0)
     }
 
-    /// 打开并跳到指定位置：按包时间戳跳过（不解码），seek 瞬时完成。
-    /// 直接传 File：symphonia 的 MediaSource 只对 File/Cursor 有内建实现，
-    /// MediaSourceStream 自带缓冲，无需 BufReader。
+    /// 打开本地文件并跳到指定位置：按包时间戳跳过（不解码），seek 瞬时完成。
     pub fn open_at(path: &str, skip_ms: u64) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("打开音频文件失败: {e}"))?;
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let ext = path.rsplit('.').next().unwrap_or("").to_string();
+        Self::open_source(Box::new(file), &ext, skip_ms)
+    }
+
+    /// 流式打开（边下边播）：数据源是阻塞式"会生长的文件"读取器，
+    /// 读取越过下载前沿时由读取器内部等待，解码逻辑与本地文件完全一致。
+    pub fn open_streaming(
+        shared: std::sync::Arc<crate::streaming::StreamingDownload>,
+        skip_ms: u64,
+    ) -> Result<Self, String> {
+        let file = crate::streaming::StreamingFile::open(shared)
+            .map_err(|e| format!("打开下载缓存失败: {e}"))?;
+        Self::open_source(Box::new(file), "", skip_ms)
+    }
+
+    fn open_source(src: Box<dyn MediaSource>, ext: &str, skip_ms: u64) -> Result<Self, String> {
+        let mss = MediaSourceStream::new(src, Default::default());
         let mut hint = Hint::new();
         // 扩展名提示（m4s 等非标准扩展交给 hint）
-        if let Some(ext) = path.rsplit('.').next() {
+        if !ext.is_empty() {
             hint.with_extension(ext);
         }
         let probed = symphonia::default::get_probe()

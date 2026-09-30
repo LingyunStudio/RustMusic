@@ -78,6 +78,9 @@ pub struct Engine {
     /// 当前输出设备句柄（持有 cpal Stream 保活；设备切换时重建）
     out: RwLock<&'static MixerDeviceSink>,
     sink: RwLock<Player>,
+    /// 边下边播：当前由流式下载供数的曲目（.part 路径 → 共享下载状态）。
+    /// seek/设备切换/重建播放链时据此走阻塞式流读取器而不是直接开文件
+    active_streaming: RwLock<Option<(String, Arc<crate::streaming::StreamingDownload>)>>,
     app: AppHandle,
     pub eq: Arc<EqShared>,
     pub pos_ms: Arc<AtomicU64>,
@@ -138,6 +141,7 @@ impl Engine {
         Ok(Self {
             out: RwLock::new(handle),
             sink: RwLock::new(sink),
+            active_streaming: RwLock::new(None),
             app,
             eq,
             pos_ms: Arc::new(AtomicU64::new(0)),
@@ -262,7 +266,7 @@ impl Engine {
                 // 当前有曲目：从 pos 处重建播放链。
                 // path 一律是本地路径（本地曲目或已缓存的在线音源文件）
                 if !info.path.is_empty() {
-                    match open_playable_source(&info.path, pos) {
+                    match self.open_current_source(&info.path, pos) {
                         Ok(src) => {
                             let wrapped = EqSource::with_base(
                                 src,
@@ -298,8 +302,8 @@ impl Engine {
 
     pub fn play_file(&self, info: TrackInfo) -> Result<(), String> {
         *self.want_url.write() = None;
-        // WASAPI 独占模式（可选）：协商失败自动回退共享模式。
-        // DASH（B 站 fMP4）由 symdec 源按包 seek 支持，不再排除在独占之外
+        // 本地/完整缓存播放：清除流式下载关联（若有）
+        *self.active_streaming.write() = None;
         if self.exclusive_enabled.load(Ordering::Relaxed) {
             match self.start_exclusive(&info, 0) {
                 Ok(()) => return Ok(()),
@@ -313,9 +317,15 @@ impl Engine {
                 }
             }
         }
-        // 走到共享路径：若独占会话还在播放（上一首独占中 / 独占开关刚关），
-        // 必须先终止并等设备交还系统混音器——否则旧会话继续出声、
-        // 新共享流被独占压制无声（表现为"旧歌不停、新歌无声"）
+        self.ensure_shared_output();
+        let src = self.open_current_source(&info.path, 0)?;
+        self.start(src, info)
+    }
+
+    /// 走共享路径前收尾：若独占会话还在播放（上一首独占中 / 独占开关刚关），
+    /// 必须先终止并等设备交还系统混音器——否则旧会话继续出声、
+    /// 新共享流被独占压制无声（表现为"旧歌不停、新歌无声"）
+    fn ensure_shared_output(&self) {
         if let Some(ctl) = self.excl.read().clone() {
             let released = wasapi_out::wait_session_exit(&ctl, 2500);
             if !released {
@@ -327,8 +337,43 @@ impl Engine {
         if self.shared_broken.swap(false, Ordering::Relaxed) {
             self.rebuild_shared_output();
         }
-        let src = open_playable_source(&info.path, 0)?;
+    }
+
+    /// 播放已打开的采样源（边下边播入口）：跳过独占尝试，
+    /// 预缓冲阶段数据未必连续可用，独占会话的协商/泵送不耐受阻塞读取。
+    fn play_source(&self, src: Box<dyn Source + Send>, info: TrackInfo) -> Result<(), String> {
+        self.ensure_shared_output();
         self.start(src, info)
+    }
+
+    /// 按当前曲目打开采样源：若该曲目正由流式下载供数（边下边播），
+    /// 走阻塞式流读取器（读到下载前沿等待新数据），否则直接打开本地文件。
+    fn open_current_source(&self, path: &str, skip_ms: u64) -> Result<Box<dyn Source + Send>, String> {
+        let streaming = self.active_streaming.read().clone();
+        if let Some((spath, shared)) = streaming {
+            if spath == path {
+                if shared.is_mp4() {
+                    return crate::symdec::SymphoniaSource::open_streaming(shared, skip_ms)
+                        .map(|s| Box::new(s) as Box<dyn Source + Send>);
+                }
+                // 非 MP4 容器的流式文件（mp3/flac 等）走 rodio，同样喂流读取器
+                let mut builder = Decoder::builder().with_seekable(true);
+                let total = shared.snapshot().1;
+                if total > 0 {
+                    builder = builder.with_byte_len(total);
+                }
+                let file = crate::streaming::StreamingFile::open(shared)
+                    .map_err(|e| format!("打开下载缓存失败: {e}"))?;
+                let decoder = builder
+                    .with_data(file)
+                    .build()
+                    .map_err(|e| format!("无法解码该音频文件: {e}"))?;
+                return Ok(Box::new(
+                    decoder.skip_duration(Duration::from_millis(skip_ms)),
+                ));
+            }
+        }
+        open_playable_source(path, skip_ms)
     }
 
     /// 启动 WASAPI 独占播放会话（skip_ms 用于 seek/重建时跳过开头）。
@@ -347,7 +392,7 @@ impl Engine {
             *self.excl.write() = None;
             // DASH（B 站 fMP4）由 helper 走 symphonia 直连源（rodio 会 panic），
             // 其余格式 rodio 解码 + skip_duration
-            let src = open_playable_source(&info.path, skip_ms)?;
+            let src = self.open_current_source(&info.path, skip_ms)?;
             let wrapped =
                 EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), skip_ms as f64);
             let params = wasapi_out::ExclusiveParams {
@@ -454,7 +499,7 @@ impl Engine {
                 if was_stopped {
                     return Ok(());
                 }
-                let src = open_playable_source(&info.path, pos)?;
+                let src = self.open_current_source(&info.path, pos)?;
                 let wrapped =
                     EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), pos as f64);
                 {
@@ -496,7 +541,13 @@ impl Engine {
         let diag_ch = wrapped.channels();
         let diag_dur = wrapped.total_duration();
         self.pos_ms.store(0, Ordering::Relaxed);
-        self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
+        // 边下边播起播时元数据可能未带时长：用解码器上报的总时长兜底
+        let dur_ms = if info.duration_ms > 0 {
+            info.duration_ms
+        } else {
+            diag_dur.map(|d| d.as_millis() as u64).unwrap_or(0)
+        };
+        self.dur_ms.store(dur_ms, Ordering::Relaxed);
         // 换曲瞬间 sink 短暂为空，置位避免 monitor 采样到 empty 误判"播完"
         self.switching.store(true, Ordering::Relaxed);
         let sink = self.sink.read();
@@ -604,6 +655,8 @@ impl Engine {
         self.stopped.store(true, Ordering::Relaxed);
         self.user_paused.store(false, Ordering::Relaxed);
         self.pos_ms.store(0, Ordering::Relaxed);
+        // 停播即解除流式下载关联（下载本身继续至完成，最终化 .part 缓存）
+        *self.active_streaming.write() = None;
         if self.excl_active() {
             if let Some(ctl) = self.excl.read().as_ref() {
                 ctl.stop.store(true, Ordering::Relaxed);
@@ -638,13 +691,23 @@ impl Engine {
         // FLAC：解码器不支持 seek，失败的 try_seek 还会重置解码器状态
         // （表现为进度先跳回开头再跳目标），直接走重建路径
         let info_opt = self.current.read().clone();
+        let is_streaming = info_opt
+            .as_ref()
+            .map(|i| {
+                self.active_streaming
+                    .read()
+                    .as_ref()
+                    .map_or(false, |(p, _)| *p == i.path)
+            })
+            .unwrap_or(false);
         let is_flac = info_opt
             .as_ref()
             .map(|i| {
                 // FLAC 与 MP4 容器（symdec 源）解码器都不支持就地 seek：走重建
                 i.path.to_lowercase().ends_with(".flac") || is_mp4_container(&i.path)
             })
-            .unwrap_or(false);
+            .unwrap_or(false)
+            || is_streaming;
         if is_flac {
             let info = info_opt.ok_or("当前没有正在播放的曲目")?;
             drop(sink);
@@ -667,22 +730,10 @@ impl Engine {
         }
     }
 
-    /// FLAC / MP4 容器（m4a、B 站 DASH 缓存等）专用：重开文件并丢弃到目标时长，重建播放链
+    /// FLAC / MP4 容器（m4a、B 站 DASH 缓存等）专用：重开文件并丢弃到目标时长，重建播放链。
+    /// 边下边播中的曲目同样适用（流读取器按包跳转到目标位置，缺失数据阻塞等待）。
     fn rebuild_at(&self, info: &TrackInfo, ms: u64) -> Result<(), String> {
-        // MP4 容器：symdec 按包时间戳跳转（demux 级，不解码），瞬时完成；
-        // rodio 的 skip_duration 对分帧流不生效，不能用它
-        let src: Box<dyn rodio::Source + Send> =
-            if is_mp4_container(&info.path) {
-                Box::new(crate::symdec::SymphoniaSource::open_at(&info.path, ms)?)
-            } else {
-                let file =
-                    std::fs::File::open(&info.path).map_err(|e| format!("重开文件失败: {e}"))?;
-                Box::new(
-                    Decoder::new(BufReader::new(file))
-                        .map_err(|e| format!("重新解码失败: {e}"))?
-                        .skip_duration(Duration::from_millis(ms)),
-                )
-            };
+        let src = self.open_current_source(&info.path, ms)?;
         let wrapped = EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64);
         self.pos_ms.store(ms, Ordering::Relaxed);
         self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
@@ -937,8 +988,94 @@ impl Engine {
         let is_bili = info.kind == "bilibili";
         let engine = Arc::clone(self);
         let app = self.app.clone();
+
+        // 边下边播：下载照常落盘 .part，预缓冲达标（或整段完成）即起播，
+        // 播放端读取器越过下载前沿时阻塞等待新数据，无需等整段下完。
+        let shared = crate::streaming::StreamingDownload::new(
+            cache.with_extension("part"),
+            cache.clone(),
+        );
+        let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // 监视线程：预缓冲达标后以流式源起播（仅当用户仍在等这首）。
+        // 与下载线程的"完成后播放"通过 started 原子交换保证只有一方起播。
+        {
+            let engine = Arc::clone(&engine);
+            let shared = Arc::clone(&shared);
+            let started = Arc::clone(&started);
+            let url = url.clone();
+            let info = info.clone();
+            let cache = cache.clone();
+            std::thread::spawn(move || loop {
+                let (_ready, done, failed) = shared.wait_prebuffer(512 * 1024);
+                if failed || done || started.load(Ordering::Relaxed) {
+                    // 整段完成 → 由下载线程负责最终播放；失败 → 其已回报错误
+                    break;
+                }
+                let armed = engine.want_url.read().as_deref() == Some(url.as_str());
+                if !armed {
+                    // 用户暂已切走：继续等下载完成（重新点播可在完成前再入本分支）
+                    continue;
+                }
+                let total = shared.snapshot().1;
+                // 预缓冲达标：嗅探容器（此时文件头必然已落盘）
+                if let Ok(mut f) = std::fs::File::open(&shared.part) {
+                    let mut head = [0u8; 8];
+                    use std::io::Read as _;
+                    if f.read(&mut head).unwrap_or(0) == 8 && head[4..8] == *b"ftyp" {
+                        shared.set_mp4(true);
+                    }
+                } else {
+                    break;
+                }
+                let open: Result<Box<dyn Source + Send>, String> = if shared.is_mp4() {
+                    crate::symdec::SymphoniaSource::open_streaming(Arc::clone(&shared), 0)
+                        .map(|s| Box::new(s) as Box<dyn Source + Send>)
+                } else {
+                    (|| {
+                        let mut builder = Decoder::builder().with_seekable(true);
+                        if total > 0 {
+                            builder = builder.with_byte_len(total);
+                        }
+                        let file = crate::streaming::StreamingFile::open(Arc::clone(&shared))
+                            .map_err(|e| format!("打开下载缓存失败: {e}"))?;
+                        let dec = builder
+                            .with_data(file)
+                            .build()
+                            .map_err(|e| format!("无法解码该音频文件: {e}"))?;
+                        Ok(Box::new(dec) as Box<dyn Source + Send>)
+                    })()
+                };
+                match open {
+                    Ok(src) => {
+                        let mut i = info.clone();
+                        i.path = cache.to_string_lossy().into_owned();
+                        // 先登记流式关联再置 started：下载线程据"流式仍在播这首"
+                        // 判断是否需要整段完成后兜底播放（跳歌后重播场景）
+                        *engine.active_streaming.write() =
+                            Some((i.path.clone(), Arc::clone(&shared)));
+                        started.store(true, Ordering::SeqCst);
+                        *engine.want_url.write() = None;
+                        if let Err(e) = engine.play_source(src, i) {
+                            let _ = engine.app.emit(
+                                "download://progress",
+                                serde_json::json!({
+                                    "url": url, "done": true,
+                                    "error": format!("播放失败：{e}")
+                                }),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[engine] 流式起播失败，等待整段下载完成后播放: {e}");
+                    }
+                }
+                break;
+            });
+        }
+
         std::thread::spawn(move || {
-            let result = download_to(&app, &url, &cache, is_bili);
+            let result = download_to(&app, &url, &cache, is_bili, Some(&shared));
             engine.downloading.write().remove(&key);
             match result {
                 Err(e) => {
@@ -952,23 +1089,35 @@ impl Engine {
                     }
                 }
                 Ok(()) => {
-                    let still_wanted = engine.want_url.read().as_deref() == Some(url.as_str());
-                    if still_wanted {
-                        let mut info = info;
-                        info.path = cache.to_string_lossy().into_owned();
-                        if info.duration_ms == 0 {
-                            info.duration_ms = probe_duration(&cache);
-                        }
-                        // 播放失败必须回报：此前静默吞噬，前端停在"播放中"
-                        // 却没有任何声音，用户无从得知原因
-                        if let Err(e) = engine.play_file(info) {
-                            let _ = app.emit(
-                                "download://progress",
-                                serde_json::json!({
-                                    "url": url, "done": true,
-                                    "error": format!("播放失败：{e}")
-                                }),
-                            );
+                    // 流式源仍在播这首 → 不重复起播；否则（小文件整段下完 /
+                    // 总长未知 / 流式起播失败 / 跳歌后重播）在此播放完整缓存
+                    let part_str = cache.to_string_lossy().into_owned();
+                    let streaming_active = started.load(Ordering::SeqCst)
+                        && engine
+                            .active_streaming
+                            .read()
+                            .as_ref()
+                            .map_or(false, |(p, _)| *p == part_str);
+                    if !streaming_active {
+                        let still_wanted =
+                            engine.want_url.read().as_deref() == Some(url.as_str());
+                        if still_wanted {
+                            let mut info = info;
+                            info.path = cache.to_string_lossy().into_owned();
+                            if info.duration_ms == 0 {
+                                info.duration_ms = probe_duration(&cache);
+                            }
+                            // 播放失败必须回报：此前静默吞噬，前端停在"播放中"
+                            // 却没有任何声音，用户无从得知原因
+                            if let Err(e) = engine.play_file(info) {
+                                let _ = app.emit(
+                                    "download://progress",
+                                    serde_json::json!({
+                                        "url": url, "done": true,
+                                        "error": format!("播放失败：{e}")
+                                    }),
+                                );
+                            }
                         }
                     }
                     // 下载成功后按上限清理（跳过正在播放/下载中的文件）
@@ -1142,6 +1291,24 @@ fn download_to(
     url: &str,
     dest: &Path,
     with_bili_headers: bool,
+    stream: Option<&Arc<crate::streaming::StreamingDownload>>,
+) -> Result<(), String> {
+    let r = download_inner(app, url, dest, with_bili_headers, stream);
+    if let Some(s) = stream {
+        // 保证失败时读取端也能立即终止（成功路径已在 inner 内 finish）
+        if r.is_err() {
+            s.finish(false, 0);
+        }
+    }
+    r
+}
+
+fn download_inner(
+    app: &AppHandle,
+    url: &str,
+    dest: &Path,
+    with_bili_headers: bool,
+    stream: Option<&Arc<crate::streaming::StreamingDownload>>,
 ) -> Result<(), String> {
     let part = dest.with_extension("part");
     // 连接与读取分段超时：整体超时会在大文件（FLAC 等几十 MB）下载中途掐断连接
@@ -1150,7 +1317,7 @@ fn download_to(
         .timeout_read(Duration::from_secs(30))
         .build();
     let mut req = agent.get(url);
-    // B 站 CDN 直链必须带 Referer 与浏览器 UA，否则部分边缘节点 403
+    // B 站 CDN 直链必须带 Referer 与浏览器 UA，否则部分边缘节点裸请求 403
     if with_bili_headers {
         req = req
             .set("Referer", "https://www.bilibili.com/")
@@ -1161,6 +1328,9 @@ fn download_to(
         .header("content-length")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    if let Some(s) = stream {
+        s.set_total(total);
+    }
 
     let title_hint = resp
         .header("content-disposition")
@@ -1177,39 +1347,65 @@ fn download_to(
     let mut buf = [0u8; 64 * 1024];
     let mut received: u64 = 0;
     let mut last_emit = std::time::Instant::now();
-    loop {
-        let n = reader
-            .read(&mut buf)
-            .map_err(|e| format!("下载数据流中断: {e}"))?;
-        if n == 0 {
-            break;
-        }
-        file.write_all(&buf[..n])
-            .map_err(|e| format!("写入缓存失败: {e}"))?;
-        received += n as u64;
-        if last_emit.elapsed() >= Duration::from_millis(300) {
-            // WebView 挂起（托盘隐藏）时跳过进度推送：避免反复唤醒渲染进程。
-            // 恢复后前端 webview://resumed 兜底复位下载条
-            let suspended = app
-                .try_state::<crate::AppState>()
-                .map(|st| st.webview_suspended.load(Ordering::SeqCst))
-                .unwrap_or(false);
-            if !suspended {
-                last_emit = std::time::Instant::now();
-                let pct = if total > 0 {
-                    (received as f64 / total as f64 * 100.0) as u64
-                } else {
-                    0
-                };
-                let _ = app.emit(
-                    "download://progress",
-                    serde_json::json!({ "url": url, "received": received, "total": total, "pct": pct, "done": false }),
-                );
+    let io_result = (|| -> Result<(), String> {
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| format!("下载数据流中断: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            file.write_all(&buf[..n])
+                .map_err(|e| format!("写入缓存失败: {e}"))?;
+            received += n as u64;
+            // 边下边播：推进数据前沿，唤醒阻塞中的播放端读取器
+            if let Some(s) = stream {
+                s.publish(received);
+            }
+            if last_emit.elapsed() >= Duration::from_millis(300) {
+                // WebView 挂起（托盘隐藏）时跳过进度推送：避免反复唤醒渲染进程。
+                // 恢复后前端 webview://resumed 兜底复位下载条
+                let suspended = app
+                    .try_state::<crate::AppState>()
+                    .map(|st| st.webview_suspended.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if !suspended {
+                    last_emit = std::time::Instant::now();
+                    let pct = if total > 0 {
+                        (received as f64 / total as f64 * 100.0) as u64
+                    } else {
+                        0
+                    };
+                    let _ = app.emit(
+                        "download://progress",
+                        serde_json::json!({ "url": url, "received": received, "total": total, "pct": pct, "done": false }),
+                    );
+                }
             }
         }
+        Ok(())
+    })();
+    if let Some(s) = stream {
+        // 先终态后重命名：读取器收到 EOF 后释放文件，重命名成功率更高
+        s.finish(io_result.is_ok(), received);
     }
+    io_result?;
     drop(file);
-    std::fs::rename(&part, dest).map_err(|e| format!("缓存文件重命名失败: {e}"))?;
+    // 播放端可能仍持有 .part 句柄（流式播放中）：Windows 上重命名会失败，
+    // 短暂重试，仍失败则留给读取器 Drop 时收尾
+    let mut renamed = false;
+    for _ in 0..30 {
+        match std::fs::rename(&part, dest) {
+            Ok(()) => {
+                renamed = true;
+                break;
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    if !renamed {
+        eprintln!("[engine] .part 暂无法重命名（播放中仍持有），由读取器收尾");
+    }
     let _ = app.emit(
         "download://progress",
         serde_json::json!({ "url": url, "received": received, "total": if total == 0 { received } else { total }, "pct": 100, "done": true }),

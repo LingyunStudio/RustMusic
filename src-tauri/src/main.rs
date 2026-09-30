@@ -14,6 +14,7 @@ mod netease;
 mod qq;
 mod qrc;
 mod smtc;
+mod streaming;
 mod symdec;
 mod updater;
 mod wasapi_out;
