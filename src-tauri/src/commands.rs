@@ -1738,10 +1738,9 @@ pub async fn kugou_toplists() -> Result<serde_json::Value, String> {
 pub async fn kugou_toplist_tracks(
     state: State<'_, AppState>,
     top_id: i64,
-    page: Option<i64>,
 ) -> Result<serde_json::Value, String> {
     let _ = kg_prepare(&state);
-    let songs = crate::kugou::toplist_tracks(top_id, page.unwrap_or(1))?;
+    let songs = crate::kugou::toplist_tracks(top_id)?;
     Ok(json!({ "songs": songs }))
 }
 

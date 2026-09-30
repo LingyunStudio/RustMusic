@@ -568,6 +568,9 @@ pub struct KgPublicPlaylist {
     pub play_count: i64,
     pub creator: String,
     pub songs: Vec<KgSong>,
+    /// 服务端声称的曲目总数（0 = 未知；详情拉取后与 songs.len() 对照可发现截断）
+    #[serde(default)]
+    pub total_count: i64,
 }
 
 /// 数值字段兼容解析（酷狗各接口数字/字符串混用）
@@ -1117,33 +1120,47 @@ pub fn toplists() -> Result<Vec<KgToplist>, String> {
     Ok(out)
 }
 
-/// 榜单曲目（网关 kmr 接口，匿名可用）
-pub fn toplist_tracks(rankid: i64, page: i64) -> Result<Vec<KgSong>, String> {
-    let body = serde_json::json!({
-        "show_portrait_mv": 1,
-        "show_type_total": 1,
-        "filter_original_remarks": 1,
-        "area_code": 1,
-        "pagesize": 30,
-        "rank_cid": 0,
-        "type": 1,
-        "page": page.max(1),
-        "rank_id": rankid,
-    });
-    let v = gateway_ex(
-        "/openapi/kmr/v2/rank/audio",
-        "",
-        &[],
-        Some(&body),
-        &[("kg-tid", "369")],
-    )
-    .map_err(|e| format!("获取榜单歌曲失败: {e}"))?;
-    let list = v
-        .pointer("/data/songlist")
-        .and_then(|x| x.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let mut songs: Vec<KgSong> = list.iter().filter_map(song_from_kmr).collect();
+/// 榜单曲目（网关 kmr 接口，匿名可调）。内部翻页拉全：榜单实际 100~500 首
+/// （TOP500 等），单页 30 只能给个零头；每页 90，封顶 20 页防异常死循环
+pub fn toplist_tracks(rankid: i64) -> Result<Vec<KgSong>, String> {
+    let pagesize = 90i64;
+    let mut songs: Vec<KgSong> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for page in 1..=20i64 {
+        let body = serde_json::json!({
+            "show_portrait_mv": 1,
+            "show_type_total": 1,
+            "filter_original_remarks": 1,
+            "area_code": 1,
+            "pagesize": pagesize,
+            "rank_cid": 0,
+            "type": 1,
+            "page": page,
+            "rank_id": rankid,
+        });
+        let v = gateway_ex(
+            "/openapi/kmr/v2/rank/audio",
+            "",
+            &[],
+            Some(&body),
+            &[("kg-tid", "369")],
+        )
+        .map_err(|e| format!("获取榜单歌曲失败: {e}"))?;
+        let list = v
+            .pointer("/data/songlist")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let got = list.len() as i64;
+        for s in list.iter().filter_map(song_from_kmr) {
+            if seen.insert(s.id.clone()) {
+                songs.push(s);
+            }
+        }
+        if got < pagesize {
+            break;
+        }
+    }
     enrich_vip(&mut songs);
     Ok(songs)
 }
@@ -1280,6 +1297,8 @@ fn special_recommend(category_id: i64, page: i64) -> Result<Vec<KgPublicPlaylist
                     .unwrap_or("")
                     .to_string(),
                 songs: vec![],
+                // 服务端声称的曲目总数（诊断翻页完整性/详情页展示用）
+                total_count: p.get("count").and_then(|v| v.as_i64()).unwrap_or(0),
             });
         }
     }
@@ -1353,6 +1372,7 @@ pub fn playlist_tracks(gcid: &str) -> Result<KgPublicPlaylist, String> {
         play_count,
         creator,
         songs,
+        total_count: 0,
     })
 }
 
@@ -1904,7 +1924,7 @@ mod tests {
     #[ignore] // 需要网络
     fn test_toplist_vip_badges() {
         // 榜单曲目也要有 VIP 标签（回归：toplist_tracks 曾漏掉权益回填）
-        let songs = toplist_tracks(8888, 1).expect("toplist failed");
+        let songs = toplist_tracks(8888).expect("toplist failed");
         let vip = songs.iter().filter(|s| s.vip).count();
         println!("TOP500 前 30 首：VIP {} 首", vip);
         assert!(vip > 0, "榜单应包含 VIP 曲目");
@@ -1937,7 +1957,7 @@ mod tests {
     fn test_toplists_and_random() {
         let tops = toplists().expect("toplists failed");
         assert!(!tops.is_empty());
-        let songs = toplist_tracks(tops[0].id, 1).expect("toplist tracks failed");
+        let songs = toplist_tracks(tops[0].id).expect("toplist tracks failed");
         assert!(!songs.is_empty());
         let pl = random_playlist().expect("random playlist failed");
         assert!(!pl.songs.is_empty());
@@ -2043,4 +2063,66 @@ fn test_kugou_download_quality_audit() {
 
 fn bytes_mb(n: u64) -> String {
     format!("{:.2} MB", n as f64 / 1048576.0)
+}
+
+/// 榜单审计：翻页拉全后与单页 30 对比（需要网络）
+#[test]
+#[ignore]
+fn test_toplist_tracks_count_audit() {
+    let tops = toplists().expect("榜单列表失败");
+    println!("榜单数: {}", tops.len());
+    for t in tops.iter().take(4) {
+        match toplist_tracks(t.id) {
+            Ok(songs) => println!("✓ 榜单「{}」→ {} 首", t.name, songs.len()),
+            Err(e) => println!("✗ 榜单「{}」失败: {e}", t.name),
+        }
+    }
+}
+
+/// 歌单详情审计：拉一个真实推荐歌单，检查实际返回曲目数（需要网络）
+#[test]
+#[ignore]
+fn test_playlist_tracks_count_audit() {
+    let specials = special_recommend(0, 1).expect("推荐页失败");
+    println!("推荐歌单数: {}", specials.len());
+    // 逐页打印：每页 got 与累计去重数（服务端若忽略 begin_idx 会重复返回首页）
+    let pagesize = 90i64;
+    for pick in specials.iter().take(4) {
+        let mut seen = std::collections::HashSet::new();
+        let mut total = 0usize;
+        let mut pages = String::new();
+        for page in 1..=20i64 {
+            let extra = vec![
+                ("area_code".into(), "1".into()),
+                ("begin_idx".into(), ((page - 1) * pagesize).to_string()),
+                ("plat".into(), "1".into()),
+                ("type".into(), "1".into()),
+                ("mode".into(), "1".into()),
+                ("personal_switch".into(), "1".into()),
+                ("extend_fields".into(), "abtags,hot_cmt,popularization".into()),
+                ("pagesize".into(), pagesize.to_string()),
+                ("global_collection_id".into(), pick.id.clone()),
+            ];
+            let v = gateway("/pubsongs/v2/get_other_list_file_nofilt", "", &extra, None)
+                .expect("拉取失败");
+            let list = v
+                .pointer("/data/songs")
+                .and_then(|x| x.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let got = list.len();
+            for t in &list {
+                if let Some(h) = t.get("hash").and_then(|x| x.as_str()) {
+                    if seen.insert(h.to_string()) {
+                        total += 1;
+                    }
+                }
+            }
+            pages.push_str(&format!("p{page}={got}/{} ", total));
+            if got < pagesize as usize {
+                break;
+            }
+        }
+        println!("「{}」: {}", pick.name, pages);
+    }
 }

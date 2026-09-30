@@ -158,11 +158,8 @@ export const api = {
   kugouLogout: () => invoke<void>("kugou_logout"),
   kugouToplists: () =>
     invoke<{ toplists: import("./types").KgToplist[] }>("kugou_toplists"),
-  kugouToplistTracks: (topId: number, page?: number) =>
-    invoke<{ songs: import("./types").KgSong[] }>("kugou_toplist_tracks", {
-      topId,
-      page: page ?? 1,
-    }),
+  kugouToplistTracks: (topId: number) =>
+    invoke<{ songs: import("./types").KgSong[] }>("kugou_toplist_tracks", { topId }),
   kugouRandomPlaylist: () =>
     invoke<import("./types").KgPublicPlaylist>("kugou_random_playlist"),
   kugouPlaylistTracks: (id: string) =>
