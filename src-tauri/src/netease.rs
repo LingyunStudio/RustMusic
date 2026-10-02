@@ -1037,45 +1037,43 @@ mod tests {
     use super::*;
     #[test]
     fn yrc_to_enhanced_lrc() {
-        // 真实样例格式（字节级实测自网易云 API）：
-        //   [行start,行dur](start,dur,0)字(start,dur,0)字…字(…,…)尾巴字
-        // 元组跟在字后面；行末最后一个“尾巴字”不带自己的元组，
-        // 其区间由下一行起始（= 行 start+dur）界定。
-        let yrc = "[1,4890](1,270,0)词(270,270,0)版(540,270,0)名\n[4890,2750](4890,270,0)曲(5160,270,0)谱";
+        // 真实样例格式（字节级实测自网易云 API，30 行统计核验）：
+        //   [行start,行dur](start,dur,0)字(start,dur,0)字…
+        // 元组在字**前面**，配它后面的文本段：首元组起始=行首、
+        // 末元组结束=行尾，元组精确铺满整行（不存在"尾巴字"）。
+        let yrc = "[31810,3730](31810,290,0)趁(32100,290,0)年(32390,290,0)少\n[36450,2400](36450,600,0)春(37050,1200,0)风";
         let out = crate::lyrics::yrc_to_enhanced_lrc(yrc).expect("yrc parsed");
         let p = crate::lyrics::parse(&out);
         assert_eq!(p.lines.len(), 2);
         let l1 = &p.lines[0];
-        assert_eq!(l1.text, "词版名", "行末尾巴字（无元组）不能丢");
+        assert_eq!(l1.text, "趁年少");
+        assert_eq!(l1.time_ms, Some(31810));
         let ws = l1.words.as_ref().unwrap();
         let real: Vec<&crate::models::Word> = ws.iter().filter(|w| !w.text.is_empty()).collect();
         assert_eq!(real.len(), 3);
-        // 配对规则：元组配它前面的紧邻文本段。行首 (1,270,0) 前无字 =
-        // 起拍占位元组，跳过；“词”的真实区间是 (270,270) → 270~540
+        // 每个字用它**自己**元组的起止：首字起始=行首（漏加/错配都会挂在这）
         assert_eq!(
             (real[0].start_ms, real[0].end_ms, real[0].text.as_str()),
-            (270, 540, "词")
+            (31810, 32100, "趁")
         );
-        assert_eq!(
-            (real[1].start_ms, real[1].end_ms, real[1].text.as_str()),
-            (540, 810, "版")
-        );
-        // 尾巴字“名”：区间 = 前元组 end(540+270=810) → 行末(1+4890=4891→4.89 粒度)
-        assert_eq!(
-            (real[2].start_ms, real[2].end_ms, real[2].text.as_str()),
-            (810, 4890, "名")
-        );
-        // 旧格式（每个字都带元组、无尾巴）依然兼容
-        let yrc2 =
-            "[1450,2200]你(1450,300)好(1750,400)呀(2150,500)\n[3650,1800]再(3650,600)见(4250,1200)";
-        let out2 = crate::lyrics::yrc_to_enhanced_lrc(yrc2).expect("yrc2 parsed");
-        let p2 = crate::lyrics::parse(&out2);
-        assert_eq!(p2.lines[1].text, "再见");
-        let ws2 = p2.lines[1].words.as_ref().unwrap();
-        let real2: Vec<&crate::models::Word> = ws2.iter().filter(|w| !w.text.is_empty()).collect();
+        assert_eq!((real[1].start_ms, real[1].end_ms), (32100, 32390));
+        assert_eq!((real[2].start_ms, real[2].end_ms, real[2].text.as_str()), (32390, 32680, "少"));
+        // 末字结束=自己元组的结束；行 dur 只作格式校验，不参与配对
+        let l2 = &p.lines[1];
+        assert_eq!(l2.text, "春风");
+        let real2: Vec<&crate::models::Word> = l2
+            .words
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|w| !w.text.is_empty())
+            .collect();
         assert_eq!(real2.len(), 2);
-        assert_eq!((real2[0].start_ms, real2[0].end_ms), (3650, 4250));
-        assert_eq!((real2[1].start_ms, real2[1].end_ms), (4250, 5450));
+        assert_eq!(
+            (real2[0].start_ms, real2[0].end_ms, real2[0].text.as_str()),
+            (36450, 37050, "春")
+        );
+        assert_eq!((real2[1].start_ms, real2[1].end_ms), (37050, 38250));
     }
 
     #[test]
@@ -1191,4 +1189,71 @@ fn test_song_url_lossless_audit() {
         .expect("song_url failed")
         .expect("no url");
     println!("✓ 网易云 lossless 实际下发: br={br}kbps ext={ext} url={}", &url[..url.len().min(70)]);
+}
+
+/// 端到端对齐回归：真实 yrc（需要网络 + 本机网易云登录）→ 转换 → 解析，
+/// 断言首字起始 ≈ 行首。此前元组错配给前一个字时，首字起始会滞后一个
+/// 字的时长，逐字染色整体不准——本断言可直接抓住该回归。
+#[test]
+#[ignore]
+fn test_yrc_word_alignment() {
+    let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("打开应用数据库失败");
+    let music_u: String = conn
+        .query_row("SELECT value FROM settings WHERE key='netease_music_u'", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or_default();
+    assert!(!music_u.is_empty(), "本机应有网易云登录凭证");
+
+    // 用户最近播过的网易云曲目（本机库）+ 搜索兜底：逐个试到有 yrc 为止
+    let mut ids: Vec<i64> = vec![
+        1465288702, 1465290469, 3342319503, 3440528018, 3440529001, 3440528000,
+        1851652156, 3416333610, 2097443876, 2600493765,
+    ];
+    let songs = search("晴天", 5, 0, None).expect("search failed");
+    ids.extend(songs.songs.iter().map(|s| s.id));
+
+    let mut yrc: Option<String> = None;
+    for id in ids {
+        let payload = serde_json::json!({
+            "id": id.to_string(), "lv": "-1", "tv": "-1", "rv": "-1", "kv": "-1",
+            "yv": "-1", "yrv": "-1", "ytc": "-1", "csrf_token": ""
+        })
+        .to_string();
+        let resp = weapi_post("/weapi/song/lyric/v1?tagVer=1", &payload, Some(&music_u))
+            .expect("yrc fetch failed");
+        let t = resp.pointer("/yrc/lyric").and_then(|v| v.as_str()).unwrap_or("");
+        if !t.trim().is_empty() {
+            yrc = Some(t.to_string());
+            break;
+        }
+    }
+    let yrc = yrc.expect("试过的曲目均无 yrc（账号无逐字权益？）");
+
+    let enhanced = crate::lyrics::yrc_to_enhanced_lrc(&yrc).expect("yrc convert");
+    let p = crate::lyrics::parse(&enhanced);
+    assert!(p.synced);
+    let checked = p
+        .lines
+        .iter()
+        .filter(|l| l.words.as_ref().map(|ws| ws.iter().any(|w| !w.text.is_empty())).unwrap_or(false))
+        .count();
+    assert!(checked > 5, "逐字行过少: {checked}");
+    for l in p.lines.iter() {
+        let Some(words) = l.words.as_ref() else { continue };
+        let Some(first) = words.iter().find(|w| !w.text.is_empty()) else { continue };
+        assert!(
+            first.start_ms + 100 >= l.time_ms.unwrap_or(0),
+            "首字起始应≈行首：行首 {:?}，首字 {}（{}）",
+            l.time_ms,
+            first.start_ms,
+            l.text
+        );
+    }
+    println!("✓ yrc 对齐校验通过（{checked} 行逐字）");
 }

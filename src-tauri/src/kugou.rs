@@ -1821,6 +1821,19 @@ mod tests {
             p.lines.iter().any(|l| l.words.is_some()),
             "应为 KRC 逐字歌词（增强 LRC 带词级时间轴）"
         );
+        // 词时间必须是绝对毫秒（词首 ≥ 行首）：线上 KRC 词时间是相对行首的
+        // 偏移，转换器漏加行首的话词首全落在 0 附近，前端逐词染色失效
+        for l in p.lines.iter() {
+            let Some(words) = l.words.as_ref() else { continue };
+            let Some(first) = words.iter().find(|w| !w.text.is_empty()) else { continue };
+            assert!(
+                first.start_ms + 100 >= l.time_ms.unwrap_or(0),
+                "词时间应为绝对毫秒：行首 {:?}，词首 {}（{}）",
+                l.time_ms,
+                first.start_ms,
+                l.text
+            );
+        }
     }
 
 
@@ -1912,7 +1925,7 @@ mod tests {
     #[ignore] // 需要网络
     fn test_toplist_vip_badges() {
         // 榜单曲目也要有 VIP 标签（回归：toplist_tracks 曾漏掉权益回填）
-        let songs = toplist_tracks(8888).expect("toplist failed");
+        let songs = toplist_tracks(8888, 1).expect("toplist failed");
         let vip = songs.iter().filter(|s| s.vip).count();
         println!("TOP500 前 30 首：VIP {} 首", vip);
         assert!(vip > 0, "榜单应包含 VIP 曲目");
@@ -1945,7 +1958,7 @@ mod tests {
     fn test_toplists_and_random() {
         let tops = toplists().expect("toplists failed");
         assert!(!tops.is_empty());
-        let songs = toplist_tracks(tops[0].id).expect("toplist tracks failed");
+        let songs = toplist_tracks(tops[0].id, 1).expect("toplist tracks failed");
         assert!(!songs.is_empty());
         let pl = random_playlist().expect("random playlist failed");
         assert!(!pl.songs.is_empty());
@@ -2049,6 +2062,7 @@ fn test_kugou_download_quality_audit() {
     }
 }
 
+#[cfg(test)] // 仅测试用（生产构建否则报 never used）
 fn bytes_mb(n: u64) -> String {
     format!("{:.2} MB", n as f64 / 1048576.0)
 }
@@ -2060,7 +2074,7 @@ fn test_toplist_tracks_count_audit() {
     let tops = toplists().expect("榜单列表失败");
     println!("榜单数: {}", tops.len());
     for t in tops.iter().take(4) {
-        match toplist_tracks(t.id) {
+        match toplist_tracks(t.id, 1) {
             Ok(songs) => println!("✓ 榜单「{}」→ {} 首", t.name, songs.len()),
             Err(e) => println!("✗ 榜单「{}」失败: {e}", t.name),
         }

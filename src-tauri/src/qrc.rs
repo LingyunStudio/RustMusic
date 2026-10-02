@@ -164,6 +164,11 @@ fn parse_lines(content: &str) -> Vec<QrcLine> {
         let start_ms: u64 = caps[1].parse().unwrap_or(0);
         let body = caps.get(3).map_or("", |m| m.as_str());
 
+        // QRC 布局（真实数据 55 行统计）与 yrc **相反**：行以首字开头、
+        // 以末元组结尾——[行start,行dur]字1(字1起,字1时长)字2(…)…
+        // 即元组跟在字**后面**，配它前面的文本段。
+        // （yrc/网易云是元组在字前面，见 lyrics.rs::yrc_to_enhanced_lrc；
+        //   两者不可套用同一配对方向，否则行首/行末丢字。）
         let mut words = Vec::new();
         let mut cursor = 0;
         for m in word_re.captures_iter(body) {
@@ -546,4 +551,41 @@ fn format_timestamp(ms: i64) -> String {
     let secs = total_secs % 60;
     let hundredths = (ms % 1000) / 10;
     format!("{:02}:{:02}.{:02}", mins, secs, hundredths)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qrc_word_pairing() {
+        // 真实 QRC 布局（55 行实测统计，样例取自《茶汤》）：
+        // [行start,行dur]字1(字1起,字1时长)字2(…)… —— 元组跟在字**后面**
+        //（与 yrc 相反），行以首字开头、以末元组结尾。
+        let content = "[0,8540]茶(0,610)汤(610,610) (1220,610)-(1830,610)郁(2440,610)可(3050,610)唯(3660,610)";
+        let lines = parse_lines(content);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].start_ms, 0);
+        let ws = &lines[0].words;
+        assert_eq!(ws.len(), 7);
+        assert_eq!(
+            (ws[0].text.as_str(), ws[0].start_ms, ws[0].duration_ms),
+            ("茶", 0, 610)
+        );
+        assert_eq!((ws[1].text.as_str(), ws[1].start_ms), ("汤", 610));
+        // 元组间的空格/连字符也是词条目（演唱间隙逐字点亮）
+        assert_eq!((ws[2].text.as_str(), ws[2].start_ms), (" ", 1220));
+        assert_eq!((ws[3].text.as_str(), ws[3].start_ms), ("-", 1830));
+        assert_eq!((ws[6].text.as_str(), ws[6].start_ms), ("唯", 3660));
+        // 转增强 LRC：行首第一个字（元组前文本段）必须保留并有时间轴
+        let enhanced = to_enhanced_lrc(content);
+        assert!(
+            enhanced.contains("[00:00.00]<00:00.00>茶<00:00.61>"),
+            "enhanced: {enhanced}"
+        );
+        assert!(
+            enhanced.contains("<00:03.66>唯<00:04.27>"),
+            "enhanced: {enhanced}"
+        );
+    }
 }

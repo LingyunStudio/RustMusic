@@ -1412,7 +1412,7 @@ mod tests {
             tops.first().map(|t| (&t.id, &t.title))
         );
         assert!(!tops.is_empty(), "no toplists");
-        let songs = toplist_tracks(tops[0].id).expect("toplist tracks failed");
+        let songs = toplist_tracks(tops[0].id, 1).expect("toplist tracks failed");
         println!("top {} songs: {}", tops[0].title, songs.len());
         assert!(!songs.is_empty(), "toplist returned no songs");
         let pl = random_playlist().expect("random playlist failed");

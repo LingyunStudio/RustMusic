@@ -134,17 +134,16 @@ fn parse_time_prefix(s: &str) -> Option<(u64, usize)> {
 
 // ---------- yrc / QRC 逐字歌词 → 增强 LRC ----------
 
-/// yrc（网易云）/ QRC（QQ）逐字歌词格式：
-/// 歌词行：[行起始ms,行持续ms]字(字起始ms,字持续ms,0)字(...)…字
-/// —— 时间元组**跟在它所属字的后面**；但实测网易云行末常带“尾巴字”：
-/// 最后一个字之后没有自己的元组（它的区间由下一行起始时间界定）。
-/// 真实样例：
-///   [1,4890](1,270,0)词(270,270,0)版(540,270,0)…公(4600,290,0)司
-/// “司”即尾巴字——不带元组。旧解析按“元组前文本”配对，尾巴被静默丢弃，
-/// 表现为行末最后一个字丢失（播放页/桌面歌词都少字）。
-/// 修法：尾巴字的区间 = [前一元组 end, 行 start+行 dur]。
-/// 元数据行（元信息 JSON：{"t":ms,"c":[...]} 或纯文本）跳过。
-/// 转换为增强 LRC：[mm:ss.cc]<mm:ss.cc>字<mm:ss.cc>...
+/// yrc（网易云）/ QRC（QQ）逐字歌词 → 增强 LRC。
+/// yrc/QRC 行格式（真实数据字节级实测）：
+///   [行起始ms,行持续ms](字起始ms,字持续ms[,0])字(…)字…
+/// 时间元组在字**前面**，配它**后面**的文本段：首元组起始=行首、
+/// 末元组结束=行尾（30 行真实 yrc 统计：元组数=字数、行首/行尾
+/// 偏差全为 0，元组精确铺满整行）。此前按"元组配前面文本"解析，
+/// 等于每个字都用下一个字的时间点亮——高亮滞后一字、行首空拍、
+/// 行末字被当作"无元组的尾巴字"拉伸到行尾，逐字歌词整体不准。
+/// 元数据行（元信息 JSON：{"t":ms,"c":[...]}、[t:0] 等）跳过。
+/// 单行解析失败只丢弃该行，一行坏不拖累整首。
 /// 无法解析出任何歌词行时返回 None（调用方回落行级 LRC）。
 pub fn yrc_to_enhanced_lrc(yrc: &str) -> Option<String> {
     let mut out = String::new();
@@ -175,41 +174,42 @@ fn yrc_line_to_enhanced(line: &str) -> Option<String> {
         return None;
     }
     let line_start: u64 = header[0].trim().parse().ok()?;
-    let line_dur: u64 = header[1].trim().parse().ok()?;
-    let line_end = line_start + line_dur;
+    // 行持续仅作行头格式校验：逐字元组自带起止，行尾时间无需使用
+    header[1].trim().parse::<u64>().ok()?;
+    let words_raw = &rest[close + 1..];
+
+    // 游标扫描：每个 (start,dur[,x]) 元组配它**后面**紧邻的文本段
+    // （真实格式见 yrc_to_enhanced_lrc 注释；元组前的零散文本规范上
+    // 不存在，有也无处挂时间轴，跳过）
     let mut body = String::new();
-    let words = &rest[close + 1..];
-    // 游标扫描：每个 (...) 元组配它前面紧邻的文本段；
-    // 元组前无文本（起拍占位）则跳过该元组。
     let mut cursor = 0usize;
-    let mut prev_end = line_start;
-    loop {
-        let Some(rel) = words[cursor..].find('(') else { break };
+    while let Some(rel) = words_raw[cursor..].find('(') {
         let lp = cursor + rel;
-        let text = words[cursor..lp].trim_start();
-        let rp = words[lp..].find(')')? + lp;
-        // 字元组 (start,dur[,ext...])：只取前两个，容忍第三参数
-        let times: Vec<&str> = words[lp + 1..rp].split(',').collect();
-        if times.len() < 2 {
-            return None;
-        }
-        let ws: u64 = times[0].trim().parse().ok()?;
-        let wd: u64 = times[1].trim().parse().ok()?;
+        let rp = match words_raw[lp..].find(')') {
+            Some(p) => lp + p,
+            None => break, // 未闭合元组：其后无法再配对
+        };
+        // 字元组 (start,dur[,ext...])：只取前两个，容忍第三参数；
+        // 畸形元组只跳过自身，不拖累整行
+        let times: Vec<&str> = words_raw[lp + 1..rp].split(',').collect();
+        let Ok(ws) = times[0].trim().parse::<u64>() else {
+            cursor = rp + 1;
+            continue;
+        };
+        let Some(wd) = times.get(1).and_then(|t| t.trim().parse::<u64>().ok()) else {
+            cursor = rp + 1;
+            continue;
+        };
+        // 字文本：到下一个 '(' 或行尾
+        let start = rp + 1;
+        let end = words_raw[start..].find('(').map(|p| start + p).unwrap_or(words_raw.len());
+        let text = words_raw[start..end].trim();
         if !text.is_empty() {
             let cs = fmt_lrc_time(ws);
             let ce = fmt_lrc_time(ws + wd);
             body.push_str(&format!("<{cs}>{text}<{ce}>"));
         }
-        prev_end = prev_end.max(ws + wd);
-        cursor = rp + 1;
-    }
-    // 行末尾巴字：最后一个元组之后仍残留的文本（它没有自己的元组），
-    // 区间 = [前一元组 end, 行 start+行 dur]
-    let tail = words[cursor..].trim_start();
-    if !tail.is_empty() && !body.is_empty() {
-        let cs = fmt_lrc_time(prev_end);
-        let ce = fmt_lrc_time(line_end.max(prev_end));
-        body.push_str(&format!("<{cs}>{tail}<{ce}>"));
+        cursor = end;
     }
     if body.is_empty() {
         return None;
@@ -222,6 +222,10 @@ fn yrc_line_to_enhanced(line: &str) -> Option<String> {
 ///   [行起始ms,行持续ms]<字起始ms,字持续ms,0>字<字起始,字持续,0>字…
 /// 与 yrc/QRC 相反，时间元组跟在字**前面**（尖括号包裹）；头部另有
 /// [ti:]/[ar:]/[offset:0] 等元数据行（带冒号），逐行跳过。
+/// 注意：krcs 线上下载数据的**字时间是相对行首的偏移**（多首歌 × 全部
+/// 候选实测），字起始需加回行起始才是绝对毫秒——与 yrc/QRC 的绝对
+/// 字时间不同。漏加的话每行词时间都落在 0~行时长 的小窗里，前端按
+/// 绝对播放进度比对会把整行瞬间判为已唱完，逐词染色失效。
 /// 无法解析出任何歌词行时返回 None（调用方回落行级 LRC）。
 pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
     let mut out = String::new();
@@ -239,8 +243,8 @@ pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
             None => continue, // 无逗号 = 元数据行
         };
         let Ok(line_start) = h0.parse::<u64>() else { continue };
-        let Ok(line_dur) = h1.parse::<u64>() else { continue };
-        let line_end = line_start + line_dur;
+        // 行持续时长仅作行头格式校验（词时间是行内偏移，转换后无需行尾时间）
+        let Ok(_) = h1.parse::<u64>() else { continue };
         let body = &rest[close + 1..];
 
         // 游标扫描：<s,d[,x]>text 段；元组在字前面
@@ -262,7 +266,8 @@ pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
             let end = body[start..].find('<').map(|p| start + p).unwrap_or(body.len());
             let text = &body[start..end];
             if !text.is_empty() {
-                words.push((ws, ws + wd, text.to_string()));
+                // 字时间是行内偏移，加回行起始才是绝对毫秒（见函数注释）
+                words.push((line_start + ws, line_start + ws + wd, text.to_string()));
             }
             cursor = end;
         }
@@ -278,7 +283,6 @@ pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
                 fmt_lrc_time(we)
             ));
         }
-        let _ = line_end;
         out.push_str(&format!("[{}]{body}\n", fmt_lrc_time(line_start)));
     }
     if out.is_empty() {
@@ -345,7 +349,8 @@ mod tests {
 
     #[test]
     fn krc_to_enhanced() {
-        let krc = "[id:$00000000$]\n[ar:测试]\n[offset:0]\n[17662,2870]<17662,187,0>跟<17849,234,0>着<18083,234,0>希望<18317,234,0>去<18551,234,0>闯\n[21120,2930]<21120,210,0>只<21330,210,0>有";
+        // 线上 krcs 真实格式：词时间是相对行首的偏移（行首 17662，首词 0）
+        let krc = "[id:$00000000$]\n[ar:测试]\n[offset:0]\n[17662,2870]<0,187,0>跟<187,234,0>着<421,234,0>希望<655,234,0>去<889,234,0>闯\n[21120,2930]<0,210,0>只<210,210,0>有";
         let out = krc_to_enhanced_lrc(krc).expect("converted");
         let p = parse(&out);
         assert!(p.synced);
@@ -358,11 +363,14 @@ mod tests {
         // `<start>字<end>` 格式经 parse 会产出字与空字交替的词表（与 yrc/QRC 转换一致）
         let real: Vec<_> = ws.iter().filter(|w| !w.text.is_empty()).collect();
         assert_eq!(real.len(), 5);
+        // 词时间必须加回行首成为绝对毫秒：漏加则落在 0~2870 小窗内
         assert_eq!(real[0].text, "跟");
         assert_eq!(real[0].start_ms, 17660);
+        assert_eq!(real[0].end_ms, 17840); // = 下一词（着）的起始
         assert_eq!(real[2].text, "希望");
         assert_eq!(real[2].start_ms, 18080);
         assert_eq!(p.lines[1].text, "只有");
+        assert_eq!(p.lines[1].words.as_ref().unwrap()[0].start_ms, 21120);
     }
 
     #[test]
