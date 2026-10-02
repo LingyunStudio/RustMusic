@@ -3,7 +3,7 @@ import { ChevronDown, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-r
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import { api, coverSrc } from "../api";
-import { extractPalette, lyricLineProgress } from "../utils";
+import { extractPalette, lyricAdaptiveColors, lyricLineProgress } from "../utils";
 
 export default function NowPlaying() {
   const current = useStore((s) => s.current);
@@ -141,11 +141,12 @@ export default function NowPlaying() {
           el.style.transform = "scale(1)";
         }
         // 周边行透明度/缩放（只在新行附近的几行，代价小）；下一句行用「下一句」色
+        // 远行透明度下限 0.5：封面调色板背景上 0.4 的远行几乎不可辨
         for (let i = 0; i < syncedLines.length; i++) {
           const r = lineRefs.current[i];
           if (!r || i === activeIdx) continue;
           const dist = Math.abs(i - activeIdx);
-          r.style.opacity = String(Math.max(0.4, 0.75 - dist * 0.07));
+          r.style.opacity = String(Math.max(0.5, 0.78 - dist * 0.06));
           r.style.transform = `scale(${Math.max(0.94, 1 - dist * 0.015)})`;
           r.style.color =
             i === activeIdx + 1 ? "var(--lyric-next, var(--ink-2))" : "";
@@ -203,57 +204,18 @@ export default function NowPlaying() {
 
   const coverUrl = current ? (current.cover ? coverSrc(current.cover) : "") : "";
   const theme = useStore((s) => s.theme);
-  const lyricsColors = useStore((s) => s.lyricsColors);
 
   // 封面取色 → 动态渐变背景
   // 远程 http(s) 封面一律走后端提取（QQ 的 y.gtimg.cn 无 CORS，前端 canvas 会被污染）；
   // asset:// 本地封面是 WebView 虚拟主机，后端 ureq 连不上，只能前端采样
   const [palette, setPalette] = useState<string[]>([]);
-  // hsl 字符串 → WCAG 相对亮度
-  const hslRelLum = (hsl: string): number | null => {
-    const m = hsl.match(/hsl\(\s*[\d.]+[,&\s]+([\d.]+)%[,&\s]+([\d.]+)%\s*\)/);
-    if (!m) return null;
-    const h = parseFloat(m[1]) / 360;
-    const s = parseFloat(m[2]) / 100;
-    const l = parseFloat(m[3]) / 100;
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h * 6;
-    const x = c * (1 - Math.abs((hp % 2) - 1));
-    let r = 0, g = 0, b = 0;
-    if (hp < 1) [r, g, b] = [c, x, 0];
-    else if (hp < 2) [r, g, b] = [x, c, 0];
-    else if (hp < 3) [r, g, b] = [0, c, x];
-    else if (hp < 4) [r, g, b] = [0, x, c];
-    else if (hp < 5) [r, g, b] = [x, 0, c];
-    else [r, g, b] = [c, 0, x];
-    const mm = l - c / 2;
-    const f = (v: number) =>
-      v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    return 0.2126 * f(r + mm) + 0.7152 * f(g + mm) + 0.0722 * f(b + mm);
-  };
-  // 播放页歌词配色单独设计：背景亮度由「主题底色 + 封面调色板」决定，
-  // 与皮肤无关。自适应始终生效（设置页的自定义配色仅在无调色板时回退）。
-  void lyricsColors;
-  const lyricVars = (() => {
-    if (palette.length < 2) return {};
-    const ls = palette.map(hslRelLum).filter((x): x is number => x != null);
-    if (!ls.length) return {};
-    const tint = ls.reduce((a, b) => a + b, 0) / ls.length;
-    const bgLum = theme === "light" ? 0.87 : 0.04;
-    // 对流渐变层不透明度 0.55，其余为主题底色
-    const eff = bgLum * 0.45 + tint * 0.55;
-    return eff >= 0.45
-      ? {
-          "--lyric-unsung": "rgba(22, 25, 34, 0.96)",
-          "--lyric-dim": "rgba(22, 25, 34, 0.72)",
-          "--lyric-next": "rgba(22, 25, 34, 0.88)",
-        }
-      : {
-          "--lyric-unsung": "rgba(255, 255, 255, 0.98)",
-          "--lyric-dim": "rgba(255, 255, 255, 0.78)",
-          "--lyric-next": "rgba(255, 255, 255, 0.9)",
-        };
-  })();
+  // 播放页歌词配色：由封面调色板自适应决定（无手动设置）。
+  // 策略实现见 utils.lyricAdaptiveColors：最坏情况对比度选文字色 +
+  // 阴影/远行透明度/柔边遮罩三档补偿 + 卡拉OK染色跟封面走。
+  // 变量挂在最外层容器上：歌词、歌名、歌手一并继承文字阴影。
+  const adaptive = palette.length >= 2 ? lyricAdaptiveColors(palette, theme) : null;
+  const lyricVars = (adaptive?.vars ?? {}) as React.CSSProperties;
+  const scrim = adaptive?.scrim ?? "";
   useEffect(() => {
     if (!coverUrl) {
       setPalette([]);
@@ -262,9 +224,19 @@ export default function NowPlaying() {
     let alive = true;
     const getPalette = async () => {
       try {
-        const colors = /^https?:\/\/(?!asset\.)/.test(coverUrl)
-          ? await api.extractCoverPalette(coverUrl)
-          : await extractPalette(coverUrl, 4);
+        let colors: string[] = [];
+        if (/^https?:\/\/(?!asset\.)/.test(coverUrl)) {
+          try {
+            colors = await api.extractCoverPalette(coverUrl);
+          } catch {
+            colors = [];
+          }
+          // 后端失败时用 canvas 兜底：网易 CDN 带 CORS 头可行；
+          // QQ 封面域无 CORS 会被污染抛错 → extractPalette 内部接住返回空
+          if (colors.length < 2) colors = await extractPalette(coverUrl, 4);
+        } else {
+          colors = await extractPalette(coverUrl, 4);
+        }
         if (alive) setPalette(colors);
       } catch {
         if (alive) setPalette([]);
@@ -283,7 +255,10 @@ export default function NowPlaying() {
   if (!current) return null;
 
   return (
-    <div className="absolute inset-0 z-40 anim-np overflow-hidden" style={{ background: "var(--bg)" }}>
+    <div
+      className="absolute inset-0 z-40 anim-np overflow-hidden"
+      style={{ background: "var(--bg)", ...(lyricVars as React.CSSProperties) }}
+    >
       {/* 背景：封面取色的流动渐变（色相旋转 + 光斑漂移） */}
       <div className="absolute inset-0 overflow-hidden">
         {palette.length < 2 && (
@@ -395,7 +370,7 @@ export default function NowPlaying() {
               iconSize={56}
             />
           </div>
-          <div className="text-center max-w-full">
+          <div className="text-center max-w-full np-shadowed">
             <div className="text-[22px] font-bold text-[var(--ink)] truncate">
               {current.title}
             </div>
@@ -550,10 +525,21 @@ export default function NowPlaying() {
 
         {/* 右：歌词 */}
         <div className="flex-1 min-w-0 relative">
+          {/* 柔边遮罩：对比不足时垫在歌词后面（颜色/浓度由配色策略给出），
+              radial 软边缘不产生生硬矩形感 */}
+          {scrim && (
+            <div
+              aria-hidden
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: `radial-gradient(115% 95% at 50% 50%, ${scrim} 42%, transparent 96%)`,
+              }}
+            />
+          )}
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto py-[28%] lyrics-mask pr-3"
-            style={{ scrollbarWidth: "none", ...(lyricVars as React.CSSProperties) }}
+            className="relative h-full overflow-y-auto py-[28%] lyrics-mask pr-3"
+            style={{ scrollbarWidth: "none" }}
           >
             {lyricsLoading && (
               <div className="text-[var(--ink-3)] text-[13px] text-center pt-20">

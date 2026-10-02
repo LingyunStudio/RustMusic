@@ -11,10 +11,6 @@ import {
   loadDesktopLyricsColors,
   saveDesktopLyricsColors,
   type DesktopLyricsColors,
-  loadLyricsColors,
-  saveLyricsColors,
-  applyLyricsColors,
-  type LyricPageColors,
 } from "./theme";
 import { applySkin, loadSkin, saveSkin } from "./skins";
 import type {
@@ -231,9 +227,6 @@ interface Store {
   /** 桌面歌词三色（已唱/未唱/下一句） */
   dlyricsColors: DesktopLyricsColors;
   setDlyricsColors(c: DesktopLyricsColors): void;
-  /** 播放页歌词三色（已唱/未唱/下一句，空 = 跟随主题） */
-  lyricsColors: LyricPageColors;
-  setLyricsColors(c: LyricPageColors): void;
 
   toggleLike(id: number): void;
   addToQueue(item: QueueItem): void;
@@ -764,7 +757,6 @@ export const useStore = create<Store>((set, get) => ({
   desktopLyricsOn: false,
   desktopLyricsLock: false,
   dlyricsColors: loadDesktopLyricsColors(),
-  lyricsColors: loadLyricsColors(),
   playingSourceId: null,
   theme: "light",
   accent: "amber",
@@ -782,8 +774,6 @@ export const useStore = create<Store>((set, get) => ({
   async init() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
-    // 播放页歌词自定义配色（CSS 变量），启动即恢复
-    applyLyricsColors(get().lyricsColors);
     unbinds.push(
       await listenEvent<PlayState>("player://state", (p) => applyPlayState(p))
     );
@@ -1699,13 +1689,6 @@ export const useStore = create<Store>((set, get) => ({
     saveDesktopLyricsColors(c);
     // 即时生效：推一帧新颜色给悬浮窗（窗口没开时 push 内部自跳过）
     pushDesktopLyrics(get());
-  },
-
-  setLyricsColors(c) {
-    set({ lyricsColors: c });
-    saveLyricsColors(c);
-    // 播放页歌词通过 CSS 变量取色，写入后即时生效（rAF/染色层都引用变量）
-    applyLyricsColors(c);
   },
 
   // ---------- 喜欢 / 队列 ----------

@@ -499,6 +499,12 @@ html[data-custom-text="dark"] {
   color: var(--lyric-dim, var(--ink-3));
   font-size: 20px;
   font-weight: 600;
+  /* 自适应文字阴影（--lyric-shadow 由播放页配色策略写入）：
+     动态渐变背景上文字边缘与局部背景的亮度分离保障 */
+  text-shadow: var(--lyric-shadow, none);
+}
+.np-shadowed {
+  text-shadow: var(--lyric-shadow, none);
 }
 .lyric-line.active {
   will-change: transform, opacity;

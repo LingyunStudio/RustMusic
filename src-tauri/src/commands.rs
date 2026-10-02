@@ -2806,6 +2806,14 @@ pub async fn extract_cover_palette(url: String) -> Result<Vec<String>, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Ok(vec![]);
     }
+    // 网易云 CDN 支持 ?param=WxH 出缩略图：库存的原图（1500px PNG）可达
+    // 3~4MB，超过读取上限被截断后解码必然失败 → 取色静默失效。
+    // 主动要一张 350px 小图，既小又完整。
+    let url = if url.contains("music.126.net") && !url.contains("param=") {
+        format!("{url}?param=350y350")
+    } else {
+        url
+    };
     let bytes = match ureq::get(&url)
         .set("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
@@ -2813,8 +2821,9 @@ pub async fn extract_cover_palette(url: String) -> Result<Vec<String>, String> {
     {
         Ok(resp) => {
             let mut buf = Vec::new();
+            // 截断的图片（PNG 的 IEND 在尾部）解码必败，上限须远大于真实封面
             resp.into_reader()
-                .take(2 * 1024 * 1024)
+                .take(12 * 1024 * 1024)
                 .read_to_end(&mut buf)
                 .map_err(|e| e.to_string())?;
             buf

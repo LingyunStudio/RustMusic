@@ -284,3 +284,134 @@ export function lyricLineProgress(
   }
   return Math.min(1, sungWeight / total);
 }
+
+// ---------- 播放页歌词自适应配色 ----------
+
+/** 解析 "hsl(H, S%, L%)" 字符串 → [h(0-360), s(0-1), l(0-1)]；非法返回 null */
+export function parseHsl(str: string): [number, number, number] | null {
+  const m = str.match(/hsl\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%\s*\)/i);
+  if (!m) return null;
+  return [parseFloat(m[1]), parseFloat(m[2]) / 100, parseFloat(m[3]) / 100];
+}
+
+export function hslToCss(h: number, s: number, l: number): string {
+  return `hsl(${Math.round(h)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+}
+
+/** HSL → WCAG 相对亮度（0=黑，1=白） */
+export function hslRelLum(h: number, s: number, l: number): number {
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  const lin = (v: number) =>
+    v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  return 0.2126 * lin(f(0)) + 0.7152 * lin(f(8)) + 0.0722 * lin(f(4));
+}
+
+export interface LyricAdaptiveColors {
+  /** 写入播放页容器的 CSS 变量（--lyric-unsung/dim/next/sung/shadow） */
+  vars: Record<string, string>;
+  /** 歌词区柔边遮罩颜色（rgba）；空串 = 不需要遮罩 */
+  scrim: string;
+}
+
+/**
+ * 播放页歌词自适应配色（有封面调色板时启用）。
+ *
+ * 背景建模：歌词背后的亮度 = 主题底色(45%) ⊕ 对流渐变层(调色板 55%)。
+ * 渐变层持续旋转、光斑漂移，歌词区背后的颜色会在调色板各色之间游走——
+ * 因此用「最亮/最暗区域」的最坏情况对比度决策，而不是平均亮度
+ * （旧策略按平均一刀切选黑/白字，旋转到亮色光斑时白字直接看不清）。
+ *
+ * 策略：
+ * - 近白文字为默认（Apple Music 式观感）；近黑文字只在明亮背景上
+ *   「决定性更优」（对最暗区域 ≥4.5:1 且明显强于白字）时启用；
+ * - 与 4.5:1 的对比缺口按比例三档补偿：文字阴影加强、次行/远行
+ *   透明度提高、歌词区加柔边遮罩（scrim）；
+ * - 已唱染色取调色板饱和度最高的一色，沿亮度轴压到「与未唱文字
+ *   可区分、与最亮/最暗背景区域都可读」的区间——染色跟封面走，
+ *   不再固定强调色（同色系封面上强调色会隐形）。
+ */
+export function lyricAdaptiveColors(
+  palette: string[],
+  theme: string
+): LyricAdaptiveColors {
+  const bgLum = theme === "light" ? 0.87 : 0.04;
+  const parsed = palette
+    .map(parseHsl)
+    .filter((x): x is [number, number, number] => x != null);
+  if (parsed.length < 2) return { vars: {}, scrim: "" };
+
+  const regionLum = (p: number) => bgLum * 0.45 + p * 0.55;
+  const lums = parsed.map(([h, s, l]) => hslRelLum(h, s, l));
+  const minR = regionLum(Math.min(...lums));
+  const maxR = regionLum(Math.max(...lums));
+  const eff = regionLum(lums.reduce((a, b) => a + b, 0) / lums.length);
+  // 白字 vs 最亮区域、近黑字 vs 最暗区域的最坏情况对比度
+  const cWhite = 1.05 / (maxR + 0.05);
+  const cDark = (minR + 0.05) / 0.07;
+  const dark = cDark > cWhite * 1.3 && cDark >= 4.5;
+  const strength = Math.min(1, Math.max(0.15, (Math.max(cWhite, cDark) - 1.6) / 3.4));
+  const lack = 1 - strength;
+
+  // 对比越弱：文字越实、远行越亮、阴影越重
+  const unsungA = (0.95 + 0.05 * strength).toFixed(2);
+  const nextA = (0.8 + 0.12 * strength).toFixed(2);
+  const dimA = (0.88 - 0.2 * strength).toFixed(2);
+  const sh = 0.2 + 0.32 * lack;
+
+  const vars: Record<string, string> = dark
+    ? {
+        "--lyric-unsung": `rgba(21, 24, 31, ${unsungA})`,
+        "--lyric-dim": `rgba(21, 24, 31, ${dimA})`,
+        "--lyric-next": `rgba(21, 24, 31, ${nextA})`,
+        "--lyric-shadow": `0 1px 2px rgba(255, 255, 255, ${(sh * 0.7).toFixed(2)}), 0 2px 18px rgba(255, 255, 255, ${sh.toFixed(2)})`,
+      }
+    : {
+        "--lyric-unsung": `rgba(255, 255, 255, ${unsungA})`,
+        "--lyric-dim": `rgba(255, 255, 255, ${dimA})`,
+        "--lyric-next": `rgba(255, 255, 255, ${nextA})`,
+        "--lyric-shadow": `0 1px 2px rgba(10, 12, 16, ${(sh * 0.7).toFixed(2)}), 0 2px 18px rgba(10, 12, 16, ${sh.toFixed(2)})`,
+      };
+
+  // 已唱染色：取调色板饱和度最高的一色，保色相，用二分法把 WCAG 相对
+  // 亮度钉到目标值。目标值自适应背景亮度带：
+  // - 带（minR+0.14 ~ maxR-0.14）非空 → 取带中心，离两端最远；
+  // - 窄带（背景亮度均匀，最常见）→ 逃到带外：白字优先压深（与白字
+  //   对比自然拉大），深不动（minR 已很低）则提亮；黑字压深。
+  // 相对亮度对 l 单调，二分必收敛；黄色系 relLum 天然偏高会自动压深，
+  // 色相不丢，染色始终跟封面走。
+  const [h, s0] = [...parsed].sort((a, b) => b[1] - a[1])[0];
+  const s = Math.min(0.95, Math.max(s0, 0.65));
+  let target: number;
+  if (maxR - 0.14 > minR + 0.14) {
+    target = (minR + maxR) / 2;
+  } else if (dark) {
+    target = Math.max(0.1, minR - 0.18);
+  } else {
+    const deeper = minR - 0.18;
+    target = deeper >= 0.16 ? deeper : Math.min(0.55, maxR + 0.18);
+  }
+  // 与文字色的可区分约束：白字下染色 ≤0.55，黑字下 0.10~0.45
+  target = dark ? Math.max(0.1, Math.min(0.45, target)) : Math.min(0.55, Math.max(0.12, target));
+  let lo = 0.05;
+  let hi = 0.95;
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
+    if (hslRelLum(h, s, mid) < target) lo = mid;
+    else hi = mid;
+  }
+  vars["--lyric-sung"] = hslToCss(h, s, (lo + hi) / 2);
+
+  // 柔边遮罩：仅对比不足时上（越缺越浓，上限 ~0.33）
+  const scrimA = Math.max(0, 0.82 - strength) * 0.5;
+  const scrim =
+    scrimA > 0.02
+      ? dark
+        ? `rgba(255, 255, 255, ${scrimA.toFixed(2)})`
+        : `rgba(10, 12, 16, ${scrimA.toFixed(2)})`
+      : "";
+  return { vars, scrim };
+}

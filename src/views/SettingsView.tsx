@@ -6,7 +6,6 @@ import {
   Headphones,
   Loader2,
   RefreshCw,
-  RotateCcw,
   Settings as SettingsIcon,
   Trash2,
   X,
@@ -18,7 +17,6 @@ import {
   loadCustomAccentHex,
   parseCustomAccent,
   saveCustomAccentHex,
-  themeLyricsDefaults,
 } from "../theme";
 import { showUpdateDialog } from "../components/UpdateDialog";
 
@@ -87,8 +85,6 @@ export default function SettingsView() {
   const unlockDesktopLyrics = useStore((s) => s.unlockDesktopLyrics);
   const dlyricsColors = useStore((s) => s.dlyricsColors);
   const setDlyricsColors = useStore((s) => s.setDlyricsColors);
-  const lyricsColors = useStore((s) => s.lyricsColors);
-  const setLyricsColors = useStore((s) => s.setLyricsColors);
   const clearCache = useStore((s) => s.clearCache);
   const cacheLimit = useStore((s) => s.cacheLimit);
   const setCacheLimit = useStore((s) => s.setCacheLimit);
@@ -104,8 +100,6 @@ export default function SettingsView() {
   const [deviceSwitching, setDeviceSwitching] = useState(false);
   // 自定义强调色（取色器当前值 / 回显上次选择）
   const [customHex, setCustomHex] = useState(loadCustomAccentHex);
-  // 播放页歌词三色的主题默认（已唱跟强调色，随主题/强调色变化重读）
-  const lyricThemeDefaults = useMemo(() => themeLyricsDefaults(), [theme, accent]);
   // 关于与更新
   const [appVersion, setAppVersion] = useState("");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -360,27 +354,9 @@ export default function SettingsView() {
               onChange={(k, v) => setDlyricsColors({ ...dlyricsColors, [k]: v })}
             />
           </div>
-
-          {/* 播放页歌词配色：空 = 跟随主题（已唱跟强调色），可一键恢复默认 */}
-          <div className="flex items-center gap-4 mt-3 pl-0">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放页配色</span>
-            <LyricColorPickers
-              values={lyricsColors}
-              defaults={lyricThemeDefaults}
-              onChange={(k, v) => setLyricsColors({ ...lyricsColors, [k]: v })}
-            />
-            <button
-              className="btn-ghost !py-1 !px-2 text-[11.5px]"
-              onClick={() => setLyricsColors({ sung: "", unsung: "", next: "" })}
-              title="清除自定义，恢复跟随主题（已唱跟强调色）"
-            >
-              <RotateCcw size={11} />
-              恢复默认
-            </button>
-          </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
             已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。
-            播放页未自定义时跟随强调色与主题，改完立即生效。
+            播放页歌词颜色由封面自动适配（取封面主色保证对比可读），不在此设置。
           </p>
         </section>
 
