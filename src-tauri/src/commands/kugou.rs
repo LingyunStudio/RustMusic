@@ -1,7 +1,7 @@
 //! 酷狗音乐：搜索 / 播放取链 / 扫码登录 / 歌词 / 榜单歌单广场
 
 use serde_json::json;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::db;
 use crate::engine::TrackInfo;
@@ -103,12 +103,20 @@ pub(crate) fn kg_prepare(state: &State<AppState>) -> (String, String) {
 
 #[tauri::command]
 pub async fn kugou_search(keyword: String, page: Option<i64>) -> Result<serde_json::Value, String> {
-    let songs = crate::kugou::search(&keyword, page.unwrap_or(1))?;
+    let songs =
+        super::blocking(move || crate::kugou::search(&keyword, page.unwrap_or(1))).await?;
     Ok(json!({ "songs": songs }))
 }
 
 #[tauri::command]
-pub async fn kugou_play(app: AppHandle, state: State<'_, AppState>, track: KgPlayReq) -> Result<(), String> {
+pub async fn kugou_play(app: AppHandle, track: KgPlayReq) -> Result<(), String> {
+    let task_app = app.clone();
+    super::blocking(move || kugou_play_task(&task_app, track)).await
+}
+
+/// 同步任务体：kg_prepare（可能触发设备注册）与取链都是阻塞网络调用
+fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let quality = {
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
@@ -137,7 +145,7 @@ pub async fn kugou_play(app: AppHandle, state: State<'_, AppState>, track: KgPla
         &quality,
     )?;
     notify_quality_fallback(
-        &app,
+        app,
         "酷狗",
         &quality,
         &quality_label,
@@ -206,7 +214,11 @@ pub async fn kugou_lyric(
             return Ok(p);
         }
     }
-    let text = crate::kugou::lyric(&hash)?;
+    let text = super::blocking({
+        let hash = hash.clone();
+        move || crate::kugou::lyric(&hash)
+    })
+    .await?;
     let text = match text {
         Some(t) if !t.is_empty() => t,
         _ => {
@@ -233,7 +245,7 @@ pub async fn kugou_lyric(
 
 #[tauri::command]
 pub async fn kugou_qr_create() -> Result<serde_json::Value, String> {
-    let (key, qr) = crate::kugou::qr_create()?;
+    let (key, qr) = super::blocking(crate::kugou::qr_create).await?;
     Ok(json!({ "key": key, "qr": qr }))
 }
 
@@ -242,7 +254,7 @@ pub async fn kugou_qr_check(
     state: State<'_, AppState>,
     key: String,
 ) -> Result<serde_json::Value, String> {
-    let r = crate::kugou::qr_check(&key)?;
+    let r = super::blocking(move || crate::kugou::qr_check(&key)).await?;
     if r.status == "success" {
         if let (Some(token), Some(userid)) = (&r.token, &r.userid) {
             crate::kugou::set_account(token, userid);
@@ -282,84 +294,109 @@ pub async fn kugou_logout(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn kugou_toplists() -> Result<serde_json::Value, String> {
-    let toplists = crate::kugou::toplists()?;
+    let toplists = super::blocking(crate::kugou::toplists).await?;
     Ok(json!({ "toplists": toplists }))
 }
 
 #[tauri::command]
 pub async fn kugou_toplist_tracks(
-    state: State<'_, AppState>,
+    app: AppHandle,
     top_id: i64,
     page: Option<i64>,
 ) -> Result<serde_json::Value, String> {
-    let _ = kg_prepare(&state);
-    let page = page.unwrap_or(1).max(1);
-    let songs = crate::kugou::toplist_tracks(top_id, page)?;
-    Ok(json!({ "songs": songs, "hasMore": songs.len() as i64 >= 90 }))
+    let task_app = app.clone();
+    super::blocking(move || {
+        let state = task_app.state::<AppState>();
+        let _ = kg_prepare(&state);
+        let page = page.unwrap_or(1).max(1);
+        let songs = crate::kugou::toplist_tracks(top_id, page)?;
+        Ok(json!({ "songs": songs, "hasMore": songs.len() as i64 >= 90 }))
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn kugou_random_playlist(
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<crate::kugou::KgPublicPlaylist, String> {
-    let _ = kg_prepare(&state);
-    crate::kugou::random_playlist()
+    let task_app = app.clone();
+    super::blocking(move || {
+        let state = task_app.state::<AppState>();
+        let _ = kg_prepare(&state);
+        crate::kugou::random_playlist()
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn kugou_playlist_tracks(
-    state: State<'_, AppState>,
+    app: AppHandle,
     id: String,
 ) -> Result<crate::kugou::KgPublicPlaylist, String> {
-    let _ = kg_prepare(&state);
-    crate::kugou::playlist_tracks(&id)
+    let task_app = app.clone();
+    super::blocking(move || {
+        let state = task_app.state::<AppState>();
+        let _ = kg_prepare(&state);
+        crate::kugou::playlist_tracks(&id)
+    })
+    .await
 }
 
 /// 酷狗账号下的自建/收藏歌单（需扫码登录）
 #[tauri::command]
 pub async fn kugou_user_playlists(
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Vec<crate::kugou::KgUserPlaylist>, String> {
-    let (token, userid) = kg_prepare(&state);
-    crate::kugou::user_playlists(&token, &userid)
+    let task_app = app.clone();
+    super::blocking(move || {
+        let state = task_app.state::<AppState>();
+        let (token, userid) = kg_prepare(&state);
+        crate::kugou::user_playlists(&token, &userid)
+    })
+    .await
 }
 
 /// 酷狗公开歌单导入为本地播放列表（匿名可拉，无需登录）
 #[tauri::command]
 pub async fn kugou_import_playlist(
-    state: State<'_, AppState>,
+    app: AppHandle,
     remote_pid: String,
     name: String,
 ) -> Result<(i64, i64), String> {
-    let _ = kg_prepare(&state);
-    let songs = crate::kugou::playlist_tracks(&remote_pid)?;
-    let (list_id, added) = {
-        let conn = state.db.lock();
-        let pid = match db::find_playlist_by_remote(&conn, "kugou", &remote_pid, &name) {
-            Some(id) => id,
-            None => db::create_playlist(&conn, &name)?,
-        };
-        db::set_playlist_remote(&conn, pid, "kugou", &remote_pid);
-        db::set_playlist_origin(&conn, pid, &name);
-        let mut added = 0i64;
-        for t in &songs.songs {
-            db::upsert_online_track(
-                &conn,
-                "kugou",
-                &t.id,
-                &t.name,
-                &t.singer,
-                &t.album,
-                &t.cover,
-                t.duration_ms as i64,
-                &t.album_audio_id.to_string(),
-                t.vip,
-            );
-            if db::add_online_to_playlist(&conn, pid, "kugou", &t.id)? {
-                added += 1;
+    let task_app = app.clone();
+    super::blocking(move || {
+        let state = task_app.state::<AppState>();
+        let _ = kg_prepare(&state);
+        let songs = crate::kugou::playlist_tracks(&remote_pid)?;
+        let (list_id, added) = {
+            let conn = state.db.lock();
+            let pid = match db::find_playlist_by_remote(&conn, "kugou", &remote_pid, &name) {
+                Some(id) => id,
+                None => db::create_playlist(&conn, &name)?,
+            };
+            db::set_playlist_remote(&conn, pid, "kugou", &remote_pid);
+            db::set_playlist_origin(&conn, pid, &name);
+            let mut added = 0i64;
+            for t in &songs.songs {
+                db::upsert_online_track(
+                    &conn,
+                    "kugou",
+                    &t.id,
+                    &t.name,
+                    &t.singer,
+                    &t.album,
+                    &t.cover,
+                    t.duration_ms as i64,
+                    &t.album_audio_id.to_string(),
+                    t.vip,
+                );
+                if db::add_online_to_playlist(&conn, pid, "kugou", &t.id)? {
+                    added += 1;
+                }
             }
-        }
-        (pid, added)
-    };
-    Ok((list_id, added))
+            (pid, added)
+        };
+        Ok((list_id, added))
+    })
+    .await
 }

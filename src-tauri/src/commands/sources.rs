@@ -1,6 +1,6 @@
 //! 在线音源（URL 直链 / B 站视频）管理与播放
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::db;
 use crate::engine::TrackInfo;
@@ -44,7 +44,14 @@ pub async fn delete_source(state: State<'_, AppState>, id: i64) -> Result<(), St
     Ok(())
 }
 #[tauri::command]
-pub async fn play_source(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+pub async fn play_source(app: AppHandle, id: i64) -> Result<(), String> {
+    let task_app = app.clone();
+    super::blocking(move || play_source_task(&task_app, id)).await
+}
+
+/// 同步任务体：B 站源解析音频直链是阻塞网络调用
+fn play_source_task(app: &AppHandle, id: i64) -> Result<(), String> {
+    let state = app.state::<AppState>();
     // B 站视频源（bili:// 存储链接 / 原始视频链接）：解析音频直链后走在线缓存播放
     let bili_input = {
         let conn = state.db.lock();

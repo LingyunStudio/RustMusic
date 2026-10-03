@@ -1,7 +1,7 @@
 //! B 站：扫码登录 / 字幕歌词 / UP 主空间 / 收藏夹 / 合集 / 视频解析 / 播放
 
 use serde_json::json;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::db;
 use crate::engine::TrackInfo;
@@ -13,7 +13,7 @@ use super::engine_clone;
 /// 多P视频每个分P各加一条，已存在的自动跳过。返回本次实际新增条数。
 #[tauri::command]
 pub async fn bilibili_add(state: State<'_, AppState>, input: String) -> Result<usize, String> {
-    let rows = crate::bilibili::resolve_pages(&input)?;
+    let rows = super::blocking(move || crate::bilibili::resolve_pages(&input)).await?;
     let mut added = 0usize;
     {
         let conn = state.db.lock();
@@ -37,7 +37,7 @@ pub async fn bilibili_add(state: State<'_, AppState>, input: String) -> Result<u
 
 #[tauri::command]
 pub async fn bilibili_qr_create() -> Result<serde_json::Value, String> {
-    let (key, qr) = crate::bilibili::login_qr_create()?;
+    let (key, qr) = super::blocking(crate::bilibili::login_qr_create).await?;
     Ok(json!({ "key": key, "qr": qr }))
 }
 
@@ -46,7 +46,7 @@ pub async fn bilibili_qr_check(
     state: State<'_, AppState>,
     key: String,
 ) -> Result<serde_json::Value, String> {
-    let r = crate::bilibili::login_qr_check(&key)?;
+    let r = super::blocking(move || crate::bilibili::login_qr_check(&key)).await?;
     if r.status == "success" {
         if let Some(c) = &r.cookies {
             let conn = state.db.lock();
@@ -80,11 +80,9 @@ pub async fn bilibili_logout(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// B 站字幕歌词：rid = "BVxxx-cid"。字幕列表需登录（SESSDATA），
-/// 未登录返回无歌词（字幕接口匿名一律为空列表）。
-#[tauri::command]
 /// 拉取并缓存 B 站字幕歌词（bilibili_lyric 命令与预热线程共用）。
 /// 字幕内容稳定：进程内缓存，避免每次播放重复拉取。
+/// （原文件此处误挂了一个未注册的 #[tauri::command]，已随拆分清理）
 fn bili_lyric_fetch(
     rid: &str,
     sessdata: &str,
@@ -135,6 +133,8 @@ pub(crate) fn spawn_bili_lyric_warmup(state: &State<'_, AppState>, rid: String) 
     });
 }
 
+/// B 站字幕歌词：rid = "BVxxx-cid"。字幕列表需登录（SESSDATA），
+/// 未登录返回无歌词（字幕接口匿名一律为空列表）。
 #[tauri::command]
 pub async fn bilibili_lyric(
     state: State<'_, AppState>,
@@ -147,7 +147,7 @@ pub async fn bilibili_lyric(
             db::get_setting(&conn, "bili_buvid3").unwrap_or_default(),
         )
     };
-    bili_lyric_fetch(&rid, &sessdata, &buvid3)
+    super::blocking(move || bili_lyric_fetch(&rid, &sessdata, &buvid3)).await
 }
 
 // ---------- B 站 UP 主空间 ----------
@@ -202,9 +202,17 @@ pub async fn bilibili_space(
 ) -> Result<serde_json::Value, String> {
     let mid = crate::bilibili::parse_space(&input)?;
     let c = bili_cookies_opt(&state);
-    let (name, face, fans, card_total) = crate::bilibili::space_card(&mid)?;
-    let (rows, list_total, has_more) = crate::bilibili::space_videos(&mid, &order, 1, c.as_ref())?;
-    let seasons = crate::bilibili::space_seasons(&mid, c.as_ref()).unwrap_or_default();
+    let mid2 = mid.clone();
+    let (name, face, fans, card_total, rows, list_total, has_more, seasons) = super::blocking(
+        move || -> Result<_, String> {
+            let (name, face, fans, card_total) = crate::bilibili::space_card(&mid2)?;
+            let (rows, list_total, has_more) =
+                crate::bilibili::space_videos(&mid2, &order, 1, c.as_ref())?;
+            let seasons = crate::bilibili::space_seasons(&mid2, c.as_ref()).unwrap_or_default();
+            Ok((name, face, fans, card_total, rows, list_total, has_more, seasons))
+        },
+    )
+    .await?;
     let total = if list_total > 0 { list_total } else { card_total };
     Ok(json!({
         "mid": mid,
@@ -228,8 +236,14 @@ pub async fn bilibili_space_more(
 ) -> Result<serde_json::Value, String> {
     let c = bili_cookies_opt(&state);
     let pn = pn.max(1) as u32;
-    let (rows, list_total, has_more) = crate::bilibili::space_videos(&mid, &order, pn, c.as_ref())?;
-    let (name, _face, _fans, card_total) = crate::bilibili::space_card(&mid)?;
+    let (rows, list_total, has_more, name, _face, _fans, card_total) =
+        super::blocking(move || -> Result<_, String> {
+            let (rows, list_total, has_more) =
+                crate::bilibili::space_videos(&mid, &order, pn, c.as_ref())?;
+            let (name, _face, _fans, card_total) = crate::bilibili::space_card(&mid)?;
+            Ok((rows, list_total, has_more, name, _face, _fans, card_total))
+        })
+        .await?;
     let total = if list_total > 0 { list_total } else { card_total };
     Ok(json!({
         "total": total,
@@ -254,11 +268,7 @@ fn bili_cookies_req(state: &State<'_, AppState>) -> Result<crate::bilibili::Bili
 #[tauri::command]
 pub async fn bilibili_fav_folders(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let c = bili_cookies_req(&state)?;
-    let (user, folders) = tauri::async_runtime::spawn_blocking(move || {
-        crate::bilibili::fav_folders(&c)
-    })
-    .await
-    .map_err(|e| format!("收藏夹任务失败：{e}"))??;
+    let (user, folders) = super::blocking(move || crate::bilibili::fav_folders(&c)).await?;
     Ok(json!({
         "folders": folders,
         "name": user.uname,
@@ -276,11 +286,7 @@ pub async fn bilibili_fav_list(
     let c = bili_cookies_req(&state)?;
     let pn = pn.max(1) as u32;
     let (rows, total, has_more) =
-        tauri::async_runtime::spawn_blocking(move || {
-            crate::bilibili::fav_folder_videos(media_id, pn, &c)
-        })
-        .await
-        .map_err(|e| format!("收藏夹任务失败：{e}"))??;
+        super::blocking(move || crate::bilibili::fav_folder_videos(media_id, pn, &c)).await?;
     Ok(json!({
         "total": total,
         "hasMore": has_more,
@@ -297,15 +303,19 @@ pub async fn bilibili_space_collection(
     kind: String,
 ) -> Result<serde_json::Value, String> {
     let c = bili_cookies_opt(&state);
-    let (rows, total, has_more) = match kind.as_str() {
-        "season" => crate::bilibili::space_season_archives(&mid, id, 1, c.as_ref())?,
-        // "fav"：登录用户收藏夹（复用结果区 UI，id = media_id）
-        "fav" => {
-            let sess = bili_cookies_req(&state)?;
-            crate::bilibili::fav_folder_videos(id, 1, &sess)?
+    // "fav"：登录用户收藏夹（复用结果区 UI，id = media_id）——登录态先取好再进阻塞线程
+    let sess = bili_cookies_req(&state).ok();
+    let (rows, total, has_more) = super::blocking(move || -> Result<_, String> {
+        match kind.as_str() {
+            "season" => crate::bilibili::space_season_archives(&mid, id, 1, c.as_ref()),
+            "fav" => {
+                let sess = sess.ok_or_else(|| "请先扫码登录 B 站账号".to_string())?;
+                crate::bilibili::fav_folder_videos(id, 1, &sess)
+            }
+            _ => crate::bilibili::space_series_archives(&mid, id, 1, c.as_ref()),
         }
-        _ => crate::bilibili::space_series_archives(&mid, id, 1, c.as_ref())?,
-    };
+    })
+    .await?;
     Ok(json!({
         "total": total,
         "hasMore": has_more,
@@ -323,14 +333,19 @@ pub async fn bilibili_space_collection_more(
     pn: i64,
 ) -> Result<serde_json::Value, String> {
     let c = bili_cookies_opt(&state);
-    let (rows, total, has_more) = match kind.as_str() {
-        "season" => crate::bilibili::space_season_archives(&mid, id, pn.max(1) as u32, c.as_ref())?,
-        "fav" => {
-            let sess = bili_cookies_req(&state)?;
-            crate::bilibili::fav_folder_videos(id, pn.max(1) as u32, &sess)?
+    let sess = bili_cookies_req(&state).ok();
+    let pn = pn.max(1) as u32;
+    let (rows, total, has_more) = super::blocking(move || -> Result<_, String> {
+        match kind.as_str() {
+            "season" => crate::bilibili::space_season_archives(&mid, id, pn, c.as_ref()),
+            "fav" => {
+                let sess = sess.ok_or_else(|| "请先扫码登录 B 站账号".to_string())?;
+                crate::bilibili::fav_folder_videos(id, pn, &sess)
+            }
+            _ => crate::bilibili::space_series_archives(&mid, id, pn, c.as_ref()),
         }
-        _ => crate::bilibili::space_series_archives(&mid, id, pn.max(1) as u32, c.as_ref())?,
-    };
+    })
+    .await?;
     Ok(json!({
         "total": total,
         "hasMore": has_more,
@@ -341,7 +356,7 @@ pub async fn bilibili_space_collection_more(
 /// 解析单个 B 站视频（当前结果展示，不落库）：每分P一条，rid = "BVxxx-cid"
 #[tauri::command]
 pub async fn bilibili_video_info(input: String) -> Result<Vec<BiliSpaceItem>, String> {
-    let rows = crate::bilibili::video_rows(&input)?;
+    let rows = super::blocking(move || crate::bilibili::video_rows(&input)).await?;
     Ok(rows
         .into_iter()
         .map(|(rid, title, artist, cover, duration_ms)| BiliSpaceItem {
@@ -376,7 +391,14 @@ pub struct BiliPlayReq {
 /// 播放 B 站曲目（我喜欢/播放列表/最近播放入口）：元数据由前端条目提供，
 /// 后端只负责解析音频直链并记录最近播放。
 #[tauri::command]
-pub async fn bilibili_play(state: State<'_, AppState>, track: BiliPlayReq) -> Result<(), String> {
+pub async fn bilibili_play(app: AppHandle, track: BiliPlayReq) -> Result<(), String> {
+    let task_app = app.clone();
+    super::blocking(move || bilibili_play_task(&task_app, track)).await
+}
+
+/// 同步任务体：音频直链解析是阻塞网络调用（经 blocking 在专用线程池执行）
+fn bilibili_play_task(app: &AppHandle, track: BiliPlayReq) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let (bvid, cid) = crate::bilibili::parse_rid(&track.rid)?;
     let (audio_url, quality) = crate::bilibili::audio_stream(&bvid, cid)?;
     // 字幕与音频并行预取：开播时歌词缓存已就绪

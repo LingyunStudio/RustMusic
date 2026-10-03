@@ -18,10 +18,13 @@ pub async fn asset_scope_allow(app: AppHandle, path: String) -> Result<(), Strin
 /// 避免原始分辨率（4K/8K 壁纸解码可达数十至上百 MB）常驻渲染进程图片缓存。
 /// 动图（gif）与已 ≤1920px 的图原样返回；任何失败都回退原路径，不影响选图
 #[tauri::command]
-pub async fn prepare_skin_image(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<String, String> {
+pub async fn prepare_skin_image(state: State<'_, AppState>, path: String) -> Result<String, String> {
+    let app_data = state.app_data.clone();
+    super::blocking(move || prepare_skin_image_task(app_data, path)).await
+}
+
+/// 同步任务体：整图解码 + 缩放重存是重 IO（4K/8K 图可达上百 MB）
+fn prepare_skin_image_task(app_data: std::path::PathBuf, path: String) -> Result<String, String> {
     let lower = path.to_lowercase();
     if lower.ends_with(".gif") {
         return Ok(path);
@@ -46,7 +49,7 @@ pub async fn prepare_skin_image(
     size.hash(&mut h);
     let stem = format!("{:016x}", h.finish());
 
-    let dir = state.app_data.join("skins");
+    let dir = app_data.join("skins");
     let _ = std::fs::create_dir_all(&dir);
 
     // 已有副本直接复用（重复选同一张图不重复解码）
@@ -100,6 +103,11 @@ pub async fn get_app_info(
 
 #[tauri::command]
 pub async fn extract_cover_palette(url: String) -> Result<Vec<String>, String> {
+    super::blocking(move || extract_cover_palette_task(url)).await
+}
+
+/// 同步任务体：封面拉取 + 图片解码取色都是阻塞 IO
+fn extract_cover_palette_task(url: String) -> Result<Vec<String>, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Ok(vec![]);
     }

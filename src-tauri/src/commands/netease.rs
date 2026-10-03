@@ -1,7 +1,7 @@
 //! 网易云音乐：搜索 / 播放取链 / 扫码登录 / 喜欢 / 歌词 / 榜单歌单
 
 use serde_json::json;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::db;
 use crate::engine::TrackInfo;
@@ -38,15 +38,24 @@ pub async fn netease_search(
     offset: Option<i64>,
 ) -> Result<crate::netease::NetSearchResult, String> {
     let music_u = netease_cookie(&state);
-    crate::netease::search(&keyword, 30, offset.unwrap_or(0), music_u.as_deref())
+    super::blocking(move || {
+        crate::netease::search(&keyword, 30, offset.unwrap_or(0), music_u.as_deref())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn netease_play(
     app: AppHandle,
-    state: State<'_, AppState>,
     track: NeteasePlayReq,
 ) -> Result<(), String> {
+    let task_app = app.clone();
+    super::blocking(move || netease_play_task(&task_app, track)).await
+}
+
+/// 同步任务体：取链是阻塞网络调用（经 blocking 在专用线程池执行）
+fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), String> {
+    let state = app.state::<AppState>();
     let music_u = netease_cookie(&state);
     let quality = {
         let conn = state.db.lock();
@@ -56,7 +65,7 @@ pub async fn netease_play(
         .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
     let quality_label = quality_tag(&ext, br);
     if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
-        notify_quality_fallback(&app, "网易云", &quality, &quality_label, "账号权益未含无损或该曲无更高音质");
+        notify_quality_fallback(app, "网易云", &quality, &quality_label, "账号权益未含无损或该曲无更高音质");
     }
     // 记录到“最近播放”（在线曲目元数据轻量入库）
     {
@@ -105,7 +114,7 @@ pub async fn netease_status(state: State<'_, AppState>) -> Result<serde_json::Va
 
 #[tauri::command]
 pub async fn netease_qr_create() -> Result<serde_json::Value, String> {
-    let (key, qr) = crate::netease::qr_create()?;
+    let (key, qr) = super::blocking(crate::netease::qr_create).await?;
     Ok(json!({ "key": key, "qr": qr }))
 }
 
@@ -114,7 +123,7 @@ pub async fn netease_qr_check(
     state: State<'_, AppState>,
     key: String,
 ) -> Result<serde_json::Value, String> {
-    let r = crate::netease::qr_check(&key)?;
+    let r = super::blocking(move || crate::netease::qr_check(&key)).await?;
     if r.status == "success" {
         if let Some(music_u) = &r.music_u {
             let conn = state.db.lock();
@@ -146,13 +155,13 @@ pub async fn netease_like_list(state: State<'_, AppState>) -> Result<Vec<i64>, S
         return Ok(vec![]);
     }
     let uid: i64 = uid.parse().map_err(|_| "账号 ID 无效".to_string())?;
-    crate::netease::like_list(uid, &music_u)
+    super::blocking(move || crate::netease::like_list(uid, &music_u)).await
 }
 
 #[tauri::command]
 pub async fn netease_like(state: State<'_, AppState>, id: i64, like: bool) -> Result<(), String> {
     let music_u = netease_cookie(&state).ok_or("未登录网易云账号")?;
-    crate::netease::like(id, like, &music_u)
+    super::blocking(move || crate::netease::like(id, like, &music_u)).await
 }
 
 #[tauri::command]
@@ -170,7 +179,7 @@ pub async fn netease_lyric(state: State<'_, AppState>, id: i64) -> Result<Lyrics
     }
     // 优先逐字歌词（yrc）：染色推进贴合实际演唱节奏；无则回落行级。
     // 翻译（tlyric）按时间就近合并进行，两种路径都带
-    let payload = (|| -> Result<LyricsPayload, String> {
+    let payload = super::blocking(move || -> Result<LyricsPayload, String> {
         if let Ok(Some(t)) = crate::netease::lyric_yrc(id, music_u.as_deref()) {
             let mut p = lyrics::parse(&t.lrc);
             if p.synced {
@@ -196,7 +205,8 @@ pub async fn netease_lyric(state: State<'_, AppState>, id: i64) -> Result<Lyrics
             payload.source = Some("行级 LRC".into());
         }
         Ok(payload)
-    })()?;
+    })
+    .await?;
     if !payload.lines.is_empty() {
         // 空结果不缓存：瞬时网络失败不至于把“无歌词”固化
         if let Ok(json) = serde_json::to_string(&payload) {
@@ -216,7 +226,7 @@ pub async fn netease_logout(state: State<'_, AppState>) -> Result<(), String> {
 }
 #[tauri::command]
 pub async fn netease_toplists() -> Result<serde_json::Value, String> {
-    let toplists = crate::netease::toplists()?;
+    let toplists = super::blocking(crate::netease::toplists).await?;
     Ok(json!({ "toplists": toplists }))
 }
 
@@ -230,7 +240,7 @@ pub async fn netease_toplist_tracks(
     let music_u = netease_cookie(&state).unwrap_or_default();
     let page = page.unwrap_or(1).max(1);
     let pagesize = 100i64;
-    let all = crate::netease::playlist_tracks(top_id, &music_u)?;
+    let all = super::blocking(move || crate::netease::playlist_tracks(top_id, &music_u)).await?;
     let start = ((page - 1) * pagesize) as usize;
     let songs = if start < all.len() {
         all[start..((start + pagesize as usize).min(all.len()))].to_vec()
@@ -245,7 +255,7 @@ pub async fn netease_random_playlist(
     state: State<'_, AppState>,
 ) -> Result<crate::netease::NetRandomPlaylist, String> {
     let music_u = netease_cookie(&state).unwrap_or_default();
-    crate::netease::random_playlist(&music_u)
+    super::blocking(move || crate::netease::random_playlist(&music_u)).await
 }
 
 #[tauri::command]
@@ -253,20 +263,29 @@ pub async fn netease_daily_recommend(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
-    let songs = crate::netease::daily_recommend(&music_u)?;
+    let songs = super::blocking(move || crate::netease::daily_recommend(&music_u)).await?;
     Ok(json!({ "songs": songs }))
 }
 
 #[tauri::command]
 pub async fn netease_personal_fm(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
-    let songs = crate::netease::personal_fm(&music_u)?;
+    let songs = super::blocking(move || crate::netease::personal_fm(&music_u)).await?;
     Ok(json!({ "songs": songs }))
 }
 #[tauri::command]
 pub async fn netease_user_playlists(
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+    let task_app = app.clone();
+    super::blocking(move || netease_user_playlists_task(&task_app)).await
+}
+
+/// 同步任务体：uid 解析与歌单拉取都是阻塞网络调用
+fn netease_user_playlists_task(
+    app: &AppHandle,
+) -> Result<Vec<crate::models::UserPlaylistMeta>, String> {
+    let state = app.state::<AppState>();
     let (uid, music_u) = {
         let conn = state.db.lock();
         (
@@ -296,10 +315,21 @@ pub async fn netease_user_playlists(
 /// 返回 (本地播放列表 id, 本次实际新增条数)
 #[tauri::command]
 pub async fn netease_import_playlist(
-    state: State<'_, AppState>,
+    app: AppHandle,
     remote_pid: i64, // 网易云歌单 ID
     name: String,    // 歌单名（前端传入；新建/同名匹配用）
 ) -> Result<(i64, i64), String> {
+    let task_app = app.clone();
+    super::blocking(move || netease_import_playlist_task(&task_app, remote_pid, name)).await
+}
+
+/// 同步任务体：歌单拉取是阻塞网络调用（经 blocking 在专用线程池执行）
+fn netease_import_playlist_task(
+    app: &AppHandle,
+    remote_pid: i64,
+    name: String,
+) -> Result<(i64, i64), String> {
+    let state = app.state::<AppState>();
     let music_u = {
         let conn = state.db.lock();
         db::get_setting(&conn, "netease_music_u").unwrap_or_default()

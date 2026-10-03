@@ -39,6 +39,19 @@ use crate::AppState;
 pub(crate) fn engine_clone(state: &State<AppState>) -> std::sync::Arc<crate::engine::Engine> {
     state.engine.clone()
 }
+
+/// 同步阻塞任务（网络请求 / 凭据管理器 / 大文件 IO）统一放到阻塞线程池执行：
+/// async 命令跑在 tokio 运行时上，直接调用同步网络接口会占死 worker 线程，
+/// 并发请求一多整个运行时都会卡顿。返回值已抹平 JoinError。
+pub(crate) async fn blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("后台任务失败：{e}"))?
+}
 /// 音质标签（在线曲目播放栏徽标）：FLAC → 无损；≥320kbps → HQ；其余 → 标准
 fn quality_tag(ext: &str, br_kbps: i64) -> String {
     if ext.eq_ignore_ascii_case("flac") {

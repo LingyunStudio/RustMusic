@@ -2,7 +2,7 @@
 
 use serde_json::json;
 use std::io::{Read, Write};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db;
 
@@ -105,11 +105,15 @@ pub async fn like_online(
 
 /// 下载在线歌曲到保存目录（写标签入库，资料库可见）
 #[tauri::command]
-pub async fn download_online(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    req: OnlineSaveReq,
-) -> Result<String, String> {
+pub async fn download_online(app: AppHandle, req: OnlineSaveReq) -> Result<String, String> {
+    let task_app = app.clone();
+    super::blocking(move || download_online_task(&task_app, req)).await
+}
+
+/// 同步任务体：取链 + 分块下载 + 封面拉取 + 标签写入全是阻塞 IO，
+/// 整体放专用线程池执行（大文件可能持续数分钟，绝不能占用异步 worker）
+fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, String> {
+    let state = app.state::<AppState>();
     let title = req.title.trim().to_string();
     if title.is_empty() {
         return Err("歌曲标题为空".into());

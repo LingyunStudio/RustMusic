@@ -1,6 +1,6 @@
 //! 媒体库：曲目列表 / 文件夹管理 / 扫描进度 / 拖拽导入 / 喜欢
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::db;
 use crate::library;
@@ -91,11 +91,14 @@ pub async fn open_folder(path: String) -> Result<(), String> {
 }
 /// 拖拽导入：文件夹加入媒体库，音频文件直接入库
 #[tauri::command]
-pub async fn drop_paths(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    paths: Vec<String>,
-) -> Result<u32, String> {
+pub async fn drop_paths(app: AppHandle, paths: Vec<String>) -> Result<u32, String> {
+    let task_app = app.clone();
+    super::blocking(move || drop_paths_task(&task_app, paths)).await
+}
+
+/// 同步任务体：parse_track 会解码内嵌封面（大图可达数十 MB），多文件拖拽明显耗时
+fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<u32, String> {
+    let state = app.state::<AppState>();
     let mut added = 0u32;
     let mut need_scan = false;
     for p in paths {
