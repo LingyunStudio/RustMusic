@@ -521,6 +521,11 @@ export default function NowPlaying() {
                 </span>
               )}
             </div>
+            {lyricSource && (
+              <div className="mt-3 text-[10.5px] tracking-wide text-[var(--ink-3)] opacity-60 select-none">
+                歌词来源：{lyricSource}
+              </div>
+            )}
           </div>
         </div>
 
@@ -597,11 +602,6 @@ export default function NowPlaying() {
               );
             })}
           </div>
-          {lyricSource && (
-            <div className="absolute bottom-2 left-4 text-[10px] tracking-wide text-[var(--ink-3)] opacity-50 select-none pointer-events-none">
-              {lyricSource}
-            </div>
-          )}
         </div>
       </div>
     </div>
