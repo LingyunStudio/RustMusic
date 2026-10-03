@@ -30,7 +30,9 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
-    pub engine: Mutex<Arc<engine::Engine>>,
+    /// 音频引擎句柄。Engine 内部以细粒度 RwLock / 原子量管理状态（sink、进度等），
+    /// 命令层克隆 Arc 后在锁外调用——不存在全局串行点
+    pub engine: Arc<engine::Engine>,
     pub app_data: std::path::PathBuf,
     /// 主窗口 WebView 是否处于挂起状态（托盘隐藏时 TrySuspend 回收渲染内存）
     pub webview_suspended: AtomicBool,
@@ -222,7 +224,7 @@ fn resume_main_webview(app: &AppHandle, notify: bool) {
             std::thread::sleep(Duration::from_millis(250));
             {
                 let st = app2.state::<AppState>();
-                st.engine.lock().resync_ui();
+                st.engine.resync_ui();
             }
             let _ = app2.emit("webview://resumed", serde_json::json!({}));
         });
@@ -305,11 +307,7 @@ fn emit_to_frontend(app: &AppHandle, event: &str, payload: serde_json::Value, wa
 #[allow(deprecated)] // 同 engine::build_output：name() 是设备偏好的持久化键
 fn device_watcher(app: AppHandle) {
     use rodio::cpal::traits::{DeviceTrait, HostTrait};
-    let eng = {
-        let st = app.state::<AppState>();
-        let e = st.engine.lock().clone();
-        e
-    };
+    let eng = app.state::<AppState>().engine.clone();
     let mut last_default: String = rodio::cpal::default_host()
         .default_output_device()
         .and_then(|d| d.name().ok())
@@ -384,11 +382,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn monitor(app: AppHandle) {
-    let eng = {
-        let st = app.state::<AppState>();
-        let e = st.engine.lock().clone();
-        e
-    };
+    let eng = app.state::<AppState>().engine.clone();
     let mut was_active = false;
     let mut last_pos_emit = std::time::Instant::now() - std::time::Duration::from_secs(1);
     let mut last_smtc = std::time::Instant::now() - std::time::Duration::from_secs(1);
@@ -592,7 +586,7 @@ fn main() {
 
             app.manage(AppState {
                 db: Mutex::new(conn),
-                engine: Mutex::new(eng),
+                engine: eng,
                 app_data: app_data.clone(),
                 webview_suspended: AtomicBool::new(false),
                 scan_last: Mutex::new(

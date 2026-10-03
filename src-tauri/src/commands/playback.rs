@@ -79,7 +79,7 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
 /// WASAPI 独占模式开关（切换后下一首生效）
 #[tauri::command]
 pub async fn set_wasapi_exclusive(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
-    let eng = state.engine.lock().clone();
+    let eng = engine_clone(&state);
     eng.set_exclusive_enabled(enabled);
     // 关闭独占时立即停止会话、把设备还给系统混音器，并从当前进度切回共享续播
     if !enabled {

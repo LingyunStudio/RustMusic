@@ -34,10 +34,10 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::AppState;
 
-/// 全部命令共用：短暂锁住 AppState 只为克隆 Arc<Engine>，真正的引擎操作
-/// 都发生在锁外（Engine 内部以 RwLock/原子量管理状态，见 engine.rs）。
+/// 全部命令共用：克隆引擎句柄。Engine 内部以细粒度 RwLock/原子量管理状态，
+/// 命令层不持有任何全局锁（见 engine.rs）
 pub(crate) fn engine_clone(state: &State<AppState>) -> std::sync::Arc<crate::engine::Engine> {
-    state.engine.lock().clone()
+    state.engine.clone()
 }
 /// 音质标签（在线曲目播放栏徽标）：FLAC → 无损；≥320kbps → HQ；其余 → 标准
 fn quality_tag(ext: &str, br_kbps: i64) -> String {
