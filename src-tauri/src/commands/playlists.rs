@@ -7,6 +7,56 @@ use crate::models::Playlist;
 use crate::AppState;
 // ---------- 播放列表 ----------
 
+/// 在线歌单导入的归一化条目（各平台曲目 → 此结构 → 统一入库）
+pub(crate) struct OnlineTrackRow {
+    pub rid: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub cover: String,
+    pub duration_ms: i64,
+    /// QQ 存 media_mid；酷狗存 album_audio_id 字符串（恢复播放时带全取链参数）
+    pub media_mid: String,
+    pub vip: bool,
+}
+
+/// 在线歌单导入的公共入库流程：按远程 id 查找/创建本地歌单 → 逐条
+/// upsert 在线条目并追加（已存在的去重跳过），返回 (歌单 id, 本次新增条数)。
+pub(crate) fn import_online_tracks(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    remote_pid: &str,
+    name: &str,
+    tracks: &[OnlineTrackRow],
+) -> Result<(i64, i64), String> {
+    let pid = match db::find_playlist_by_remote(conn, kind, remote_pid, name) {
+        Some(id) => id,
+        None => db::create_playlist(conn, name)?,
+    };
+    db::set_playlist_remote(conn, pid, kind, remote_pid);
+    // 记录原始导入名：改名后重导入仍能认出（配合 remote id 兜底）
+    db::set_playlist_origin(conn, pid, name);
+    let mut added = 0i64;
+    for t in tracks {
+        db::upsert_online_track(
+            conn,
+            kind,
+            &t.rid,
+            &t.title,
+            &t.artist,
+            &t.album,
+            &t.cover,
+            t.duration_ms,
+            &t.media_mid,
+            t.vip,
+        );
+        if db::add_online_to_playlist(conn, pid, kind, &t.rid)? {
+            added += 1;
+        }
+    }
+    Ok((pid, added))
+}
+
 #[tauri::command]
 pub async fn list_playlists(state: State<'_, AppState>) -> Result<Vec<Playlist>, String> {
     let conn = state.db.lock();

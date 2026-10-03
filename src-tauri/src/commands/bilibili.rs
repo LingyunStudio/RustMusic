@@ -403,21 +403,6 @@ fn bilibili_play_task(app: &AppHandle, track: BiliPlayReq) -> Result<(), String>
     let (audio_url, quality) = crate::bilibili::audio_stream(&bvid, cid)?;
     // 字幕与音频并行预取：开播时歌词缓存已就绪
     spawn_bili_lyric_warmup(&state, track.rid.clone());
-    {
-        let conn = state.db.lock();
-        db::record_play_online(
-            &conn,
-            "bilibili",
-            &track.rid,
-            &track.title,
-            &track.artist,
-            &track.album,
-            &track.cover,
-            track.duration_ms as i64,
-            "",
-            false,
-        );
-    }
     let info = TrackInfo {
         id: None,
         kind: "bilibili".into(),
@@ -432,5 +417,6 @@ fn bilibili_play_task(app: &AppHandle, track: BiliPlayReq) -> Result<(), String>
         kgid: None,
         quality: Some(quality),
     };
+    super::record_online_play(&state, &info, "", false);
     engine_clone(&state).play_url(audio_url, info)
 }

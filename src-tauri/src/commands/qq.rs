@@ -108,21 +108,7 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
         quality: Some(quality_label.to_string()),
     };
     // 记录到“最近播放”（在线曲目元数据轻量入库）
-    {
-        let conn = state.db.lock();
-        db::record_play_online(
-            &conn,
-            "qq",
-            &track.songmid,
-            &track.title,
-            &track.artist,
-            &track.album,
-            &cover,
-            track.duration_ms as i64,
-            &track.media_mid,
-            false,
-        );
-    }
+    super::record_online_play(&state, &info, &track.media_mid, false);
     engine_clone(&state).play_url(url, info)
 }
 
@@ -283,37 +269,26 @@ fn qq_import_playlist_task(
         &musickey,
         &crate::qq::encrypt_uin_of(&musicid, &stored_euin),
     )?;
+    let rows: Vec<super::playlists::OnlineTrackRow> = songs
+        .iter()
+        .map(|t| super::playlists::OnlineTrackRow {
+            rid: t.id.clone(),
+            title: t.name.clone(),
+            artist: t.singer.clone(),
+            album: t.album.clone(),
+            // 封面按 album_mid 拼 CDN 规则 URL（导入时即写入完整地址）
+            cover: format!(
+                "https://y.gtimg.cn/music/photo_new/T002R300x300M000{}.jpg",
+                t.album_mid
+            ),
+            duration_ms: t.duration_ms as i64,
+            media_mid: t.media_mid.clone(),
+            vip: t.vip,
+        })
+        .collect();
     let (list_id, added) = {
         let conn = state.db.lock();
-        let pid = match db::find_playlist_by_remote(&conn, "qq", &remote_pid.to_string(), &name) {
-            Some(id) => id,
-            None => db::create_playlist(&conn, &name)?,
-        };
-        db::set_playlist_remote(&conn, pid, "qq", &remote_pid.to_string());
-        // 记录原始导入名：改名后重导入仍能认出（配合 remote id 兜底）
-        db::set_playlist_origin(&conn, pid, &name);
-        let mut added = 0i64;
-        for t in &songs {
-            db::upsert_online_track(
-                &conn,
-                "qq",
-                &t.id,
-                &t.name,
-                &t.singer,
-                &t.album,
-                &format!(
-                    "https://y.gtimg.cn/music/photo_new/T002R300x300M000{}.jpg",
-                    t.album_mid
-                ),
-                t.duration_ms as i64,
-                &t.media_mid,
-                t.vip,
-            );
-            if db::add_online_to_playlist(&conn, pid, "qq", &t.id)? {
-                added += 1;
-            }
-        }
-        (pid, added)
+        super::playlists::import_online_tracks(&conn, "qq", &remote_pid.to_string(), &name, &rows)?
     };
     Ok((list_id, added))
 }

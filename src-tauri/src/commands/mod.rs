@@ -32,12 +32,46 @@ pub use updater::*;
 
 use tauri::{AppHandle, Emitter, State};
 
+use crate::db;
+use crate::engine::TrackInfo;
 use crate::AppState;
 
 /// 全部命令共用：克隆引擎句柄。Engine 内部以细粒度 RwLock/原子量管理状态，
 /// 命令层不持有任何全局锁（见 engine.rs）
 pub(crate) fn engine_clone(state: &State<AppState>) -> std::sync::Arc<crate::engine::Engine> {
     state.engine.clone()
+}
+
+/// 在线曲目"最近播放"入库（起播成功后调用）：rid 按 kind 从 TrackInfo 推导
+/// （netease=nid、kugou=kgid、其余=qid）。media_mid/vip 单独传——
+/// TrackInfo 未携带（仅 QQ 存 media_mid、酷狗存 album_audio_id）。
+pub(crate) fn record_online_play(
+    state: &State<AppState>,
+    info: &TrackInfo,
+    media_mid: &str,
+    vip: bool,
+) {
+    let rid = match info.kind.as_str() {
+        "netease" => info.nid.map(|n| n.to_string()).unwrap_or_default(),
+        "kugou" => info.kgid.clone().unwrap_or_default(),
+        _ => info.qid.clone().unwrap_or_default(),
+    };
+    if rid.is_empty() {
+        return;
+    }
+    let conn = state.db.lock();
+    db::record_play_online(
+        &conn,
+        &info.kind,
+        &rid,
+        &info.title,
+        &info.artist,
+        &info.album,
+        &info.cover,
+        info.duration_ms as i64,
+        media_mid,
+        vip,
+    );
 }
 
 /// 同步阻塞任务（网络请求 / 凭据管理器 / 大文件 IO）统一放到阻塞线程池执行：

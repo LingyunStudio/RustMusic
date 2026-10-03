@@ -67,22 +67,6 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
     if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
         notify_quality_fallback(app, "网易云", &quality, &quality_label, "账号权益未含无损或该曲无更高音质");
     }
-    // 记录到“最近播放”（在线曲目元数据轻量入库）
-    {
-        let conn = state.db.lock();
-        db::record_play_online(
-            &conn,
-            "netease",
-            &track.id.to_string(),
-            &track.title,
-            &track.artist,
-            &track.album,
-            &track.cover,
-            track.duration_ms as i64,
-            "",
-            false,
-        );
-    }
     let info = TrackInfo {
         id: None,
         kind: "netease".into(),
@@ -98,6 +82,7 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
         quality: Some(quality_label.to_string()),
     };
     let _ = app; // 事件由引擎发出
+    super::record_online_play(&state, &info, "", false);
     engine_clone(&state).play_url(url, info)
 }
 
@@ -338,35 +323,22 @@ fn netease_import_playlist_task(
         return Err("未登录网易云账号".into());
     }
     let songs = crate::netease::playlist_tracks(remote_pid, &music_u)?;
+    let rows: Vec<super::playlists::OnlineTrackRow> = songs
+        .iter()
+        .map(|t| super::playlists::OnlineTrackRow {
+            rid: t.id.to_string(),
+            title: t.name.clone(),
+            artist: t.artist_str(),
+            album: t.album_name(),
+            cover: t.cover_url().unwrap_or_default(),
+            duration_ms: t.duration_ms(),
+            media_mid: String::new(),
+            vip: t.fee == 1,
+        })
+        .collect();
     let (list_id, added) = {
         let conn = state.db.lock();
-        let pid =
-            match db::find_playlist_by_remote(&conn, "netease", &remote_pid.to_string(), &name) {
-                Some(id) => id,
-                None => db::create_playlist(&conn, &name)?,
-            };
-        db::set_playlist_remote(&conn, pid, "netease", &remote_pid.to_string());
-        // 记录原始导入名：改名后重导入仍能认出（配合 remote id 兜底）
-        db::set_playlist_origin(&conn, pid, &name);
-        let mut added = 0i64;
-        for t in &songs {
-            db::upsert_online_track(
-                &conn,
-                "netease",
-                &t.id.to_string(),
-                &t.name,
-                &t.artist_str(),
-                &t.album_name(),
-                &t.cover_url().unwrap_or_default(),
-                t.duration_ms(),
-                "",
-                t.fee == 1,
-            );
-            if db::add_online_to_playlist(&conn, pid, "netease", &t.id.to_string())? {
-                added += 1;
-            }
-        }
-        (pid, added)
+        super::playlists::import_online_tracks(&conn, "netease", &remote_pid.to_string(), &name, &rows)?
     };
     Ok((list_id, added))
 }

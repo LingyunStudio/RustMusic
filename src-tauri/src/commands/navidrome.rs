@@ -181,21 +181,6 @@ fn navidrome_play_task(
     };
     let server = if server.is_empty() { saved } else { server };
     let url = crate::navidrome::stream_url(&server, &username, &track.id)?;
-    {
-        let conn = state.db.lock();
-        db::record_play_online(
-            &conn,
-            "navidrome",
-            &track.id,
-            &track.title,
-            &track.artist,
-            &track.album,
-            &track.cover,
-            track.duration_ms as i64,
-            "",
-            false,
-        );
-    }
     let info = TrackInfo {
         id: None,
         kind: "navidrome".into(),
@@ -210,6 +195,7 @@ fn navidrome_play_task(
         kgid: None,
         quality: None,
     };
+    super::record_online_play(&state, &info, "", false);
     engine_clone(&state).play_url(url, info)
 }
 

@@ -181,21 +181,7 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     };
     // 记录到“最近播放”（在线曲目元数据轻量入库；album_audio_id 存入
     // media_mid 列，恢复播放时能带全取链接参数）
-    {
-        let conn = state.db.lock();
-        db::record_play_online(
-            &conn,
-            "kugou",
-            &track.hash,
-            &track.title,
-            &track.artist,
-            &track.album,
-            &cover,
-            track.duration_ms as i64,
-            &track.album_audio_id.to_string(),
-            track.vip,
-        );
-    }
+    super::record_online_play(&state, &info, &track.album_audio_id.to_string(), track.vip);
     engine_clone(&state).play_url(url, info)
 }
 
@@ -368,33 +354,23 @@ pub async fn kugou_import_playlist(
         let state = task_app.state::<AppState>();
         let _ = kg_prepare(&state);
         let songs = crate::kugou::playlist_tracks(&remote_pid)?;
+        let rows: Vec<super::playlists::OnlineTrackRow> = songs
+            .songs
+            .iter()
+            .map(|t| super::playlists::OnlineTrackRow {
+                rid: t.id.clone(),
+                title: t.name.clone(),
+                artist: t.singer.clone(),
+                album: t.album.clone(),
+                cover: t.cover.clone(),
+                duration_ms: t.duration_ms as i64,
+                media_mid: t.album_audio_id.to_string(),
+                vip: t.vip,
+            })
+            .collect();
         let (list_id, added) = {
             let conn = state.db.lock();
-            let pid = match db::find_playlist_by_remote(&conn, "kugou", &remote_pid, &name) {
-                Some(id) => id,
-                None => db::create_playlist(&conn, &name)?,
-            };
-            db::set_playlist_remote(&conn, pid, "kugou", &remote_pid);
-            db::set_playlist_origin(&conn, pid, &name);
-            let mut added = 0i64;
-            for t in &songs.songs {
-                db::upsert_online_track(
-                    &conn,
-                    "kugou",
-                    &t.id,
-                    &t.name,
-                    &t.singer,
-                    &t.album,
-                    &t.cover,
-                    t.duration_ms as i64,
-                    &t.album_audio_id.to_string(),
-                    t.vip,
-                );
-                if db::add_online_to_playlist(&conn, pid, "kugou", &t.id)? {
-                    added += 1;
-                }
-            }
-            (pid, added)
+            super::playlists::import_online_tracks(&conn, "kugou", &remote_pid, &name, &rows)?
         };
         Ok((list_id, added))
     })
