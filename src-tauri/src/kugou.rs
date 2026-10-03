@@ -1040,21 +1040,25 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
         return Ok(None);
     }
 
-    // KRC 逐字：解密/解析失败静默回落 LRC
+    // KRC 逐字：解密/解析失败回落 LRC（回落原因落 stderr，便于诊断"没有逐词"类反馈）
     let krc_url = format!(
         "http://krcs.kugou.com/download?ver=1&client=mobi&fmt=krc&charset=utf8&id={id}&accesskey={accesskey}"
     );
-    if let Ok(text) = get_text(&krc_url, "http://krcs.kugou.com/", UA) {
-        if let Ok(v) = parse_json(&text, "酷狗 KRC 下载") {
-            if let Some(content) = v.get("content").and_then(|c| c.as_str()).filter(|s| !s.is_empty()) {
-                if let Ok(krc) = decrypt_krc(content) {
-                    let trimmed = krc.trim_start_matches('\u{feff}').trim().to_string();
-                    if let Some(enhanced) = crate::lyrics::krc_to_enhanced_lrc(&trimmed) {
-                        return Ok(Some(enhanced));
-                    }
-                }
-            }
-        }
+    match (|| -> Result<String, String> {
+        let text = get_text(&krc_url, "http://krcs.kugou.com/", UA)?;
+        let v = parse_json(&text, "酷狗 KRC 下载")?;
+        let content = v
+            .get("content")
+            .and_then(|c| c.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "KRC content 为空".to_string())?;
+        let krc = decrypt_krc(content)?;
+        let trimmed = krc.trim_start_matches('\u{feff}').trim().to_string();
+        crate::lyrics::krc_to_enhanced_lrc(&trimmed)
+            .ok_or_else(|| "KRC 转增强 LRC 失败".to_string())
+    })() {
+        Ok(enhanced) => return Ok(Some(enhanced)),
+        Err(e) => eprintln!("[kugou] {id} KRC 通道失败，回落 LRC: {e}"),
     }
 
     // LRC 行级

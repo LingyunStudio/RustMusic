@@ -203,7 +203,7 @@ impl Read for StreamingFile {
 impl Seek for StreamingFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let (ready, total, done, _) = self.shared.snapshot();
-        let base_end = |cur: u64| -> u64 {
+        let base_end = |_cur: u64| -> u64 {
             // End 以已知总长（或已就绪长度兜底）为基准
             if total > 0 {
                 total
