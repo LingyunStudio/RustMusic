@@ -169,6 +169,8 @@ impl Engine {
     /// 按设备偏好创建输出流与 Player；None = 系统默认设备。
     /// MixerDeviceSink 持有 cpal Stream（非 Send）：泄漏保活整个进程周期
     /// （与旧实现一致），设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
+    #[allow(deprecated)]
+    // 设备名持久化在设置里做匹配依据，description() 格式不同会导致已选设备失配
     fn build_output(pref: Option<&str>) -> Result<(&'static MixerDeviceSink, Player), String> {
         let host = rodio::cpal::default_host();
         let device = match pref {
@@ -206,6 +208,7 @@ impl Engine {
     }
 
     /// 当前使用的输出设备名
+    #[allow(deprecated)] // 同 build_output：name() 是设备偏好的持久化键
     pub fn current_device_name(&self) -> String {
         // cpal 无"stream 绑定的设备"查询；按偏好返回，无偏好时取系统默认
         if let Some(name) = self.device_pref.read().as_deref() {
@@ -870,6 +873,7 @@ impl Engine {
     // ---------- 输出设备 ----------
 
     /// 枚举输出设备（含"当前默认"标记）
+    #[allow(deprecated)] // 同 build_output
     pub fn list_output_devices(&self) -> Vec<OutputDeviceInfo> {
         let host = rodio::cpal::default_host();
         let default_name = host

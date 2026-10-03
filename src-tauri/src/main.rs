@@ -302,6 +302,7 @@ fn emit_to_frontend(app: &AppHandle, event: &str, payload: serde_json::Value, wa
 /// 监听系统默认输出设备变化（耳机插入/拔出、切换默认设备）：
 /// 用户未固定设备时自动重建输出流跟到新默认设备，并通知前端刷新设置页。
 /// cpal/Windows 无设备变更回调，用轮询实现（2s 间隔，仅查名字开销可忽略）。
+#[allow(deprecated)] // 同 engine::build_output：name() 是设备偏好的持久化键
 fn device_watcher(app: AppHandle) {
     use rodio::cpal::traits::{DeviceTrait, HostTrait};
     let eng = {

@@ -40,7 +40,8 @@ pub struct SymphoniaSource {
 }
 
 impl SymphoniaSource {
-    /// 打开并探针文件（fragmented MP4 / 常规容器均可）
+    /// 打开并探针文件（fragmented MP4 / 常规容器均可）；仅测试使用
+    #[cfg(test)]
     pub fn open(path: &str) -> Result<Self, String> {
         Self::open_at(path, 0)
     }
@@ -81,7 +82,7 @@ impl SymphoniaSource {
                 &MetadataOptions::default(),
             )
             .map_err(|e| format!("音频容器解析失败: {e}"))?;
-        let mut format = probed.format;
+        let format = probed.format;
         let track = format
             .tracks()
             .iter()
