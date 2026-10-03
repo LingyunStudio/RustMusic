@@ -120,7 +120,7 @@ fn get_json(server: &str, username: &str, endpoint: &str, extra: &str) -> Result
 pub fn search_all(
     server: &str,
     username: &str,
-    password: &str,
+    _password: &str,
     offset: u64,
 ) -> Result<serde_json::Value, String> {
     let extra = format!(
@@ -355,14 +355,12 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
                                     time_ms: Some(start),
                                     text: value,
                                     words: None,
+                                    trans: None,
                                 })
                             })
                             .collect();
                         if !out.is_empty() {
-                            return Ok(crate::models::LyricsPayload {
-                                synced: true,
-                                lines: out,
-                            });
+                            return Ok(crate::models::LyricsPayload::new(true, out));
                         }
                     } else {
                         // 非同步歌词：拼成纯文本
@@ -374,10 +372,7 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
 ");
                         if !text.trim().is_empty() {
                             let p = crate::lyrics::parse(&text);
-                            return Ok(crate::models::LyricsPayload {
-                                synced: p.synced,
-                                lines: p.lines,
-                            });
+                            return Ok(crate::models::LyricsPayload::new(p.synced, p.lines));
                         }
                     }
                 }
@@ -419,10 +414,7 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
                                     {
                                         if !value.trim().is_empty() {
                                             let p = crate::lyrics::parse(value);
-                                            return Ok(crate::models::LyricsPayload {
-                                                synced: p.synced,
-                                                lines: p.lines,
-                                            });
+                                            return Ok(crate::models::LyricsPayload::new(p.synced, p.lines));
                                         }
                                     }
                                 }
@@ -434,10 +426,7 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
         }
     }
 
-    Ok(crate::models::LyricsPayload {
-        synced: false,
-        lines: vec![],
-    })
+    Ok(crate::models::LyricsPayload::new(false, vec![]))
 }
 
 #[cfg(test)]

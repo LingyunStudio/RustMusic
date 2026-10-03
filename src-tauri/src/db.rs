@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS liked_online (
 );
 -- “资料库/我喜欢”的手动排序（列表 key + 行 key → 序号）；
 -- 播放列表不用它（playlist_tracks 自带 position 列）
+CREATE TABLE IF NOT EXISTS lyrics_cache (
+  kind TEXT NOT NULL,
+  rid TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (kind, rid)
+);
 CREATE TABLE IF NOT EXISTS manual_order (
   list TEXT NOT NULL,
   row_key TEXT NOT NULL,
@@ -258,6 +264,25 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) {
     let _ = conn.execute(
         "INSERT INTO settings(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
         params![key, value],
+    );
+}
+
+// ---------- lyrics_cache（在线歌词缓存：逐字/翻译近乎静态，命中免网络往返） ----------
+
+pub fn get_lyrics_cache(conn: &Connection, kind: &str, rid: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT payload FROM lyrics_cache WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+        |r| r.get(0),
+    )
+    .ok()
+}
+
+pub fn set_lyrics_cache(conn: &Connection, kind: &str, rid: &str, payload: &str) {
+    let _ = conn.execute(
+        "INSERT INTO lyrics_cache(kind, rid, payload) VALUES(?1, ?2, ?3)
+         ON CONFLICT(kind, rid) DO UPDATE SET payload = excluded.payload",
+        params![kind, rid, payload],
     );
 }
 

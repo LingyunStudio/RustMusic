@@ -13,6 +13,7 @@ export default function NowPlaying() {
   const toggleLike = useStore((s) => s.toggleLike);
   const lyrics = useStore((s) => s.lyrics);
   const lyricsLoading = useStore((s) => s.lyricsLoading);
+  const lyricSource = useStore((s) => s.lyrics?.source);
   const loadLyricsByKey = useStore((s) => s.loadLyricsByKey);
   const seek = useStore((s) => s.seek);
   const neteaseLiked = useStore((s) => s.neteaseLiked);
@@ -584,6 +585,11 @@ export default function NowPlaying() {
                   className="lyric-line lyric-fill px-4 py-[9px] text-center cursor-pointer"
                 >
                   {text}
+                  {l.trans && (
+                    <div className="text-[12.5px] leading-snug mt-0.5 opacity-80">
+                      {l.trans}
+                    </div>
+                  )}
                   <div className="lyric-fill-ov" aria-hidden>
                     <span>{text}</span>
                   </div>
@@ -591,6 +597,11 @@ export default function NowPlaying() {
               );
             })}
           </div>
+          {lyricSource && (
+            <div className="absolute bottom-2 left-4 text-[10px] tracking-wide text-[var(--ink-3)] opacity-50 select-none pointer-events-none">
+              {lyricSource}
+            </div>
+          )}
         </div>
       </div>
     </div>

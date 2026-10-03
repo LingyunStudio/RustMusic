@@ -418,7 +418,13 @@ pub fn song_url(
 }
 
 /// 获取歌词（LRC 文本，含逐行时间标签）
-pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
+/// 歌词文本 + 可选行级翻译（tlyric，标准 LRC）
+pub struct LyricText {
+    pub lrc: String,
+    pub trans: Option<String>,
+}
+
+pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<LyricText>, String> {
     let music_u = music_u.filter(|s| !s.is_empty());
     let payload = serde_json::json!({
         "id": id.to_string(), "tv": "-1", "lv": "-1",
@@ -430,18 +436,23 @@ pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
     if code != 200 {
         return Err(format!("获取歌词失败（code {code}）"));
     }
+    let trans = resp
+        .pointer("/tlyric/lyric")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| s.contains('['));
     let lrc = resp
         .pointer("/lrc/lyric")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
-    Ok(lrc)
+    Ok(lrc.map(|lrc| LyricText { lrc, trans }))
 }
 
 /// 获取逐字歌词（yrc），返回转换为增强 LRC 的文本
 /// （[mm:ss.xx]<mm:ss.xx>字...，时间精度 10ms 即 yrc 原始精度）。
 /// 需要开通逐字歌词权益的歌曲才有；没有时返回 None，调用方回落行级 LRC。
-pub fn lyric_yrc(id: i64, music_u: Option<&str>) -> Result<Option<String>, String> {
+pub fn lyric_yrc(id: i64, music_u: Option<&str>) -> Result<Option<LyricText>, String> {
     let music_u = music_u.filter(|s| !s.is_empty());
     // 逐字歌词必须走 /lyric/v1 端点（旧 /lyric 端点无 yrc 字段），
     // yv=-1 请求逐字；需要账号有逐字权益，没有时 yrc 缺失 → 回落行级
@@ -461,7 +472,12 @@ pub fn lyric_yrc(id: i64, music_u: Option<&str>) -> Result<Option<String>, Strin
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty());
     let Some(yrc) = yrc else { return Ok(None) };
-    Ok(crate::lyrics::yrc_to_enhanced_lrc(yrc))
+    let trans = resp
+        .pointer("/tlyric/lyric")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| s.contains('['));
+    Ok(crate::lyrics::yrc_to_enhanced_lrc(yrc).map(|lrc| LyricText { lrc, trans }))
 }
 
 /// 从 music_u 反查账号 ID（老版本登录时未存 uid 的兜底）
@@ -1122,7 +1138,7 @@ mod cover_lyric_tests {
             Some(t) => println!(
                 "lyric[{}] first 80 chars: {}",
                 any_id,
-                &t.chars().take(80).collect::<String>()
+                &t.lrc.chars().take(80).collect::<String>()
             ),
             None => println!("lyric[{}]: none", any_id),
         }

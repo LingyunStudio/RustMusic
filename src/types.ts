@@ -84,11 +84,15 @@ export interface LyricLine {
   text: string;
   /** 逐字时间戳（yrc/QRC/增强 LRC）；缺省时按文字长度加权推进 */
   words?: LyricWord[];
+  /** 行级翻译（网易 tlyric），随当前行小字展示 */
+  trans?: string;
 }
 
 export interface LyricsPayload {
   synced: boolean;
   lines: LyricLine[];
+  /** 歌词来源标记（诊断用："逐字 KRC"/"逐字 YRC"/"行级 LRC"/"字幕 B站"…） */
+  source?: string;
 }
 
 export interface TrackInfo {

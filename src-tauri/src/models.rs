@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -95,7 +95,7 @@ pub struct SourceItem {
     pub created_at: i64,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LyricLine {
     pub time_ms: Option<u64>,
@@ -103,10 +103,13 @@ pub struct LyricLine {
     /// 逐字时间戳（yrc/增强 LRC）；缺省时前端按文字长度加权推进
     #[serde(skip_serializing_if = "Option::is_none")]
     pub words: Option<Vec<Word>>,
+    /// 行级翻译（网易 tlyric）；随当前行小字展示，无翻译时省略
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trans: Option<String>,
 }
 
 /// 一个字（或词）的起止时间
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Word {
     pub start_ms: u64,
@@ -114,11 +117,20 @@ pub struct Word {
     pub text: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LyricsPayload {
     pub synced: bool,
     pub lines: Vec<LyricLine>,
+    /// 歌词来源标记（"逐字 KRC"/"行级 LRC"/"字幕 B站"…，诊断用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+impl LyricsPayload {
+    pub fn new(synced: bool, lines: Vec<LyricLine>) -> Self {
+        Self { synced, lines, source: None }
+    }
 }
 
 #[derive(Serialize, Clone, Debug)]

@@ -181,10 +181,7 @@ pub async fn get_lyrics(
         if let Ok(text) = std::fs::read_to_string(&lrc_path) {
             let p = lyrics::parse(&text);
             if !p.lines.is_empty() {
-                return Ok(LyricsPayload {
-                    synced: p.synced,
-                    lines: p.lines,
-                });
+                return Ok(LyricsPayload::new(p.synced, p.lines));
             }
         }
     }
@@ -195,18 +192,12 @@ pub async fn get_lyrics(
             if let Some(text) = tag.get_string(&lofty::tag::ItemKey::Lyrics) {
                 let p = lyrics::parse(text);
                 if !p.lines.is_empty() {
-                    return Ok(LyricsPayload {
-                        synced: p.synced,
-                        lines: p.lines,
-                    });
+                    return Ok(LyricsPayload::new(p.synced, p.lines));
                 }
             }
         }
     }
-    Ok(LyricsPayload {
-        synced: false,
-        lines: vec![],
-    })
+    Ok(LyricsPayload::new(false, vec![]))
 }
 
 // ---------- 喜欢 / 统计 ----------
@@ -631,19 +622,6 @@ pub async fn navidrome_album_songs(
     Ok(json!({ "name": name, "artist": artist, "songs": songs }))
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NdStreamReq {
-    pub server: String,
-    pub username: String,
-    pub id: String,
-}
-
-#[tauri::command]
-pub async fn navidrome_stream_url(req: NdStreamReq) -> Result<String, String> {
-    crate::navidrome::stream_url(&crate::navidrome::norm_base(&req.server), &req.username, &req.id)
-}
-
 #[tauri::command]
 pub async fn navidrome_all_songs(
     state: State<'_, AppState>,
@@ -808,10 +786,11 @@ fn bili_lyric_fetch(
         })
     };
     let payload = crate::bilibili::subtitle_lyrics(&bvid, &cid.to_string(), c.as_ref())?
-        .unwrap_or(crate::models::LyricsPayload {
-            synced: false,
-            lines: vec![],
-        });
+        .unwrap_or(crate::models::LyricsPayload::new(false, vec![]));
+    let mut payload = payload;
+    if !payload.lines.is_empty() {
+        payload.source = Some("字幕 B站".into());
+    }
     if !payload.lines.is_empty() {
         if let Ok(mut m) = cache.lock() {
             m.insert(rid.to_string(), payload.clone());
@@ -1313,29 +1292,53 @@ pub async fn netease_like(state: State<'_, AppState>, id: i64, like: bool) -> Re
 #[tauri::command]
 pub async fn netease_lyric(state: State<'_, AppState>, id: i64) -> Result<LyricsPayload, String> {
     let music_u = netease_cookie(&state);
-    // 优先逐字歌词（yrc）：染色推进贴合实际演唱节奏；无则回落行级
-    if let Ok(Some(enhanced)) = crate::netease::lyric_yrc(id, music_u.as_deref()) {
-        let p = lyrics::parse(&enhanced);
-        if p.synced {
-            return Ok(LyricsPayload {
-                synced: p.synced,
-                lines: p.lines,
-            });
+    // 歌词近乎静态（含逐字/翻译）：命中缓存免全部网络往返
+    let cached = {
+        let conn = state.db.lock();
+        db::get_lyrics_cache(&conn, "netease", &id.to_string())
+    };
+    if let Some(json) = cached {
+        if let Ok(p) = serde_json::from_str::<LyricsPayload>(&json) {
+            return Ok(p);
         }
     }
-    let lrc = crate::netease::lyric(id, music_u.as_deref())?;
-    let text = lrc.unwrap_or_default();
-    if text.is_empty() {
-        return Ok(LyricsPayload {
-            synced: false,
-            lines: vec![],
-        });
+    // 优先逐字歌词（yrc）：染色推进贴合实际演唱节奏；无则回落行级。
+    // 翻译（tlyric）按时间就近合并进行，两种路径都带
+    let payload = (|| -> Result<LyricsPayload, String> {
+        if let Ok(Some(t)) = crate::netease::lyric_yrc(id, music_u.as_deref()) {
+            let mut p = lyrics::parse(&t.lrc);
+            if p.synced {
+                if let Some(tr) = &t.trans {
+                    lyrics::attach_translations(&mut p, tr);
+                }
+                let mut payload = LyricsPayload::new(true, p.lines);
+                payload.source = Some("逐字 YRC".into());
+                return Ok(payload);
+            }
+        }
+        eprintln!("[netease] id {id} yrc 不可用，回落行级 LRC");
+        let t = crate::netease::lyric(id, music_u.as_deref())?;
+        let Some(t) = t else {
+            return Ok(LyricsPayload::new(false, vec![]));
+        };
+        let mut p = lyrics::parse(&t.lrc);
+        if let Some(tr) = &t.trans {
+            lyrics::attach_translations(&mut p, tr);
+        }
+        let mut payload = LyricsPayload::new(p.synced, p.lines);
+        if p.synced {
+            payload.source = Some("行级 LRC".into());
+        }
+        Ok(payload)
+    })()?;
+    if !payload.lines.is_empty() {
+        // 空结果不缓存：瞬时网络失败不至于把“无歌词”固化
+        if let Ok(json) = serde_json::to_string(&payload) {
+            let conn = state.db.lock();
+            db::set_lyrics_cache(&conn, "netease", &id.to_string(), &json);
+        }
     }
-    let p = lyrics::parse(&text);
-    Ok(LyricsPayload {
-        synced: p.synced,
-        lines: p.lines,
-    })
+    Ok(payload)
 }
 
 #[tauri::command]
@@ -1458,30 +1461,46 @@ pub async fn qq_lyric(
     state: State<'_, AppState>,
     songmid: String,
 ) -> Result<LyricsPayload, String> {
-    // 优先逐字歌词（QRC，需登录）；失败回落匿名行级接口
-    if let Ok((musicid, musickey)) = qq_credential(&state) {
-        if let Ok(Some(enhanced)) = crate::qq::lyric_qrc(&songmid, &musicid, &musickey) {
-            let p = lyrics::parse(&enhanced);
-            if p.synced {
-                return Ok(LyricsPayload {
-                    synced: p.synced,
-                    lines: p.lines,
-                });
-            }
+    let cached = {
+        let conn = state.db.lock();
+        db::get_lyrics_cache(&conn, "qq", &songmid)
+    };
+    if let Some(json) = cached {
+        if let Ok(p) = serde_json::from_str::<LyricsPayload>(&json) {
+            return Ok(p);
         }
     }
-    let text = crate::qq::lyric(&songmid)?.unwrap_or_default();
-    if text.is_empty() {
-        return Ok(LyricsPayload {
-            synced: false,
-            lines: vec![],
-        });
+    // 优先逐字歌词（QRC，需登录）；失败回落匿名行级接口
+    let payload = (|| -> Result<LyricsPayload, String> {
+        if let Ok((musicid, musickey)) = qq_credential(&state) {
+            if let Ok(Some(enhanced)) = crate::qq::lyric_qrc(&songmid, &musicid, &musickey) {
+                let p = lyrics::parse(&enhanced);
+                if p.synced {
+                    let mut payload = LyricsPayload::new(p.synced, p.lines);
+                    payload.source = Some("逐字 QRC".into());
+                    return Ok(payload);
+                }
+            }
+            eprintln!("[qq] {songmid} QRC 不可用（无权益/解密失败），回落行级 LRC");
+        }
+        let text = crate::qq::lyric(&songmid)?.unwrap_or_default();
+        if text.is_empty() {
+            return Ok(LyricsPayload::new(false, vec![]));
+        }
+        let p = lyrics::parse(&text);
+        let mut payload = LyricsPayload::new(p.synced, p.lines);
+        if p.synced {
+            payload.source = Some("行级 LRC".into());
+        }
+        Ok(payload)
+    })()?;
+    if !payload.lines.is_empty() {
+        if let Ok(json) = serde_json::to_string(&payload) {
+            let conn = state.db.lock();
+            db::set_lyrics_cache(&conn, "qq", &songmid, &json);
+        }
     }
-    let p = lyrics::parse(&text);
-    Ok(LyricsPayload {
-        synced: p.synced,
-        lines: p.lines,
-    })
+    Ok(payload)
 }
 
 // ---------- 酷狗音乐在线曲库（搜索/播放匿名；VIP 曲目需扫码登录） ----------
@@ -1658,23 +1677,37 @@ pub async fn kugou_lyric(
     state: State<'_, AppState>,
     hash: String,
 ) -> Result<LyricsPayload, String> {
-    // 入库时已记录的酷狗歌词直接走远端；本地缓存散布在播放缓存之外，简化为直取
-    let _ = &state;
+    // 歌词近乎静态（含逐字）：命中缓存免全部网络往返
+    let cached = {
+        let conn = state.db.lock();
+        db::get_lyrics_cache(&conn, "kugou", &hash)
+    };
+    if let Some(json) = cached {
+        if let Ok(p) = serde_json::from_str::<LyricsPayload>(&json) {
+            return Ok(p);
+        }
+    }
     let text = crate::kugou::lyric(&hash)?;
     let text = match text {
         Some(t) if !t.is_empty() => t,
         _ => {
-            return Ok(LyricsPayload {
-                synced: false,
-                lines: vec![],
-            })
+            return Ok(LyricsPayload::new(false, vec![]));
         }
     };
     let p = lyrics::parse(&text);
-    Ok(LyricsPayload {
-        synced: p.synced,
-        lines: p.lines,
-    })
+    // KRC 通道成功与否由 kugou::lyric 内部落 stderr 日志；来源按解析结果区分
+    let word_level = p.lines.iter().any(|l| l.words.is_some());
+    let mut payload = LyricsPayload::new(p.synced, p.lines);
+    if p.synced {
+        payload.source = Some(if word_level { "逐字 KRC" } else { "行级 LRC" }.into());
+    }
+    if !payload.lines.is_empty() {
+        if let Ok(json) = serde_json::to_string(&payload) {
+            let conn = state.db.lock();
+            db::set_lyrics_cache(&conn, "kugou", &hash, &json);
+        }
+    }
+    Ok(payload)
 }
 
 // ---------- 酷狗扫码登录 ----------
@@ -2179,7 +2212,8 @@ pub async fn download_online(
             netease_cookie(&state).as_deref(),
         )
         .ok()
-        .flatten(),
+        .flatten()
+        .map(|t| t.lrc),
         "qq" => crate::qq::lyric(&req.id).ok().flatten(),
         "kugou" => crate::kugou::lyric(&req.id).ok().flatten(),
         _ => None,

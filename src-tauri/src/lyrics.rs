@@ -45,6 +45,7 @@ pub fn parse(text: &str) -> Parsed {
                     time_ms: None,
                     text: content,
                     words: None,
+                    trans: None,
                 });
             }
         } else {
@@ -66,6 +67,7 @@ pub fn parse(text: &str) -> Parsed {
                     time_ms: Some(adj(t)),
                     text: content.clone(),
                     words: words.clone(),
+                    trans: None,
                 });
             }
         }
@@ -289,6 +291,34 @@ pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
         None
     } else {
         Some(out)
+    }
+}
+
+/// 把行级翻译（标准 LRC：[mm:ss.xx]文本）按时间就近合并进歌词行。
+/// 翻译与原文出自同一来源打点，时间戳通常严格一致；±800ms 容差兜底
+/// 逐字行头与翻译行的取整差。每条翻译只消费一次，就近优先。
+pub fn attach_translations(parsed: &mut Parsed, trans: &str) {
+    if trans.trim().is_empty() {
+        return;
+    }
+    let mut cand: Vec<(u64, String)> = parse(trans)
+        .lines
+        .into_iter()
+        .filter_map(|l| l.time_ms.map(|t| (t, l.text)))
+        .filter(|(_, t)| !t.trim().is_empty())
+        .collect();
+    cand.sort_by_key(|(t, _)| *t);
+    for line in parsed.lines.iter_mut() {
+        let Some(lt) = line.time_ms else { continue };
+        let best = cand
+            .iter()
+            .enumerate()
+            .filter(|(_, (t, _))| t.abs_diff(lt) <= 800)
+            .min_by_key(|(_, (t, _))| t.abs_diff(lt))
+            .map(|(i, _)| i);
+        if let Some(i) = best {
+            line.trans = Some(cand.remove(i).1);
+        }
     }
 }
 

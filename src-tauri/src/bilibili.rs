@@ -497,7 +497,7 @@ pub fn login_qr_create() -> Result<(String, String), String> {
             image::ImageFormat::Png,
         )
         .map_err(|e| format!("编码二维码图片失败: {e}"))?;
-    use std::io::Write as _;
+    
     let mut b64 = String::new();
     b64_encode_into(&png, &mut b64);
     qr_debug_log(&format!("gen key={key}"));
@@ -821,6 +821,7 @@ pub fn subtitle_lyrics(
                 time_ms: Some((from * 1000.0).round() as u64),
                 text,
                 words: None,
+                trans: None,
             })
         })
         .collect();
@@ -828,10 +829,7 @@ pub fn subtitle_lyrics(
         return Ok(None);
     }
     lines.sort_by_key(|l| l.time_ms.unwrap_or(0));
-    Ok(Some(crate::models::LyricsPayload {
-        synced: true,
-        lines,
-    }))
+    Ok(Some(crate::models::LyricsPayload::new(true, lines)))
 }
 
 // ---------- UP 主空间 ----------
@@ -1101,11 +1099,6 @@ pub fn nav_user(cookies: &BiliCookies) -> Result<NavUser, String> {
     })
 }
 
-/// 登录用户的 mid（nav 接口，需有效 SESSDATA）
-pub fn nav_mid(cookies: &BiliCookies) -> Result<String, String> {
-    nav_user(cookies).map(|u| u.mid)
-}
-
 /// 收藏夹（用户自建）
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1183,19 +1176,6 @@ pub fn fav_folder_videos(
     Ok((items, total, has_more))
 }
 
-/// 后台预热整个列表的 bvid→cid 缓存：自动连播时每首都现查 view 接口会
-/// 连续触发风控（-412/-352），整条队列逐首失败跳过。预热后切歌直接命中
-/// 缓存，不再发 view 请求。限速逐个解析，失败静默（播放时再重试）。
-pub fn warm_cids(rows: &[SpaceVideo], cookies: Option<BiliCookies>) {
-    let jobs: Vec<String> = rows.iter().map(|r| r.bvid.clone()).collect();
-    std::thread::spawn(move || {
-        for bvid in jobs {
-            let _ = parse_rid(&bvid);
-            std::thread::sleep(Duration::from_millis(400));
-        }
-    });
-    let _ = cookies;
-}
 /// rid 为 "BVxxx-cid"。不落库——列表只展示当前解析结果。
 /// 返回 (rid, title, artist, cover, duration_ms) 列表。
 pub fn video_rows(input: &str) -> Result<Vec<(String, String, String, String, u64)>, String> {
