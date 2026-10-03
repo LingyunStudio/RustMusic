@@ -7,6 +7,8 @@ use crate::models::{Folder, Playlist, SourceItem, TrackMeta};
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
+-- WAL 模式的推荐档位：掉电最多丢最后一次事务、不损坏库；写提交不再逐条 fsync
+PRAGMA synchronous = NORMAL;
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -242,6 +244,9 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str, alter: &s
 
 pub fn init(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    // busy_timeout 兜底写锁竞争（WAL 下写-写冲突时等待而非立刻报 SQLITE_BUSY）
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
     conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
     migrate(&conn);
     Ok(conn)
@@ -391,18 +396,29 @@ pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, folder_prefixes
         .map(|(p, _, _)| p)
         .filter(|p| !seen.contains(p) && folder_prefixes.iter().any(|f| p.starts_with(f.as_str())))
         .collect();
-    for p in &stale {
-        let _ = conn.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![p]);
-    }
     // 目录重新添加/文件回归：复活对应记录
     let revived: Vec<String> = seen
         .iter()
         .filter(|p| folder_prefixes.iter().any(|f| p.starts_with(f.as_str())))
         .cloned()
         .collect();
-    for p in &revived {
-        let _ = conn.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", params![p]);
+    // 两个批量标记合并进单事务，替代逐行隐式提交
+    let Ok(tx) = conn.unchecked_transaction() else {
+        for p in &stale {
+            let _ = conn.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![p]);
+        }
+        for p in &revived {
+            let _ = conn.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", params![p]);
+        }
+        return;
+    };
+    for p in &stale {
+        let _ = tx.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![p]);
     }
+    for p in &revived {
+        let _ = tx.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", params![p]);
+    }
+    let _ = tx.commit();
 }
 
 fn row_to_meta(r: &Row) -> rusqlite::Result<TrackMeta> {

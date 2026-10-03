@@ -124,9 +124,24 @@ pub fn run_scan(app: AppHandle) {
         });
         {
             let conn = st.db.lock();
-            for t in parsed.into_iter().flatten() {
-                db::upsert_track(&conn, &t);
-            }
+            // 攒批单事务：一批 24 条共享一次提交（fsync），替代逐条隐式事务。
+            // 事务开启失败（理论上仅 IO 故障）回退逐条写入
+            match conn.unchecked_transaction() {
+                Ok(tx) => {
+                    for t in parsed.into_iter().flatten() {
+                        db::upsert_track(&tx, &t);
+                    }
+                    if let Err(e) = tx.commit() {
+                        eprintln!("[library] 入库事务提交失败: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[library] 开启入库事务失败，回退逐条写入: {e}");
+                    for t in parsed.into_iter().flatten() {
+                        db::upsert_track(&conn, &t);
+                    }
+                }
+            };
         }
         done += chunk.len();
         emit(done, total, true);
