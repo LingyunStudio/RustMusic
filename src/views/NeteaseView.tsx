@@ -29,6 +29,7 @@ import type {
   OnlineNavSnapshot,
   OnlineRecState,
   QqSong,
+  QueueItem,
 } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
@@ -313,8 +314,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const loadToplist = async (
     t: { id: number; name: string; cover: string },
     page = 1,
-  ) => {
-    if (recLoading) return;
+  ): Promise<QueueItem[]> => {
+    if (recLoading) return [];
     setRecLoading(true);
     try {
       const append = page > 1 && rec?.origin === "top" && rec.topId === t.id;
@@ -371,11 +372,27 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               })();
       cacheRecSongs(next);
       setRec(next);
+      // 本页新增行 → 队列项（自动续页时追加进播放队列；prevLen 与上面
+      // merge 用的同一个 rec 快照，slice 结果恰为本次接口返回的新增）
+      const prevLen =
+        source === "netease"
+          ? (append ? rec?.netease?.length ?? 0 : 0)
+          : source === "qq"
+            ? (append ? rec?.qq?.length ?? 0 : 0)
+            : (append ? rec?.kugou?.length ?? 0 : 0);
+      const merged =
+        source === "netease" ? next.netease : source === "qq" ? next.qq : next.kugou;
+      return (merged ?? []).slice(prevLen).map((t) =>
+        source === "netease"
+          ? ({ kind: "netease", id: t.id } as QueueItem)
+          : ({ kind: source, id: t.id } as QueueItem)
+      );
     } catch (e) {
       toast(String(e), "error");
     } finally {
       setRecLoading(false);
     }
+    return [];
   };
 
   // 每日推荐 / 私人 FM：仅网易云且已登录可用
@@ -576,21 +593,83 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const ROW_H = 60;
   const win = useVirtualWindow(rows.length, ROW_H);
 
-  // 当前播放行的下标（歌单/榜单行：网易比 nid、酷狗比 kgid、QQ 比 qid）
+  // 队列自动续页：把当前列表（搜索结果 / 榜单）的"加载下一页"注册给队列。
+  // 播到队列最后一条时 store 触发本回调，加载的新行追加进队列——最后一首
+  // 自然播完后无缝继续。tail 校验防止队列被替换后过期回调误续页。
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const recRef = useRef(rec);
+  recRef.current = rec;
+  const loadToplistRef = useRef(loadToplist);
+  loadToplistRef.current = loadToplist;
+  const registerQueueExtender = () => {
+    const tail = rowsRef.current[rowsRef.current.length - 1];
+    if (!tail) return;
+    let expectedTail = String(tail.id);
+    const tailKind = tail.kind;
+    const kwAtPlay = kw;
+    const srcAtPlay = source;
+    useStore.getState().setQueueExtender(async () => {
+      const st = useStore.getState();
+      const last = st.queue[st.queue.length - 1];
+      if (!last || last.kind !== tailKind || String(last.id) !== expectedTail) {
+        return null; // 队列尾部已变（换队列/手动增删）：本上下文过期
+      }
+      const rec = recRef.current;
+      if (rec) {
+        // 歌单/榜单模式：榜单有分页（加载更多），歌单/每日推荐整单加载无续页
+        if (rec.origin !== "top" || !rec.recHasMore || rec.topId == null) return null;
+        const fresh = await loadToplistRef.current(
+          { id: rec.topId, name: rec.title, cover: rec.cover },
+          (rec.recPage ?? 1) + 1,
+        );
+        if (!fresh.length) return null;
+        expectedTail = String(fresh[fresh.length - 1].id);
+        return fresh;
+      }
+      // 搜索结果模式：hasMore 判定与"加载更多"按钮一致
+      if (srcAtPlay === "netease") {
+        if (st.neteaseResults.length >= st.neteaseTotal) return null;
+        const before = st.neteaseResults.length;
+        await neteaseSearch(kwAtPlay, true);
+        const fresh = useStore.getState().neteaseResults.slice(before);
+        if (!fresh.length) return null;
+        expectedTail = String(fresh[fresh.length - 1].id);
+        return fresh.map((t) => ({ kind: "netease", id: t.id }) as QueueItem);
+      }
+      if (srcAtPlay === "qq") {
+        if (st.qqResults.length === 0 || st.qqResults.length !== 30 * st.qqPage) return null;
+        const before = st.qqResults.length;
+        await qqSearch(kwAtPlay, true);
+        const fresh = useStore.getState().qqResults.slice(before);
+        if (!fresh.length) return null;
+        expectedTail = String(fresh[fresh.length - 1].id);
+        return fresh.map((t) => ({ kind: "qq", id: t.id }) as QueueItem);
+      }
+      if (st.kugouResults.length === 0 || st.kugouResults.length !== 30 * st.kugouPage) return null;
+      const before = st.kugouResults.length;
+      await kugouSearch(kwAtPlay, true);
+      const fresh = useStore.getState().kugouResults.slice(before);
+      if (!fresh.length) return null;
+      expectedTail = String(fresh[fresh.length - 1].id);
+      return fresh.map((t) => ({ kind: "kugou", id: t.id }) as QueueItem);
+    });
+  };
+
+  // 当前播放行的下标（网易比 nid、酷狗比 kgid、QQ 比 qid）——
+  // 搜索结果与歌单/榜单共用（药丸两种模式都要工作）
   const currentIdx = useMemo(
     () =>
-      rec
-        ? rows.findIndex(
-            (t) =>
-              current?.kind === t.kind &&
-              (t.kind === "netease"
-                ? current.nid === t.id
-                : t.kind === "kugou"
-                  ? current.kgid === t.id
-                  : current.qid === t.id)
-          )
-        : -1,
-    [rec, rows, current]
+      rows.findIndex(
+        (t) =>
+          current?.kind === t.kind &&
+          (t.kind === "netease"
+            ? current.nid === t.id
+            : t.kind === "kugou"
+              ? current.kgid === t.id
+              : current.qid === t.id)
+      ),
+    [rows, current]
   );
 
   // 打开歌单/榜单（rec 变化）时定位到当前播放行；不在列表则回到顶部。
@@ -611,6 +690,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   });
 
   const playRow = (i: number) => {
+    registerQueueExtender();
     if (rec) {
       // 推荐态：队列 = 当前推荐列表（曲目信息已在加载时写入缓存）
       if (rec.netease) playNetease(rec.netease, i);

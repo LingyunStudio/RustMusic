@@ -203,6 +203,9 @@ interface Store {
   playKugou(list: KgSong[], idx: number): void;
   playEntries(entries: PlaylistEntryMeta[], idx: number): void;
   playQueueIndex(i: number): void;
+  /** 队列自动续页：列表视图注册"加载下一页并返回新增队列项"的回调；
+      播到队列最后一条时 store 自动触发并追加（无更多/上下文失效返回 null） */
+  setQueueExtender(fn: (() => Promise<QueueItem[] | null>) | null): void;
   /** 在线条目（网易云/QQ/酷狗）转可播放的队列项；无元数据时返回 null */
   entryToQueueItem(e: PlaylistEntryMeta): QueueItem | null;
   togglePlay(): void;
@@ -234,6 +237,7 @@ interface Store {
   removeQueueItem(i: number): void;
   clearQueue(): void;
   jumpTo(i: number): void;
+  queueExtender: (() => Promise<QueueItem[] | null>) | null;
 
   createPlaylist(name: string): Promise<number>;
   deletePlaylist(id: number): Promise<void>;
@@ -422,6 +426,8 @@ const searchGen: Record<"netease" | "qq" | "kugou", number> = {
   qq: 0,
   kugou: 0,
 };
+/** 队列自动续页进行中：防止最后一条上的重复触发并发拉页 */
+let queueExtendBusy = false;
 /** 加载更多进行中标记（按源隔离：三源共享一把锁会让别源的 append 互相误清/重入） */
 const loadMoreBusy: Record<"netease" | "qq" | "kugou", boolean> = {
   netease: false,
@@ -684,6 +690,7 @@ export const useStore = create<Store>((set, get) => ({
   playSeq: 0,
   scrubbing: false,
   queue: [],
+  queueExtender: null,
   qIndex: 0,
   history: [],
   volume: 0.8,
@@ -1336,10 +1343,37 @@ export const useStore = create<Store>((set, get) => ({
     return null;
   },
 
+  setQueueExtender(fn) {
+    set({ queueExtender: fn });
+  },
+
   playQueueIndex(i) {
     const { queue } = get();
     const item = queue[i];
     if (!item) return;
+
+    // 自动续页：播到队列最后一条时，若来源（搜索/在线榜单）还有下一页，
+    // 后台加载并追加进队列——最后一首自然播完后无缝继续，代替人工点
+    // "加载更多"。extender 由列表视图注册；返回 null（无更多/上下文失效）
+    // 即注销。busy 防同一首上的重复触发并发拉页。
+    if (i === queue.length - 1 && !queueExtendBusy) {
+      const extender = get().queueExtender;
+      if (extender) {
+        queueExtendBusy = true;
+        extender()
+          .then((items) => {
+            if (items && items.length) {
+              set((s) => ({ queue: [...s.queue, ...items] }));
+            } else {
+              set({ queueExtender: null });
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            queueExtendBusy = false;
+          });
+      }
+    }
     // 维护“正在播放的自定义音源 id”（供 SourcesView 高亮；非 url 播放时清除）
     if (item.kind === "url") set({ playingSourceId: item.id });
     else if (get().playingSourceId != null) set({ playingSourceId: null });
