@@ -242,12 +242,25 @@ export default function PlaylistDetail({ id }: { id: number }) {
   });
 
   // 打开 / 切换歌单时定位到当前播放行（行高恒定，数学定位对窗口化与
-  // 全量渲染都成立）；当前曲不在本歌单则回到顶部
+  // 全量渲染都成立）；当前曲不在本歌单则回到顶部。
+  // 布局/封面加载时序敏感：连续三帧重试确保滚动到位
   useLayoutEffect(() => {
-    const el = win.containerRef.current;
-    if (!el) return;
-    if (currentIdx >= 0) win.scrollToIndex(currentIdx);
-    else el.scrollTop = 0;
+    const doLocate = () => {
+      const el = win.containerRef.current;
+      if (!el) return;
+      if (currentIdx >= 0) win.scrollToIndex(currentIdx);
+      else el.scrollTop = 0;
+    };
+    doLocate();
+    let raf = 0;
+    let frame = 0;
+    const tick = () => {
+      doLocate();
+      frame += 1;
+      if (frame < 3) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -573,6 +586,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
             </div>
           )}
         </div>
+        <LocateCurrentPill
+          show={pill.show}
+          onClick={pill.locate}
+          className="absolute bottom-[72px] left-1/2 -translate-x-1/2"
+        />
       </div>
 
       {/* 条目菜单（Portal 到 body：脱离 .glass 卡片，fixed 才相对视口） */}
