@@ -30,4 +30,6 @@ jobs:
 
       - name: Rust 单元测试
         working-directory: src-tauri
-        run: cargo test --bin rustmusic
+        # --locked：Cargo.toml 与 Cargo.lock 不同步时直接失败，
+        # 版本变更必须经由显式 cargo update 评审，杜绝 CI 顺手升级
+        run: cargo test --bin rustmusic --locked

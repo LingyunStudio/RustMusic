@@ -7,11 +7,13 @@ license = "Apache-2.0"
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+# 锁 minor（~）：Tauri 次版本升级可能带行为变更，升级需显式改这里并全量回归。
+# 0.x 依赖（rodio/rusqlite/lofty/windows 等）的 caret 语义本就锁定 minor，无需重复处理
+tauri-build = { version = "~2.6", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
-tauri-plugin-dialog = "2"
+tauri = { version = "~2.11", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-dialog = "~2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rodio = { version = "0.22", default-features = false, features = ["playback", "symphonia-mp3", "symphonia-aac", "symphonia-isomp4", "symphonia-vorbis", "symphonia-wav", "flac"] }
@@ -20,7 +22,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 walkdir = "2"
 rayon = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
-ureq = { version = "2", features = ["json"] }
+# 同步 HTTP 客户端：ureq 3 重写了 API 与 TLS 栈，minor 也可能有行为差异
+ureq = { version = "~2.12", features = ["json"] }
 percent-encoding = "2"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "isomp4"] }
 souvlaki = "0.8"
@@ -39,7 +42,7 @@ wasapi = "0.14"
 windows51 = { package = "windows", version = "0.51", default-features = false }
 qrcode = { version = "0.14", default-features = false, features = ["image"] }
 filetime = "0.2"
-keyring = { version = "3", features = ["windows-native"] }
+keyring = { version = "~3.6", features = ["windows-native"] }
 
 [target.'cfg(windows)'.dependencies]
 # WebView2 TrySuspend：托盘隐藏时挂起渲染进程回收内存
