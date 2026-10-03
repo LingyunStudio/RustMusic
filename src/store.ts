@@ -15,6 +15,7 @@ import {
 import { applySkin, loadSkin, saveSkin } from "./skins";
 import type {
   CurrentTrack,
+  NdSong,
   OnlineNavSnapshot,
   OnlineRecState,
   OnlineSource,
@@ -199,6 +200,8 @@ interface Store {
   playTracks(tracks: TrackMeta[], idx: number): void;
   playSourceItem(s: SourceItem): void;
   playNetease(list: NeteaseTrack[], idx: number): void;
+  /** Navidrome 全部歌曲列表播放（整表入队，支持自动续页） */
+  playNdList(songs: NdSong[], idx: number): void;
   playQq(list: QqSong[], idx: number): void;
   playKugou(list: KgSong[], idx: number): void;
   playEntries(entries: PlaylistEntryMeta[], idx: number): void;
@@ -1151,6 +1154,31 @@ export const useStore = create<Store>((set, get) => ({
     const target = Math.max(0, Math.min(idx, queue.length - 1));
     set((s) => ({
       neteaseCache: capOnlineCache("netease", cache, get().neteaseCache),
+      queue,
+      qIndex: target,
+      history: [...s.history.slice(-50), s.qIndex],
+      failStreak: 0,
+      failToastId: null,
+    }));
+    get().playQueueIndex(target);
+  },
+
+  playNdList(songs: NdSong[], idx: number) {
+    if (!songs.length) return;
+    const cache = { ...get().ndCache };
+    for (const t of songs) {
+      cache[t.id] = {
+        title: t.title,
+        artist: t.artist,
+        album: t.album,
+        cover: t.coverUrl,
+        durationMs: t.duration * 1000,
+      };
+    }
+    const queue: QueueItem[] = songs.map((t) => ({ kind: "navidrome", id: t.id }));
+    const target = Math.max(0, Math.min(idx, queue.length - 1));
+    set((s) => ({
+      ndCache: capOnlineCache("nd", cache, get().ndCache),
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],

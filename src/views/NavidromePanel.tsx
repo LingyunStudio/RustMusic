@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useStore } from "../store";
+import { useLocatePillEl } from "../hooks/useLocatePillEl";
+import LocateCurrentPill from "../components/LocateCurrentPill";
 import type { NdAlbum, NdSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
@@ -274,20 +276,22 @@ export default function NavidromePanel() {
     }
   };
 
-  const loadMoreSongs = async () => {
-    if (loading) return;
+  const loadMoreSongs = async (): Promise<NdSong[] | null> => {
+    if (loading) return null;
     const gen = ++reqGen.current;
     setLoading(true);
     try {
       const r = await api.navidromeAllSongs(server, username, allSongs.length);
-      if (gen !== reqGen.current) return;
+      if (gen !== reqGen.current) return null;
       setAllSongs((prev) => [...prev, ...r.songs]);
       setTotal(r.total);
+      return r.songs;
     } catch (e) {
       if (gen === reqGen.current) toast(String(e), "error");
     } finally {
       if (gen === reqGen.current) setLoading(false);
     }
+    return null;
   };
 
   const goBack = () => {
@@ -325,8 +329,52 @@ export default function NavidromePanel() {
 
   const rows: { s: NdSong; i: number }[] = albumSongs.map((s, i) => ({ s, i }));
 
+  // 「回到当前歌曲」药丸 + 队列自动续页（Navidrome 全部歌曲列表）
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const current = useStore((s) => s.current);
+  const pill = useLocatePillEl({
+    containerRef: scrollRef,
+    activeSelector: current?.kind === "navidrome" ? '[data-now-playing="1"]' : null,
+  });
+  const allSongsLenRef = useRef(allSongs.length);
+  allSongsLenRef.current = allSongs.length;
+  const totalRef = useRef(total);
+  totalRef.current = total;
+  const loadMoreSongsRef = useRef(loadMoreSongs);
+  loadMoreSongsRef.current = loadMoreSongs;
+  const locatedRef = useRef(false);
+  // 首页歌曲加载完成后：正在播放的 Navidrome 歌曲若在列表中，定位到它
+  useEffect(() => {
+    if (locatedRef.current || !allSongsLenRef.current) return;
+    locatedRef.current = true;
+    requestAnimationFrame(() => {
+      scrollRef.current
+        ?.querySelector('[data-now-playing="1"]')
+        ?.scrollIntoView({ block: "center" });
+    });
+  }, [allSongs.length]);
+  const registerQueueExtender = (expectedTail: string) => {
+    let tail = expectedTail;
+    useStore.getState().setQueueExtender(async () => {
+      const st = useStore.getState();
+      const last = st.queue[st.queue.length - 1];
+      if (!last || last.kind !== "navidrome" || String(last.id) !== tail) {
+        return null; // 队列尾部已变：上下文过期
+      }
+      if (allSongsLenRef.current >= totalRef.current) return null;
+      const fresh = await loadMoreSongsRef.current();
+      if (!fresh?.length) return null;
+      tail = String(fresh[fresh.length - 1].id);
+      return fresh.map(queueItemOf);
+    });
+  };
   return (
     <div className="h-full flex flex-col min-h-0" ref={listRef}>
+      <LocateCurrentPill
+        show={pill.show}
+        onClick={pill.locate}
+        className="fixed bottom-[92px] left-1/2 -translate-x-1/2"
+      />
       {!connected ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <div
@@ -443,7 +491,11 @@ export default function NavidromePanel() {
           </div>
 
           {/* 内容区 */}
-          <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
+          <div
+            ref={scrollRef}
+            className="flex-1 min-h-0 overflow-y-auto"
+            style={{ scrollbarWidth: "thin" }}
+          >
             {loading && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
@@ -456,8 +508,17 @@ export default function NavidromePanel() {
                   {allSongs.map((s) => (
                     <div
                       key={s.id}
+                      data-now-playing={
+                        current?.kind === "navidrome" && current.qid === s.id ? "1" : undefined
+                      }
                       className="group grid grid-cols-[36px_minmax(0,1fr)_160px_70px_120px] items-center gap-4 h-[56px] px-3 rounded-[13px] hover:bg-[var(--shade-hover)] transition-colors"
-                      onDoubleClick={() => playSong(s)}
+                      onDoubleClick={() => {
+                        // 整表入队从该行开播（与其它列表一致）：播到最后一条时
+                        // 由 queueExtender 自动加载更多并追加，无缝继续
+                        const idx = allSongs.findIndex((x) => x.id === s.id);
+                        useStore.getState().playNdList(allSongs, idx >= 0 ? idx : 0);
+                        registerQueueExtender(String(allSongs[allSongs.length - 1].id));
+                      }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setMenu({ x: e.clientX, y: e.clientY, song: s });

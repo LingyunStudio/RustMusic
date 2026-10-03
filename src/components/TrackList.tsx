@@ -669,7 +669,7 @@ export default function TrackList({
       <LocateCurrentPill
         show={pill.show}
         onClick={pill.locate}
-        className={inCard ? "bottom-[98px] left-1/2 -translate-x-1/2" : "bottom-[70px] left-1/2 -translate-x-1/2"}
+        className={`absolute ${inCard ? "bottom-[98px]" : "bottom-[70px]"} left-1/2 -translate-x-1/2`}
       />
       </div>
 

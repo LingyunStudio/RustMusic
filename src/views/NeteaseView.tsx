@@ -1416,7 +1416,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               </div>
             )}
           </div>
-          <LocateCurrentPill show={pill.show} onClick={pill.locate} className="bottom-3 left-1/2 -translate-x-1/2" />
+          <LocateCurrentPill show={pill.show} onClick={pill.locate} className="absolute bottom-3 left-1/2 -translate-x-1/2" />
         </div>
       </div>
 

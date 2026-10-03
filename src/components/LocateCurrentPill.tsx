@@ -9,7 +9,7 @@ import { LocateFixed } from "lucide-react";
 export default function LocateCurrentPill({
   show,
   onClick,
-  className = "bottom-3 left-1/2 -translate-x-1/2",
+  className = "absolute bottom-3 left-1/2 -translate-x-1/2",
 }: {
   show: boolean;
   onClick: () => void;
@@ -18,7 +18,7 @@ export default function LocateCurrentPill({
   if (!show) return null;
   return (
     <button
-      className={`absolute z-10 flex items-center gap-1.5 h-8 px-3.5 rounded-full glass-strong shadow-lg text-[12px] font-medium text-[var(--accent-strong)] hover:text-[var(--accent)] anim-fade whitespace-nowrap ${className}`}
+      className={`z-10 flex items-center gap-1.5 h-8 px-3.5 rounded-full glass-strong shadow-lg text-[12px] font-medium text-[var(--accent-strong)] hover:text-[var(--accent)] anim-fade whitespace-nowrap ${className}`}
       onClick={onClick}
     >
       <LocateFixed size={13} />

@@ -32,7 +32,9 @@ import NavidromePanel from "./NavidromePanel";
 import Modal from "../components/Modal";
 import CoverImg from "../components/CoverImg";
 import { fmtDate, fmtTime } from "../utils";
-import type { BiliCollection, BiliFollow, BiliSpaceItem, SourcesResult } from "../types";
+import type { BiliCollection, BiliFollow, BiliSpaceItem, QueueItem, SourcesResult } from "../types";
+import { useLocatePillEl } from "../hooks/useLocatePillEl";
+import LocateCurrentPill from "../components/LocateCurrentPill";
 
 const ORDERS: { key: "pubdate" | "click" | "stow"; label: string }[] = [
   { key: "pubdate", label: "最新发布" },
@@ -395,6 +397,40 @@ export default function SourcesView() {
   const rowKey = (r: BiliSpaceItem) => `bilibili-${r.rid}`;
   const rowActive = (r: BiliSpaceItem) =>
     current?.kind === "bilibili" && current.qid != null && current.qid === r.rid;
+
+  // 「回到当前歌曲」药丸 + 队列自动续页（B 站空间列表，卡片网格用元素级定位）
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const pill = useLocatePillEl({
+    containerRef: listRef,
+    activeSelector: current?.kind === "bilibili" ? '[data-now-playing="1"]' : null,
+  });
+  const resultRef = useRef(result);
+  resultRef.current = result;
+  const loadMoreRef = useRef<() => Promise<BiliSpaceItem[] | null>>(() =>
+    Promise.resolve(null)
+  );
+  const registerQueueExtender = (expectedTail: string) => {
+    let tail = expectedTail;
+    useStore.getState().setQueueExtender(async () => {
+      const st = useStore.getState();
+      const last = st.queue[st.queue.length - 1];
+      if (!last || last.kind !== "bilibili" || String(last.id) !== tail) {
+        return null; // 队列尾部已变：上下文过期
+      }
+      const res = resultRef.current;
+      const hasMore =
+        res && res.type === "space"
+          ? res.activeCollection
+            ? res.activeCollection.hasMore
+            : res.hasMore
+          : false;
+      if (!hasMore) return null;
+      const fresh = await loadMoreRef.current();
+      if (!fresh?.length) return null;
+      tail = String(fresh[fresh.length - 1].rid);
+      return fresh.map((r) => ({ kind: "bilibili", id: r.rid }) as QueueItem);
+    });
+  };
   const rowLiked = (r: BiliSpaceItem) => !!savedOnline[rowKey(r)];
 
   const toOnlineRow = (r: BiliSpaceItem) => ({
@@ -523,19 +559,19 @@ export default function SourcesView() {
     }
   };
 
-  const loadMore = async () => {
-    if (!result || result.type !== "space") return;
+  const loadMore = async (): Promise<BiliSpaceItem[] | null> => {
+    if (!result || result.type !== "space") return null;
     const s = result;
     const gen = spaceGenRef.current;
     if (s.activeCollection) {
       const c = s.activeCollection;
-      if (c.loadingMore || !c.hasMore) return;
+      if (c.loadingMore || !c.hasMore) return null;
       setResult({ ...s, activeCollection: { ...c, loadingMore: true } });
       try {
         const r = await useStore
           .getState()
           .biliSpaceCollectionMore(s.mid, c.id, c.kind, c.pn + 1);
-        if (gen !== spaceGenRef.current) return;
+        if (gen !== spaceGenRef.current) return null;
         setResult((cur) =>
           cur && cur.type === "space" && cur.activeCollection?.id === c.id
             ? {
@@ -550,17 +586,18 @@ export default function SourcesView() {
               }
             : cur
         );
+        return r.items;
       } catch (e) {
-        if (gen !== spaceGenRef.current) return;
+        if (gen !== spaceGenRef.current) return null;
         setResult({ ...s, activeCollection: { ...c, loadingMore: false } });
         useStore.getState().toast(String(e), "error");
       }
     } else {
-      if (s.loadingMore || !s.hasMore) return;
+      if (s.loadingMore || !s.hasMore) return null;
       setResult({ ...s, loadingMore: true });
       try {
         const r = await useStore.getState().biliSpaceMore(s.mid, s.order, s.pn + 1);
-        if (gen !== spaceGenRef.current) return;
+        if (gen !== spaceGenRef.current) return null;
         setResult((cur) =>
           cur && cur.type === "space" && cur.mid === s.mid
             ? {
@@ -572,13 +609,16 @@ export default function SourcesView() {
               }
             : cur
         );
+        return r.items;
       } catch (e) {
-        if (gen !== spaceGenRef.current) return;
+        if (gen !== spaceGenRef.current) return null;
         setResult({ ...s, loadingMore: false });
         useStore.getState().toast(String(e), "error");
       }
     }
+    return null;
   };
+  loadMoreRef.current = loadMore;
 
   const openCollection = async (c: BiliCollection) => {
     if (!result || result.type !== "space") return;
@@ -781,6 +821,7 @@ export default function SourcesView() {
     return (
       <div
         key={r.rid}
+        data-now-playing={active ? "1" : undefined}
         className={`group cursor-pointer rounded-xl p-1.5 transition-colors ${
           checked ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade)]"
         }`}
@@ -818,6 +859,7 @@ export default function SourcesView() {
                 else {
                   const idx = visibleRows.findIndex((x) => x.rid === r.rid);
                   playBilibiliList(visibleRows, idx >= 0 ? idx : 0);
+                  registerQueueExtender(String(visibleRows[visibleRows.length - 1].rid));
                 }
               }}
             >
@@ -895,6 +937,25 @@ export default function SourcesView() {
     );
   };
 
+  const locatedKeyRef = useRef("");
+  useEffect(() => {
+    const key = result
+      ? result.type === "space"
+        ? `space:${result.mid}`
+        : result.type === "video"
+          ? `video:${result.rows[0]?.rid ?? ""}`
+          : `direct:${result.rows[0]?.sourceId ?? ""}`
+      : "";
+    if (!key || locatedKeyRef.current === key) return;
+    locatedKeyRef.current = key;
+    // 新解析结果：正在播放的 B 站歌曲若在列表中，定位到它
+    requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector('[data-now-playing="1"]')
+        ?.scrollIntoView({ block: "center" });
+    });
+  }, [result]);
+
   const space = result && result.type === "space" ? result : null;
   const spaceFollowed = space ? biliFollows.some((f) => f.mid === space.mid) : false;
   const listRows = selMode ? visibleRows : [];
@@ -909,6 +970,11 @@ export default function SourcesView() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col pb-[84px]">
+      <LocateCurrentPill
+        show={pill.show}
+        onClick={pill.locate}
+        className="fixed bottom-[92px] left-1/2 -translate-x-1/2"
+      />
       <header className="pt-5 pb-3 px-5">
         {/* 音源页签 */}
         <div className="flex items-center gap-1.5">
@@ -1087,7 +1153,7 @@ export default function SourcesView() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-2">
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-5 pb-2">
         {/* Navidrome 常驻挂载：切 Tab 用 display:none 隐藏而非卸载——
             保留连接状态、当前页面（导航栈）与滚动位置，
             切回来不再闪登录页重新自动连接 */}
