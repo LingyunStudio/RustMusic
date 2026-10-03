@@ -4,6 +4,8 @@ import { createPortal } from "react-dom";
 import { useStore } from "../store";
 import { useDragList } from "../hooks/useDragList";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
+import { useLocatePill } from "../hooks/useLocatePill";
+import LocateCurrentPill from "./LocateCurrentPill";
 import type { PlaylistEntryMeta, TrackMeta } from "../types";
 import { clampMenuPos, fmtTime, refineMenuPos, trackArtist, trackTitle } from "../utils";
 import CoverImg from "./CoverImg";
@@ -190,6 +192,30 @@ export default function TrackList({
 
   // 窗口化：DOM 只保留可视区 ± overscan 行（拖拽模式下计算了但不用）
   const win = useVirtualWindow(rows.length, ROW_H);
+
+  // 当前播放行的下标（本地行比 current.id；在线行按音源比对应 id 字段，
+  // 与行内 active 判定同规则）
+  const currentIdx = useMemo(() => {
+    if (!current) return -1;
+    return rows.findIndex((r) =>
+      r.type === "local"
+        ? current.kind === "track" && current.id === r.t.id
+        : current.kind === r.e.kind &&
+          (r.e.kind === "netease"
+            ? current.nid === Number(r.e.onlineId)
+            : r.e.kind === "kugou"
+              ? current.kgid === r.e.onlineId
+              : current.qid === r.e.onlineId)
+    );
+  }, [rows, current]);
+
+  // 浏览语义页面（资料库/艺人专辑）：打开恒为顶部、不自动传送；
+  // 当前播放行滚出视野时浮出「回到当前歌曲」药丸，点击平滑滚回
+  const pill = useLocatePill({
+    containerRef: win.containerRef,
+    rowHeight: ROW_H,
+    currentIndex: currentIdx,
+  });
   const renderRow = (r: RowEntry) =>
     r.type === "local" ? renderLocal(r.t, r.i, r.idxNum) : renderOnline(r.e, r.i, r.idxNum);
 
@@ -622,6 +648,7 @@ export default function TrackList({
 
   return (
     <>
+      <div className="relative flex-1 min-h-0 flex flex-col">
       <div
         ref={win.containerRef}
         onScroll={win.onScroll}
@@ -638,6 +665,12 @@ export default function TrackList({
           <div style={{ height: Math.max(0, rows.length - win.end) * ROW_H }} aria-hidden />
         </>
       )}
+      </div>
+      <LocateCurrentPill
+        show={pill.show}
+        onClick={pill.locate}
+        className={inCard ? "bottom-[98px] left-1/2 -translate-x-1/2" : "bottom-[70px] left-1/2 -translate-x-1/2"}
+      />
       </div>
 
       {/* 在线条目右键菜单（Portal 到 body：fixed 定位的包含块必须是视口；

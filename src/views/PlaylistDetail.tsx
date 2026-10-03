@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Ban,
@@ -15,6 +15,8 @@ import { useStore } from "../store";
 import { useDragList } from "../hooks/useDragList";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { ConfirmModal, InputModal } from "../components/Dialogs";
+import LocateCurrentPill from "../components/LocateCurrentPill";
+import { useLocatePill } from "../hooks/useLocatePill";
 import { clampMenuPos, fmtTime, matchSearch } from "../utils";
 import CoverImg from "../components/CoverImg";
 import Modal from "../components/Modal";
@@ -216,6 +218,39 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const windowed = list.length > WINDOW_THRESHOLD;
   const win = useVirtualWindow(list.length, ROW_H);
 
+  // 当前行判定（行 vs 播放中曲目）：本地曲目比 current.id；在线行按音源
+  // 比对应 id 字段（qq/bilibili/navidrome 都落在 current.qid）。旧实现
+  // 本地曲目落到 qid 分支（null === number）永不命中——歌单里播本地歌
+  // 从不显示“正在播放”标识，这里一并修正
+  const isCurrentRow = (r: DetailRow) =>
+    current != null &&
+    (r.kind === "track"
+      ? current.kind === "track" && current.id === r.id
+      : current.kind === r.kind &&
+        (r.kind === "netease"
+          ? current.nid === r.id
+          : r.kind === "kugou"
+            ? current.kgid === r.id
+            : current.qid === r.id));
+  const currentIdx = useMemo(() => list.findIndex(isCurrentRow), [list, current]);
+
+  // 当前播放行滚出可视区时浮出「回到当前歌曲」药丸（打开定位之外的可回补路径）
+  const pill = useLocatePill({
+    containerRef: win.containerRef,
+    rowHeight: ROW_H,
+    currentIndex: currentIdx,
+  });
+
+  // 打开 / 切换歌单时定位到当前播放行（行高恒定，数学定位对窗口化与
+  // 全量渲染都成立）；当前曲不在本歌单则回到顶部
+  useLayoutEffect(() => {
+    const el = win.containerRef.current;
+    if (!el) return;
+    if (currentIdx >= 0) win.scrollToIndex(currentIdx);
+    else el.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   if (!pl) {
     return (
       <div className="flex-1 flex items-center justify-center text-[var(--ink-2)]">
@@ -225,7 +260,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
+    <div className="relative flex-1 min-h-0 flex flex-col">
       <header className="pt-5 pb-4 px-5 flex gap-5 items-end">
         {pl.cover ? (
           <CoverImg
@@ -343,16 +378,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               />
               {(windowed ? list.slice(win.start, win.end) : list).map((r, k) => {
                 const i = windowed ? win.start + k : k;
-                const active =
-                  current != null &&
-                  current.kind === r.kind &&
-                  (r.kind === "qq"
-                    ? current.qid === r.id
-                    : r.kind === "netease"
-                      ? current.nid === r.id
-                      : r.kind === "kugou"
-                        ? current.kgid === r.id
-                        : current.qid === r.id);
+                const active = isCurrentRow(r);
                 // 播放失败（无版权/下架等）：整行置灰 + 无版权标记
                 const dead =
                   r.kind !== "track" &&

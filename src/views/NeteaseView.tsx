@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -21,6 +21,8 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
+import { useLocatePill } from "../hooks/useLocatePill";
+import LocateCurrentPill from "../components/LocateCurrentPill";
 import type {
   KgSong,
   NeteaseTrack,
@@ -574,6 +576,40 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const ROW_H = 60;
   const win = useVirtualWindow(rows.length, ROW_H);
 
+  // 当前播放行的下标（歌单/榜单行：网易比 nid、酷狗比 kgid、QQ 比 qid）
+  const currentIdx = useMemo(
+    () =>
+      rec
+        ? rows.findIndex(
+            (t) =>
+              current?.kind === t.kind &&
+              (t.kind === "netease"
+                ? current.nid === t.id
+                : t.kind === "kugou"
+                  ? current.kgid === t.id
+                  : current.qid === t.id)
+          )
+        : -1,
+    [rec, rows, current]
+  );
+
+  // 打开歌单/榜单（rec 变化）时定位到当前播放行；不在列表则回到顶部。
+  // rows 由 rec 同步派生（setRec 在数据就绪后调用），此时 rows 已是新列表
+  useLayoutEffect(() => {
+    const el = win.containerRef.current;
+    if (!el || !rec) return;
+    if (currentIdx >= 0) win.scrollToIndex(currentIdx);
+    else el.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rec]);
+
+  // 当前播放行滚出可视区时浮出「回到当前歌曲」药丸
+  const pill = useLocatePill({
+    containerRef: win.containerRef,
+    rowHeight: ROW_H,
+    currentIndex: currentIdx,
+  });
+
   const playRow = (i: number) => {
     if (rec) {
       // 推荐态：队列 = 当前推荐列表（曲目信息已在加载时写入缓存）
@@ -796,7 +832,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
       {/* 结果列表（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
-        <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="relative glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {/* 推荐横幅：随机歌单/榜单接管列表时的来源说明与操作 */}
           {rec && (
             <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--line)] shrink-0">
@@ -1300,6 +1336,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               </div>
             )}
           </div>
+          <LocateCurrentPill show={pill.show} onClick={pill.locate} className="bottom-3 left-1/2 -translate-x-1/2" />
         </div>
       </div>
 

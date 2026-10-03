@@ -48,6 +48,22 @@ export function useVirtualWindow(count: number, rowHeight: number, overscan = 8)
     rafRef.current = requestAnimationFrame(measure);
   }, [measure]);
 
+  // 定位到第 i 行（垂直居中）：打开播放队列/歌单/歌曲列表时跳到当前播放曲。
+  // 数学定位对窗口化与全量渲染都成立（行高恒定约定见文件头）；
+  // 容器内边距造成的偏差 ≤ 一个 padding，居中视觉下可忽略
+  const scrollToIndex = useCallback(
+    (i: number) => {
+      const el = containerRef.current;
+      if (!el || i < 0) return;
+      el.scrollTop = Math.max(
+        0,
+        i * rowHeight - el.clientHeight / 2 + rowHeight / 2
+      );
+      measure();
+    },
+    [rowHeight, measure]
+  );
+
   useLayoutEffect(() => {
     measure();
     const el = containerRef.current;
@@ -61,5 +77,5 @@ export function useVirtualWindow(count: number, rowHeight: number, overscan = 8)
     };
   }, [measure]);
 
-  return { containerRef, start: range.start, end: range.end, onScroll };
+  return { containerRef, start: range.start, end: range.end, onScroll, scrollToIndex };
 }

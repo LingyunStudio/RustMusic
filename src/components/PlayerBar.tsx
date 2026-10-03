@@ -150,13 +150,8 @@ function VolumePopover({
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
-        className="absolute bottom-[48px] right-0 z-[61] w-11 rounded-2xl p-2 flex flex-col items-center gap-1.5"
-        style={{
-          background: "var(--bar-glass)",
-          backdropFilter: "blur(var(--bar-blur, 8px))",
-          border: "1px solid var(--bar-line)",
-          boxShadow: "var(--bar-shadow)",
-        }}
+        className="absolute bottom-[48px] right-0 z-[61] w-11 rounded-2xl p-2 flex flex-col items-center gap-1.5 glass-strong"
+        style={{ boxShadow: "var(--bar-shadow)" }}
       >
         {/* 静音切换：记忆静音前的音量 */}
         <button
@@ -227,13 +222,8 @@ function SleepPopover({
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
-        className="absolute bottom-[48px] right-0 z-[61] w-[168px] rounded-2xl p-1.5 flex flex-col"
-        style={{
-          background: "var(--bar-glass)",
-          backdropFilter: "blur(var(--bar-blur, 8px))",
-          border: "1px solid var(--bar-line)",
-          boxShadow: "var(--bar-shadow)",
-        }}
+        className="absolute bottom-[48px] right-0 z-[61] w-[168px] rounded-2xl p-1.5 flex flex-col glass-strong"
+        style={{ boxShadow: "var(--bar-shadow)" }}
       >
         {remainMin != null && (
           <div className="px-2.5 py-1 text-[11px] text-[var(--accent-strong)] font-semibold">
