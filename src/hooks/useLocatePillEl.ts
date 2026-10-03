@@ -19,21 +19,23 @@ export function useLocatePillEl(opts: {
 
   const update = useCallback(() => {
     const el = containerRef.current;
-    let next = false;
+    // 药丸在行**不可见**时显示（与 useLocatePill 同规则——此处曾漏取反）
+    let pillVisible = false;
     if (el && activeSelector) {
       const card = el.querySelector(activeSelector);
       if (card) {
         const r = card.getBoundingClientRect();
         const c = el.getBoundingClientRect();
-        // 元素与容器可视区相交即视为可见（上下各 ±1/4 容器高的容差）
-        next = !(
+        // 行与容器可视区相交（上下 ±1/4 容器高容差）= 可见
+        const visible = !(
           r.bottom < c.top - c.height * 0.25 || r.top > c.bottom + c.height * 0.25
         );
+        pillVisible = !visible;
       }
     }
-    if (next !== showRef.current) {
-      showRef.current = next;
-      setShow(next);
+    if (pillVisible !== showRef.current) {
+      showRef.current = pillVisible;
+      setShow(pillVisible);
     }
   }, [containerRef, activeSelector]);
 
