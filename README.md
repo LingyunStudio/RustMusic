@@ -53,22 +53,37 @@
 ├── desktop-lyrics.html      # 桌面歌词窗口入口（Vite 多页构建）
 ├── src/                     # React 前端
 │   ├── components/          # 播放栏、歌词页、队列、通用组件
-│   ├── views/               # 资料库 / 播放列表 / 在线曲库（网易 & QQ & 酷狗）/ 音源（B 站 & Navidrome）/ 设置
+│   ├── views/               # 资料库 / 播放列表 / 设置等页面
+│   │   └── online/          # 在线曲库子组件（扫码登录、弹窗、右键菜单、结果行）
 │   ├── desktop-lyrics/      # 桌面歌词窗口前端
-│   ├── hooks/               # 通用 hooks（如列表拖拽 useDragList）
-│   ├── store.ts             # Zustand 状态（队列与播放逻辑在前端编排）
-│   └── api.ts               # Tauri invoke / 事件封装
+│   ├── hooks/               # 通用 hooks（列表拖拽、虚拟窗口、定位药丸）
+│   ├── store/               # Zustand 状态：contract 全量契约 + 按领域切片
+│   │   └──                  # （播放队列 / 在线音源 / 歌单 / 设置 / UI），队列与播放逻辑在前端编排
+│   ├── api.ts               # Tauri invoke / 事件封装
+│   ├── theme.ts             # 主题与强调色
+│   └── skins.ts             # 内置皮肤与自定义图片皮肤
 ├── scripts/icon-tool/       # 图标生成工具（SVG 源文件 → 母图 → 全平台图标）
 ├── installer/               # Windows 打包：Inno Setup 脚本 + 一键打包脚本
 └── src-tauri/               # Rust 后端
     └── src/
-        ├── engine.rs        # 音频引擎：rodio Sink、独占/共享调度、在线源下载缓存
+        ├── main.rs          # 应用装配（窗口事件、DWM 样式、模块挂载）
+        ├── engine/          # 音频引擎
+        │   ├── mod.rs       #   播放核心（rodio 播放链、seek 重建、状态事件）
+        │   ├── output.rs    #   输出设备管理（构建 / 热切换 / 枚举）
+        │   ├── exclusive.rs #   WASAPI 独占会话调度
+        │   └── cache.rs     #   在线源下载缓存（边下边播、LRU 清理）
+        ├── commands/        # Tauri 命令层（按业务域拆分：媒体库 / 播放 / 歌单 /
+        │   └──              #   网易 / QQ / 酷狗 / B 站 / Navidrome / 下载 / 设置 / 更新）
+        ├── webview_suspend.rs # 主窗口 WebView 挂起/恢复（TrySuspend 回收渲染内存）
+        ├── tray.rs          # 系统托盘 + 统一媒体控制转发
+        ├── monitor.rs       # 播放进度事件推送 / 输出设备热切换监听
         ├── eq.rs            # 10 段均衡器（biquad）+ 播放位置统计
         ├── wasapi_out.rs    # WASAPI 独占模式输出（格式协商、未对齐恢复、事件驱动喂采样）
         ├── symdec.rs        # symphonia 直连解码源（B 站 DASH/fMP4、按包 seek）
-        ├── library.rs       # 媒体库扫描（rayon 并行）、lofty 标签/封面
+        ├── streaming.rs     # 在线音源边下边播（流式下载供数、预缓冲起播）
+        ├── library.rs       # 媒体库扫描（rayon 并行解析、批量事务入库）、lofty 标签/封面
         ├── lyrics.rs        # LRC / yrc / QRC / KRC → 逐字增强 LRC
-        ├── db.rs            # SQLite（rusqlite）持久化
+        ├── db.rs            # SQLite（rusqlite、WAL）持久化 + 迁移测试
         ├── netease.rs       # 网易云音乐接口客户端（weapi 加密、搜索、取链接、扫码登录）
         ├── qq.rs            # QQ 音乐接口客户端（搜索、取链接、歌词、扫码登录）
         ├── kugou.rs         # 酷狗音乐接口客户端（搜索、榜单、歌单、无损取链、扫码登录）
@@ -76,8 +91,7 @@
         ├── bilibili.rs      # B 站接口客户端（视频解析、空间/合集/收藏夹、字幕、扫码登录）
         ├── qrc.rs           # QQ QRC 加密歌词解密 → 逐字增强 LRC（来自开源实现，MIT）
         ├── smtc.rs          # Windows 系统媒体控制（souvlaki）
-        ├── updater.rs       # GitHub Release 自动更新（下载 + SHA-256 校验 + 静默安装）
-        └── commands.rs      # Tauri 命令层
+        └── updater.rs       # GitHub Release 自动更新（下载 + SHA-256 校验 + 静默安装）
 ```
 
 **选型说明**：Tauri 2 = Rust 高性能后端 + Web 渲染的精美界面；框架天然支持 Windows / macOS / Linux（当前只做 Windows 构建），未来可低成本扩展。
