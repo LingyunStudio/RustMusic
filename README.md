@@ -96,6 +96,18 @@
 
 **选型说明**：Tauri 2 = Rust 高性能后端 + Web 渲染的精美界面；框架天然支持 Windows / macOS / Linux（当前只做 Windows 构建），未来可低成本扩展。
 
+### 💡 核心设计亮点：WebView2 TrySuspend 深度休眠与事件驱动后台切歌
+
+许多桌面开发者在处理混合架构（如 Tauri / Electron）的“后台播放与内存占用”时常面临两难：
+- **常驻后台**：Chromium / WebView2 渲染进程常驻会吃掉上百 MB 内存；
+- **销毁 WebView**：重新创建界面不仅有明显的白屏开销，且保存在前端状态机（Zustand）中的播放队列、历史回退栈与随机策略也会丢失。
+
+RustMusic 设计了一套高效的**事件驱动状态唤醒 + 延迟重休眠**机制：
+1. **深度冻结与内存即时回收**：当主窗口最小化至系统托盘时，后端触发 Windows 原生 `ICoreWebView2_3::TrySuspend` 冻结渲染进程，并主动执行 `EmptyWorkingSet` 将物理内存即时回收至个位数 MB（音频由纯 Rust 线程解码播放，完全独立于 UI，毫秒不乱）；
+2. **切歌时精准状态唤醒**：播放队列及模式逻辑在前端 Zustand 中编排。当后端监控线程检测到曲目自然播完（或收到托盘/系统媒体键切歌指令）时，通过 `resume_main_webview` 执行毫秒级状态唤醒，在 JS 运行时解冻完成后安全投递 `player://ended` 或对应指令；
+3. **完成切歌后自动重新休眠**：前端 Zustand 驱动下一首曲目加载并通知后端起播后，后台自动调度 `schedule_resuspend`（延迟数秒确认无连续交互后再次静默挂起），既保证了全自动后台切歌的平滑连贯，又做到了极致的低内存驻留；
+4. **无感唤醒防闪烁**：当用户从托盘点击恢复主界面时，先在离屏状态下唤醒 WebView2 并等待毛玻璃背景与封面重采样渲染稳定（约 500ms），然后再呼出窗口，彻底消除 Chromium 恢复时的渲染过渡帧与白屏闪烁。
+
 ## 📦 下载安装
 
 前往 [Releases](https://github.com/LingyunStudio/RustMusic/releases/latest) 下载 `RustMusic_<版本>_x64-setup.exe`（Windows 10/11 x64，Inno Setup 安装器）。已安装的旧版本会通过应用内自动更新提示升级（下载带 SHA-256 校验，静默安装后自动重启）。
