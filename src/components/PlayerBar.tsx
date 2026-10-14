@@ -4,8 +4,10 @@ import {
   ListMusic,
   Pause,
   Play,
+  FastForward,
   Repeat,
   Repeat1,
+  Rewind,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -305,6 +307,8 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
   const togglePlay = useStore((s) => s.togglePlay);
   const next = useStore((s) => s.next);
   const prev = useStore((s) => s.prev);
+  const seekForward = useStore((s) => s.seekForward);
+  const seekBackward = useStore((s) => s.seekBackward);
   const setVolume = useStore((s) => s.setVolume);
   const setSpeed = useStore((s) => s.setSpeed);
   const setRepeat = useStore((s) => s.setRepeat);
@@ -499,7 +503,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
 
         {/* 中部控制（内容总高 40+16+4=60px，在 64px 条高内垂直居中） */}
         <div className="flex-1 flex flex-col items-center justify-center gap-1 min-w-0">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <button
               className={`btn-ghost w-[30px] h-[30px] ${shuffle ? "!text-[var(--accent)]" : ""}`}
               onClick={toggleShuffle}
@@ -509,6 +513,14 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
             </button>
             <button className="btn-ghost w-[30px] h-[30px]" onClick={prev} title="上一首">
               <SkipBack size={16} className="fill-current" />
+            </button>
+            <button
+              className="btn-ghost w-[30px] h-[30px] disabled:opacity-40"
+              disabled={!current}
+              onClick={() => seekBackward(5000)}
+              title="快退 5 秒（←）"
+            >
+              <Rewind size={16} className="fill-current" />
             </button>
             <button
               className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-[var(--accent-on)] hover:scale-105 active:scale-95 transition-transform"
@@ -524,6 +536,14 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               ) : (
                 <Play size={17} className="fill-current ml-0.5" />
               )}
+            </button>
+            <button
+              className="btn-ghost w-[30px] h-[30px] disabled:opacity-40"
+              disabled={!current}
+              onClick={() => seekForward(5000)}
+              title="快进 5 秒（→）"
+            >
+              <FastForward size={16} className="fill-current" />
             </button>
             <button className="btn-ghost w-[30px] h-[30px]" onClick={() => next(false)} title="下一首">
               <SkipForward size={16} className="fill-current" />

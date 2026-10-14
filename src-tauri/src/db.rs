@@ -389,17 +389,16 @@ pub fn track_paths(conn: &Connection) -> Vec<(String, i64, i64)> {
 
 /// 文件已不存在时软删除（missing=1）：记录保留（含喜欢/播放统计/歌单引用），
 /// 资料库隐藏；文件重新加入后 upsert 自动复活
-pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, folder_prefixes: &[String]) {
-    // 曾在监控目录下、现已不在任何目录前缀内的 → missing
+pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, _folder_prefixes: &[String]) {
+    // 凡是不在当前任何监控目录现存文件集合 (seen) 里的 → missing
     let stale: Vec<String> = track_paths(conn)
         .into_iter()
         .map(|(p, _, _)| p)
-        .filter(|p| !seen.contains(p) && folder_prefixes.iter().any(|f| p.starts_with(f.as_str())))
+        .filter(|p| !seen.contains(p))
         .collect();
     // 目录重新添加/文件回归：复活对应记录
     let revived: Vec<String> = seen
         .iter()
-        .filter(|p| folder_prefixes.iter().any(|f| p.starts_with(f.as_str())))
         .cloned()
         .collect();
     // 两个批量标记合并进单事务，替代逐行隐式提交
@@ -485,6 +484,17 @@ pub fn get_track(conn: &Connection, id: i64) -> Option<TrackMeta> {
     .flatten()
 }
 
+pub fn get_track_by_path(conn: &Connection, path: &str) -> Option<TrackMeta> {
+    conn.query_row(
+        &(TRACK_SELECT.to_string() + "WHERE t.path = ?1"),
+        params![path],
+        row_to_meta,
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
 pub fn get_track_path(conn: &Connection, id: i64) -> Option<String> {
     conn.query_row("SELECT path FROM tracks WHERE id = ?1", params![id], |r| {
         r.get(0)
@@ -505,6 +515,54 @@ pub fn get_lrc_path(conn: &Connection, id: i64) -> Option<String> {
         .ok()
         .flatten();
     v.filter(|s| !s.is_empty())
+}
+
+pub fn delete_track(conn: &Connection, id: i64) {
+    let row_key = format!("track:{id}");
+    let _ = conn.execute("DELETE FROM tracks WHERE id = ?1", params![id]);
+    let _ = conn.execute("DELETE FROM liked WHERE track_id = ?1", params![id]);
+    let _ = conn.execute("DELETE FROM stats WHERE track_id = ?1", params![id]);
+    let _ = conn.execute(
+        "DELETE FROM playlist_tracks WHERE track_id = ?1 AND kind = 'local'",
+        params![id],
+    );
+    let _ = conn.execute(
+        "DELETE FROM manual_order WHERE row_key = ?1",
+        params![row_key],
+    );
+}
+
+pub fn delete_tracks(conn: &Connection, ids: &[i64]) {
+    if ids.is_empty() {
+        return;
+    }
+    match conn.unchecked_transaction() {
+        Ok(tx) => {
+            for &id in ids {
+                let row_key = format!("track:{id}");
+                let _ = tx.execute("DELETE FROM tracks WHERE id = ?1", params![id]);
+                let _ = tx.execute("DELETE FROM liked WHERE track_id = ?1", params![id]);
+                let _ = tx.execute("DELETE FROM stats WHERE track_id = ?1", params![id]);
+                let _ = tx.execute(
+                    "DELETE FROM playlist_tracks WHERE track_id = ?1 AND kind = 'local'",
+                    params![id],
+                );
+                let _ = tx.execute(
+                    "DELETE FROM manual_order WHERE row_key = ?1",
+                    params![row_key],
+                );
+            }
+            if let Err(e) = tx.commit() {
+                eprintln!("[db] delete_tracks commit 失败: {e}");
+            }
+        }
+        Err(e) => {
+            eprintln!("[db] delete_tracks 开启事务失败，回退逐条删除: {e}");
+            for &id in ids {
+                delete_track(conn, id);
+            }
+        }
+    }
 }
 
 pub fn like_track(conn: &Connection, id: i64, on: bool) {
@@ -652,6 +710,32 @@ pub fn delete_playlist(conn: &Connection, id: i64) {
         "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
         params![id],
     );
+}
+
+pub fn delete_playlists(conn: &Connection, ids: &[i64]) {
+    if ids.is_empty() {
+        return;
+    }
+    match conn.unchecked_transaction() {
+        Ok(tx) => {
+            for &id in ids {
+                let _ = tx.execute("DELETE FROM playlists WHERE id = ?1", params![id]);
+                let _ = tx.execute(
+                    "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+                    params![id],
+                );
+            }
+            if let Err(e) = tx.commit() {
+                eprintln!("[db] delete_playlists commit 失败: {e}");
+            }
+        }
+        Err(e) => {
+            eprintln!("[db] delete_playlists 开启事务失败，回退逐个删除: {e}");
+            for &id in ids {
+                delete_playlist(conn, id);
+            }
+        }
+    }
 }
 
 /// 重命名播放列表。远程导入的列表若还没记录原始导入名，先以当前名
@@ -965,6 +1049,31 @@ pub fn remove_playlist_entry(conn: &Connection, rowid: i64) {
         "DELETE FROM playlist_tracks WHERE rowid = ?1",
         params![rowid],
     );
+}
+
+pub fn remove_playlist_entries(conn: &Connection, rowids: &[i64]) {
+    if rowids.is_empty() {
+        return;
+    }
+    match conn.unchecked_transaction() {
+        Ok(tx) => {
+            for &rowid in rowids {
+                let _ = tx.execute(
+                    "DELETE FROM playlist_tracks WHERE rowid = ?1",
+                    params![rowid],
+                );
+            }
+            if let Err(e) = tx.commit() {
+                eprintln!("[db] remove_playlist_entries commit 失败: {e}");
+            }
+        }
+        Err(e) => {
+            eprintln!("[db] remove_playlist_entries 开启事务失败，回退逐条删除: {e}");
+            for &rowid in rowids {
+                remove_playlist_entry(conn, rowid);
+            }
+        }
+    }
 }
 
 // ---------- 在线喜欢（轻量引用，不下载） ----------

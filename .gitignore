@@ -31,3 +31,4 @@ src-tauri/_*.rs
 .tmp-test/
 src-tauri/rust_url.txt
 *.log.bak
+.zcodeignore

@@ -1,7 +1,7 @@
 //! 在线曲目行（虚拟窗口渲染的单行）：当前行高亮、多选勾选、行内操作。
 //! 组件自身从 store 读 current/playing/savedOnline/openDetailPage/toggleLikeOnline，
 //! 父组件只传行数据与回调，保证列表逻辑集中在上层。
-import { Heart, MoreHorizontal, Play, Check } from "lucide-react";
+import { Heart, MoreHorizontal, Pause, Play, Check } from "lucide-react";
 import { useStore } from "../../store";
 import { fmtTime } from "../../utils";
 import type { OnlineRow, Source } from "./shared";
@@ -76,10 +76,8 @@ export function TrackRowItem({
                     ) : (
                       <>
                         <span
-                          className={`text-[12.5px] tabular-nums transition-opacity ${
-                            active
-                              ? "text-[var(--accent)] font-bold opacity-100 group-hover:opacity-0"
-                              : "text-[var(--ink-3)] group-hover:opacity-0"
+                          className={`text-[12.5px] tabular-nums transition-opacity group-hover:opacity-0 ${
+                            active ? "text-[var(--accent)] font-bold" : "text-[var(--ink-3)]"
                           }`}
                         >
                           {String(i + 1).padStart(2, "0")}
@@ -87,13 +85,24 @@ export function TrackRowItem({
                         <button
                           className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
                             active
-                              ? "text-[var(--accent)]"
-                              : "bg-[var(--accent)] text-[var(--accent-on)]"
+                              ? "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.2)]"
+                              : "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.18)]"
                           }`}
-                          onClick={onPlay}
-                          title="播放"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            if (active) {
+                              useStore.getState().togglePlay();
+                            } else {
+                              onPlay();
+                            }
+                          }}
+                          title={active ? (playing ? "暂停" : "播放") : "播放"}
                         >
-                          <Play size={14} className="fill-current ml-px" />
+                          {active && playing ? (
+                            <Pause size={14} className="fill-current" />
+                          ) : (
+                            <Play size={14} className="fill-current ml-px" />
+                          )}
                         </button>
                       </>
                     )}

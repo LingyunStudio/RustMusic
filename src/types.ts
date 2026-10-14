@@ -31,6 +31,11 @@ export interface Folder {
   path: string;
 }
 
+export interface DropResult {
+  foldersAdded: number;
+  tracksAdded: TrackMeta[];
+}
+
 export interface PlaylistEntryMeta {
   rowid: number;
   kind: "local" | "netease" | "qq" | "kugou" | "bilibili" | "navidrome";

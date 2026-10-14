@@ -284,6 +284,10 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
     builder
         .build()
         .map_err(|e| format!("创建桌面歌词窗口失败: {e}"))?;
+    app.state::<AppState>()
+        .dlyrics_locked
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::tray::update_dlyrics_tray(&app);
     Ok(())
 }
 
@@ -310,6 +314,10 @@ pub async fn desktop_lyrics_close(app: AppHandle) -> Result<(), String> {
         }
         let _ = w.close();
     }
+    app.state::<AppState>()
+        .dlyrics_locked
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::tray::update_dlyrics_tray(&app);
     Ok(())
 }
 
@@ -320,6 +328,10 @@ pub async fn desktop_lyrics_unlock(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("desktop-lyrics") {
         let _ = w.set_ignore_cursor_events(false);
     }
+    app.state::<AppState>()
+        .dlyrics_locked
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::tray::update_dlyrics_tray(&app);
     Ok(())
 }
 

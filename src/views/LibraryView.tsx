@@ -11,11 +11,13 @@ import {
   Play,
   Search,
   Shuffle,
+  Trash2,
   X,
 } from "lucide-react";
 import { useStore } from "../store";
 import TrackList, { type SortKey } from "../components/TrackList";
 import Modal from "../components/Modal";
+import { ConfirmModal } from "../components/Dialogs";
 import { matchSearch } from "../utils";
 import type { PlaylistEntryMeta, TrackMeta } from "../types";
 
@@ -65,6 +67,11 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const playlists = useStore((s) => s.playlists);
   const toast = useStore((s) => s.toast);
   const openDetailPage = useStore((s) => s.openDetailPage);
+  const deleteTrack = useStore((s) => s.deleteTrack);
+  const deleteTracks = useStore((s) => s.deleteTracks);
+  // 删除确认弹窗状态
+  const [deleteTarget, setDeleteTarget] = useState<TrackMeta | null>(null);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   // 批量多选：key 与 unavailable/手动排序一致（track:<id> / netease:<rid>…）
   const [batchMode, setBatchMode] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -306,6 +313,10 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, sortedTracks, mergedRows]);
   const selectedBatch = batchRows.filter((r) => sel.has(r.key));
+  const selectedLocalTracks = selectedBatch.filter((r) => r.type === "local") as {
+    type: "local";
+    t: TrackMeta;
+  }[];
 
   const toggleSelKey = (key: string) =>
     setSel((prev) => {
@@ -596,6 +607,17 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 <Download size={13} />
                 下载到本地
               </button>
+              {mode === "library" && (
+                <button
+                  className="btn-secondary !py-1.5 !px-3 !text-[#e0533f] hover:!bg-[#e0533f]/10"
+                  disabled={!selectedLocalTracks.length}
+                  onClick={() => setBatchDeleteOpen(true)}
+                  title="从硬盘上永久删除选中的歌曲文件"
+                >
+                  <Trash2 size={13} />
+                  从硬盘删除
+                </button>
+              )}
               <button
                 className="btn-ghost !py-1.5 !px-3 text-[12.5px]"
                 onClick={() => setSel(new Set())}
@@ -621,6 +643,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               onToggle: toggleSelKey,
             }}
             onMetaClick={(field, text) => openDetailPage(field, text)}
+            onDeleteTrack={mode === "library" ? (t) => setDeleteTarget(t) : undefined}
             emptyHint={
               mode === "library"
                 ? "资料库还是空的"
@@ -699,6 +722,62 @@ export default function LibraryView({ mode }: { mode: Mode }) {
           </button>
         </div>
       </Modal>
+
+      {/* 单曲从硬盘删除确认弹窗 */}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="从硬盘删除歌曲"
+        confirmText="确认删除"
+        danger
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await deleteTrack(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-[13px] text-[var(--ink)] font-medium">
+            确定要从硬盘上删除歌曲「{deleteTarget?.title}」吗？
+          </p>
+          {deleteTarget?.path && (
+            <div className="text-[11.5px] text-[var(--ink-2)] break-all font-mono bg-[var(--shade)] p-2 rounded-lg border border-[var(--line)]">
+              {deleteTarget.path}
+            </div>
+          )}
+          <p className="text-[12px] text-[#e0533f]">
+            注意：此操作将直接将文件从硬盘永久删除，无法撤销！
+          </p>
+        </div>
+      </ConfirmModal>
+
+      {/* 批量从硬盘删除确认弹窗 */}
+      <ConfirmModal
+        open={batchDeleteOpen}
+        title="批量从硬盘删除歌曲"
+        confirmText={`确认删除 (${selectedLocalTracks.length} 首)`}
+        danger
+        onClose={() => setBatchDeleteOpen(false)}
+        onConfirm={async () => {
+          const ids = selectedLocalTracks.map((r) => r.t.id);
+          if (ids.length) {
+            await deleteTracks(ids);
+            setSel(new Set());
+            setBatchMode(false);
+          }
+          setBatchDeleteOpen(false);
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-[13px] text-[var(--ink)] font-medium">
+            确定要从硬盘上永久删除选中的 {selectedLocalTracks.length} 首歌曲吗？
+          </p>
+          <p className="text-[12px] text-[#e0533f]">
+            注意：此操作将直接将这些音频文件从硬盘永久删除，无法撤销！
+          </p>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

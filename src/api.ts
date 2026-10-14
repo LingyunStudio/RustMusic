@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   Folder,
+  DropResult,
   LyricsPayload,
   NeteaseTrack,
   Playlist,
@@ -31,13 +32,16 @@ export const api = {
     }>("list_output_devices"),
   setOutputDevice: (name: string | null) =>
     invoke<void>("set_output_device", { name }),
-  dropPaths: (paths: string[]) => invoke<number>("drop_paths", { paths }),
+  dropPaths: (paths: string[]) => invoke<DropResult>("drop_paths", { paths }),
   getLyrics: (trackId: number) => invoke<LyricsPayload>("get_lyrics", { trackId }),
   likeTrack: (id: number, liked: boolean) =>
     invoke<void>("like_track", { id, liked }),
+  deleteTrack: (id: number) => invoke<void>("delete_track", { id }),
+  deleteTracks: (ids: number[]) => invoke<number>("delete_tracks", { ids }),
   listPlaylists: () => invoke<Playlist[]>("list_playlists"),
   createPlaylist: (name: string) => invoke<number>("create_playlist", { name }),
   deletePlaylist: (id: number) => invoke<void>("delete_playlist", { id }),
+  deletePlaylists: (ids: number[]) => invoke<void>("delete_playlists", { ids }),
   renamePlaylist: (id: number, name: string) =>
     invoke<void>("rename_playlist", { id, name }),
   addToPlaylist: (playlistId: number, trackId: number) =>
@@ -229,6 +233,8 @@ export const api = {
   }) => invoke<void>("add_online_to_playlist", req),
   removePlaylistEntry: (rowid: number) =>
     invoke<void>("remove_playlist_entry", { rowid }),
+  removePlaylistEntries: (rowids: number[]) =>
+    invoke<void>("remove_playlist_entries", { rowids }),
   saveManualOrder: (list: string, keys: string[]) =>
     invoke<void>("save_manual_order", { list, keys }),
   getManualOrder: (list: string) =>

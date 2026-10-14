@@ -15,6 +15,8 @@ type Fields = Pick<
   | "addFolderByDialog"
   | "removeFolder"
   | "rescan"
+  | "deleteTrack"
+  | "deleteTracks"
   | "addSource"
   | "deleteSource"
   | "addBilibili"
@@ -72,6 +74,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
       const selected = await open({ directory: true, multiple: false, title: "选择音乐文件夹" });
       if (!selected || typeof selected !== "string") return;
       await api.addFolder(selected);
+      await get().refreshFolders();
       get().toast("文件夹已添加，正在扫描…", "success");
     } catch (e) {
       get().toast(String(e), "error");
@@ -82,6 +85,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
     try {
       await api.removeFolder(id);
       await get().refreshFolders();
+      get().toast("文件夹已移除，正在重新扫描…", "info");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -89,6 +93,106 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
 
   rescan() {
     api.rescan().catch((e) => get().toast(String(e), "error"));
+  },
+
+  async deleteTrack(id) {
+    try {
+      await api.deleteTrack(id);
+      const s = get();
+      const current = s.current;
+      const isCurrentDeleted = current?.kind === "track" && current.id === id;
+      const newQueue = s.queue.filter((q) => !(q.kind === "track" && q.id === id));
+      const newTracks = s.tracks.filter((t) => t.id !== id);
+
+      if (newQueue.length === 0) {
+        api.stop().catch(() => {});
+        set({
+          queue: [],
+          qIndex: 0,
+          current: null,
+          playing: false,
+          pos: 0,
+          tracks: newTracks,
+        });
+      } else if (isCurrentDeleted) {
+        const target = Math.min(s.qIndex, newQueue.length - 1);
+        set({
+          queue: newQueue,
+          qIndex: target,
+          tracks: newTracks,
+        });
+        get().playQueueIndex(target);
+      } else {
+        const newQIndex = newQueue.findIndex((item) => {
+          if (current?.kind === "track") return item.kind === "track" && item.id === current.id;
+          return (
+            item.kind === current?.kind &&
+            item.id === ((current as any)?.nid ?? (current as any)?.qid)
+          );
+        });
+        set({
+          queue: newQueue,
+          qIndex: newQIndex >= 0 ? newQIndex : Math.min(s.qIndex, newQueue.length - 1),
+          tracks: newTracks,
+        });
+      }
+      get().refreshPlaylists().catch(() => {});
+      get().toast("歌曲已从硬盘删除", "success");
+    } catch (e) {
+      get().toast(`删除失败：${e}`, "error");
+    }
+  },
+
+  async deleteTracks(ids) {
+    try {
+      const idSet = new Set(ids);
+      const count = await api.deleteTracks(ids);
+      const s = get();
+      const current = s.current;
+      const isCurrentDeleted =
+        current?.kind === "track" && current.id != null && idSet.has(current.id);
+      const newQueue = s.queue.filter(
+        (q) => !(q.kind === "track" && q.id != null && idSet.has(q.id))
+      );
+      const newTracks = s.tracks.filter((t) => !idSet.has(t.id));
+
+      if (newQueue.length === 0) {
+        api.stop().catch(() => {});
+        set({
+          queue: [],
+          qIndex: 0,
+          current: null,
+          playing: false,
+          pos: 0,
+          tracks: newTracks,
+        });
+      } else if (isCurrentDeleted) {
+        const target = Math.min(s.qIndex, newQueue.length - 1);
+        set({
+          queue: newQueue,
+          qIndex: target,
+          tracks: newTracks,
+        });
+        get().playQueueIndex(target);
+      } else {
+        const newQIndex = newQueue.findIndex((item) => {
+          if (current?.kind === "track") return item.kind === "track" && item.id === current.id;
+          return (
+            item.kind === current?.kind &&
+            item.id === ((current as any)?.nid ?? (current as any)?.qid)
+          );
+        });
+        set({
+          queue: newQueue,
+          qIndex: newQIndex >= 0 ? newQIndex : Math.min(s.qIndex, newQueue.length - 1),
+          tracks: newTracks,
+        });
+      }
+      get().refreshPlaylists().catch(() => {});
+      get().toast(`已从硬盘删除 ${count} 首歌曲`, "success");
+    } catch (e) {
+      get().toast(`删除失败：${e}`, "error");
+    }
   },
   // ---------- 在线音源 ----------
 

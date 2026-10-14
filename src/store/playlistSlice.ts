@@ -11,11 +11,13 @@ type Fields = Pick<
   | "refreshPlaylists"
   | "createPlaylist"
   | "deletePlaylist"
+  | "deletePlaylists"
   | "renamePlaylist"
   | "addToPlaylist"
   | "removeFromPlaylist"
   | "addOnlineToPlaylist"
   | "removePlaylistEntryRow"
+  | "removePlaylistEntryRows"
   | "rowKeyOf"
   | "loadManualOrder"
   | "saveManualOrder"
@@ -55,6 +57,23 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
         set({ view: "library" });
       }
       get().toast("播放列表已删除", "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async deletePlaylists(ids) {
+    try {
+      await api.deletePlaylists(ids);
+      await get().refreshPlaylists();
+      if (
+        get().view === "playlist" &&
+        get().viewParam != null &&
+        ids.includes(get().viewParam as number)
+      ) {
+        set({ view: "library" });
+      }
+      get().toast(`已删除 ${ids.length} 个播放列表`, "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -114,6 +133,16 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
     try {
       await api.removePlaylistEntry(rowid);
       await get().refreshPlaylists();
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async removePlaylistEntryRows(rowids) {
+    try {
+      await api.removePlaylistEntries(rowids);
+      await get().refreshPlaylists();
+      get().toast(`已从歌单中移除 ${rowids.length} 首歌曲`, "success");
     } catch (e) {
       get().toast(String(e), "error");
     }

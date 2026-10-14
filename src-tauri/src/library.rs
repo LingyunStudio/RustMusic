@@ -60,6 +60,12 @@ pub fn run_scan(app: AppHandle) {
     };
 
     if folders.is_empty() {
+        emit(0, 0, true);
+        {
+            let conn = st.db.lock();
+            let seen = HashSet::new();
+            db::delete_missing(&conn, &seen, &prefixes);
+        }
         emit(0, 0, false);
         return;
     }

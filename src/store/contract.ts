@@ -184,6 +184,8 @@ export interface Store {
   refreshSources(): Promise<void>;
 
   playTracks(tracks: TrackMeta[], idx: number): void;
+  /** 追加本地曲目进队列并立即开始播放第一首（拖拽音频文件用） */
+  enqueueAndPlay(tracks: TrackMeta[]): void;
   playSourceItem(s: SourceItem): void;
   playNetease(list: NeteaseTrack[], idx: number): void;
   /** Navidrome 全部歌曲列表播放（整表入队，支持自动续页） */
@@ -201,6 +203,8 @@ export interface Store {
   next(auto?: boolean, ended?: boolean, bypassRepeatOne?: boolean): void;
   prev(): void;
   seek(ms: number): void;
+  seekForward(stepMs?: number): void;
+  seekBackward(stepMs?: number): void;
   setScrubbing(v: boolean): void;
   setVolume(v: number): void;
   /** 定时停止播放：min=null 取消；到点停止引擎并复位 UI */
@@ -230,6 +234,7 @@ export interface Store {
 
   createPlaylist(name: string): Promise<number>;
   deletePlaylist(id: number): Promise<void>;
+  deletePlaylists(ids: number[]): Promise<void>;
   renamePlaylist(id: number, name: string): Promise<void>;
   addToPlaylist(pid: number, tid: number): Promise<void>;
   removeFromPlaylist(pid: number, tid: number): Promise<void>;
@@ -237,6 +242,8 @@ export interface Store {
   addFolderByDialog(): Promise<void>;
   removeFolder(id: number): Promise<void>;
   rescan(): void;
+  deleteTrack(id: number): Promise<void>;
+  deleteTracks(ids: number[]): Promise<void>;
   addSource(url: string, title: string): Promise<void>;
   deleteSource(id: number): Promise<void>;
   /** 解析 B 站视频加入在线音源（多P全部加入） */
@@ -371,6 +378,7 @@ export interface Store {
     }
   ): Promise<void>;
   removePlaylistEntryRow(rowid: number): Promise<void>;
+  removePlaylistEntryRows(rowids: number[]): Promise<void>;
   importNeteasePlaylist(remotePid: number, name: string, opts?: { quiet?: boolean }): Promise<number | null>;
   importQqPlaylist(remotePid: number, name: string, opts?: { quiet?: boolean }): Promise<number | null>;
   /** 三个平台共用的导入实现：返回本次新增数，失败返回 null。

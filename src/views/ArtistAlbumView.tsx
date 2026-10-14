@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Play, Shuffle } from "lucide-react";
 import { useStore } from "../store";
 import TrackList from "../components/TrackList";
+import { ConfirmModal } from "../components/Dialogs";
 import { api } from "../api";
-import type { PlaylistEntryMeta } from "../types";
+import type { PlaylistEntryMeta, TrackMeta } from "../types";
 
 const qqCover = (albumMid: string) =>
   albumMid
@@ -22,9 +23,11 @@ export default function ArtistAlbumView({
   const popDetailPage = useStore((s) => s.popDetailPage);
   const openDetailPage = useStore((s) => s.openDetailPage);
   const playEntries = useStore((s) => s.playEntries);
+  const deleteTrack = useStore((s) => s.deleteTrack);
 
   const [onlineLoading, setOnlineLoading] = useState(true);
   const [onlineEntries, setOnlineEntries] = useState<PlaylistEntryMeta[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<TrackMeta | null>(null);
 
   // 本地曲库匹配（大小写不敏感的精确匹配：歌手匹配 artist/albumArtist，专辑匹配 album）
   const localMatches = useMemo(() => {
@@ -218,12 +221,42 @@ export default function ArtistAlbumView({
             inCard
             onlineEntries={onlineEntries}
             onMetaClick={(field, text) => openDetailPage(field, text)}
+            onDeleteTrack={(t) => setDeleteTarget(t)}
             emptyHint={`本地曲库中没有该${kind === "artist" ? "歌手" : "专辑"}的歌曲${
               onlineLoading ? "，正在搜索在线曲库…" : "，在线曲库也没有找到"
             }`}
           />
         </div>
       </div>
+
+      {/* 单曲从硬盘删除确认弹窗 */}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="从硬盘删除歌曲"
+        confirmText="确认删除"
+        danger
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await deleteTrack(deleteTarget.id);
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-[13px] text-[var(--ink)] font-medium">
+            确定要从硬盘上删除歌曲「{deleteTarget?.title}」吗？
+          </p>
+          {deleteTarget?.path && (
+            <div className="text-[11.5px] text-[var(--ink-2)] break-all font-mono bg-[var(--shade)] p-2 rounded-lg border border-[var(--line)]">
+              {deleteTarget.path}
+            </div>
+          )}
+          <p className="text-[12px] text-[#e0533f]">
+            注意：此操作将直接将文件从硬盘永久删除，无法撤销！
+          </p>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import {
+  Check,
   Clock3,
   Cloud,
   Disc3,
   Heart,
   Library,
+  ListChecks,
   ListMusic,
   Loader2,
   Music2,
@@ -14,13 +16,14 @@ import {
   Settings,
   DiscAlbum,
   Trash2,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
 import Logo from "./Logo";
 import SkinPicker from "./SkinPicker";
-import { InputModal } from "./Dialogs";
+import { ConfirmModal, InputModal } from "./Dialogs";
 import CoverImg from "./CoverImg";
 import { clampMenuPos } from "../utils";
 import { useDragList } from "../hooks/useDragList";
@@ -47,7 +50,12 @@ export default function Sidebar() {
   const reorderPlaylists = useStore((s) => s.reorderPlaylists);
   const renamePlaylist = useStore((s) => s.renamePlaylist);
   const deletePlaylist = useStore((s) => s.deletePlaylist);
+  const deletePlaylists = useStore((s) => s.deletePlaylists);
   const [plModalOpen, setPlModalOpen] = useState(false);
+  // 歌单批量选择模式与状态
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSel, setBatchSel] = useState<Set<number>>(new Set());
+  const [confirmBatchDel, setConfirmBatchDel] = useState(false);
   // 播放列表右键菜单 / 重命名弹窗
   const [menu, setMenu] = useState<{ x: number; y: number; id: number } | null>(
     null
@@ -135,49 +143,127 @@ export default function Sidebar() {
         </nav>
 
         {/* 播放列表 */}
-        <div className="mt-7 mb-2 px-4 flex items-center justify-between">
+        <div className="mt-7 mb-2 px-3 flex items-center justify-between">
           <span className="text-[10.5px] font-semibold text-[var(--ink-3)] tracking-[0.18em]">
-            播放列表
+            {batchMode ? `已选 ${batchSel.size} 个` : "播放列表"}
           </span>
-          <button
-            className="btn-ghost w-7 h-7 rounded-lg"
-            title="新建播放列表"
-            onClick={() => setPlModalOpen(true)}
-          >
-            <Plus size={15} />
-          </button>
+          <div className="flex items-center gap-1">
+            {batchMode ? (
+              <>
+                <button
+                  className="btn-ghost text-[10.5px] px-1.5 h-6 rounded"
+                  onClick={() => {
+                    if (batchSel.size === playlists.length) {
+                      setBatchSel(new Set());
+                    } else {
+                      setBatchSel(new Set(playlists.map((p) => p.id)));
+                    }
+                  }}
+                  title={batchSel.size === playlists.length ? "取消全选" : "全选"}
+                >
+                  {batchSel.size === playlists.length ? "取消" : "全选"}
+                </button>
+                <button
+                  className="btn-ghost w-6 h-6 rounded text-[#e0533f] hover:bg-[#e0533f]/10 disabled:opacity-30"
+                  title="删除所选歌单"
+                  disabled={batchSel.size === 0}
+                  onClick={() => setConfirmBatchDel(true)}
+                >
+                  <Trash2 size={13} />
+                </button>
+                <button
+                  className="btn-ghost w-6 h-6 rounded text-[var(--ink-3)]"
+                  title="退出批量模式"
+                  onClick={() => {
+                    setBatchMode(false);
+                    setBatchSel(new Set());
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="btn-ghost w-7 h-7 rounded-lg text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
+                  title="批量删除歌单"
+                  disabled={playlists.length === 0}
+                  onClick={() => {
+                    setBatchMode(true);
+                    setBatchSel(new Set());
+                  }}
+                >
+                  <ListChecks size={14} />
+                </button>
+                <button
+                  className="btn-ghost w-7 h-7 rounded-lg"
+                  title="新建播放列表"
+                  onClick={() => setPlModalOpen(true)}
+                >
+                  <Plus size={15} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col gap-1">
           {playlists.map((p, i) => {
             const active = view === "playlist" && viewParam === p.id;
+            const checked = batchMode && batchSel.has(p.id);
             const originTip =
               p.originName && p.originName !== p.name
                 ? `原名：${p.originName}（长按可拖动排序）`
                 : "长按可拖动排序";
             return (
-              <div key={p.id} {...rowProps(i)}>
+              <div key={p.id} {...(batchMode ? {} : rowProps(i))}>
                 {/* 整行原是 button：会被 useDragList 的“行内控件不触发拖拽”
                     保护拦掉，故行容器用 div，点击行为由内层承接 */}
                 <div
                   role="button"
                   tabIndex={-1}
-                  title={originTip}
-                  onClick={() => setView("playlist", p.id)}
+                  title={batchMode ? undefined : originTip}
+                  onClick={() => {
+                    if (batchMode) {
+                      setBatchSel((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(p.id)) next.delete(p.id);
+                        else next.add(p.id);
+                        return next;
+                      });
+                    } else {
+                      setView("playlist", p.id);
+                    }
+                  }}
                   onContextMenu={(ev) => {
+                    if (batchMode) return;
                     ev.preventDefault();
                     setMenu({ x: ev.clientX, y: ev.clientY, id: p.id });
                   }}
-                  className={`nav-item h-10 pl-4 pr-3 rounded-xl flex items-center gap-3 text-[13px] transition-all cursor-pointer ${
-                    active
-                      ? "bg-[var(--shade-strong)] text-[var(--ink)]"
-                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  className={`nav-item h-10 pl-3 pr-3 rounded-xl flex items-center gap-2.5 text-[13px] transition-all cursor-pointer ${
+                    checked
+                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
+                      : active
+                        ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                        : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
-                  <ListMusic
-                    size={15}
-                    className={active ? "text-[var(--accent)]" : "text-[var(--ink-3)]"}
-                  />
+                  {batchMode ? (
+                    <span
+                      className={`w-[17px] h-[17px] rounded-[5px] border flex items-center justify-center shrink-0 transition-colors ${
+                        checked
+                          ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
+                          : "border-[var(--line)]"
+                      }`}
+                    >
+                      {checked && <Check size={12} strokeWidth={3} />}
+                    </span>
+                  ) : (
+                    <ListMusic
+                      size={15}
+                      className={active ? "text-[var(--accent)]" : "text-[var(--ink-3)]"}
+                    />
+                  )}
                   <span className="truncate">{p.name}</span>
                   <span className="ml-auto text-[11.5px] text-[var(--ink-3)] tabular-nums">
                     {p.entries.length}
@@ -309,6 +395,37 @@ export default function Sidebar() {
           </div>,
           document.body
         )}
+
+      <ConfirmModal
+        open={confirmBatchDel}
+        title="批量删除播放列表"
+        danger
+        confirmText={`确认删除 (${batchSel.size} 个)`}
+        onClose={() => setConfirmBatchDel(false)}
+        onConfirm={async () => {
+          const ids = Array.from(batchSel);
+          if (ids.length) {
+            await deletePlaylists(ids);
+            if (
+              view === "playlist" &&
+              viewParam != null &&
+              batchSel.has(viewParam)
+            ) {
+              setView("library");
+            }
+            setBatchSel(new Set());
+            setBatchMode(false);
+          }
+          setConfirmBatchDel(false);
+        }}
+      >
+        <p className="text-[13px] text-[var(--ink)] font-medium mb-1.5">
+          确定删除选中的 {batchSel.size} 个播放列表？
+        </p>
+        <p className="text-[12px] text-[var(--ink-3)]">
+          注意：列表中的条目引用将被移除，但本地歌曲源文件不会受任何影响。
+        </p>
+      </ConfirmModal>
     </aside>
   );
 }

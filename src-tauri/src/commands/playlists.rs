@@ -81,6 +81,13 @@ pub async fn delete_playlist(state: State<'_, AppState>, id: i64) -> Result<(), 
 }
 
 #[tauri::command]
+pub async fn delete_playlists(state: State<'_, AppState>, ids: Vec<i64>) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::delete_playlists(&conn, &ids);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn rename_playlist(
     state: State<'_, AppState>,
     id: i64,
@@ -154,6 +161,16 @@ pub async fn add_online_to_playlist(
 pub async fn remove_playlist_entry(state: State<'_, AppState>, rowid: i64) -> Result<(), String> {
     let conn = state.db.lock();
     db::remove_playlist_entry(&conn, rowid);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_playlist_entries(
+    state: State<'_, AppState>,
+    rowids: Vec<i64>,
+) -> Result<(), String> {
+    let conn = state.db.lock();
+    db::remove_playlist_entries(&conn, &rowids);
     Ok(())
 }
 

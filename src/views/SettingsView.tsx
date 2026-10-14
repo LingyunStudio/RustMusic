@@ -386,26 +386,35 @@ export default function SettingsView() {
               {folders.map((f) => (
                 <div
                   key={f.id}
-                  className="group flex items-center gap-2.5 h-10 px-3 rounded-lg bg-white/[0.03] hover:bg-[var(--shade)] transition-colors"
+                  className="flex items-center gap-2.5 h-11 px-3 rounded-lg bg-white/[0.03] hover:bg-[var(--shade)] transition-colors"
                 >
                   <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
-                  <span className="text-[12.5px] text-[var(--ink)] truncate">{f.path}</span>
-                  <button
-                    className="btn-ghost w-7 h-7 ml-auto shrink-0 opacity-0 group-hover:opacity-100"
-                    onClick={() =>
-                      api.openFolder(f.path).catch((e) => useStore.getState().toast(String(e), "error"))
-                    }
-                    title="在资源管理器中打开"
+                  <span
+                    className="text-[12.5px] text-[var(--ink)] truncate flex-1 min-w-0"
+                    title={f.path}
                   >
-                    <FolderOpen size={14} />
-                  </button>
-                  <button
-                    className="btn-ghost w-7 h-7 shrink-0 opacity-0 group-hover:opacity-100 hover:!text-rose-400"
-                    onClick={() => removeFolder(f.id)}
-                    title="移除（不会删除文件）"
-                  >
-                    <X size={14} />
-                  </button>
+                    {f.path}
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      className="btn-secondary !py-1 !px-2.5 text-[12px] flex items-center gap-1.5"
+                      onClick={() =>
+                        api.openFolder(f.path).catch((e) => useStore.getState().toast(String(e), "error"))
+                      }
+                      title="在文件管理器中打开"
+                    >
+                      <FolderOpen size={13} />
+                      在文件管理器中打开
+                    </button>
+                    <button
+                      className="btn-secondary !py-1 !px-2.5 text-[12px] flex items-center gap-1.5 hover:!text-rose-400"
+                      onClick={() => removeFolder(f.id)}
+                      title="移除（不会删除文件）"
+                    >
+                      <Trash2 size={13} />
+                      移除
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -587,12 +596,30 @@ export default function SettingsView() {
           <h2 className="text-[14.5px] font-semibold mb-3">下载保存目录</h2>
           <div className="flex items-center gap-3">
             <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
-            <span className="text-[12.5px] text-[var(--ink)] truncate flex-1">
+            <span
+              className="text-[12.5px] text-[var(--ink)] truncate flex-1 min-w-0"
+              title={saveDir || saveDirDefault}
+            >
               {saveDir || saveDirDefault}
             </span>
-            <button className="btn-secondary !py-1.5 !px-3" onClick={pickSaveDir}>
-              更改目录
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                className="btn-secondary !py-1.5 !px-3 flex items-center gap-1.5"
+                onClick={() => {
+                  const target = saveDir || saveDirDefault;
+                  if (target) {
+                    api.openFolder(target).catch((e) => useStore.getState().toast(String(e), "error"));
+                  }
+                }}
+                title="在资源管理器中显示"
+              >
+                <FolderOpen size={13} />
+                在资源管理器中显示
+              </button>
+              <button className="btn-secondary !py-1.5 !px-3" onClick={pickSaveDir}>
+                更改目录
+              </button>
+            </div>
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
             在线歌曲“下载到本地”将保存到此目录，并自动加入资料库（含标签与歌词）。

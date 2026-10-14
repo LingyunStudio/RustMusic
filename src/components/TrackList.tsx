@@ -1,4 +1,4 @@
-import { Ban, Check, Heart, ListMusic, MoreHorizontal, Play } from "lucide-react";
+import { Ban, Check, Heart, ListMusic, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
@@ -42,6 +42,8 @@ interface TrackListProps {
   };
   /** 点击歌手/专辑名回调（提供即启用可点击；资料库=填入本页搜索框） */
   onMetaClick?: (field: "artist" | "album", text: string) => void;
+  /** 删除歌曲回调（从硬盘删除，触发二次确认） */
+  onDeleteTrack?: (track: TrackMeta) => void;
 }
 
 export type SortKey = "manual" | "title" | "artist" | "album" | "duration" | "added";
@@ -71,6 +73,7 @@ export default function TrackList({
   onDragReorder,
   selection,
   onMetaClick,
+  onDeleteTrack,
 }: TrackListProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [pickerFor, setPickerFor] = useState<TrackMeta | null>(null);
@@ -295,10 +298,8 @@ export default function TrackList({
           ) : (
             <>
               <span
-                className={`text-[12.5px] tabular-nums transition-opacity ${
-                  active
-                    ? "text-[var(--accent)] font-bold"
-                    : "text-[var(--ink-3)] group-hover:opacity-0"
+                className={`text-[12.5px] tabular-nums transition-opacity group-hover:opacity-0 ${
+                  active ? "text-[var(--accent)] font-bold" : "text-[var(--ink-3)]"
                 }`}
               >
                 {String(idxNum + 1).padStart(2, "0")}
@@ -306,13 +307,24 @@ export default function TrackList({
               <button
                 className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
                   active
-                    ? "text-[var(--accent)]"
+                    ? "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.2)]"
                     : "bg-[var(--play-btn-bg)] text-[var(--play-btn-on)] shadow-[0_2px_10px_rgba(0,0,0,0.18)]"
                 }`}
-                onClick={() => (active ? useStore.getState().togglePlay() : playTracks(tracks, i))}
-                title={active ? "播放 / 暂停" : "播放"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (active) {
+                    useStore.getState().togglePlay();
+                  } else {
+                    playTracks(tracks, i);
+                  }
+                }}
+                title={active ? (playing ? "暂停" : "播放") : "播放"}
               >
-                <Play size={14} className="fill-current ml-px" />
+                {active && playing ? (
+                  <Pause size={14} className="fill-current" />
+                ) : (
+                  <Play size={14} className="fill-current ml-px" />
+                )}
               </button>
             </>
           )}
@@ -487,22 +499,33 @@ export default function TrackList({
           ) : (
             <>
               <span
-                className={`text-[12.5px] tabular-nums transition-opacity ${
-                  active
-                    ? "text-[var(--accent)] font-bold"
-                    : "text-[var(--ink-3)] group-hover:opacity-0"
+                className={`text-[12.5px] tabular-nums transition-opacity group-hover:opacity-0 ${
+                  active ? "text-[var(--accent)] font-bold" : "text-[var(--ink-3)]"
                 }`}
               >
                 {String(idxNum + 1).padStart(2, "0")}
               </span>
               <button
                 className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
-                  active ? "text-[var(--accent)]" : "bg-[var(--accent)] text-[var(--accent-on)]"
+                  active
+                    ? "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.2)]"
+                    : "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.18)]"
                 }`}
-                onClick={() => playEntries(onlineEntries, Math.max(0, i))}
-                title="播放"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (active) {
+                    useStore.getState().togglePlay();
+                  } else {
+                    playEntries(onlineEntries, Math.max(0, i));
+                  }
+                }}
+                title={active ? (playing ? "暂停" : "播放") : "播放"}
               >
-                <Play size={14} className="fill-current ml-px" />
+                {active && playing ? (
+                  <Pause size={14} className="fill-current" />
+                ) : (
+                  <Play size={14} className="fill-current ml-px" />
+                )}
               </button>
             </>
           )}
@@ -835,6 +858,21 @@ export default function TrackList({
           >
             <ListMusic size={13} /> 添加到播放列表…
           </button>
+          {onDeleteTrack && (
+            <>
+              <div className="my-1 mx-2 border-t border-[var(--line)]" />
+              <button
+                className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[#e0533f] hover:bg-[#e0533f]/10 text-left transition-colors"
+                onClick={() => {
+                  const target = menu.track;
+                  setMenu(null);
+                  onDeleteTrack(target);
+                }}
+              >
+                <Trash2 size={13} /> 从硬盘删除
+              </button>
+            </>
+          )}
         </div>,
         document.body
       )}

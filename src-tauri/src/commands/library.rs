@@ -71,6 +71,9 @@ pub async fn rescan(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_folder(path: String) -> Result<(), String> {
     let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        let _ = std::fs::create_dir_all(&p);
+    }
     if !p.is_dir() {
         return Err("该路径不是文件夹".into());
     }
@@ -89,17 +92,25 @@ pub async fn open_folder(path: String) -> Result<(), String> {
     }
     Ok(())
 }
+#[derive(serde::Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DropResult {
+    pub folders_added: u32,
+    pub tracks_added: Vec<crate::models::TrackMeta>,
+}
+
 /// 拖拽导入：文件夹加入媒体库，音频文件直接入库
 #[tauri::command]
-pub async fn drop_paths(app: AppHandle, paths: Vec<String>) -> Result<u32, String> {
+pub async fn drop_paths(app: AppHandle, paths: Vec<String>) -> Result<DropResult, String> {
     let task_app = app.clone();
     super::blocking(move || drop_paths_task(&task_app, paths)).await
 }
 
 /// 同步任务体：parse_track 会解码内嵌封面（大图可达数十 MB），多文件拖拽明显耗时
-fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<u32, String> {
+fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<DropResult, String> {
     let state = app.state::<AppState>();
-    let mut added = 0u32;
+    let mut folders_added = 0u32;
+    let mut tracks_added = Vec::new();
     let mut need_scan = false;
     for p in paths {
         let pb = std::path::PathBuf::from(&p);
@@ -110,7 +121,7 @@ fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<u32, String> {
             let norm = library::norm_path(&pb);
             let conn = state.db.lock();
             if db::add_folder(&conn, &norm).is_ok() {
-                added += 1;
+                folders_added += 1;
                 need_scan = true;
             }
         } else if library::is_audio(&pb) {
@@ -118,14 +129,19 @@ fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<u32, String> {
             if let Some(t) = library::parse_track(&pb, &app_data) {
                 let conn = state.db.lock();
                 db::upsert_track(&conn, &t);
-                added += 1;
+                if let Some(meta) = db::get_track_by_path(&conn, &t.path) {
+                    tracks_added.push(meta);
+                }
             }
         }
     }
     if need_scan {
-        library::spawn_scan(&app);
+        library::spawn_scan(app);
     }
-    Ok(added)
+    Ok(DropResult {
+        folders_added,
+        tracks_added,
+    })
 }
 // ---------- 喜欢 / 统计 ----------
 
@@ -134,4 +150,111 @@ pub async fn like_track(state: State<'_, AppState>, id: i64, liked: bool) -> Res
     let conn = state.db.lock();
     db::like_track(&conn, id, liked);
     Ok(())
+}
+
+// ---------- 删除曲目 ----------
+
+#[tauri::command]
+pub async fn delete_track(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<(), String> {
+    delete_tracks(app, state, vec![id]).await.map(|_| ())
+}
+
+#[tauri::command]
+pub async fn delete_tracks(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<i64>,
+) -> Result<u32, String> {
+    let _ = state;
+    let task_app = app.clone();
+    super::blocking(move || delete_tracks_task(&task_app, ids)).await
+}
+
+fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let state = app.state::<AppState>();
+    let engine = super::engine_clone(&state);
+
+    // 如果正在播放其中某首，先停止播放释放文件句柄
+    let current_id = engine.current.read().as_ref().and_then(|info| {
+        if info.kind == "track" {
+            info.id
+        } else {
+            None
+        }
+    });
+    if let Some(cid) = current_id {
+        if ids.contains(&cid) {
+            engine.stop();
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
+    }
+
+    let mut successful_ids = Vec::with_capacity(ids.len());
+    let mut last_err = None;
+
+    for id in &ids {
+        let meta = {
+            let conn = state.db.lock();
+            db::get_track(&conn, *id)
+        };
+        let Some(t) = meta else {
+            continue;
+        };
+
+        let pb = std::path::PathBuf::from(&t.path);
+        if pb.exists() {
+            // 清理只读属性
+            if let Ok(m) = std::fs::metadata(&pb) {
+                let mut perms = m.permissions();
+                if perms.readonly() {
+                    perms.set_readonly(false);
+                    let _ = std::fs::set_permissions(&pb, perms);
+                }
+            }
+            if let Err(e) = std::fs::remove_file(&pb) {
+                last_err = Some(format!("删除文件失败 ({}): {e}", t.path));
+                continue;
+            }
+            let lrc = pb.with_extension("lrc");
+            if lrc.exists() {
+                let _ = std::fs::remove_file(lrc);
+            }
+        }
+
+        // 清理缓存目录中对应的封面小图与原图（限定在 covers 缓存目录下）
+        if !t.cover.is_empty() {
+            let cov = std::path::PathBuf::from(&t.cover);
+            let covers_dir = state.app_data.join("covers");
+            let is_cache = if let (Ok(p1), Ok(p2)) = (cov.canonicalize(), covers_dir.canonicalize()) {
+                p1.starts_with(p2)
+            } else {
+                cov.starts_with(&covers_dir)
+            };
+            if is_cache && cov.exists() {
+                let _ = std::fs::remove_file(&cov);
+                let small = t.cover.replace(".jpg", "_s.jpg");
+                let _ = std::fs::remove_file(small);
+            }
+        }
+
+        successful_ids.push(*id);
+    }
+
+    if successful_ids.is_empty() && last_err.is_some() {
+        return Err(last_err.unwrap());
+    }
+
+    if !successful_ids.is_empty() {
+        let conn = state.db.lock();
+        db::delete_tracks(&conn, &successful_ids);
+    }
+
+    Ok(successful_ids.len() as u32)
 }

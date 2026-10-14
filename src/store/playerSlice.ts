@@ -33,6 +33,7 @@ type Fields = Pick<
   | "lyricsLoading"
   | "lyricsFor"
   | "playTracks"
+  | "enqueueAndPlay"
   | "playSourceItem"
   | "playEntries"
   | "playQueueIndex"
@@ -42,6 +43,8 @@ type Fields = Pick<
   | "next"
   | "prev"
   | "seek"
+  | "seekForward"
+  | "seekBackward"
   | "setScrubbing"
   | "setVolume"
   | "setSleepTimer"
@@ -133,6 +136,32 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       failStreak: 0,
       failToastId: null,
     }));
+    get().playQueueIndex(target);
+  },
+  enqueueAndPlay(tracks) {
+    if (!tracks.length) return;
+    const newItems: QueueItem[] = tracks.map((t) => ({ kind: "track", id: t.id }));
+    const { queue, qIndex, history, tracks: existingTracks } = get();
+
+    // 补齐 tracks 缓存，确保播放器/列表能显示元数据
+    const existingIds = new Set(existingTracks.map((t) => t.id));
+    const mergedTracks = [...existingTracks];
+    for (const t of tracks) {
+      if (!existingIds.has(t.id)) {
+        mergedTracks.push(t);
+        existingIds.add(t.id);
+      }
+    }
+
+    const target = queue.length;
+    set({
+      tracks: mergedTracks,
+      queue: [...queue, ...newItems],
+      qIndex: target,
+      history: [...history.slice(-50), qIndex],
+      failStreak: 0,
+      failToastId: null,
+    });
     get().playQueueIndex(target);
   },
   playSourceItem(s) {
@@ -611,6 +640,21 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       .finally(() => set({ scrubbing: false }));
   },
 
+  seekForward(stepMs = 5000) {
+    if (!get().current) return;
+    const { pos, dur } = get();
+    const maxDur = dur || (pos + stepMs);
+    const target = Math.min(pos + stepMs, maxDur);
+    get().seek(target);
+  },
+
+  seekBackward(stepMs = 5000) {
+    if (!get().current) return;
+    const { pos } = get();
+    const target = Math.max(0, pos - stepMs);
+    get().seek(target);
+  },
+
   setVolume(v) {
     const vol = Math.max(0, Math.min(1, v));
     set({ volume: vol });
@@ -760,15 +804,24 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         api.stop().catch(() => {});
         break;
       case "seek_fwd":
-        s.seek(Math.min(s.pos + 10000, s.dur || s.pos + 10000));
+        s.seekForward(value ?? 5000);
         break;
       case "seek_back":
-        s.seek(Math.max(0, s.pos - 10000));
+        s.seekBackward(value ?? 5000);
         break;
       case "set_pos":
         if (value != null) s.seek(value);
         break;
       case "show":
+        break;
+      case "dlyrics_toggle":
+        if (!s.desktopLyricsOn) {
+          s.openDesktopLyrics();
+        } else if (s.desktopLyricsLock) {
+          s.unlockDesktopLyrics();
+        } else {
+          s.closeDesktopLyrics();
+        }
         break;
     }
   },

@@ -42,6 +42,8 @@ pub struct AppState {
     pub webview_suspended: AtomicBool,
     /// 最近一次扫描进度快照（挂起期间 scan://progress 事件会丢，恢复后补发）
     pub scan_last: Mutex<serde_json::Value>,
+    /// 桌面歌词是否处于鼠标穿透锁定状态
+    pub dlyrics_locked: AtomicBool,
 }
 
 fn main() {
@@ -197,6 +199,7 @@ fn main() {
                 scan_last: Mutex::new(
                     serde_json::json!({ "active": false, "done": 0, "total": 0 }),
                 ),
+                dlyrics_locked: AtomicBool::new(false),
             });
 
             let mhandle = handle.clone();
@@ -220,9 +223,12 @@ fn main() {
             commands::drop_paths,
             commands::get_lyrics,
             commands::like_track,
+            commands::delete_track,
+            commands::delete_tracks,
             commands::list_playlists,
             commands::create_playlist,
             commands::delete_playlist,
+            commands::delete_playlists,
             commands::rename_playlist,
             commands::reorder_playlists,
             commands::asset_scope_allow,
@@ -294,6 +300,7 @@ fn main() {
             commands::save_dir_set,
             commands::add_online_to_playlist,
             commands::remove_playlist_entry,
+            commands::remove_playlist_entries,
             commands::save_manual_order,
             commands::get_manual_order,
             commands::reorder_playlist,

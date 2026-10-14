@@ -15,6 +15,7 @@ import SourcesView from "./views/SourcesView";
 import SettingsView from "./views/SettingsView";
 import OnlineLibraryView from "./views/NeteaseView";
 import ArtistAlbumView from "./views/ArtistAlbumView";
+import { Music2 } from "lucide-react";
 import { coverSrc } from "./api";
 import { extractColor } from "./utils";
 import { skinUri } from "./skins";
@@ -134,19 +135,46 @@ export default function App() {
   const queueOpen = useStore((s) => s.queueOpen);
   const nowPlayingOpen = useStore((s) => s.nowPlayingOpen);
   const fullscreen = useStore((s) => s.fullscreen);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     useStore.getState().init();
   }, []);
 
-  // 空格键 播放/暂停；L 切桌面歌词；Esc 退出全屏
+  // 空格键 播放/暂停；L 切桌面歌词；Esc 退出全屏；左右箭头 快退/快进
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+
+      // 左右箭头：快退 / 快进 5 秒（无修饰键时生效，支持长按连续步进）
+      if (
+        (e.code === "ArrowLeft" || e.key === "ArrowLeft") &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+        useStore.getState().seekBackward(5000);
+        return;
+      }
+      if (
+        (e.code === "ArrowRight" || e.key === "ArrowRight") &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+        useStore.getState().seekForward(5000);
+        return;
+      }
+
       // 长按触发的 OS 键盘重复不响应：否则空格会以每秒几十次的频率
       // 反复 togglePlay，L 反复开关桌面歌词窗口
       if (e.repeat) return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.code === "Space") {
         e.preventDefault();
         useStore.getState().togglePlay();
@@ -174,16 +202,50 @@ export default function App() {
       try {
         const { getCurrentWebview } = await import("@tauri-apps/api/webview");
         const u = await getCurrentWebview().onDragDropEvent((ev) => {
-          if (ev.payload.type === "drop") {
+          if (ev.payload.type === "enter" || ev.payload.type === "over") {
+            setIsDragging(true);
+          } else if (ev.payload.type === "leave") {
+            setIsDragging(false);
+          } else if (ev.payload.type === "drop") {
+            setIsDragging(false);
             const paths = ev.payload.paths ?? [];
             if (!paths.length) return;
             api
               .dropPaths(paths)
-              .then((n) => {
-                if (n > 0)
+              .then((res) => {
+                if (res.foldersAdded > 0) {
+                  useStore.getState().refreshFolders();
+                }
+                if (res.tracksAdded.length > 0) {
+                  useStore.getState().enqueueAndPlay(res.tracksAdded);
+                }
+
+                if (res.foldersAdded > 0 && res.tracksAdded.length > 0) {
                   useStore
                     .getState()
-                    .toast(`已导入 ${n} 项，正在扫描…`, "success");
+                    .toast(
+                      `已添加 ${res.foldersAdded} 个音乐文件夹并开始扫描，已添加 ${res.tracksAdded.length} 首歌曲并开始播放`,
+                      "success"
+                    );
+                } else if (res.foldersAdded > 0) {
+                  useStore
+                    .getState()
+                    .toast(
+                      `已添加 ${res.foldersAdded} 个音乐文件夹，正在扫描…`,
+                      "success"
+                    );
+                } else if (res.tracksAdded.length > 0) {
+                  useStore
+                    .getState()
+                    .toast(
+                      res.tracksAdded.length === 1
+                        ? `已添加「${res.tracksAdded[0].title}」并开始播放`
+                        : `已添加 ${res.tracksAdded.length} 首歌曲并开始播放`,
+                      "success"
+                    );
+                } else {
+                  useStore.getState().toast("未检测到有效音频文件或文件夹", "info");
+                }
               })
               .catch((err) => useStore.getState().toast(String(err), "error"));
           }
@@ -268,6 +330,17 @@ export default function App() {
 
       {/* 自动更新弹窗：启动检查到新版本时自动弹出，设置页也可手动触发 */}
       <UpdateDialog />
+
+      {/* 拖拽文件/文件夹悬停视觉提示 */}
+      {isDragging && (
+        <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-black/45 backdrop-blur-[2px] transition-all">
+          <div className="rounded-2xl border-2 border-dashed border-[var(--primary)] bg-[var(--card)]/95 px-8 py-6 shadow-2xl flex flex-col items-center gap-3">
+            <Music2 className="w-10 h-10 text-[var(--primary)] animate-bounce" />
+            <div className="text-[15px] font-medium text-[var(--ink)]">释放以导入歌曲或文件夹</div>
+            <div className="text-[12px] text-[var(--ink-2)]">单曲即刻播放 · 文件夹自动添加扫描</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

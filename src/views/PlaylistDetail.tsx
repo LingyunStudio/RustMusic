@@ -1,15 +1,19 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Ban,
+  Check,
   Heart,
+  ListChecks,
   ListMusic,
   MoreHorizontal,
+  Pause,
   Pencil,
   Play,
   Shuffle,
   Trash2,
   Cloud,
+  X,
 } from "lucide-react";
 import { useStore } from "../store";
 import { useDragList } from "../hooks/useDragList";
@@ -99,6 +103,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const playEntries = useStore((s) => s.playEntries);
   const entryToQueueItem = useStore((s) => s.entryToQueueItem);
   const removePlaylistEntryRow = useStore((s) => s.removePlaylistEntryRow);
+  const removePlaylistEntryRows = useStore((s) => s.removePlaylistEntryRows);
+  const toast = useStore((s) => s.toast);
   const toggleLike = useStore((s) => s.toggleLike);
   const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
   const downloadOnline = useStore((s) => s.downloadOnline);
@@ -108,6 +114,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const current = useStore((s) => s.current);
   const savedOnline = useStore((s) => s.savedOnline);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [confirmBatchRemove, setConfirmBatchRemove] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; e: PlaylistEntryMeta } | null>(
     null
   );
@@ -117,6 +126,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const pl = playlists.find((p) => p.id === id);
   const unavailable = useStore((s) => s.unavailable);
   const [renameOpen, setRenameOpen] = useState(false);
+
+  useEffect(() => {
+    setBatchMode(false);
+    setSel(new Set());
+  }, [id]);
 
   const list = useMemo<DetailRow[]>(() => {
     if (!pl) return [];
@@ -186,6 +200,42 @@ export default function PlaylistDetail({ id }: { id: number }) {
         };
       });
   }, [pl, tracks, search, savedOnline]);
+
+  const toggleSel = (rowid: number) => {
+    setSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowid)) next.delete(rowid);
+      else next.add(rowid);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (sel.size === list.length) {
+      setSel(new Set());
+    } else {
+      setSel(new Set(list.map((r) => r.entry.rowid)));
+    }
+  };
+
+  const batchAddToQueue = () => {
+    const selectedRows = list.filter((r) => sel.has(r.entry.rowid));
+    for (const r of selectedRows) {
+      const item = entryToQueueItem(r.entry);
+      if (item) addToQueue(item);
+    }
+    toast(`已将 ${selectedRows.length} 首歌曲加入播放队列`);
+  };
+
+  const handleBatchRemove = async () => {
+    const rowids = Array.from(sel);
+    if (rowids.length > 0) {
+      await removePlaylistEntryRows(rowids);
+      setSel(new Set());
+      setBatchMode(false);
+    }
+    setConfirmBatchRemove(false);
+  };
 
   // 长按拖拽调序：提交时按 rowid 序列重写 position。
   // 搜索过滤时 list 只是可见子集——基于全量 entries 重排（被拖行插到
@@ -331,6 +381,17 @@ export default function PlaylistDetail({ id }: { id: number }) {
               随机
             </button>
             <button
+              className={`btn-secondary ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
+              onClick={() => {
+                setBatchMode((v) => !v);
+                setSel(new Set());
+              }}
+              disabled={list.length === 0}
+            >
+              <ListChecks size={13} />
+              {batchMode ? "退出批量" : "批量管理"}
+            </button>
+            <button
               className="btn-secondary"
               onClick={() => setRenameOpen(true)}
             >
@@ -359,6 +420,22 @@ export default function PlaylistDetail({ id }: { id: number }) {
         确定删除播放列表「{pl.name}」？列表中的曲目不会被删除。
       </ConfirmModal>
 
+      <ConfirmModal
+        open={confirmBatchRemove}
+        title="批量从歌单移除"
+        danger
+        confirmText={`确认移除 (${sel.size} 首)`}
+        onClose={() => setConfirmBatchRemove(false)}
+        onConfirm={handleBatchRemove}
+      >
+        <p className="text-[13px] text-[var(--ink)] font-medium mb-1.5">
+          确定从歌单「{pl.name}」中移除选中的 {sel.size} 首歌曲？
+        </p>
+        <p className="text-[12px] text-[var(--ink-3)]">
+          注意：仅从当前歌单中移除该歌曲记录，不会删除硬盘上的本地音乐文件。
+        </p>
+      </ConfirmModal>
+
       <InputModal
         open={renameOpen}
         title="重命名播放列表"
@@ -370,6 +447,48 @@ export default function PlaylistDetail({ id }: { id: number }) {
 
       {/* 底边界抬到播放条上方，留 4px 空隙（播放条总占位 64+16+4=84px） */}
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
+        {batchMode && (
+          <div className="mb-2 px-4 py-2 glass rounded-2xl flex items-center justify-between gap-3 text-[12.5px] anim-fade-in shrink-0">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[var(--ink-2)] font-medium">
+                已选 <span className="text-[var(--accent-strong)] font-semibold">{sel.size}</span> / {list.length} 首
+              </span>
+              <button
+                className="btn-ghost text-[12px] px-2 h-7 rounded-lg text-[var(--ink-2)] hover:text-[var(--ink)]"
+                onClick={toggleSelectAll}
+              >
+                {sel.size === list.length ? "取消全选" : "全选"}
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="btn-secondary h-7 text-[12px] px-2.5"
+                disabled={sel.size === 0}
+                onClick={batchAddToQueue}
+              >
+                加入队列
+              </button>
+              <button
+                className="btn-secondary h-7 text-[12px] px-2.5 !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)] disabled:opacity-40"
+                disabled={sel.size === 0}
+                onClick={() => setConfirmBatchRemove(true)}
+              >
+                <Trash2 size={12} />
+                从歌单移除
+              </button>
+              <button
+                className="btn-ghost w-7 h-7 rounded-lg text-[var(--ink-3)]"
+                onClick={() => {
+                  setBatchMode(false);
+                  setSel(new Set());
+                }}
+                title="关闭批量管理"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {list.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
@@ -392,6 +511,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               {(windowed ? list.slice(win.start, win.end) : list).map((r, k) => {
                 const i = windowed ? win.start + k : k;
                 const active = isCurrentRow(r);
+                const isSelected = batchMode && sel.has(r.entry.rowid);
                 // 播放失败（无版权/下架等）：整行置灰 + 无版权标记
                 const dead =
                   r.kind !== "track" &&
@@ -399,38 +519,77 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 return (
                   <div
                     key={r.entry.rowid}
-                    {...(windowed ? {} : rowProps(i))}
+                    {...(windowed || batchMode ? {} : rowProps(i))}
                     style={{ ["--row-idx" as string]: Math.min(i, 12) }}
                     className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
-                      active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+                      isSelected
+                        ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
+                        : active
+                          ? "bg-[var(--accent-weak)]"
+                          : "hover:bg-[var(--shade-hover)]"
                     } ${dead ? "opacity-45" : ""}`}
                     title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
-                    onDoubleClick={() => playEntries(list.map((x) => x.entry), i)}
+                    onClick={() => {
+                      if (batchMode) toggleSel(r.entry.rowid);
+                    }}
+                    onDoubleClick={() => {
+                      if (!batchMode) playEntries(list.map((x) => x.entry), i);
+                    }}
                     onContextMenu={(ev) => {
+                      if (batchMode) return;
                       ev.preventDefault();
                       setMenu({ x: ev.clientX, y: ev.clientY, e: r.entry });
                     }}
                   >
                     <div className="relative h-11 flex items-center justify-center">
-                      <span
-                        className={`text-[12.5px] tabular-nums transition-opacity ${
-                          active
-                            ? "text-[var(--accent)] font-bold opacity-100 group-hover:opacity-0"
-                            : "text-[var(--ink-3)] group-hover:opacity-0"
-                        }`}
-                      >
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <button
-                        className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
-                          active
-                            ? "text-[var(--accent)]"
-                            : "bg-[var(--accent)] text-[var(--accent-on)]"
-                        }`}
-                        onClick={() => playEntries(list.map((x) => x.entry), i)}
-                      >
-                        <Play size={14} className="fill-current ml-px" />
-                      </button>
+                      {batchMode ? (
+                        <button
+                          type="button"
+                          className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center shrink-0 transition-colors ${
+                            isSelected
+                              ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
+                              : "border-[var(--line)] hover:border-[var(--accent)]"
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSel(r.entry.rowid);
+                          }}
+                        >
+                          {isSelected && <Check size={12} strokeWidth={3} />}
+                        </button>
+                      ) : (
+                        <>
+                          <span
+                            className={`text-[12.5px] tabular-nums transition-opacity group-hover:opacity-0 ${
+                              active ? "text-[var(--accent)] font-bold" : "text-[var(--ink-3)]"
+                            }`}
+                          >
+                            {String(i + 1).padStart(2, "0")}
+                          </span>
+                          <button
+                            className={`absolute inset-0 m-auto w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:scale-105 ${
+                              active
+                                ? "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.2)]"
+                                : "bg-[var(--accent)] text-[var(--accent-on)] shadow-[0_2px_10px_rgba(0,0,0,0.18)]"
+                            }`}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              if (active) {
+                                useStore.getState().togglePlay();
+                              } else {
+                                playEntries(list.map((x) => x.entry), i);
+                              }
+                            }}
+                            title={active ? (playing ? "暂停" : "播放") : "播放"}
+                          >
+                            {active && playing ? (
+                              <Pause size={14} className="fill-current" />
+                            ) : (
+                              <Play size={14} className="fill-current ml-px" />
+                            )}
+                          </button>
+                        </>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-4 min-w-0">
@@ -479,10 +638,15 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         <button
                           className="block text-left text-[12px] text-[var(--ink-3)] truncate mt-1 max-w-full hover:text-[var(--accent-strong)] transition-colors"
                           onClick={(ev) => {
+                            if (batchMode) {
+                              ev.stopPropagation();
+                              toggleSel(r.entry.rowid);
+                              return;
+                            }
                             ev.stopPropagation();
                             openDetailPage("artist", r.artist || "未知艺术家");
                           }}
-                          title={`查看歌手：${r.artist || "未知艺术家"}`}
+                          title={batchMode ? undefined : `查看歌手：${r.artist || "未知艺术家"}`}
                         >
                           {r.artist || "未知艺术家"}
                         </button>
@@ -492,10 +656,15 @@ export default function PlaylistDetail({ id }: { id: number }) {
                     <button
                       className="block text-left text-[12.5px] text-[var(--ink-3)] truncate max-w-full hover:text-[var(--accent-strong)] transition-colors"
                       onClick={(ev) => {
+                        if (batchMode) {
+                          ev.stopPropagation();
+                          toggleSel(r.entry.rowid);
+                          return;
+                        }
                         ev.stopPropagation();
                         openDetailPage("album", r.album || "未知专辑");
                       }}
-                      title={`查看专辑：${r.album || "未知专辑"}`}
+                      title={batchMode ? undefined : `查看专辑：${r.album || "未知专辑"}`}
                     >
                       {r.album || "未知专辑"}
                     </button>
@@ -504,7 +673,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                       {fmtTime(r.durationMs)}
                     </div>
 
-                    <div className="flex items-center justify-end gap-1 pr-1">
+                    <div className={`flex items-center justify-end gap-1 pr-1 ${batchMode ? "opacity-0 pointer-events-none" : ""}`}>
                       <button
                         className="btn-ghost w-8 h-8"
                         onClick={(e) => {
