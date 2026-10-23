@@ -2,7 +2,9 @@
 
 一款用 **Rust + Tauri 2 + React** 打造的高性能、精美界面的桌面音乐播放器。
 
-[tech](https://img.shields.io/badge/Rust-1.87+-DEA584) [tech](https://img.shields.io/badge/Tauri-2-24C8D8) [tech](https://img.shields.io/badge/React-18-61DAFB) [tech](https://img.shields.io/badge/Node-20+-5FA04E) [platform](https://img.shields.io/badge/platform-Windows-blue)
+![Rust](https://img.shields.io/badge/Rust-1.87%2B-DEA584?logo=rust&logoColor=white) ![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white) ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black) ![Node](https://img.shields.io/badge/Node-20%2B-5FA04E?logo=nodedotjs&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
+
+
 
 ![image-20261023115804740](https://cdn.jsdelivr.net/gh/LingyunStudio/LingyunImg@master/2026/10/upgit_20261023_1792727886.png)
 
