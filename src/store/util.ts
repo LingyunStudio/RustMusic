@@ -14,7 +14,7 @@ let lastPushedLines: unknown = undefined; // undefined = 尚未推过（下次�
 export async function pushDesktopLyrics(
   s: Pick<
     Store,
-    "lyrics" | "pos" | "dur" | "playing" | "current" | "desktopLyricsOn"
+    "lyrics" | "pos" | "dur" | "playing" | "current" | "desktopLyricsOn" | "speed"
   > & { dlyricsColors?: DesktopLyricsColors }
 ) {
   if (!s.desktopLyricsOn) return;
@@ -31,6 +31,7 @@ export async function pushDesktopLyrics(
         pos: s.pos,
         dur: s.dur,
         playing: s.playing,
+        speed: s.speed ?? 1,
         title: s.current?.title ?? "",
         artist: s.current?.artist ?? "",
         colors: s.dlyricsColors ?? loadDesktopLyricsColors(),

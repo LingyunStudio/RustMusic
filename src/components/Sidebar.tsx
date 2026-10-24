@@ -18,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
 import Logo from "./Logo";
@@ -74,9 +74,16 @@ export default function Sidebar() {
     void reorderPlaylists(ids);
   });
 
-  // 计数 = 本地喜欢 + 在线喜欢（与“我喜欢”视图显示的内容一致）
-  const likedCount = tracks.filter((t) => t.liked).length + likedOnline.length;
-  const totalDuration = tracks.reduce((acc, t) => acc + t.duration, 0);
+  // 计数 = 本地喜欢 + 在线喜欢（与“我喜欢”视图显示的内容一致）。
+  // useMemo：此前每次渲染都全库扫两遍，扫描期间每条进度更新都触发重算
+  const likedCount = useMemo(
+    () => tracks.filter((t) => t.liked).length + likedOnline.length,
+    [tracks, likedOnline]
+  );
+  const totalDuration = useMemo(
+    () => tracks.reduce((acc, t) => acc + t.duration, 0),
+    [tracks]
+  );
   const hours = Math.floor(totalDuration / 3600);
   const mins = Math.floor((totalDuration % 3600) / 60);
 

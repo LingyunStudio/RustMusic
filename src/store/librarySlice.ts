@@ -125,10 +125,12 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
       } else {
         const newQIndex = newQueue.findIndex((item) => {
           if (current?.kind === "track") return item.kind === "track" && item.id === current.id;
-          return (
-            item.kind === current?.kind &&
-            item.id === ((current as any)?.nid ?? (current as any)?.qid)
-          );
+          // 在线曲目当前项的重定位：nid/qid/kgid 各源只填自己那一个，
+          // 直链音源三者皆空（用 current.id 兜底）——漏掉 kgid 时酷狗当前曲
+          // 恒匹配失败，qIndex 指向错误行、UI 高亮与“下一首”和实际播放脱节
+          const curId =
+            (current as any)?.nid ?? (current as any)?.qid ?? (current as any)?.kgid ?? current?.id;
+          return item.kind === current?.kind && item.id === curId;
         });
         set({
           queue: newQueue,
@@ -177,10 +179,9 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
       } else {
         const newQIndex = newQueue.findIndex((item) => {
           if (current?.kind === "track") return item.kind === "track" && item.id === current.id;
-          return (
-            item.kind === current?.kind &&
-            item.id === ((current as any)?.nid ?? (current as any)?.qid)
-          );
+          const curId =
+            (current as any)?.nid ?? (current as any)?.qid ?? (current as any)?.kgid ?? current?.id;
+          return item.kind === current?.kind && item.id === curId;
         });
         set({
           queue: newQueue,

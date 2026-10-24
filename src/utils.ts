@@ -1,23 +1,6 @@
 import type { LyricsPayload, LyricLine, TrackMeta } from "./types";
 
 /** 当前播放位置对应的歌词行（无同步歌词返回 null） */
-export function activeLyricText(
-  lyrics: LyricsPayload | null,
-  pos: number
-): string | null {
-  if (!lyrics?.synced) return null;
-  const lines = lyrics.lines
-    .filter((l) => l.timeMs != null && l.text.trim() !== "")
-    .sort((a, b) => (a.timeMs ?? 0) - (b.timeMs ?? 0));
-  if (!lines.length) return null;
-  let ans: string | null = null;
-  for (const l of lines) {
-    if ((l.timeMs ?? 0) <= pos) ans = l.text;
-    else break;
-  }
-  return ans;
-}
-
 export function fmtTime(ms: number): string {
   if (!isFinite(ms) || ms <= 0) return "0:00";
   const total = Math.floor(ms / 1000);

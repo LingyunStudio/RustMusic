@@ -15,6 +15,7 @@ import {
   type DesktopLyricsColors,
 } from "../theme";
 import { applySkin, loadSkin, saveSkin } from "../skins";
+import { loadFxPref, saveFxPref } from "../fx";
 import type { PlayState, ScanState } from "../types";
 import type { Store } from "./contract";
 import { pushDesktopLyrics, resetDesktopLyricsFrame } from "./util";
@@ -42,11 +43,17 @@ type Fields = Pick<
   | "theme"
   | "accent"
   | "skin"
+  | "fxAudio"
+  | "setFxAudio"
   | "desktopLyricsOn"
   | "desktopLyricsLock"
   | "dlyricsColors"
   | "sourcesResult"
   | "sourcesTab"
+  | "lyricsShowTrans"
+  | "setLyricsShowTrans"
+  | "lyricsFontScale"
+  | "setLyricsFontScale"
   | "init"
   | "toast"
   | "dismissToast"
@@ -79,6 +86,8 @@ let unbinds: ListenerUnbind[] = [];
 let lastPosEventAt = 0;
 /** init 单例：React StrictMode 双挂载 / 并发调用时只注册一次事件监听 */
 let initPromise: Promise<void> | null = null;
+/** pos 自愈拉快照的冷却时间戳（getPlayState 持续失败时避免逐帧 IPC 放大） */
+let lastSelfHealPullAt = 0;
 
 /** 应用后端播放状态：player://state 事件与挂起恢复后的主动拉取共用。
  *  posOverride：拉取快照自带进度时直接采用（事件路径由 isFreshStart 决定是否归零）。 */
@@ -201,9 +210,22 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   desktopLyricsOn: false,
   desktopLyricsLock: false,
   dlyricsColors: loadDesktopLyricsColors(),
+  lyricsShowTrans:
+    ((): boolean => {
+      try {
+        return localStorage.getItem("rustmusic.lyricsShowTrans") !== "0";
+      } catch {
+        return true;
+      }
+    })(),
+  lyricsFontScale: (() => {
+    const v = Number(localStorage.getItem("rustmusic.lyricsFontScale"));
+    return Number.isFinite(v) && v >= 0.85 && v <= 1.4 ? v : 1;
+  })(),
   theme: "light",
   accent: "amber",
   skin: "default",
+  fxAudio: loadFxPref(),
   // ---------- 初始化 ----------
 
   async init() {
@@ -223,6 +245,13 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
         // 没有当前曲目时忽略：空引擎的 pos 帧（旧版 resync 补发）会把
         // 按钮误置为“播放中”
         if (!get().playing && get().current) set({ playing: true });
+        // 有进度帧却没有当前曲目（状态事件丢失的窗口期）：拉权威快照补齐，
+        // 否则表现为“在播但界面不知道在播什么”。2s 冷却：拉取持续失败时
+        // 不逐帧放大 IPC
+        if (!get().current && Date.now() - lastSelfHealPullAt > 2000) {
+          lastSelfHealPullAt = Date.now();
+          pullPlayState(set, get);
+        }
         set({ pos: p.pos, dur: p.dur > 0 ? p.dur : get().dur });
         // 桌面歌词跟随（250ms 一帧，歌词窗口自行插值当前行）
         pushDesktopLyrics(get());
@@ -230,7 +259,34 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     );
 
     unbinds.push(
-      await listenEvent("player://ended", () => get().next(true, true))
+      await listenEvent("player://ended", () => {
+        const s = get();
+        // 睡眠定时“播完当前曲停止”：一次性消费
+        if (s.sleepStopAfterTrack) {
+          set({ sleepStopAfterTrack: false });
+          api.stop().catch(() => {});
+          set({ playing: false, pos: 0 });
+          get().toast("定时停止：当前歌曲已播完", "info");
+          return;
+        }
+        // 睡眠定时“播完列表停止”：按已播计数判定——随机播放不按序到尾、
+        // 自动续页会追加队列，按位置判定可能永不触发
+        if (s.sleepStopAfterQueue) {
+          s.bumpSleepQueueCount();
+          const reached =
+            s.sleepQueueReached() ||
+            s.repeat === "one" ||
+            s.qIndex >= s.queue.length - 1;
+          if (reached) {
+            set({ sleepStopAfterQueue: false });
+            api.stop().catch(() => {});
+            set({ playing: false, pos: 0 });
+            get().toast("定时停止：列表已播完", "info");
+            return;
+          }
+        }
+        get().next(true, true);
+      })
     );
 
     // 独占模式协商失败回退共享模式时，明确告知用户（否则无声降级难以察觉）
@@ -322,10 +378,17 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       )
     );
 
+    let lastScanKey = "";
     unbinds.push(
       await listenEvent<ScanState>("scan://progress", (p) => {
         const wasActive = get().scan.active;
-        set({ scan: p });
+        // 大目录扫描时每个文件一条事件：内容未变不 set 新引用，
+        // 订阅 scan 的组件不会逐条重渲染
+        const key = `${p.active ? 1 : 0}:${p.done}/${p.total}`;
+        if (key !== lastScanKey || !wasActive) {
+          lastScanKey = key;
+          set({ scan: p });
+        }
         if (wasActive && !p.active) {
           get().refreshTracks();
           get().refreshFolders();
@@ -351,28 +414,34 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
           set({ download: null });
           return;
         }
-        set({
-          download: {
-            title: p.url.split("/").pop() ?? p.url,
-            pct: p.pct ?? 0,
-          },
-        });
+        // pct 未变化（字节级事件）不产生新引用，避免下载条无谓重渲染
+        const title = p.url.split("/").pop() ?? p.url;
+        const pct = p.pct ?? 0;
+        const cur = get().download;
+        if (!cur || cur.title !== title || cur.pct !== pct) {
+          set({ download: { title, pct } });
+        }
       })
     );
 
     try {
-      const [settings, tracks, folders, playlists, sources, neteaseStatus, qqStatus, biliStatus, kugouStatus] =
-        await Promise.all([
-          api.getSettings(),
-          api.listTracks(),
-          api.listFolders(),
-          api.listPlaylists(),
-          api.listSources(),
-          api.neteaseStatus(),
-          api.qqStatus(),
-          api.biliStatus(),
-          api.kugouStatus(),
-        ]);
+      // 本地数据与登录态分离：任一在线 status 失败（cookie 损坏等）不该让
+      // tracks/playlists 全空——此前 Promise.all 一损俱损，应用呈现“空资料库”
+      const [settings, tracks, folders, playlists, sources] = await Promise.all([
+        api.getSettings(),
+        api.listTracks(),
+        api.listFolders(),
+        api.listPlaylists(),
+        api.listSources(),
+      ]);
+      const [neteaseStatus, qqStatus, biliStatus, kugouStatus] = await Promise.all(
+        [
+          api.neteaseStatus().catch(() => ({ loggedIn: false, nickname: "" })),
+          api.qqStatus().catch(() => ({ loggedIn: false, nickname: "" })),
+          api.biliStatus().catch(() => ({ loggedIn: false, nickname: "" })),
+          api.kugouStatus().catch(() => ({ loggedIn: false, nickname: "" })),
+        ]
+      );
       set({
         theme: loadTheme(),
         accent: loadAccent(),
@@ -417,7 +486,11 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
 
   toast(msg, type = "info") {
     const id = toastSeq++;
-    set((s) => ({ toasts: [...s.toasts, { id, msg, type }] }));
+    // 数量封顶：批量操作逐项 toast 时丢最旧的，避免短时堆叠几十条
+    set((s) => {
+      const next = [...s.toasts, { id, msg, type }];
+      return { toasts: next.length > 5 ? next.slice(next.length - 5) : next };
+    });
     setTimeout(() => get().dismissToast(id), 3600);
     return id;
   },
@@ -500,10 +573,11 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   },
 
   toggleFullscreen(v) {
-    const next = v ?? !get().fullscreen;
+    const prev = get().fullscreen;
+    const next = v ?? !prev;
     set({ fullscreen: next });
     // 真全屏（占据整个显示器、隐藏任务栏）。最大化状态下 Windows 会拒绝
-    // 切全屏，先还原窗口；错误显式提示而非静默吞掉
+    // 切全屏，先还原窗口；失败回滚状态（否则 UI 进入全屏形态、窗口却不是）
     import("@tauri-apps/api/window")
       .then(async ({ getCurrentWindow }) => {
         const win = getCurrentWindow();
@@ -513,10 +587,14 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
           }
           await win.setFullscreen(next);
         } catch (e) {
+          if (get().fullscreen === next) set({ fullscreen: prev });
           get().toast(`全屏切换失败：${e}`, "error");
         }
       })
-      .catch((e) => get().toast(`全屏切换失败：${e}`, "error"));
+      .catch((e) => {
+        if (get().fullscreen === next) set({ fullscreen: prev });
+        get().toast(`全屏切换失败：${e}`, "error");
+      });
   },
 
   setQueueOpen(v) {
@@ -566,6 +644,21 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     // 即时生效：推一帧新颜色给悬浮窗（窗口没开时 push 内部自跳过）
     pushDesktopLyrics(get());
   },
+  setLyricsShowTrans(v) {
+    set({ lyricsShowTrans: v });
+    try {
+      localStorage.setItem("rustmusic.lyricsShowTrans", v ? "1" : "0");
+    } catch {}
+  },
+
+  setLyricsFontScale(v) {
+    const scale = Math.min(1.4, Math.max(0.85, v));
+    set({ lyricsFontScale: scale });
+    try {
+      localStorage.setItem("rustmusic.lyricsFontScale", String(scale));
+    } catch {}
+  },
+
   setTheme(t) {
     set({ theme: t });
     saveTheme(t);
@@ -583,6 +676,13 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     set({ skin: key });
     saveSkin(key);
     applySkin(key);
+  },
+
+  setFxAudio(on) {
+    set({ fxAudio: on });
+    saveFxPref(on);
+    // 皮肤背景在完整版/律动基座版之间切换由 DynamicBackdrop 的
+    // effect 响应 fxAudio 变化统一驱动，这里只落状态与偏好
   },
   setSourcesResult(r) {
     if (typeof r === "function") {

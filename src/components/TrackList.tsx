@@ -44,6 +44,9 @@ interface TrackListProps {
   onMetaClick?: (field: "artist" | "album", text: string) => void;
   /** 删除歌曲回调（从硬盘删除，触发二次确认） */
   onDeleteTrack?: (track: TrackMeta) => void;
+  /** 归并模式下按所见序列播放（mergedRows 提供时生效；idx = 归并序列下标）。
+   *  缺省时归并视图内双击播放的是“同类型子列表”——与画面上交叉排列的顺序不符 */
+  onPlayMerged?: (idx: number) => void;
 }
 
 export type SortKey = "manual" | "title" | "artist" | "album" | "duration" | "added";
@@ -74,6 +77,7 @@ export default function TrackList({
   selection,
   onMetaClick,
   onDeleteTrack,
+  onPlayMerged,
 }: TrackListProps) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [pickerFor, setPickerFor] = useState<TrackMeta | null>(null);
@@ -136,15 +140,15 @@ export default function TrackList({
   const menuY = menuPos.y;
 
   const hasMerged = !!mergedRows && mergedRows.length > 0;
-  // 拖拽调序只在启用且回调存在时生效（视觉反馈由 hook 直接写 DOM）
+  // 拖拽调序只在启用且回调存在时生效（视觉反馈由 hook 直接写 DOM）。
+  // dragMode 在 rows 计算之后确定（见下）
   const { rowProps, setEnabled } = useDragList((from, to) => {
     if (dragSortable && onDragReorder) onDragReorder(from, to);
   });
-  setEnabled(!!dragSortable && !!onDragReorder);
-
   // 拖拽模式下退回全量渲染：useDragList 依赖“行 = 滚动容器全部直接子元素”
-  // 直接读写 DOM，与窗口化互斥（手动排序是低频编辑态，临时全量可接受）
-  const dragMode = !!dragSortable && !!onDragReorder;
+  // 直接读写 DOM，与窗口化互斥（手动排序是低频编辑态，临时全量可接受）。
+  // 超大列表不进拖拽模式：万级曲库切“手动排序”会一次性挂载上万行 DOM
+  const DRAG_MAX = 500;
 
   // 播放下标映射：归并序列回填原列表下标，消掉渲染期的 indexOf O(n²)
   const localIndexById = useMemo(() => {
@@ -192,6 +196,11 @@ export default function TrackList({
       })),
     ];
   }, [hasMerged, mergedRows, tracks, onlineEntries, localIndexById, onlineIndexByKey]);
+
+  // 拖拽模式判定（rows 之后）与 hook 使能
+  const dragMode = !!dragSortable && !!onDragReorder && rows.length <= DRAG_MAX;
+  const dragTooBig = !!dragSortable && !!onDragReorder && rows.length > DRAG_MAX;
+  setEnabled(dragMode);
 
   // 窗口化：DOM 只保留可视区 ± overscan 行（拖拽模式下计算了但不用）
   const win = useVirtualWindow(rows.length, ROW_H);
@@ -277,7 +286,10 @@ export default function TrackList({
               }
             : undefined
         }
-        onDoubleClick={() => !selection?.active && playTracks(tracks, i)}
+        onDoubleClick={() =>
+          !selection?.active &&
+          (hasMerged && onPlayMerged ? onPlayMerged(idxNum) : playTracks(tracks, i))
+        }
         onContextMenu={(e) => {
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY, track: t });
@@ -315,7 +327,9 @@ export default function TrackList({
                   if (active) {
                     useStore.getState().togglePlay();
                   } else {
-                    playTracks(tracks, i);
+                    hasMerged && onPlayMerged
+                      ? onPlayMerged(idxNum)
+                      : playTracks(tracks, i);
                   }
                 }}
                 title={active ? (playing ? "暂停" : "播放") : "播放"}
@@ -479,7 +493,12 @@ export default function TrackList({
               }
             : undefined
         }
-        onDoubleClick={() => !selection?.active && playEntries(onlineEntries, Math.max(0, i))}
+        onDoubleClick={() =>
+          !selection?.active &&
+          (hasMerged && onPlayMerged
+            ? onPlayMerged(idxNum)
+            : playEntries(onlineEntries, Math.max(0, i)))
+        }
         onContextMenu={(ev) => {
           ev.preventDefault();
           setOnlineMenu({ x: ev.clientX, y: ev.clientY, entry: e });
@@ -516,7 +535,9 @@ export default function TrackList({
                   if (active) {
                     useStore.getState().togglePlay();
                   } else {
-                    playEntries(onlineEntries, Math.max(0, i));
+                    hasMerged && onPlayMerged
+                      ? onPlayMerged(idxNum)
+                      : playEntries(onlineEntries, Math.max(0, i));
                   }
                 }}
                 title={active ? (playing ? "暂停" : "播放") : "播放"}
@@ -671,12 +692,17 @@ export default function TrackList({
 
   return (
     <>
+      {dragTooBig && (
+        <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg text-[11.5px] text-[var(--ink-2)] glass">
+          当前列表 {rows.length} 首，超过 {DRAG_MAX} 首暂不支持拖拽排序（已临时关闭，其它排序方式不受影响）
+        </div>
+      )}
       <div className="relative flex-1 min-h-0 flex flex-col">
-      <div
-        ref={win.containerRef}
-        onScroll={win.onScroll}
-        className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 pt-2.5 pb-[90px]" : "px-5 pb-[62px]"}`}
-      >
+        <div
+          ref={win.containerRef}
+          onScroll={win.onScroll}
+          className={`flex-1 min-h-0 overflow-y-auto ${inCard ? "px-2.5 pt-2.5 pb-[90px]" : "px-5 pb-[62px]"}`}
+        >
       {dragMode ? (
         // 拖拽模式：全量渲染（useDragList 直接按 container.children 顺序读写 DOM）
         rows.map(renderRow)
@@ -824,7 +850,13 @@ export default function TrackList({
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
-              playTracks(tracks, tracks.indexOf(menu.track));
+              // 不用对象身份 indexOf：菜单开着时后台扫描刷新会替换行对象，
+              // indexOf 得 -1 被 clamp 成 0 → 实际播放了第一首（在线菜单已修过同款）
+              const idx = Math.max(
+                0,
+                tracks.findIndex((x) => x.id === menu.track.id)
+              );
+              playTracks(tracks, idx);
               setMenu(null);
             }}
           >

@@ -15,6 +15,7 @@ import {
   saveCustomSkinSettings,
   setActiveCustomImage,
   SKINS,
+  skinSupportsFx,
   skinUri,
   type CustomFill,
   type CustomSkinSettings,
@@ -30,6 +31,8 @@ export default function SkinPicker({
 }) {
   const skin = useStore((s) => s.skin);
   const setSkin = useStore((s) => s.setSkin);
+  const fxAudio = useStore((s) => s.fxAudio);
+  const setFxAudio = useStore((s) => s.setFxAudio);
   const [custom, setCustom] = useState<CustomSkinSettings>(loadCustomSkinSettings);
   const [customImgs, setCustomImgs] = useState<string[]>(loadCustomImages);
   const [activeImg, setActiveImg] = useState<string>(activeCustomImage);
@@ -267,6 +270,28 @@ export default function SkinPicker({
               ))}
             </div>
           </div>
+        </div>
+      )}
+      {/* 音频律动开关：仅支持律动的皮肤（带基座版）显示 */}
+      {skinSupportsFx(skin) && (
+        <div className="mt-3 p-4 rounded-xl bg-[var(--shade)] flex items-center gap-3">
+          <span className="text-[12.5px] text-[var(--ink-2)] shrink-0">音频律动</span>
+          <span className="text-[11.5px] text-[var(--ink-3)] flex-1 leading-snug">
+            频谱柱、涟漪与光晕跟随正在播放的歌曲实时起伏（引擎 FFT，两种输出模式均生效）
+          </span>
+          <button
+            className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 ${
+              fxAudio ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
+            }`}
+            onClick={() => setFxAudio(!fxAudio)}
+            title={fxAudio ? "关闭音频律动" : "开启音频律动"}
+          >
+            <span
+              className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
+                fxAudio ? "left-[21px]" : "left-[3px]"
+              }`}
+            />
+          </button>
         </div>
       )}
       <div className="text-[10.5px] text-[var(--ink-3)] mt-3 leading-relaxed">

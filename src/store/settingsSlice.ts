@@ -38,11 +38,15 @@ export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, ge
   },
 
   setCacheLimit(bytes) {
+    const prev = get().cacheLimit;
     set({ cacheLimit: bytes });
     api
       .setCacheLimit(bytes)
       .then(() => get().refreshCacheBytes())
-      .catch((e) => get().toast(String(e), "error"));
+      .catch((e) => {
+        set({ cacheLimit: prev });
+        get().toast(String(e), "error");
+      });
   },
 
   async refreshCacheBytes() {
@@ -53,23 +57,41 @@ export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, ge
       // 非致命：设置页进入时会再查一次
     }
   },
+  // 设置项全部由后端持久化：先乐观更新、失败回滚——否则 UI 显示新值、
+  // 实际仍是旧值，重启后“设置自己跳回去”
   setQuality(q) {
+    const prev = get().quality;
     set({ quality: q });
-    api.setPlayQuality(q).catch((e) => get().toast(String(e), "error"));
+    api.setPlayQuality(q).catch((e) => {
+      set({ quality: prev });
+      get().toast(String(e), "error");
+    });
   },
 
   setCloseAction(a) {
+    const prev = get().closeAction;
     set({ closeAction: a });
-    api.setCloseAction(a).catch((e) => get().toast(String(e), "error"));
+    api.setCloseAction(a).catch((e) => {
+      set({ closeAction: prev });
+      get().toast(String(e), "error");
+    });
   },
 
   setAutoUpdate(enabled) {
+    const prev = get().autoUpdate;
     set({ autoUpdate: enabled });
-    api.setAutoUpdate(enabled).catch((e) => get().toast(String(e), "error"));
+    api.setAutoUpdate(enabled).catch((e) => {
+      set({ autoUpdate: prev });
+      get().toast(String(e), "error");
+    });
   },
 
   setWasapiExclusive(enabled) {
+    const prev = get().wasapiExclusive;
     set({ wasapiExclusive: enabled });
-    api.setWasapiExclusive(enabled).catch((e) => get().toast(String(e), "error"));
+    api.setWasapiExclusive(enabled).catch((e) => {
+      set({ wasapiExclusive: prev });
+      get().toast(String(e), "error");
+    });
   },
 });

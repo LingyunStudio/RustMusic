@@ -26,6 +26,7 @@ const QUALITIES: { key: string; label: string; desc: string }[] = [
   { key: "standard", label: "标准", desc: "128k" },
   { key: "high", label: "较高", desc: "320k" },
   { key: "lossless", label: "无损", desc: "FLAC" },
+  { key: "hires", label: "Hi-Res", desc: "无损+" },
 ];
 
 const PRESETS: Record<string, number[]> = {
@@ -91,7 +92,15 @@ export default function SettingsView() {
   const cacheBytes = useStore((s) => s.cacheBytes);
   const [saveDir, setSaveDir] = useState("");
   const [saveDirDefault, setSaveDirDefault] = useState("");
-  const [preset, setPreset] = useState("平直");
+  // 挂载时按持久化的增益识别已选预设（此前重启后滑块是摇滚值、
+  // 高亮却停在“平直”）
+  const [preset, setPreset] = useState(() => {
+    const hit = Object.entries(PRESETS).find(
+      ([, g]) =>
+        g.length === eqGains.length && g.every((v, i) => Math.abs(v - eqGains[i]) < 0.01)
+    );
+    return hit ? hit[0] : "自定义";
+  });
   const [devices, setDevices] = useState<
     { name: string; isDefault: boolean }[]
   >([]);
@@ -506,7 +515,7 @@ export default function SettingsView() {
               ))}
             </div>
             <span className="text-[11px] text-[var(--ink-3)]">
-              VIP 曲目与高音质需在各音源页扫码登录后按账号权益播放
+              Hi-Res 需网易云黑胶 SVIP 权益（酷狗/QQ 自动按其最高无损档取）
             </span>
           </div>
           <div className="flex items-center gap-4">
@@ -549,6 +558,7 @@ export default function SettingsView() {
               value={devicePref ?? ""}
               disabled={deviceSwitching}
               onChange={(e) => pickDevice(e.target.value)}
+              title={devicePref ?? deviceCurrent ?? "跟随系统默认"}
             >
               <option value="">跟随系统默认{deviceCurrent && devicePref == null ? `（${deviceCurrent}）` : ""}</option>
               {devices.map((d) => (

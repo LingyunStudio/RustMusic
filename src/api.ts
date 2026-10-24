@@ -32,10 +32,14 @@ export const api = {
     }>("list_output_devices"),
   setOutputDevice: (name: string | null) =>
     invoke<void>("set_output_device", { name }),
+  fxSetEnabled: (enabled: boolean) =>
+    invoke<void>("fx_set_enabled", { enabled }),
   dropPaths: (paths: string[]) => invoke<DropResult>("drop_paths", { paths }),
   getLyrics: (trackId: number) => invoke<LyricsPayload>("get_lyrics", { trackId }),
   likeTrack: (id: number, liked: boolean) =>
     invoke<void>("like_track", { id, liked }),
+  likeTracks: (ids: number[], liked: boolean) =>
+    invoke<void>("like_tracks", { ids, liked }),
   deleteTrack: (id: number) => invoke<void>("delete_track", { id }),
   deleteTracks: (ids: number[]) => invoke<number>("delete_tracks", { ids }),
   listPlaylists: () => invoke<Playlist[]>("list_playlists"),
@@ -46,6 +50,15 @@ export const api = {
     invoke<void>("rename_playlist", { id, name }),
   addToPlaylist: (playlistId: number, trackId: number) =>
     invoke<void>("add_to_playlist", { playlistId, trackId }),
+  addTracksToPlaylist: (playlistId: number, trackIds: number[]) =>
+    invoke<number>("add_tracks_to_playlist", { playlistId, trackIds }),
+  exportPlaylistM3u: (playlistId: number, path: string) =>
+    invoke<number>("export_playlist_m3u", { playlistId, path }),
+  importPlaylistM3u: (name: string, path: string) =>
+    invoke<{ playlistId: number; added: number; skipped: number }>(
+      "import_playlist_m3u",
+      { name, path }
+    ),
   removeFromPlaylist: (playlistId: number, trackId: number) =>
     invoke<void>("remove_from_playlist", { playlistId, trackId }),
   listSources: () => invoke<SourceItem[]>("list_sources"),
@@ -211,11 +224,13 @@ export const api = {
     hqHash?: string;
     sqHash?: string;
     superHash?: string;
-  }) => invoke<string>("download_online", { req }),
+  }) => invoke<{ name: string; quality: string | null }>("download_online", { req }),
   likedOnlineList: () =>
     invoke<import("./types").PlaylistEntryMeta[]>("liked_online_list"),
   recentOnlineList: () =>
     invoke<import("./types").PlaylistEntryMeta[]>("recent_online_list"),
+  downloadedOnlineList: () =>
+    invoke<import("./types").PlaylistEntryMeta[]>("downloaded_online_list"),
   saveDirGet: () =>
     invoke<{ dir: string; default: string }>("save_dir_get"),
   saveDirSet: (dir: string) => invoke<void>("save_dir_set", { dir }),

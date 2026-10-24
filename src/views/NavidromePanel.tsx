@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -15,6 +15,8 @@ import {
 import { api } from "../api";
 import { useStore } from "../store";
 import { useLocatePillEl } from "../hooks/useLocatePillEl";
+import { useLocatePill } from "../hooks/useLocatePill";
+import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import LocateCurrentPill from "../components/LocateCurrentPill";
 import type { NdAlbum, NdSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
@@ -331,6 +333,10 @@ export default function NavidromePanel() {
 
   // 「回到当前歌曲」药丸 + 队列自动续页（Navidrome 全部歌曲列表）
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // “歌曲”页窗口化（此前全量渲染，大曲库 Navidrome DOM 行数线性增长）。
+  // 与 scrollRef 共指同一容器：ref 合并挂载 + 滚动事件双订阅
+  const ND_ROW_H = 56;
+  const songsWin = useVirtualWindow(allSongs.length, ND_ROW_H);
   const current = useStore((s) => s.current);
   const pill = useLocatePillEl({
     containerRef: scrollRef,
@@ -343,15 +349,25 @@ export default function NavidromePanel() {
   const loadMoreSongsRef = useRef(loadMoreSongs);
   loadMoreSongsRef.current = loadMoreSongs;
   const locatedRef = useRef(false);
+  // 当前播放曲在歌曲页列表中的下标（数学定位：虚拟窗口化后元素不常驻
+  // DOM，元素版 querySelector 定位失效）
+  const currentSongIdx = useMemo(() => {
+    if (current?.kind !== "navidrome" || current.qid == null) return -1;
+    return allSongs.findIndex((s) => s.id === current.qid);
+  }, [allSongs, current]);
+  const songPill = useLocatePill({
+    containerRef: scrollRef as React.RefObject<HTMLDivElement | null>,
+    rowHeight: ND_ROW_H,
+    currentIndex: currentSongIdx,
+  });
   // 首页歌曲加载完成后：正在播放的 Navidrome 歌曲若在列表中，定位到它
   useEffect(() => {
     if (locatedRef.current || !allSongsLenRef.current) return;
     locatedRef.current = true;
     requestAnimationFrame(() => {
-      scrollRef.current
-        ?.querySelector('[data-now-playing="1"]')
-        ?.scrollIntoView({ block: "center" });
+      if (currentSongIdx >= 0) songsWin.scrollToIndex(currentSongIdx);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSongs.length]);
   const registerQueueExtender = (expectedTail: string) => {
     let tail = expectedTail;
@@ -492,7 +508,11 @@ export default function NavidromePanel() {
 
           {/* 内容区 */}
           <div
-            ref={scrollRef}
+            ref={(el) => {
+              scrollRef.current = el;
+              songsWin.containerRef.current = el;
+            }}
+            onScroll={songsWin.onScroll}
             className="flex-1 min-h-0 overflow-y-auto"
             style={{ scrollbarWidth: "thin" }}
           >
@@ -505,7 +525,10 @@ export default function NavidromePanel() {
             {!loading && view.page === "songs" && (
               <>
                 <div className="pb-4">
-                  {allSongs.map((s) => (
+                  <div style={{ height: songsWin.start * ND_ROW_H }} aria-hidden />
+                  {allSongs.slice(songsWin.start, songsWin.end).map((s, k) => {
+                    const i = songsWin.start + k;
+                    return (
                     <div
                       key={s.id}
                       data-now-playing={
@@ -558,7 +581,15 @@ export default function NavidromePanel() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
+                  <div
+                    style={{
+                      height:
+                        Math.max(0, allSongs.length - songsWin.end) * ND_ROW_H,
+                    }}
+                    aria-hidden
+                  />
                   {allSongs.length < total && (
                     <div className="flex justify-center pt-2 pb-4">
                       <button className="btn-secondary !py-1.5 !px-4" onClick={loadMoreSongs}>

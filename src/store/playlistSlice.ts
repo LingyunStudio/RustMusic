@@ -14,6 +14,9 @@ type Fields = Pick<
   | "deletePlaylists"
   | "renamePlaylist"
   | "addToPlaylist"
+  | "addTracksToPlaylist"
+  | "exportPlaylistM3u"
+  | "importPlaylistM3u"
   | "removeFromPlaylist"
   | "addOnlineToPlaylist"
   | "removePlaylistEntryRow"
@@ -99,6 +102,45 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
     }
   },
 
+  async addTracksToPlaylist(pid, tids) {
+    if (!tids.length) return;
+    try {
+      const added = await api.addTracksToPlaylist(pid, tids);
+      await get().refreshPlaylists();
+      const pl = get().playlists.find((p) => p.id === pid);
+      get().toast(
+        added > 0
+          ? `已添加 ${added} 首到「${pl?.name ?? "播放列表"}」`
+          : `所选歌曲都已在「${pl?.name ?? "播放列表"}」中`,
+        added > 0 ? "success" : "info"
+      );
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async exportPlaylistM3u(pid, path) {
+    try {
+      const n = await api.exportPlaylistM3u(pid, path);
+      get().toast(`已导出 ${n} 条到 ${path}`, "success");
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
+  async importPlaylistM3u(name, path) {
+    try {
+      const r = await api.importPlaylistM3u(name, path);
+      await get().refreshPlaylists();
+      get().toast(
+        `已导入「${name}」：${r.added} 首${r.skipped > 0 ? `（跳过 ${r.skipped} 条无效条目）` : ""}`,
+        "success"
+      );
+    } catch (e) {
+      get().toast(String(e), "error");
+    }
+  },
+
   async removeFromPlaylist(pid, tid) {
     try {
       await api.removeFromPlaylist(pid, tid);
@@ -178,10 +220,28 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
   },
 
   async reorderPlaylist(pid, rowids) {
+    // 乐观更新：useDragList 的提交契约要求 onSubmit 同步重渲染，
+    // 否则松手清空 transform 的瞬间 DOM 会闪回旧顺序（SQLite 往返期间）。
+    // 本地按 rowid 序列重排 entries，持久化失败回滚
+    const prev = get().playlists;
+    const next = prev.map((p) => {
+      if (p.id !== pid) return p;
+      const byRowid = new Map(p.entries.map((e) => [e.rowid, e] as const));
+      const ordered = rowids
+        .map((rid) => byRowid.get(rid))
+        .filter((e): e is (typeof p.entries)[number] => e != null);
+      if (ordered.length !== p.entries.length) {
+        for (const e of p.entries) {
+          if (!rowids.includes(e.rowid)) ordered.push(e);
+        }
+      }
+      return { ...p, entries: ordered };
+    });
+    set({ playlists: next });
     try {
       await api.reorderPlaylist(pid, rowids);
-      await get().refreshPlaylists();
     } catch (e) {
+      set({ playlists: prev });
       get().toast("顺序保存失败", "error");
     }
   },

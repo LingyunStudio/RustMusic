@@ -285,10 +285,17 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     setRecLoading(true);
     try {
       const append = page > 1 && rec?.origin === "top" && rec.topId === t.id;
-      const merge = <T,>(old: T[] | undefined, add: T[]): T[] => [
-        ...(old ?? []),
-        ...add,
-      ];
+      // 追加去重：榜单接口两次请求间数据变动会返回重叠条目
+      //（同 key 双行 + React 行复用错位）
+      const merge = <T extends { kind?: string; id?: string | number }>(
+        old: T[] | undefined,
+        add: T[],
+        idOf?: (x: T) => string,
+      ): T[] => {
+        const seen = new Set((old ?? []).map((x) => (idOf ? idOf(x) : String(x.id))));
+        const fresh = add.filter((x) => !seen.has(idOf ? idOf(x) : String(x.id)));
+        return [...(old ?? []), ...fresh];
+      };
       const next: OnlineRecState =
         source === "netease"
           ? await (async () => {
@@ -638,11 +645,21 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     [rows, current]
   );
 
-  // 打开歌单/榜单（rec 变化）时定位到当前播放行；不在列表则回到顶部。
-  // rows 由 rec 同步派生（setRec 在数据就绪后调用），此时 rows 已是新列表
+  // 打开歌单/榜单（列表身份变化）时定位到当前播放行；不在列表则回到顶部。
+  // rows 由 rec 同步派生（setRec 在数据就绪后调用），此时 rows 已是新列表。
+  // 注意按"列表身份"判重而不是 rec 对象引用：榜单"加载更多"会重建 rec
+  // （merge 出新数组后 setRec），若按引用触发会把每次翻页都变成一次
+  // 重新定位——列表跳回顶部/正在播放行，滚动位置丢失
+  const recKeyRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     const el = win.containerRef.current;
-    if (!el || !rec) return;
+    if (!el || !rec) {
+      recKeyRef.current = null;
+      return;
+    }
+    const key = `${rec.origin}|${rec.topId ?? rec.playlistId ?? rec.title}`;
+    if (key === recKeyRef.current) return;
+    recKeyRef.current = key;
     if (currentIdx >= 0) win.scrollToIndex(currentIdx);
     else el.scrollTop = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps

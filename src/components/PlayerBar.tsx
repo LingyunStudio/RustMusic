@@ -16,11 +16,11 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import Slider from "./Slider";
-import { activeLyricText, fmtTime } from "../utils";
+import { fmtTime } from "../utils";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 
@@ -35,11 +35,33 @@ function TrackTitleLyric() {
 
   // 播放栏歌词：当前行（未打开播放页时也加载并展示）。
   // 是否滚动不再靠字宽估算，而是渲染后实测：容器 scrollWidth > clientWidth 即滚。
-  const activeLyric = (() => {
-    if (nowPlayingOpen) return null;
-    const text = activeLyricText(lyrics, pos);
-    return text == null ? null : { text };
-  })();
+  // 时间行在歌词加载时预计算一次（此前每 250ms 一帧 filter+sort 重建数组），
+  // 当前行用二分定位
+  const timedLines = useMemo(
+    () =>
+      lyrics?.synced
+        ? lyrics.lines
+            .filter((l) => l.timeMs != null && l.text.trim() !== "")
+            .sort((a, b) => (a.timeMs ?? 0) - (b.timeMs ?? 0))
+        : [],
+    [lyrics]
+  );
+  const activeLyric = useMemo(() => {
+    if (nowPlayingOpen || !timedLines.length) return null;
+    let lo = 0;
+    let hi = timedLines.length - 1;
+    let ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((timedLines[mid].timeMs ?? 0) <= pos) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return ans >= 0 ? { text: timedLines[ans].text } : null;
+  }, [nowPlayingOpen, timedLines, pos]);
 
   // 实测溢出：文字真实宽度超出可视宽度时启用 marquee（下一帧测，本帧可能未布局）
   const lyricWrapRef = useRef<HTMLDivElement>(null);
@@ -51,10 +73,14 @@ function TrackTitleLyric() {
       setLyricOverflow(false);
       return;
     }
-    requestAnimationFrame(() => {
+    const measure = () => {
       const e2 = lyricWrapRef.current;
       if (e2) setLyricOverflow(e2.scrollWidth > e2.clientWidth + 1);
-    });
+    };
+    requestAnimationFrame(measure);
+    // 窗口拉宽/缩窄后溢出状态要重算（否则该滚的停滚、该停的仍滚）
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, [overflowText]);
 
   if (!current) return null;
@@ -96,29 +122,70 @@ function TrackTitleLyric() {
   );
 }
 
-/** 中部进度区：时间 + 滑块。pos/dur 的高频订阅隔离于此 */
+/** 中部进度区：时间 + 滑块 + 悬停时间气泡。pos/dur 的高频订阅隔离于此。
+ *  拖动期数值完全留在本地（Slider 视觉本就本地预览）：此前每个 pointermove
+ *  写全局 store，Playhead/TrackTitleLyric/队列面板全部逐帧重渲染 */
 function Playhead({ fallbackTotal }: { fallbackTotal: number }) {
   const pos = useStore((s) => s.pos);
   const dur = useStore((s) => s.dur);
   const seek = useStore((s) => s.seek);
+  const setScrubbing = useStore((s) => s.setScrubbing);
   const total = dur || fallbackTotal || 0;
+  const [dragVal, setDragVal] = useState<number | null>(null);
+  const shown = dragVal ?? pos;
+  // 悬停时间气泡：非拖动时跟随鼠标位置预览对应时间
+  const [hoverRatio, setHoverRatio] = useState<number | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const ratioOf = (clientX: number) => {
+    const el = barRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 ? Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) : 0;
+  };
   return (
     <div className="w-full max-w-[540px] flex items-center gap-3">
       <span className="text-[11px] text-[var(--ink-3)] tabular-nums w-9 text-right">
-        {fmtTime(pos)}
+        {fmtTime(shown)}
       </span>
-      <Slider
-        value={pos}
-        max={total || 1}
-        onChange={(v) => useStore.setState({ pos: v, scrubbing: true })}
-        onCommit={(v) => {
-          useStore.setState({ scrubbing: true });
-          seek(v);
+      <div
+        ref={barRef}
+        className="relative flex-1"
+        onPointerMove={(e) => {
+          if (dragVal != null) return;
+          setHoverRatio(ratioOf(e.clientX));
         }}
-        // 拖动被系统中断：不 seek，松开 scrubbing 让引擎 pos 事件恢复回写
-        onCancel={() => useStore.setState({ scrubbing: false })}
-        className="flex-1"
-      />
+        onPointerLeave={() => setHoverRatio(null)}
+      >
+        <Slider
+          value={pos}
+          max={total || 1}
+          onChange={(v) => {
+            if (dragVal == null) {
+              setScrubbing(true);
+              setHoverRatio(null);
+            }
+            setDragVal(v);
+          }}
+          onCommit={(v) => {
+            setDragVal(null);
+            seek(v);
+          }}
+          // 拖动被系统中断：不 seek，松开 scrubbing 让引擎 pos 事件恢复回写
+          onCancel={() => {
+            setDragVal(null);
+            setScrubbing(false);
+          }}
+          className="w-full"
+        />
+        {hoverRatio != null && total > 0 && (
+          <span
+            className="pointer-events-none absolute -top-7 -translate-x-1/2 text-[10.5px] px-1.5 py-0.5 rounded-md text-[var(--ink)] glass-strong tabular-nums"
+            style={{ left: `${hoverRatio * 100}%` }}
+          >
+            {fmtTime(hoverRatio * total)}
+          </span>
+        )}
+      </div>
       <span className="text-[11px] text-[var(--ink-3)] tabular-nums w-9">
         {fmtTime(total)}
       </span>
@@ -198,14 +265,21 @@ function VolumePopover({
   );
 }
 
-/** 定时停止弹出菜单（点击时钟图标显示，点击其他区域收起） */
+/** 定时停止弹出菜单（点击时钟图标显示，点击其他区域收起）。
+ *  含“播完当前歌曲/列表后停止”两个档位——音乐播放器最高频的定时诉求 */
 function SleepPopover({
   sleepAt,
   onSet,
+  onMode,
+  stopAfterTrack,
+  stopAfterQueue,
   onClose,
 }: {
   sleepAt: number | null;
   onSet: (min: number | null) => void;
+  onMode: (mode: "track" | "queue" | null) => void;
+  stopAfterTrack: boolean;
+  stopAfterQueue: boolean;
   onClose: () => void;
 }) {
   const remainMin = sleepAt
@@ -244,6 +318,29 @@ function SleepPopover({
             {m} 分钟后停止
           </button>
         ))}
+        <div className="my-1 h-px bg-[var(--line)]" />
+        <button
+          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left ${
+            stopAfterTrack ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
+          }`}
+          onClick={() => {
+            onMode("track");
+            onClose();
+          }}
+        >
+          播完当前歌曲后停止
+        </button>
+        <button
+          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left ${
+            stopAfterQueue ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
+          }`}
+          onClick={() => {
+            onMode("queue");
+            onClose();
+          }}
+        >
+          播完当前列表后停止
+        </button>
         {/* 自定义时长（分钟）：回车或点确定生效 */}
         <div className="flex items-center gap-1 px-1 pt-1.5">
           <input
@@ -265,11 +362,12 @@ function SleepPopover({
             确定
           </button>
         </div>
-        {sleepAt != null && (
+        {(sleepAt != null || stopAfterTrack || stopAfterQueue) && (
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left"
             onClick={() => {
               onSet(null);
+              onMode(null);
               onClose();
             }}
           >
@@ -289,6 +387,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
   const volume = useStore((s) => s.volume);
   const sleepAt = useStore((s) => s.sleepAt);
   const setSleepTimer = useStore((s) => s.setSleepTimer);
+  const sleepStopAfterTrack = useStore((s) => s.sleepStopAfterTrack);
+  const sleepStopAfterQueue = useStore((s) => s.sleepStopAfterQueue);
+  const setSleepMode = useStore((s) => s.setSleepMode);
   const speed = useStore((s) => s.speed);
   const repeat = useStore((s) => s.repeat);
   const shuffle = useStore((s) => s.shuffle);
@@ -332,7 +433,16 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       }`}
     >
       {download && (
-        <div className="absolute left-8 right-8 top-0 h-[3px] bg-[var(--shade)] rounded-full overflow-hidden">
+        <button
+          className="absolute right-8 top-1 z-10 btn-ghost !w-6 !h-6 text-[10px] text-[var(--ink-3)] hover:text-[var(--ink)]"
+          onClick={() => useStore.getState().cancelDownloadQueue()}
+          title="取消排队中的批量下载（正在执行的当前这一个不受影响）"
+        >
+          取消排队
+        </button>
+      )}
+      {download && (
+        <div className="absolute left-8 right-24 top-0 h-[3px] bg-[var(--shade)] rounded-full overflow-hidden">
           <div
             className="h-full transition-all duration-300 rounded-full"
             style={{
@@ -446,6 +556,58 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                     size={16}
                     className={
                       savedOnline[`qq-${current.qid}`]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
+              )}
+              {current.kind === "bilibili" && current.qid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 shrink-0"
+                  onClick={() => {
+                    toggleLikeOnline({
+                      kind: "bilibili",
+                      id: current.qid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                    });
+                  }}
+                  title={savedOnline[`bilibili-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      savedOnline[`bilibili-${current.qid}`]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
+              )}
+              {current.kind === "navidrome" && current.qid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 shrink-0"
+                  onClick={() => {
+                    toggleLikeOnline({
+                      kind: "navidrome",
+                      id: current.qid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                    });
+                  }}
+                  title={savedOnline[`navidrome-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      savedOnline[`navidrome-${current.qid}`]
                         ? "fill-[#e0533f] text-[#e0533f]"
                         : ""
                     }
@@ -608,7 +770,12 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               ref={volBtnRef}
               className={`btn-ghost w-9 h-9 shrink-0 ${volOpen ? "!text-[var(--accent)]" : ""}`}
               onClick={() => setVolOpen((v) => !v)}
-              title="音量"
+              onWheel={(e) => {
+                // 音量滚轮：不必点开弹条拖动（React 的 wheel 是 passive
+                // 监听，preventDefault 无效且会刷控制台告警，故不调用）
+                setVolume(Math.min(1, Math.max(0, volume + (e.deltaY < 0 ? 0.05 : -0.05))));
+              }}
+              title="音量（滚轮调节）"
             >
               <VolIcon size={15} />
             </button>
@@ -633,13 +800,19 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           <div className="relative flex items-center">
             <button
               className={`btn-ghost w-9 h-9 shrink-0 ${
-                sleepAt != null ? "!text-[var(--accent)]" : ""
+                sleepAt != null || sleepStopAfterTrack || sleepStopAfterQueue
+                  ? "!text-[var(--accent)]"
+                  : ""
               }`}
               onClick={() => setSleepOpen((v) => !v)}
               title={
                 sleepAt != null
                   ? `定时停止：剩余约 ${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))} 分钟`
-                  : "定时停止播放"
+                  : sleepStopAfterTrack
+                    ? "定时停止：播完当前歌曲后停止"
+                    : sleepStopAfterQueue
+                      ? "定时停止：播完当前列表后停止"
+                      : "定时停止播放"
               }
             >
               <Timer size={15} />
@@ -648,6 +821,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               <SleepPopover
                 sleepAt={sleepAt}
                 onSet={setSleepTimer}
+                onMode={setSleepMode}
+                stopAfterTrack={sleepStopAfterTrack}
+                stopAfterQueue={sleepStopAfterQueue}
                 onClose={() => setSleepOpen(false)}
               />
             )}

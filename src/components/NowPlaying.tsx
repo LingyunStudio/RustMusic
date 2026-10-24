@@ -23,6 +23,10 @@ export default function NowPlaying() {
   const recentOnline = useStore((s) => s.recentOnline);
   const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
   const playing = useStore((s) => s.playing);
+  const lyricsShowTrans = useStore((s) => s.lyricsShowTrans);
+  const setLyricsShowTrans = useStore((s) => s.setLyricsShowTrans);
+  const lyricsFontScale = useStore((s) => s.lyricsFontScale);
+  const setLyricsFontScale = useStore((s) => s.setLyricsFontScale);
 
   // 歌词逐字染色完全脱离 React 渲染（同桌面歌词）：
   // - 不订阅 s.pos（250ms 一次会让整页重渲染，挤压歌词渲染帧预算），
@@ -78,6 +82,13 @@ export default function NowPlaying() {
     }
   }, [lyricsKey, loadLyricsByKey]);
 
+  // 当前歌词是否带翻译（决定“译”按钮可用态——没有翻译数据时置灰，
+  // 避免按了没反应被误认为功能失效）
+  const hasTrans = useMemo(
+    () => (lyrics?.lines ?? []).some((l) => l.trans != null && l.trans !== ""),
+    [lyrics]
+  );
+
   const syncedLines = useMemo(
     () =>
       lyrics?.synced
@@ -98,7 +109,10 @@ export default function NowPlaying() {
       // 外推封顶在曲目时长：托盘挂起恢复后锚点时间戳涵盖整段挂起时长，
       // 不封顶的话进度/歌词会瞬间冲到很远（表现为“没声音但歌词狂飙”）
       const dur = useStore.getState().dur;
-      const raw = a.pos + (performance.now() - a.at);
+      // 外推必须乘播放速度：2x 下按 1x 墙钟外推，两次 pos 帧之间染色持续
+      // 滞后并锯齿跳变（进度实际走得比外推快一倍）
+      const speed = useStore.getState().speed;
+      const raw = a.pos + (performance.now() - a.at) * speed;
       const posNow = dur > 0 ? Math.min(raw, dur) : raw;
 
       // 当前行二分（行数据是排好序的）
@@ -135,6 +149,8 @@ export default function NowPlaying() {
           el.classList.add("active");
           // 当前行文字色 = 「未唱」自定义色（空时回落主题正文色，CSS 变量即时生效）
           el.style.color = "var(--lyric-unsung, var(--ink))";
+          // 字号固定 25px：整体缩放由滚动容器的 zoom 统一负责
+          //（再乘 scale 会双重缩放，字号档位失衡）
           el.style.fontSize = "25px";
           el.style.fontWeight = "800";
           el.style.opacity = "1";
@@ -500,6 +516,36 @@ export default function NowPlaying() {
                   />
                 </button>
               )}
+              {current.kind === "navidrome" && current.qid != null && (
+                <button
+                  className="btn-ghost w-8 h-8 !rounded-full glass"
+                  onClick={() =>
+                    toggleLikeOnline({
+                      kind: "navidrome",
+                      id: current.qid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                      mediaMid: "",
+                      vip: false,
+                    })
+                  }
+                  title={
+                    savedOnline[`navidrome-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"
+                  }
+                >
+                  <Heart
+                    size={16}
+                    className={
+                      savedOnline[`navidrome-${current.qid}`]
+                        ? "fill-[#e0533f] text-[#e0533f]"
+                        : ""
+                    }
+                  />
+                </button>
+              )}
               {current.kind === "track" && (
                 <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
                   {current.album || "未知专辑"}
@@ -521,11 +567,41 @@ export default function NowPlaying() {
                 </span>
               )}
             </div>
-            {lyricSource && (
-              <div className="mt-3 text-[10.5px] tracking-wide text-[var(--ink-3)] opacity-60 select-none">
-                歌词来源：{lyricSource}
-              </div>
-            )}
+            <div className="mt-3 flex items-center justify-center gap-3 text-[10.5px] tracking-wide text-[var(--ink-3)] opacity-80 select-none">
+              {lyricSource && <span>歌词来源：{lyricSource}</span>}
+              <button
+                disabled={!hasTrans}
+                className={`px-1.5 py-0.5 rounded transition-colors ${
+                  !hasTrans
+                    ? "opacity-40 cursor-not-allowed"
+                    : lyricsShowTrans
+                      ? "text-[var(--accent-strong)] font-semibold hover:text-[var(--ink)]"
+                      : "hover:text-[var(--ink)]"
+                }`}
+                onClick={() => setLyricsShowTrans(!lyricsShowTrans)}
+                title={
+                  hasTrans
+                    ? "显示 / 隐藏歌词翻译"
+                    : "当前歌曲没有翻译歌词（网易云 / QQ 曲目通常带官方翻译）"
+                }
+              >
+                译
+              </button>
+              <button
+                className="px-1 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-semibold"
+                onClick={() => setLyricsFontScale(lyricsFontScale - 0.1)}
+                title="减小歌词字号"
+              >
+                A-
+              </button>
+              <button
+                className="px-1 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-semibold"
+                onClick={() => setLyricsFontScale(lyricsFontScale + 0.1)}
+                title="增大歌词字号"
+              >
+                A+
+              </button>
+            </div>
           </div>
         </div>
 
@@ -545,7 +621,7 @@ export default function NowPlaying() {
           <div
             ref={scrollRef}
             className="relative h-full overflow-y-auto py-[28%] lyrics-mask pr-3"
-            style={{ scrollbarWidth: "none" }}
+            style={{ scrollbarWidth: "none", zoom: lyricsFontScale }}
           >
             {lyricsLoading && (
               <div className="text-[var(--ink-3)] text-[13px] text-center pt-20">
@@ -590,7 +666,7 @@ export default function NowPlaying() {
                   className="lyric-line lyric-fill px-4 py-[9px] text-center cursor-pointer"
                 >
                   {text}
-                  {l.trans && (
+                  {lyricsShowTrans && l.trans && (
                     <div className="text-[12.5px] leading-snug mt-0.5 opacity-80">
                       {l.trans}
                     </div>

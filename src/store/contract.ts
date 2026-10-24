@@ -127,8 +127,8 @@ export interface Store {
       | ((cur: import("../types").SourcesResult | null) => import("../types").SourcesResult | null)
   ): void;
   /** 在线音源页当前音源页签（切页保留） */
-  sourcesTab: "bilibili" | "navidrome" | "other";
-  setSourcesTab(t: "bilibili" | "navidrome" | "other"): void;
+  sourcesTab: "bilibili" | "navidrome" | "other" | "downloads";
+  setSourcesTab(t: "bilibili" | "navidrome" | "other" | "downloads"): void;
 
   quality: string;
   /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
@@ -200,6 +200,9 @@ export interface Store {
   /** 在线条目（网易云/QQ/酷狗）转可播放的队列项；无元数据时返回 null */
   entryToQueueItem(e: PlaylistEntryMeta): QueueItem | null;
   togglePlay(): void;
+  /** 队列已自然播完（ended 且无下一首）：此后按“播放”从队列第一首重开，
+   *  而不是引擎侧无声重播最后一首（媒体键误触时的“莫名继续播放”） */
+  queueFinished: boolean;
   next(auto?: boolean, ended?: boolean, bypassRepeatOne?: boolean): void;
   prev(): void;
   seek(ms: number): void;
@@ -210,6 +213,16 @@ export interface Store {
   /** 定时停止播放：min=null 取消；到点停止引擎并复位 UI */
   sleepAt: number | null;
   setSleepTimer(min: number | null): void;
+  /** 睡眠定时“播完当前歌曲后停止”（一次性，ended 事件消费） */
+  sleepStopAfterTrack: boolean;
+  /** 睡眠定时“播完当前列表后停止”（队列耗尽/循环回绕时停止） */
+  sleepStopAfterQueue: boolean;
+  /** 设置睡眠定时模式：track=播完当前曲 / queue=播完列表 / null=取消模式 */
+  setSleepMode(mode: "track" | "queue" | null): void;
+  /** 睡眠“播完列表”已播计数 +1（ended 事件消费；内部实现） */
+  bumpSleepQueueCount(): void;
+  /** 睡眠“播完列表”是否已达目标（内部实现） */
+  sleepQueueReached(): boolean;
   setSpeed(v: number): void;
   setRepeat(m: RepeatMode): void;
   toggleShuffle(): void;
@@ -229,8 +242,26 @@ export interface Store {
   playNext(item: QueueItem): void;
   removeQueueItem(i: number): void;
   clearQueue(): void;
+  /** 清除当前曲目之后的所有队列项（保留当前与已播过的） */
+  clearQueueFromCurrent(): void;
+  /** 队列去重：保留每首歌的首次出现，当前播放位置保持指向原曲目 */
+  dedupeQueue(): void;
+  /** 取消排队中的批量下载（正在执行的一个无法中断），返回取消数量 */
+  cancelDownloadQueue(): number;
+  /** 批量添加本地曲目到歌单（多选场景，单事务提交） */
+  addTracksToPlaylist(pid: number, tids: number[]): Promise<void>;
+  /** 导出歌单为 .m3u8 文件（path 为前端对话框选定的完整路径） */
+  exportPlaylistM3u(pid: number, path: string): Promise<void>;
+  /** 从 .m3u/.m3u8 导入歌单 */
+  importPlaylistM3u(name: string, path: string): Promise<void>;
   jumpTo(i: number): void;
   queueExtender: (() => Promise<QueueItem[] | null>) | null;
+  /** 歌词页：是否显示翻译（持久化） */
+  lyricsShowTrans: boolean;
+  setLyricsShowTrans(v: boolean): void;
+  /** 歌词页：字号缩放（0.85~1.4，持久化） */
+  lyricsFontScale: number;
+  setLyricsFontScale(v: number): void;
 
   createPlaylist(name: string): Promise<number>;
   deletePlaylist(id: number): Promise<void>;
@@ -340,6 +371,9 @@ export interface Store {
   /** 当前皮肤 key（"default" = 内置氛围背景） */
   skin: string;
   setSkin(key: string): void;
+  /** 皮肤音频律动开关（跟随播放频谱；仅对带律动层的皮肤生效） */
+  fxAudio: boolean;
+  setFxAudio(on: boolean): void;
   toggleLikeOnline(row: {
     kind: string;
     id: string | number;

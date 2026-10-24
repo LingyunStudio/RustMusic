@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Clock3,
@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "../store";
+import { api } from "../api";
 import TrackList, { type SortKey } from "../components/TrackList";
 import Modal from "../components/Modal";
 import { ConfirmModal } from "../components/Dialogs";
@@ -60,6 +61,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const loadManualOrder = useStore((s) => s.loadManualOrder);
   // 批量操作（本地 + 在线条目统一处理）
   const addToPlaylist = useStore((s) => s.addToPlaylist);
+  const addTracksToPlaylist = useStore((s) => s.addTracksToPlaylist);
   const addOnlineToPlaylist = useStore((s) => s.addOnlineToPlaylist);
   const addToQueue = useStore((s) => s.addToQueue);
   const downloadOnline = useStore((s) => s.downloadOnline);
@@ -82,6 +84,20 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   // 默认排序“添加时间”（资料库=入库顺序；最近播放/我喜欢=列表时间，本地与在线归并）
   const [sortKey, setSortKey] = useState<SortKey>("added");
   const [dir, setDir] = useState<1 | -1>(-1);
+  // 搜索防抖：每键击全表三字段过滤在万级曲库下是 15 万次字符串分配，
+  // 180ms 合并到最后一击（输入框本身不受影响）
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 180);
+    return () => clearTimeout(t);
+  }, [search]);
+  // Ctrl+F 聚焦本页搜索框（App 全局键分发 "rm:focus-search" 事件）
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const focus = () => searchInputRef.current?.focus();
+    window.addEventListener("rm:focus-search", focus);
+    return () => window.removeEventListener("rm:focus-search", focus);
+  }, []);
 
   // 手动排序仅对“资料库/我喜欢”开放（最近播放是时间线语义）
   const orderList = mode === "liked" ? "liked" : "library";
@@ -102,29 +118,29 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const onlineLikedEntries: PlaylistEntryMeta[] = useMemo(() => {
     if (mode !== "liked") return [];
     return likedOnline.filter((e) => {
-      if (!search) return true;
-      const s = search.toLowerCase();
+      if (!debouncedSearch) return true;
+      const s = debouncedSearch.toLowerCase();
       return (
         e.title.toLowerCase().includes(s) ||
         e.artist.toLowerCase().includes(s) ||
         e.album.toLowerCase().includes(s)
       );
     });
-  }, [mode, likedOnline, search]);
+  }, [mode, likedOnline, debouncedSearch]);
 
   // “最近播放”的在线曲目部分（含本地软删除记录：文件没了记录还在）
   const onlineRecentEntries: PlaylistEntryMeta[] = useMemo(() => {
     if (mode !== "recent") return [];
     return recentOnline.filter((e) => {
-      if (!search) return true;
-      const s = search.toLowerCase();
+      if (!debouncedSearch) return true;
+      const s = debouncedSearch.toLowerCase();
       return (
         e.title.toLowerCase().includes(s) ||
         e.artist.toLowerCase().includes(s) ||
         e.album.toLowerCase().includes(s)
       );
     });
-  }, [mode, recentOnline, search]);
+  }, [mode, recentOnline, debouncedSearch]);
 
   const filtered = useMemo(() => {
     let list: TrackMeta[];
@@ -137,8 +153,8 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       // 资料库：只显示文件存在的曲目
       list = tracks.filter((t) => !t.missing);
     }
-    return list.filter((t) => matchSearch(t, search));
-  }, [tracks, mode, search]);
+    return list.filter((t) => matchSearch(t, debouncedSearch));
+  }, [tracks, mode, debouncedSearch]);
 
   // 排序键的统一取值：本地与在线行都给出可比较值（字符串用 localeCompare，
   // 数字直接相减），归并排序对所有键生效——此前只有“添加时间”走归并，
@@ -326,6 +342,25 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       return next;
     });
 
+  // 批量模式下 Ctrl+A 全选 / Ctrl+D 清空选择
+  useEffect(() => {
+    if (!batchMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable)
+        return;
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
+        e.preventDefault();
+        setSel(new Set(batchRows.map((r) => r.key)));
+      } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyD") {
+        e.preventDefault();
+        setSel(new Set());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [batchMode, batchRows]);
+
   const batchQueue = () => {
     for (const r of selectedBatch) {
       if (r.type === "local") addToQueue({ kind: "track", id: r.t.id });
@@ -372,9 +407,14 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   };
 
   const batchAddToPlaylist = async (pid: number) => {
+    // 本地部分批量单事务入库；在线条目逐条（各源元数据不同）
+    const localIds = selectedBatch
+      .filter((r) => r.type === "local")
+      .map((r) => (r as { type: "local"; t: TrackMeta }).t.id);
+    if (localIds.length) await addTracksToPlaylist(pid, localIds);
     for (const r of selectedBatch) {
       if (r.type === "local") {
-        await addToPlaylist(pid, r.t.id);
+        continue;
       } else {
         await addOnlineToPlaylist(pid, {
           kind: r.e.kind,
@@ -401,7 +441,9 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     const visible = [...rows];
     const [moved] = visible.splice(from, 1);
     visible.splice(to, 0, moved);
-    if (!search) {
+    // 与渲染序列同源（防抖后的值）：清空搜索的 180ms 窗口内提交拖拽时，
+    // 渲染仍是旧过滤子集，按未过滤全量存会清掉不可见行的手动序
+    if (!debouncedSearch) {
       // 无过滤：渲染序列即全量，直接存
       saveManualOrder(orderList, visible.map(keyOfRow));
       return;
@@ -492,10 +534,11 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
               />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索歌曲、艺术家、专辑…"
+                placeholder="搜索歌曲、艺术家、专辑…（Ctrl+F）"
                 className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-8 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
               />
               {search && (
@@ -585,6 +628,38 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               </span>
               <button
                 className="btn-secondary !py-1.5 !px-3"
+                disabled={!batchRows.length}
+                onClick={() => setSel(new Set(batchRows.map((r) => r.key)))}
+                title="全选当前列表（Ctrl+A）"
+              >
+                <ListChecks size={13} />
+                全选
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!selectedLocalTracks.length}
+                onClick={async () => {
+                  // 批量喜欢本地曲目：单事务后端 + 本地乐观更新
+                  const ids = selectedLocalTracks.map((r) => r.t.id);
+                  const idSet = new Set(ids);
+                  useStore.setState((s) => ({
+                    tracks: s.tracks.map((t) =>
+                      idSet.has(t.id) && !t.liked ? { ...t, liked: true } : t
+                    ),
+                  }));
+                  try {
+                    await api.likeTracks(ids, true);
+                    toast(`已喜欢 ${ids.length} 首歌曲`, "success");
+                  } catch (e) {
+                    toast(String(e), "error");
+                  }
+                }}
+              >
+                <Heart size={13} />
+                喜欢
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
                 disabled={!sel.size}
                 onClick={() => setPickerOpen(true)}
               >
@@ -643,6 +718,9 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               onToggle: toggleSelKey,
             }}
             onMetaClick={(field, text) => openDetailPage(field, text)}
+            onPlayMerged={
+              mergedEntries.length ? (idx) => playEntries(mergedEntries, idx) : undefined
+            }
             onDeleteTrack={mode === "library" ? (t) => setDeleteTarget(t) : undefined}
             emptyHint={
               mode === "library"

@@ -4,7 +4,8 @@ import type { StateCreator } from "zustand";
 import { api } from "../api";
 import type { BiliFollow, KgSong, NeteaseTrack, NdSong, QqSong, QueueItem } from "../types";
 import type { Store } from "./contract";
-import { capOnlineCache } from "./onlineCache";
+import { capOnlineCache, pinnedIdsOf } from "./onlineCache";
+import { resetVipFailStreak } from "./playerSlice";
 import { jsonEq } from "./util";
 
 type Fields = Pick<
@@ -73,6 +74,7 @@ type Fields = Pick<
   | "playSourceId"
   | "toggleLikeOnline"
   | "downloadOnline"
+  | "cancelDownloadQueue"
   | "refreshLikedOnline"
   | "refreshRecentOnline"
   | "importKugouPlaylist"
@@ -88,6 +90,17 @@ const searchGen: Record<"netease" | "qq" | "kugou", number> = {
   qq: 0,
   kugou: 0,
 };
+/** 网易云搜索已请求条数（去重后 results.length 会小于服务端已消费数，
+ *  直接用 length 当 offset 会基准漂移、反复拉同一批重复条目） */
+let neteaseReqCount = 0;
+
+/** 分页追加按 id 去重：服务端结果集在两次请求间变动会返回重叠条目 */
+function dedupeAppend<T extends { id: string | number }>(old: T[], add: T[]): T[] {
+  const seen = new Set(old.map((t) => String(t.id)));
+  const fresh = add.filter((t) => !seen.has(String(t.id)));
+  return fresh.length ? [...old, ...fresh] : old;
+}
+
 /** 加载更多进行中标记（按源隔离：三源共享一把锁会让别源的 append 互相误清/重入） */
 const loadMoreBusy: Record<"netease" | "qq" | "kugou", boolean> = {
   netease: false,
@@ -95,8 +108,21 @@ const loadMoreBusy: Record<"netease" | "qq" | "kugou", boolean> = {
   kugou: false,
 };
 /** 下载串行队列：download://progress 是单通道事件、download 是单槽状态，
- *  并发下载会互抢进度条，且同名文件并发写会损坏——排成队依次执行 */
-let downloadChain: Promise<void> = Promise.resolve();
+ *  并发下载会互抢进度条，且同名文件并发写会损坏——排成队依次执行。
+ *  显式队列（而非 promise 链）：排队中的任务可整队取消（批量误选后不必逐个等）。
+ *  每项带 abort：取消时把等待方立即 settle（false），Promise 不悬空挂起 */
+const downloadQueue: Array<{ task: () => Promise<void>; abort: () => void }> = [];
+let downloadRunning = false;
+function pumpDownloadQueue() {
+  if (downloadRunning) return;
+  const next = downloadQueue.shift();
+  if (!next) return;
+  downloadRunning = true;
+  void next.task().finally(() => {
+    downloadRunning = false;
+    pumpDownloadQueue();
+  });
+}
 /** refreshLikedOnline 合并器（批量收藏并发触发时防旧快照覆盖新状态） */
 let likedRefreshInFlight = false;
 let likedRefreshDirty = false;
@@ -169,12 +195,16 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const queue: QueueItem[] = list.map((t) => ({ kind: "netease", id: t.id }));
     const target = Math.max(0, Math.min(idx, queue.length - 1));
     set((s) => ({
-      neteaseCache: capOnlineCache("netease", cache, get().neteaseCache),
+      neteaseCache: capOnlineCache(
+        "netease", cache, get().neteaseCache,
+        pinnedIdsOf("netease", { queue, likedOnline: get().likedOnline })
+      ),
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     get().playQueueIndex(target);
   },
@@ -194,12 +224,16 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const queue: QueueItem[] = songs.map((t) => ({ kind: "navidrome", id: t.id }));
     const target = Math.max(0, Math.min(idx, queue.length - 1));
     set((s) => ({
-      ndCache: capOnlineCache("nd", cache, get().ndCache),
+      ndCache: capOnlineCache(
+        "nd", cache, get().ndCache,
+        pinnedIdsOf("navidrome", { queue, likedOnline: get().likedOnline })
+      ),
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     get().playQueueIndex(target);
   },
@@ -252,13 +286,17 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const queue: QueueItem[] = rows.map((r) => ({ kind: "bilibili", id: r.rid }));
     const target = Math.max(0, Math.min(idx, queue.length - 1));
     set((s) => ({
-      biliCache: capOnlineCache("bili", cache, get().biliCache),
+      biliCache: capOnlineCache(
+        "bili", cache, get().biliCache,
+        pinnedIdsOf("bilibili", { queue, likedOnline: get().likedOnline })
+      ),
       playingSourceId: null,
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     get().playQueueIndex(target);
   },
@@ -316,12 +354,16 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const queue: QueueItem[] = list.map((t) => ({ kind: "qq", id: t.id }));
     const target = Math.max(0, Math.min(idx, queue.length - 1));
     set((s) => ({
-      qqCache: capOnlineCache("qq", cache, get().qqCache),
+      qqCache: capOnlineCache(
+        "qq", cache, get().qqCache,
+        pinnedIdsOf("qq", { queue, likedOnline: get().likedOnline })
+      ),
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     get().playQueueIndex(target);
   },
@@ -333,12 +375,16 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const queue: QueueItem[] = list.map((t) => ({ kind: "kugou", id: t.id }));
     const target = Math.max(0, Math.min(idx, queue.length - 1));
     set((s) => ({
-      kugouCache: capOnlineCache("kugou", cache, get().kugouCache),
+      kugouCache: capOnlineCache(
+        "kugou", cache, get().kugouCache,
+        pinnedIdsOf("kugou", { queue, likedOnline: get().likedOnline })
+      ),
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     get().playQueueIndex(target);
   },
@@ -350,10 +396,15 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       if (loadMoreBusy.qq) return;
       loadMoreBusy.qq = true;
     } else {
-      // 新搜索会重置结果：同源在途 append 一并作废并解锁
+      // 新搜索会重置结果：同源在途 append 一并作废并解锁。
+      // 页码/结果立即原子复位——否则新搜索在途时触发 append 会用旧页码发请求
       loadMoreBusy.qq = false;
     }
-    set({ qqSearching: true, qqSearched: true });
+    set(
+      append
+        ? { qqSearching: true }
+        : { qqSearching: true, qqSearched: true, qqResults: [], qqPage: 1 }
+    );
     try {
       const page = append ? get().qqPage + 1 : 1;
       const r = await api.qqSearch(keyword, page);
@@ -361,10 +412,12 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       const cache = { ...get().qqCache };
       for (const t of r.songs) cache[t.id] = t;
       set((s) => ({
-        qqResults: append ? [...s.qqResults, ...r.songs] : r.songs,
+        // 追加按 id 去重：分页接口两次请求间数据变动会返回重叠条目
+        // （同 key 双行 + React 行复用错位）
+        qqResults: append ? dedupeAppend(s.qqResults, r.songs) : r.songs,
         qqSearching: false,
         qqPage: page,
-        qqCache: capOnlineCache("qq", cache, get().qqCache),
+        qqCache: capOnlineCache("qq", cache, get().qqCache, pinnedIdsOf("qq", get())),
       }));
     } catch (e) {
       if (gen === searchGen.qq) {
@@ -386,7 +439,11 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else {
       loadMoreBusy.kugou = false;
     }
-    set({ kugouSearching: true, kugouSearched: true });
+    set(
+      append
+        ? { kugouSearching: true }
+        : { kugouSearching: true, kugouSearched: true, kugouResults: [], kugouPage: 1 }
+    );
     try {
       const page = append ? get().kugouPage + 1 : 1;
       const r = await api.kugouSearch(keyword, page);
@@ -394,10 +451,10 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       const cache = { ...get().kugouCache };
       for (const t of r.songs) cache[t.id] = t;
       set((s) => ({
-        kugouResults: append ? [...s.kugouResults, ...r.songs] : r.songs,
+        kugouResults: append ? dedupeAppend(s.kugouResults, r.songs) : r.songs,
         kugouSearching: false,
         kugouPage: page,
-        kugouCache: capOnlineCache("kugou", cache, get().kugouCache),
+        kugouCache: capOnlineCache("kugou", cache, get().kugouCache, pinnedIdsOf("kugou", get())),
       }));
     } catch (e) {
       if (gen === searchGen.kugou) {
@@ -417,6 +474,8 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   kugouSetLogin(loggedIn, nickname) {
+    // 登录/退出都意味着账号状态变化：清零 VIP 熔断计数
+    resetVipFailStreak();
     set((s) => {
       const unavailable = Object.fromEntries(
         Object.entries(s.unavailable).filter(([k]) => !k.startsWith("kugou:"))
@@ -440,6 +499,8 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   qqSetLogin(loggedIn, nickname) {
+    // 登录/退出都意味着账号状态变化：清零 VIP 熔断计数
+    resetVipFailStreak();
     set((s) => {
       // 登录/退出都会改变曲目可用性：清除之前会话状态下做出的置灰标记，
       // 让重新登录后的 VIP 曲目得以重试（修复"过期误标后永远不能播"）
@@ -453,7 +514,9 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   async qqLogout() {
     try {
       await api.qqLogout();
-      set({ qqLoggedIn: false, qqNickname: "" });
+      // 走 SetLogin 包装：退出登录同样改变曲目可用性，需清掉 qq: 前缀的
+      // 置灰标记（与 kugouLogout 行为一致；直接 set 曾让标记残留到下次登录）
+      get().qqSetLogin(false, "");
       get().toast("已退出 QQ 音乐登录", "success");
     } catch (e) {
       get().toast(String(e), "error");
@@ -479,8 +542,13 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       });
       await get().refreshLikedOnline();
     } catch (e) {
-      // 回滚
-      set((s) => ({ savedOnline: { ...s.savedOnline, [key]: !next } }));
+      // 回滚仅当当前值仍是本次的乐观值：并发二次点击已成功时，
+      // 无条件回滚会把正确状态改错且再无纠正路径
+      set((s) =>
+        s.savedOnline[key] === next
+          ? { savedOnline: { ...s.savedOnline, [key]: !next } }
+          : {}
+      );
       get().toast(String(e), "error");
     }
   },
@@ -488,9 +556,9 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   downloadOnline(row) {
     // 返回是否成功：批量下载靠它统计失败数（错误已 toast，不 reject）
     const run = async (): Promise<boolean> => {
-      get().toast("开始下载…", "info");
+      get().toast(`开始下载「${row.name}」…`, "info");
       try {
-        const name = await api.downloadOnline({
+        const r = await api.downloadOnline({
           kind: row.kind,
           id: String(row.id),
           title: row.name,
@@ -505,20 +573,32 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
           superHash: (row as { superHash?: string }).superHash,
         });
         await get().refreshTracks();
-        get().toast(`已下载到资料库：${name}`, "success");
+        get().toast(
+          `已下载到资料库：${r.name}${r.quality ? `（${r.quality}）` : ""}`,
+          "success"
+        );
         return true;
       } catch (e) {
         get().toast(String(e), "error");
         return false;
       }
     };
-    // 挂到串行链尾：批量下载逐个执行，进度条/文件写入不再互相干扰
-    const p = downloadChain.then(run, run);
-    downloadChain = p.then(
-      () => {},
-      () => {}
-    );
-    return p;
+    // 入串行队列：批量下载逐个执行，进度条/文件写入不再互相干扰；
+    // 排队中的任务可被 cancelDownloadQueue 整队取消（批量误选后不必逐个等）
+    return new Promise<boolean>((resolve) => {
+      const task = () => run().then((ok) => resolve(ok), () => resolve(false));
+      downloadQueue.push({ task, abort: () => resolve(false) });
+      pumpDownloadQueue();
+    });
+  },
+
+  cancelDownloadQueue() {
+    const pending = downloadQueue.splice(0, downloadQueue.length);
+    for (const p of pending) p.abort();
+    if (pending.length > 0) {
+      get().toast(`已取消排队中的 ${pending.length} 个下载`, "info");
+    }
+    return pending.length;
   },
   async refreshLikedOnline() {
     // 批量收藏会并发触发 N 次本方法：并发快照乱序返回时，旧的会覆盖
@@ -631,19 +711,27 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else {
       loadMoreBusy.netease = false;
     }
-    set({ neteaseSearching: true, neteaseSearched: true });
+    set(
+      append
+        ? { neteaseSearching: true }
+        : { neteaseSearching: true, neteaseSearched: true, neteaseResults: [], neteaseTotal: 0 }
+    );
+    if (!append) neteaseReqCount = 0;
     try {
-      const offset = append ? get().neteaseResults.length : 0;
+      const offset = append ? neteaseReqCount : 0;
       const r = await api.neteaseSearch(keyword, offset);
       if (gen !== searchGen.netease) return;
       const cache = { ...get().neteaseCache };
       for (const t of r.songs) cache[t.id] = t;
       set((s) => ({
-        neteaseResults: append ? [...s.neteaseResults, ...r.songs] : r.songs,
+        // 按 offset 翻页在服务端结果集变动时必出重复条目，追加按 id 去重
+        neteaseResults: append ? dedupeAppend(s.neteaseResults, r.songs) : r.songs,
         neteaseTotal: r.total,
         neteaseSearching: false,
-        neteaseCache: capOnlineCache("netease", cache, get().neteaseCache),
+        // 计数用服务端返回的原始条数（去重前的已消费量）
+        neteaseCache: capOnlineCache("netease", cache, get().neteaseCache, pinnedIdsOf("netease", get())),
       }));
+      neteaseReqCount += r.songs.length;
     } catch (e) {
       if (gen === searchGen.netease) {
         set({ neteaseSearching: false });
@@ -662,6 +750,8 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   neteaseSetLogin(loggedIn, nickname) {
+    // 登录/退出都意味着账号状态变化：清零 VIP 熔断计数
+    resetVipFailStreak();
     set((s) => {
       const unavailable = Object.fromEntries(
         Object.entries(s.unavailable).filter(([k]) => !k.startsWith("netease:"))
@@ -704,7 +794,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   async neteaseLogout() {
     try {
       await api.neteaseLogout();
-      set({ neteaseLoggedIn: false, neteaseNickname: "" });
+      get().neteaseSetLogin(false, "");
       get().toast("已退出网易云登录", "success");
     } catch (e) {
       get().toast(String(e), "error");

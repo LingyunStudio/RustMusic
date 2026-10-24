@@ -3,7 +3,7 @@ import type { StateCreator } from "zustand";
 import { api } from "../api";
 import type { PlaylistEntryMeta, QueueItem } from "../types";
 import type { Store } from "./contract";
-import { capOnlineCache } from "./onlineCache";
+import { capOnlineCache, pinnedIdsOf } from "./onlineCache";
 import { pushDesktopLyrics } from "./util";
 
 type Fields = Pick<
@@ -28,6 +28,13 @@ type Fields = Pick<
   | "playingSourceId"
   | "scrubbing"
   | "sleepAt"
+  | "sleepStopAfterTrack"
+  | "sleepStopAfterQueue"
+  | "setSleepMode"
+  | "bumpSleepQueueCount"
+  | "sleepQueueReached"
+  | "clearQueueFromCurrent"
+  | "dedupeQueue"
   | "queueExtender"
   | "lyrics"
   | "lyricsLoading"
@@ -40,6 +47,7 @@ type Fields = Pick<
   | "setQueueExtender"
   | "entryToQueueItem"
   | "togglePlay"
+  | "queueFinished"
   | "next"
   | "prev"
   | "seek"
@@ -64,8 +72,20 @@ type Fields = Pick<
 
 let volumeTimer: ReturnType<typeof setTimeout> | null = null;
 let sleepTimerRef: ReturnType<typeof setTimeout> | null = null;
+/** 睡眠定时“播完列表”模式的已播计数与目标（启用时快照队列长度；
+ *  随机播放不按序到尾、续页会追加——按计数判定才能保证触发） */
+let sleepQueueTarget = 0;
+let sleepQueueCount = 0;
 /** 队列自动续页进行中：防止最后一条上的重复触发并发拉页 */
 let queueExtendBusy = false;
+/** 连续 VIP/权益类播放失败计数：会员过期是账号级持续状态，整队 VIP 歌
+ *  逐首自动跳歌只是在逐首撞墙（每首还白付一次取链请求）——连跳 3 首即停 */
+let vipFailStreak = 0;
+/** 账号状态变化（重新登录成功）时清零 VIP 熔断计数：续费后重新扫码
+ *  即刻恢复，无需等第一首歌播成功 */
+export function resetVipFailStreak() {
+  vipFailStreak = 0;
+}
 /** set_eq IPC 防抖定时器 */
 let eqTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -103,6 +123,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   playing: false,
   pos: 0,
   dur: 0,
+  queueFinished: false,
   playSeq: 0,
   scrubbing: false,
   queue: [],
@@ -111,6 +132,8 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   history: [],
   volume: 0.8,
   sleepAt: null,
+  sleepStopAfterTrack: false,
+  sleepStopAfterQueue: false,
   speed: 1,
   repeat: "off",
   shuffle: false,
@@ -135,6 +158,9 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      // 队列被整体替换：此前在线列表注册的续页器上下文已失效，必须注销
+      //（其尾部校验依赖旧队列尾条，巧合匹配时会把无关歌曲续进新队列）
+      queueExtender: null,
     }));
     get().playQueueIndex(target);
   },
@@ -173,6 +199,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       history: [...st.history.slice(-50), st.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     api
       .playSource(s.id)
@@ -253,17 +280,22 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       (q, i) => i >= target && get().unavailable[`${q.kind}:${q.id}`] == null
     );
     if (avail >= 0) target = avail;
+    // 缓存淘汰保护：新队列全部条目 + 我喜欢列表的元数据不能被容量上限逐出
+    //（大队列被 FIFO 逐出元数据 → 播放时“曲目信息缺失”连环跳过）
+    const pinOf = (kind: string) =>
+      pinnedIdsOf(kind, { queue, likedOnline: get().likedOnline });
     set((s) => ({
-      neteaseCache: capOnlineCache("netease", neteaseCache, get().neteaseCache),
-      qqCache: capOnlineCache("qq", qqCache, get().qqCache),
-      kugouCache: capOnlineCache("kugou", kugouCache, get().kugouCache),
-      ndCache: capOnlineCache("nd", ndCache, get().ndCache),
-      biliCache: capOnlineCache("bili", biliCache, get().biliCache),
+      neteaseCache: capOnlineCache("netease", neteaseCache, get().neteaseCache, pinOf("netease")),
+      qqCache: capOnlineCache("qq", qqCache, get().qqCache, pinOf("qq")),
+      kugouCache: capOnlineCache("kugou", kugouCache, get().kugouCache, pinOf("kugou")),
+      ndCache: capOnlineCache("nd", ndCache, get().ndCache, pinOf("navidrome")),
+      biliCache: capOnlineCache("bili", biliCache, get().biliCache, pinOf("bilibili")),
       queue,
       qIndex: target,
       history: [...s.history.slice(-50), s.qIndex],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     if (queue.length) get().playQueueIndex(target);
   },
@@ -284,7 +316,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         dt: Math.round(e.duration * 1000),
         fee: e.vip ? 1 : 0,
       };
-      set({ neteaseCache: capOnlineCache("netease", neteaseCache, get().neteaseCache) });
+      set({ neteaseCache: capOnlineCache("netease", neteaseCache, get().neteaseCache, pinnedIdsOf("netease", get())) });
       return { kind: "netease", id: idNum };
     }
     if (e.kind === "qq" && e.onlineId) {
@@ -300,7 +332,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         durationMs: Math.round(e.duration * 1000),
         vip: e.vip ?? false,
       };
-      set({ qqCache: capOnlineCache("qq", qqCache, get().qqCache) });
+      set({ qqCache: capOnlineCache("qq", qqCache, get().qqCache, pinnedIdsOf("qq", get())) });
       return { kind: "qq", id: e.onlineId };
     }
     if (e.kind === "kugou" && e.onlineId) {
@@ -315,7 +347,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         vip: e.vip ?? false,
         albumAudioId: Number(e.mediaMid) || 0,
       };
-      set({ kugouCache: capOnlineCache("kugou", kugouCache, get().kugouCache) });
+      set({ kugouCache: capOnlineCache("kugou", kugouCache, get().kugouCache, pinnedIdsOf("kugou", get())) });
       return { kind: "kugou", id: e.onlineId };
     }
     if (e.kind === "bilibili" && e.onlineId) {
@@ -328,7 +360,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         cover: e.cover,
         durationMs: Math.round(e.duration * 1000),
       };
-      set({ biliCache: capOnlineCache("bili", biliCache, get().biliCache) });
+      set({ biliCache: capOnlineCache("bili", biliCache, get().biliCache, pinnedIdsOf("bilibili", get())) });
       return { kind: "bilibili", id: e.onlineId };
     }
     if (e.kind === "navidrome" && e.onlineId) {
@@ -340,7 +372,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         cover: e.cover,
         durationMs: Math.round(e.duration * 1000),
       };
-      set({ ndCache: capOnlineCache("nd", ndCache, get().ndCache) });
+      set({ ndCache: capOnlineCache("nd", ndCache, get().ndCache, pinnedIdsOf("navidrome", get())) });
       return { kind: "navidrome", id: e.onlineId };
     }
     return null;
@@ -353,6 +385,8 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const { queue } = get();
     const item = queue[i];
     if (!item) return;
+    // 任何一次开播都解除“队列已播完”标记
+    if (get().queueFinished) set({ queueFinished: false });
 
     // 自动续页：播到队列最后一条时，若来源（搜索/在线榜单）还有下一页，
     // 后台加载并追加进队列——最后一首自然播完后无缝继续，代替人工点
@@ -366,6 +400,12 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
           .then((items) => {
             if (items && items.length) {
               set((s) => ({ queue: [...s.queue, ...items] }));
+              // 续页对用户可见化：这是“最后一首播完继续播下一页”的来源，
+              // 不提示的话表现为“不知道在播什么”
+              get().toast(
+                `已自动加载下一页，队列追加 ${items.length} 首（当前列表播完后继续播放）`,
+                "info"
+              );
             } else {
               set({ queueExtender: null });
             }
@@ -388,6 +428,9 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const fail = (msg: string) => {
       const needRelogin = /登录已过期|请重新登录|未登录/.test(msg);
       const permanent = !needRelogin && /无版权|下架|已失效|信息失效/.test(msg);
+      // VIP/权益类失败与登录过期同级对待的信号：会员过期后队列里的
+      // VIP 歌会全部逐首失败，不能像坏歌那样一路跳下去
+      const vipRelated = !needRelogin && /VIP|会员|付费|权益/.test(msg);
       const key = `${item.kind}:${item.id}`;
       set((s) => ({
         unavailable: permanent
@@ -413,16 +456,31 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       // （如在线曲目失败回落的场景），绝不能动 playing——按钮和进度
       // 一律以引擎的 player://nowplaying 事件为准。
       if (needRelogin) return;
+      // VIP/权益失败熔断：连续 3 首即停止自动跳歌（会员过期不是曲目问题，
+      // 跳完整个队列也一首都播不出，反而每首都浪费一次取链请求）
+      if (vipRelated) {
+        vipFailStreak += 1;
+        if (vipFailStreak >= 3) {
+          api.stop().catch(() => {});
+          set({ playing: false, pos: 0 });
+          get().toast(
+            `已连续 ${vipFailStreak} 首 VIP/付费曲目无法播放——账号会员可能已过期，已停止自动跳歌（续费或换免费曲目后继续）`,
+            "error"
+          );
+          return;
+        }
+      }
       if (streak < queue.length) {
         // 失败自动跳歌必须绕过单曲循环：repeat-one 下 next(true) 会重播
         // 刚失败的同一首，坏歌被反复重试直到 failStreak 追平队列长度
         get().next(true, false, true);
       }
     };
-    // 开播成功则清零连跳计数，并自愈清除本曲历史置灰标记
+    // 开播成功则清零连跳计数（含 VIP 熔断计数），并自愈清除本曲历史置灰标记
     //（元数据后补/状态恢复后同一曲目仍可正常播放，kugou 等无登录态
     // 刷新路径的来源也由此恢复；登录刷新的前缀清理只作兜底）
-    const ok = () =>
+    const ok = () => {
+      vipFailStreak = 0;
       set((s) => {
         const key = `${item.kind}:${item.id}`;
         if (s.unavailable[key] == null)
@@ -430,6 +488,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         const { [key]: _cleared, ...rest } = s.unavailable;
         return { unavailable: rest, failStreak: 0, failToastId: null };
       });
+    };
 
     if (item.kind === "track") {
       api.playTrack(item.id).then(ok).catch((e) => fail(String(e)));
@@ -544,6 +603,12 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       }
       return;
     }
+    // 队列已自然播完：按“播放”= 从队列第一首重新开始（可见、可理解），
+    // 不再走引擎的 resume()——那条路径会无声重播最后一首
+    if (get().queueFinished && queue.length) {
+      get().playQueueIndex(0);
+      return;
+    }
     api.playPause().catch((e) => get().toast(String(e), "error"));
   },
 
@@ -585,6 +650,14 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         // ended=true 表示由"自然播完"事件驱动、引擎已空闲：立即复位，
         // 不必等看门狗数秒后纠正（否则按钮卡"播放中"、进度冻结）
         if (ended || !get().playing) set({ playing: false, pos: 0 });
+        if (ended) {
+          // 自然播完：彻底收停引擎（stopped=true、清流式关联、SMTC 同步）。
+          // 此前引擎停在"空闲但未停"的暧昧态——媒体键/系统浮窗的“播放”
+          // 会让 resume() 无声无息把最后一首从头重播（用户感知就是
+          // “歌单明明播完了还在响，界面又没在放什么”）
+          set({ queueFinished: true });
+          api.stop().catch(() => {});
+        }
         return;
       }
     }
@@ -670,9 +743,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       sleepTimerRef = null;
     }
     if (min == null) {
-      set({ sleepAt: null });
+      set({ sleepAt: null, sleepStopAfterTrack: false, sleepStopAfterQueue: false });
       return;
     }
+    set({ sleepStopAfterTrack: false, sleepStopAfterQueue: false });
     set({ sleepAt: Date.now() + min * 60000 });
     sleepTimerRef = setTimeout(() => {
       sleepTimerRef = null;
@@ -681,6 +755,35 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       api.stop().catch(() => {});
       get().toast("定时时间到，已停止播放", "info");
     }, min * 60000);
+  },
+
+  setSleepMode(mode) {
+    if (mode === "track") {
+      // 两种模式互斥；到点模式也一并取消（用户显式选择了新模式）
+      if (sleepTimerRef) {
+        clearTimeout(sleepTimerRef);
+        sleepTimerRef = null;
+      }
+      set({ sleepStopAfterTrack: true, sleepStopAfterQueue: false, sleepAt: null });
+      get().toast("将在播完当前歌曲后停止", "info");
+    } else if (mode === "queue") {
+      if (sleepTimerRef) {
+        clearTimeout(sleepTimerRef);
+        sleepTimerRef = null;
+      }
+      // 快照当前队列长度作为目标：续页器之后追加的不算（“当时的列表”）
+      sleepQueueTarget = get().queue.length;
+      sleepQueueCount = 0;
+      set({ sleepStopAfterTrack: false, sleepStopAfterQueue: true, sleepAt: null });
+      get().toast(
+        sleepQueueTarget > 0
+          ? `将在播完当前列表（剩 ${Math.max(1, sleepQueueTarget - get().qIndex)} 首）后停止`
+          : "将在播完当前列表后停止",
+        "info"
+      );
+    } else {
+      set({ sleepStopAfterTrack: false, sleepStopAfterQueue: false });
+    }
   },
 
   setSpeed(v) {
@@ -727,6 +830,61 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       queue: keep.filter(Boolean),
       qIndex: 0,
     });
+    get().toast("已清空播放队列（保留正在播放的曲目）", "info");
+  },
+
+  /** 睡眠“播完列表”已播计数（ended 事件每次消费时 +1；uiSlice 调用） */
+  bumpSleepQueueCount() {
+    sleepQueueCount += 1;
+  },
+  /** 睡眠“播完列表”是否已到目标 */
+  sleepQueueReached(): boolean {
+    return sleepQueueTarget > 0 && sleepQueueCount >= sleepQueueTarget;
+  },
+
+  clearQueueFromCurrent() {
+    const { queue, qIndex } = get();
+    if (qIndex >= queue.length - 1) {
+      get().toast("当前曲目之后没有待播放项", "info");
+      return;
+    }
+    const removed = queue.length - 1 - qIndex;
+    set({ queue: queue.slice(0, qIndex + 1) });
+    get().toast(`已清除当前之后的 ${removed} 首队列项`, "info");
+  },
+
+  dedupeQueue() {
+    const { queue, qIndex } = get();
+    const cur = queue[qIndex];
+    const seen = new Set<string>();
+    const firstIdxOf = new Map<string, number>();
+    const next: typeof queue = [];
+    const idxMap: number[] = [];
+    queue.forEach((q) => {
+      const key = `${q.kind}:${q.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        firstIdxOf.set(key, next.length);
+        idxMap.push(next.length);
+        next.push(q);
+      } else {
+        idxMap.push(-1);
+      }
+    });
+    if (next.length === queue.length) {
+      get().toast("队列中没有重复项", "info");
+      return;
+    }
+    const removed = queue.length - next.length;
+    // 当前曲目的新位置：保留了原项则用落点；原项是重复项（未保留）
+    // 则落到同曲目的首次出现位置
+    const newQIndex = cur
+      ? idxMap[qIndex] >= 0
+        ? idxMap[qIndex]
+        : (firstIdxOf.get(`${cur.kind}:${cur.id}`) ?? 0)
+      : 0;
+    set({ queue: next, qIndex: newQIndex });
+    get().toast(`已去重：移除 ${removed} 首重复项`, "success");
   },
 
   jumpTo(i) {
@@ -786,7 +944,14 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const s = get();
     switch (action) {
       case "play":
-        if (!s.playing) api.resume().catch(() => {});
+        if (!s.playing) {
+          // 与 togglePlay 同语义：队列播完后的“播放”从第一首重开
+          if (s.queueFinished && s.queue.length) {
+            s.playQueueIndex(0);
+          } else {
+            api.resume().catch(() => {});
+          }
+        }
         break;
       case "pause":
         if (s.playing) api.pause().catch(() => {});

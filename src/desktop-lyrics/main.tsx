@@ -21,6 +21,8 @@ interface PushPayload {
   pos: number;
   dur: number;
   playing: boolean;
+  /** 播放速度（外推用；缺省 = 1） */
+  speed?: number;
   title: string;
   artist: string;
   /** 三色（缺省时用内置默认）：sung=已唱 unsung=未唱 next=下一句 */
@@ -153,8 +155,10 @@ function DesktopLyrics() {
 
   // 外推封顶在曲目时长：主窗口 WebView 挂起期间推送中断、恢复后锚点时间戳
   // 涵盖了整段挂起时长，不封顶的话进度会瞬间冲到很远（表现为“没声音但歌词狂飙”）
+  // 外推按倍速缩放：2x 播放下按 1x 墙钟外推会让染色持续滞后并锯齿跳变
+  const speed = data.speed ?? 1;
   const rawPos =
-    data.pos + (data.playing ? performance.now() - posAtRef.current : 0);
+    data.pos + (data.playing ? (performance.now() - posAtRef.current) * speed : 0);
   const posNow = data.dur > 0 ? Math.min(rawPos, data.dur) : rawPos;
 
   const syncedLines = (data.lines ?? []).filter(

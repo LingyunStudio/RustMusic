@@ -17,6 +17,9 @@ export interface Skin {
   desc: string;
   /** 完整 SVG 源码（单引号属性，无文字，纯矢量场景） */
   svg: string;
+  /** 音频律动基座版（可选）：律动层接管动态元素后背景退化的静态底座。
+   *  无此字段的皮肤不支持音频律动 */
+  svgCalm?: string;
   /** 深色主题的纱：压暗背景保证浅色文字可读（按场景明暗单独调） */
   scrimDark: string;
   /** 浅色主题的纱：提亮背景保证深色文字可读（按场景明暗单独调） */
@@ -458,6 +461,135 @@ const FIREFLY = `${SVG_HEAD}
 </g>
 </svg>`;
 
+/* ---------- 黑胶：聆听室里的唱片与频谱（呼应应用黑胶 Logo、eq-bars 与琥珀强调色） ---------- */
+/** 频谱柱数据：[x, 设计高度(包络), 基线透明度, 周期档类, 动画延迟s]。
+ *  设计高度同时是音频律动层的包络（AudioFxLayer 的 DESIGN_H 与此同源） */
+const VINYL_BAR_DATA: Array<[number, number, number, string, number]> = [
+  [42, 46, 0.2, "", 0.1], [85, 72, 0.22, "v-b2", 0.62], [128, 58, 0.21, "v-b3", 1.18],
+  [171, 96, 0.24, "v-b4", 0.32], [214, 76, 0.23, "v-b5", 0.86], [257, 122, 0.26, "v-b6", 1.42],
+  [300, 92, 0.24, "", 0.48], [343, 142, 0.28, "v-b2", 1], [386, 112, 0.26, "v-b3", 0.2],
+  [429, 162, 0.3, "v-b4", 0.74], [472, 132, 0.28, "v-b5", 1.3], [515, 186, 0.32, "v-b6", 0.4],
+  [558, 152, 0.3, "", 0.95], [601, 212, 0.34, "v-b2", 0.28], [644, 172, 0.32, "v-b3", 0.82],
+  [687, 232, 0.36, "v-b4", 1.38], [730, 192, 0.33, "v-b5", 0.52], [773, 244, 0.38, "v-b6", 1.05],
+  [816, 206, 0.35, "", 0.15], [859, 256, 0.39, "v-b2", 0.7], [902, 218, 0.36, "v-b3", 1.25],
+  [945, 248, 0.39, "v-b4", 0.36], [988, 228, 0.37, "v-b5", 0.9], [1031, 258, 0.4, "v-b6", 1.45],
+  [1074, 238, 0.38, "", 0.58], [1117, 252, 0.4, "v-b2", 1.12], [1160, 222, 0.37, "v-b3", 0.24],
+  [1203, 236, 0.39, "v-b4", 0.78], [1246, 198, 0.36, "v-b5", 1.32], [1289, 212, 0.37, "v-b6", 0.45],
+  [1332, 172, 0.34, "", 1], [1375, 188, 0.36, "v-b2", 0.3], [1418, 148, 0.33, "v-b3", 0.85],
+  [1461, 164, 0.34, "v-b4", 1.4], [1504, 124, 0.31, "v-b5", 0.5], [1547, 140, 0.33, "v-b6", 1.08],
+];
+
+/** 频谱柱标记：完整版各自错拍起伏；基座版（音频律动接管时）退化为
+ *  低透明度静态剪影，作为律动柱的"容量刻度" */
+const vinylBars = (calm: boolean) =>
+  VINYL_BAR_DATA.map(([x, h, op, dur, delay]) =>
+    `<rect x='${x}' y='${1000 - h}' width='22' height='${h}' rx='4' opacity='${
+      calm ? (op * 0.45).toFixed(2) : op.toFixed(2)
+    }'${
+      calm ? "" : ` class='v-bar ${dur}' style='animation-delay:-${delay}s'`
+    }/>`
+  ).join("");
+
+/** 声波涟漪：完整版四圈错相外扩；基座版交由律动层按节拍实时生成 */
+const vinylRipples = (calm: boolean) =>
+  calm
+    ? ""
+    : `<g fill='none' stroke='#ffc98f' stroke-width='2'>
+<circle cx='1120' cy='500' r='210' opacity='.085'><animate attributeName='r' values='195;565' dur='5.4s' repeatCount='indefinite'/><animate attributeName='opacity' values='.085;0' dur='5.4s' repeatCount='indefinite'/></circle>
+<circle cx='1120' cy='500' r='420' opacity='.045'><animate attributeName='r' values='195;565' dur='5.4s' begin='-1.35s' repeatCount='indefinite'/><animate attributeName='opacity' values='.085;0' dur='5.4s' begin='-1.35s' repeatCount='indefinite'/></circle>
+<circle cx='1120' cy='500' r='300' opacity='.07'><animate attributeName='r' values='195;565' dur='5.4s' begin='-2.7s' repeatCount='indefinite'/><animate attributeName='opacity' values='.085;0' dur='5.4s' begin='-2.7s' repeatCount='indefinite'/></circle>
+<circle cx='1120' cy='500' r='510' opacity='.02'><animate attributeName='r' values='195;565' dur='5.4s' begin='-4.05s' repeatCount='indefinite'/><animate attributeName='opacity' values='.085;0' dur='5.4s' begin='-4.05s' repeatCount='indefinite'/></circle>
+</g>`;
+
+/** calm = 音频律动基座版：柱与涟漪交给律动层实时驱动，
+ *  唱片旋转/音符漂浮/光晕呼吸等"恒动氛围"保留 */
+const vinylSvg = (calm: boolean) => `${SVG_HEAD}
+<defs>
+<linearGradient id='room' x1='0' y1='0' x2='0' y2='1'>
+<stop offset='0' stop-color='#130c09'/><stop offset='.55' stop-color='#211310'/><stop offset='1' stop-color='#2e170d'/>
+</linearGradient>
+<radialGradient id='glow' cx='.5' cy='.5' r='.5'>
+<stop offset='0' stop-color='#ff9d4d' stop-opacity='.3'/><stop offset='.55' stop-color='#e8823f' stop-opacity='.1'/><stop offset='1' stop-color='#e8823f' stop-opacity='0'/>
+</radialGradient>
+<radialGradient id='disc' cx='.36' cy='.32' r='.9'>
+<stop offset='0' stop-color='#3d2d23'/><stop offset='.3' stop-color='#251b15'/><stop offset='.65' stop-color='#171110'/><stop offset='1' stop-color='#0c0908'/>
+</radialGradient>
+<linearGradient id='sheen' x1='0' y1='0' x2='1' y2='1'>
+<stop offset='0' stop-color='#ffdcae' stop-opacity='0'/><stop offset='.32' stop-color='#ffdcae' stop-opacity='.13'/><stop offset='.5' stop-color='#fff0d4' stop-opacity='.2'/><stop offset='.68' stop-color='#ffdcae' stop-opacity='.09'/><stop offset='1' stop-color='#ffdcae' stop-opacity='0'/>
+</linearGradient>
+<radialGradient id='label' cx='.4' cy='.35' r='.85'>
+<stop offset='0' stop-color='#ffb877'/><stop offset='.62' stop-color='#ef8c42'/><stop offset='1' stop-color='#c96a2e'/>
+</radialGradient>
+<linearGradient id='bars' x1='0' y1='1' x2='0' y2='0'>
+<stop offset='0' stop-color='#7c421d' stop-opacity='.8'/><stop offset='1' stop-color='#ffb066' stop-opacity='.9'/>
+</linearGradient>
+<style>
+.v-spin{transform-box:view-box;transform-origin:1120px 500px;animation:v-spin 13s linear infinite}
+@keyframes v-spin{to{transform:rotate(360deg)}}
+.v-glow{animation:v-breath 7s ease-in-out infinite}
+@keyframes v-breath{0%,100%{opacity:.82}50%{opacity:1}}
+.v-bar{transform-box:fill-box;transform-origin:50% 100%;animation:v-bar 1.3s ease-in-out infinite}
+@keyframes v-bar{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.42)}}
+.v-b2{animation-duration:1.15s}.v-b3{animation-duration:1.5s}.v-b4{animation-duration:1.25s}.v-b5{animation-duration:1.65s}.v-b6{animation-duration:1.4s}
+.v-note{transform-box:fill-box;transform-origin:50% 50%;animation:v-note 9s ease-in-out infinite}
+@keyframes v-note{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-34px) rotate(2.4deg)}}
+</style>
+</defs>
+<rect width='1600' height='1000' fill='url(#room)'/>
+<circle cx='1120' cy='500' r='560' fill='url(#glow)' class='v-glow'/>
+<!-- 声波自盘心扩散（正在播放的意象）：四圈错相外扩、渐隐 -->
+${vinylRipples(calm)}
+<!-- 黑胶盘（唱针落点在盘面发音区） -->
+<g>
+<circle cx='1120' cy='500' r='398' fill='url(#disc)'/>
+<g fill='none' stroke='#5a4636'>
+<circle cx='1120' cy='500' r='150' opacity='.16' stroke-width='1.4'/><circle cx='1120' cy='500' r='166' opacity='.1' stroke-width='1.2'/><circle cx='1120' cy='500' r='182' opacity='.15' stroke-width='1.4'/><circle cx='1120' cy='500' r='198' opacity='.09' stroke-width='1.2'/><circle cx='1120' cy='500' r='214' opacity='.14' stroke-width='1.4'/><circle cx='1120' cy='500' r='230' opacity='.09' stroke-width='1.2'/><circle cx='1120' cy='500' r='246' opacity='.13' stroke-width='1.4'/><circle cx='1120' cy='500' r='262' opacity='.08' stroke-width='1.2'/><circle cx='1120' cy='500' r='278' opacity='.12' stroke-width='1.4'/><circle cx='1120' cy='500' r='294' opacity='.08' stroke-width='1.2'/><circle cx='1120' cy='500' r='310' opacity='.11' stroke-width='1.4'/><circle cx='1120' cy='500' r='326' opacity='.07' stroke-width='1.2'/><circle cx='1120' cy='500' r='342' opacity='.1' stroke-width='1.4'/><circle cx='1120' cy='500' r='358' opacity='.07' stroke-width='1.2'/><circle cx='1120' cy='500' r='374' opacity='.09' stroke-width='1.4'/><circle cx='1120' cy='500' r='390' opacity='.06' stroke-width='1.2'/>
+</g>
+<!-- 旋转层：虚线音槽环 + 纹理反光弧随盘面匀速转动（高光/光晕留在层外，模拟固定光源） -->
+<g class='v-spin'>
+<circle cx='1120' cy='500' r='240' fill='none' stroke='#c9a882' stroke-width='1.6' stroke-dasharray='2 9' opacity='.12'/>
+<circle cx='1120' cy='500' r='305' fill='none' stroke='#c9a882' stroke-width='1.4' stroke-dasharray='1.5 13' opacity='.1'/>
+<path d='M 1439 616 A 340 340 0 0 1 1315 778' stroke='#ffdcae' stroke-width='3' fill='none' opacity='.06' stroke-linecap='round'/>
+<path d='M 980 742 A 280 280 0 0 1 857 596' stroke='#ffdcae' stroke-width='2.4' fill='none' opacity='.05' stroke-linecap='round'/>
+<path d='M 1005 301 A 230 230 0 0 1 1100 271' stroke='#ffe9c9' stroke-width='2' fill='none' opacity='.05' stroke-linecap='round'/>
+</g>
+<circle cx='1120' cy='500' r='398' fill='url(#sheen)'/>
+<path d='M 830 300 A 355 355 0 0 1 1230 165' stroke='#ffe9c9' stroke-width='7' fill='none' opacity='.14' stroke-linecap='round'/>
+<path d='M 800 360 A 330 330 0 0 1 1180 230' stroke='#ffdcae' stroke-width='4' fill='none' opacity='.1' stroke-linecap='round'/>
+<circle cx='1120' cy='500' r='118' fill='url(#label)'/>
+<circle cx='1120' cy='500' r='118' fill='none' stroke='#a85c28' stroke-width='3' opacity='.7'/>
+<circle cx='1120' cy='500' r='92' fill='none' stroke='#a85c28' stroke-width='1.6' opacity='.4'/>
+<circle cx='1120' cy='500' r='14' fill='#1c130d'/>
+<circle cx='1120' cy='500' r='5' fill='#f7e7cf'/>
+</g>
+<!-- 唱臂 -->
+<g>
+<circle cx='1462' cy='150' r='34' fill='#241a14'/>
+<circle cx='1462' cy='150' r='34' fill='none' stroke='#6b5642' stroke-width='2.5' opacity='.8'/>
+<circle cx='1462' cy='150' r='10' fill='#8a6f55'/>
+<line x1='1462' y1='150' x2='1196' y2='394' stroke='#cbbfae' stroke-width='11' stroke-linecap='round' opacity='.92'/>
+<line x1='1462' y1='150' x2='1196' y2='394' stroke='#7a6a55' stroke-width='3' stroke-linecap='round' opacity='.5'/>
+<g transform='translate(1196 394) rotate(137)'>
+<rect x='-9' y='-7' width='34' height='21' rx='4' fill='#cbbfae' opacity='.92'/>
+<rect x='19' y='-4' width='14' height='13' rx='2' fill='#3a2c20'/>
+</g>
+</g>
+<!-- 频谱柱：从播放条后升起，与界面 eq-bars / 琥珀强调色同源；各柱错拍起伏 -->
+<g fill='url(#bars)'>${vinylBars(calm)}</g>
+<!-- 左侧静景：漂浮音符（侧栏玻璃后的淡影，缓慢浮沉） -->
+<g fill='#ffd9ac'>
+<g transform='translate(210 300) rotate(-14)' opacity='.14'><g class='v-note' style='animation-duration:8.5s;animation-delay:-1.5s'><ellipse cx='0' cy='0' rx='12' ry='8.5' transform='rotate(-18)'/><rect x='8.5' y='-42' width='4.2' height='44'/><path d='M12.7 -42 q 17 4 19 22 q -5 -13 -19 -11 Z'/></g></g>
+<g transform='translate(360 190) rotate(9)' opacity='.11'><g class='v-note' style='animation-duration:10.5s;animation-delay:-4s'><ellipse cx='0' cy='0' rx='10.5' ry='7.5' transform='rotate(-18)'/><rect x='7.5' y='-37' width='3.8' height='39'/></g></g>
+<g transform='translate(555 320) rotate(-7)' opacity='.13'><g class='v-note' style='animation-duration:7.5s;animation-delay:-2.5s'><ellipse cx='0' cy='0' rx='11' ry='8' transform='rotate(-18)'/><rect x='8' y='-40' width='4' height='42'/><path d='M12 -40 q 15 4 17 20 q -4 -12 -17 -10 Z'/></g></g>
+<g transform='translate(105 480) rotate(12)' opacity='.09'><g class='v-note' style='animation-duration:11s;animation-delay:-6s'><ellipse cx='0' cy='0' rx='9.5' ry='7' transform='rotate(-18)'/><rect x='6.8' y='-34' width='3.5' height='36'/></g></g>
+<g transform='translate(680 210) rotate(-12)' opacity='.08'><g class='v-note' style='animation-duration:9.5s;animation-delay:-3.5s'><ellipse cx='0' cy='0' rx='9' ry='6.5' transform='rotate(-18)'/><rect x='6.4' y='-32' width='3.2' height='34'/></g></g>
+</g>
+</svg>`;
+
+const VINYL = vinylSvg(false);
+/** 音频律动激活时的基座版：柱退化为静态剪影、涟漪移除（由律动层实时驱动） */
+const VINYL_CALM = vinylSvg(true);
+
 /** 深色主题纱的快捷构造：自上而下三段压暗 */
 const darkScrim = (a1: number, a2: number, a3: number) =>
   `linear-gradient(180deg, rgba(12,10,18,${a1}) 0%, rgba(12,10,18,${a2}) 55%, rgba(12,10,18,${a3}) 100%)`;
@@ -515,6 +647,11 @@ export const SKINS: Skin[] = [
     key: "firefly", name: "萤火", desc: "夏夜塘畔 · 流萤点点", svg: FIREFLY,
     scrimDark: darkScrim(0.28, 0.46, 0.56), scrimLight: lightScrim(0.54, 0.66),
   },
+  {
+    key: "vinyl", name: "黑胶", desc: "聆听室 · 唱片旋转与频谱律动", svg: VINYL,
+    svgCalm: VINYL_CALM,
+    scrimDark: darkScrim(0.12, 0.26, 0.4), scrimLight: lightScrim(0.74, 0.84),
+  },
 ];
 
 const SKIN_KEY = "rustmusic.skin";
@@ -522,26 +659,29 @@ export const DEFAULT_SKIN = "default";
 
 const URI_CACHE = new Map<string, string>();
 
-/** 皮肤背景的 data URI；默认皮肤返回 null（走内置渐变氛围） */
-export function skinUri(key: string): string | null {
+/** 皮肤背景的 data URI；默认皮肤返回 null（走内置渐变氛围）。
+ *  calm=true 时若皮肤提供音频律动基座版则改用之（动态元素交由律动层） */
+export function skinUri(key: string, calm = false): string | null {
   if (key === CUSTOM_SKIN) {
     const img = activeCustomImage();
     if (!img) return null;
     return `url("${convertFileSrc(img)}")`;
   }
   if (!key || key === DEFAULT_SKIN) return null;
-  const cached = URI_CACHE.get(key);
+  const cacheKey = calm ? `${key}|calm` : key;
+  const cached = URI_CACHE.get(cacheKey);
   if (cached) return cached;
   const skin = SKINS.find((s) => s.key === key);
   if (!skin) return null;
-  const uri = `url("data:image/svg+xml,${encodeURIComponent(skin.svg)}")`;
-  URI_CACHE.set(key, uri);
+  const svg = calm && skin.svgCalm ? skin.svgCalm : skin.svg;
+  const uri = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  URI_CACHE.set(cacheKey, uri);
   return uri;
 }
 
-export function applySkin(key: string) {
+export function applySkin(key: string, calm = false) {
   const root = document.documentElement.style;
-  const uri = skinUri(key);
+  const uri = skinUri(key, calm);
   if (uri) {
     root.setProperty("--skin-url", uri);
     if (key === CUSTOM_SKIN) {
@@ -580,6 +720,11 @@ export function applySkin(key: string) {
 
 export function loadSkin(): string {
   return localStorage.getItem(SKIN_KEY) ?? DEFAULT_SKIN;
+}
+
+/** 该皮肤是否支持音频律动（提供基座版） */
+export function skinSupportsFx(key: string): boolean {
+  return SKINS.some((s) => s.key === key && !!s.svgCalm);
 }
 
 export function saveSkin(key: string) {

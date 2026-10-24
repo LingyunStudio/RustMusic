@@ -22,13 +22,14 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "../store";
+import { api } from "../api";
 import NavidromePanel from "./NavidromePanel";
 import { UpFollowRow } from "./online/BiliFollowRow";
 import { BiliPlaylistPickerModal } from "./online/BiliPlaylistPickerModal";
 import { BiliSpaceCard } from "./online/BiliSpaceCard";
 import Modal from "../components/Modal";
 import CoverImg from "../components/CoverImg";
-import { fmtDate, fmtTime } from "../utils";
+import { fmtDate, fmtTime, clampMenuPos } from "../utils";
 import type { BiliCollection, BiliFollow, BiliSpaceItem, QueueItem, SourcesResult } from "../types";
 import { useLocatePillEl } from "../hooks/useLocatePillEl";
 import LocateCurrentPill from "../components/LocateCurrentPill";
@@ -39,13 +40,84 @@ const ORDERS: { key: "pubdate" | "click" | "stow"; label: string }[] = [
   { key: "stow", label: "最多收藏" },
 ];
 
-type SourceTab = "bilibili" | "navidrome" | "other";
+type SourceTab = "bilibili" | "navidrome" | "other" | "downloads";
 
 const TABS: { key: SourceTab; label: string }[] = [
   { key: "bilibili", label: "Bilibili" },
   { key: "navidrome", label: "Navidrome" },
   { key: "other", label: "其它" },
+  { key: "downloads", label: "已下载" },
 ];
+
+/** 下载历史：已下载到本地的在线曲目（后端 downloaded 标记） */
+function DownloadsPanel() {
+  const [rows, setRows] = useState<import("../types").PlaylistEntryMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const playEntries = useStore((s) => s.playEntries);
+  const refresh = () => {
+    setLoading(true);
+    api
+      .downloadedOnlineList()
+      .then(setRows)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+  useEffect(refresh, []);
+  const kindLabel: Record<string, string> = {
+    netease: "网易云",
+    qq: "QQ音乐",
+    kugou: "酷狗",
+    bilibili: "B站",
+    navidrome: "Navidrome",
+  };
+  return (
+    <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden anim-fade">
+      <div className="px-6 pt-5 pb-3 flex items-center justify-between shrink-0">
+        <div>
+          <div className="text-[15px] font-semibold">下载历史</div>
+          <div className="text-[11.5px] text-[var(--ink-3)] mt-1">
+            已下载到保存目录并入库的在线曲目（{rows.length} 首）
+          </div>
+        </div>
+        <button className="btn-secondary" onClick={refresh}>
+          刷新
+        </button>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4">
+        {loading && (
+          <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">加载中…</div>
+        )}
+        {!loading && !rows.length && (
+          <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">
+            还没有下载过在线曲目（列表右键 → 下载到本地）
+          </div>
+        )}
+        {rows.map((r, i) => (
+          <div
+            key={`${r.kind}-${r.onlineId}-${i}`}
+            className="group grid grid-cols-[36px_minmax(0,1fr)_150px_80px_110px] items-center gap-4 h-[56px] px-3 rounded-[13px] hover:bg-[var(--shade-hover)] transition-colors"
+            onDoubleClick={() => playEntries(rows, i)}
+          >
+            <span className="text-[12px] text-[var(--ink-3)] tabular-nums text-center">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <div className="min-w-0">
+              <div className="text-[13px] text-[var(--ink)] truncate">{r.title || "未知曲目"}</div>
+              <div className="text-[11.5px] text-[var(--ink-3)] truncate">{r.artist}</div>
+            </div>
+            <div className="text-[11px] px-2 py-0.5 rounded bg-[var(--shade)] text-[var(--ink-2)] w-fit">
+              {kindLabel[r.kind] ?? r.kind}
+            </div>
+            <div className="text-[12px] text-[var(--ink-2)] tabular-nums text-right">
+              {fmtTime(r.duration * 1000)}
+            </div>
+            <div className="text-right pr-1 text-[11px] text-[var(--ink-3)]">双击播放</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function fmtPlay(n: number): string {
   if (n >= 10000_0000) return `${(n / 10000_0000).toFixed(1)}亿`;
@@ -294,7 +366,13 @@ export default function SourcesView() {
                 ...cur,
                 activeCollection: {
                   ...c,
-                  rows: [...c.rows, ...r.items],
+                  // 追加按 rid 去重：分页接口数据变动会返回重叠条目
+                  rows: [
+                    ...c.rows,
+                    ...r.items.filter(
+                      (x) => !c.rows.some((y) => y.rid === x.rid),
+                    ),
+                  ],
                   pn: c.pn + 1,
                   hasMore: r.hasMore,
                   loadingMore: false,
@@ -318,7 +396,12 @@ export default function SourcesView() {
           cur && cur.type === "space" && cur.mid === s.mid
             ? {
                 ...cur,
-                rows: [...cur.rows, ...r.items],
+                rows: [
+                  ...cur.rows,
+                  ...r.items.filter(
+                    (x) => !cur.rows.some((y) => y.rid === x.rid),
+                  ),
+                ],
                 pn: s.pn + 1,
                 hasMore: r.hasMore,
                 loadingMore: false,
@@ -785,10 +868,16 @@ export default function SourcesView() {
         {/* Navidrome 常驻挂载：切 Tab 用 display:none 隐藏而非卸载——
             保留连接状态、当前页面（导航栈）与滚动位置，
             切回来不再闪登录页重新自动连接 */}
+        {tab === "downloads" && <DownloadsPanel />}
+
+
+
+
         <div className={tab === "navidrome" ? "h-full" : "hidden"}>
           <NavidromePanel />
         </div>
         {tab !== "navidrome" &&
+          tab !== "downloads" &&
           (!result || !tabResult ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-[var(--ink-3)]">
             <div
@@ -988,7 +1077,7 @@ export default function SourcesView() {
         createPortal(
           <div
             className="fixed z-[75] w-[190px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
-            style={{ left: menu.x, top: menu.y }}
+            style={clampMenuPos(menu.x, menu.y, 190, 200)}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseLeave={() => setMenu(null)}
           >

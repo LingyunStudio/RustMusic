@@ -18,12 +18,24 @@ import ArtistAlbumView from "./views/ArtistAlbumView";
 import { Music2 } from "lucide-react";
 import { coverSrc } from "./api";
 import { extractColor } from "./utils";
-import { skinUri } from "./skins";
+import { applySkin, skinSupportsFx, skinUri } from "./skins";
+import { initFx, setFxWanted } from "./fx";
+import AudioFxLayer from "./components/AudioFxLayer";
 
 function DynamicBackdrop() {
   const cover = useStore((s) => s.current?.cover);
   const skin = useStore((s) => s.skin);
+  const fxAudio = useStore((s) => s.fxAudio);
   const skinUrl = skinUri(skin);
+  // 音频律动：仅对提供基座版的皮肤生效（当前为黑胶）
+  const reactive = fxAudio && skinSupportsFx(skin);
+
+  // 律动开关/皮肤切换时：背景换用基座版并同步后端分析开关
+  useEffect(() => {
+    if (skinUrl) applySkin(skin, reactive);
+    setFxWanted(reactive);
+    return () => setFxWanted(false);
+  }, [skin, reactive, skinUrl]);
   // http 封面直接用原始 URL，本地路径才走 asset 协议
   const url = cover
     ? cover.startsWith("http://") || cover.startsWith("https://")
@@ -77,6 +89,8 @@ function DynamicBackdrop() {
               opacity: "var(--skin-img-opacity, 1)",
             }}
           />
+          {/* 音频律动层：与背景 SVG 同 slice 几何的实时频谱/涟漪/光晕 */}
+          {reactive && <AudioFxLayer />}
           {/* 主题纱：暗色压暗 / 浅色洗成粉彩，保证前景文字可读 */}
           <div className="absolute inset-0" style={{ background: "var(--skin-scrim)" }} />
         </>
@@ -139,6 +153,8 @@ export default function App() {
 
   useEffect(() => {
     useStore.getState().init();
+    // 音频律动桥：频谱事件订阅 + 窗口可见性门控（一次）
+    initFx();
   }, []);
 
   // 空格键 播放/暂停；L 切桌面歌词；Esc 退出全屏；左右箭头 快退/快进
@@ -172,6 +188,12 @@ export default function App() {
         return;
       }
 
+      // Ctrl+F 聚焦当前页搜索框（资料库/歌单页有监听）
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyF") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("rm:focus-search"));
+        return;
+      }
       // 长按触发的 OS 键盘重复不响应：否则空格会以每秒几十次的频率
       // 反复 togglePlay，L 反复开关桌面歌词窗口
       if (e.repeat) return;

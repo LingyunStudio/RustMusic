@@ -113,6 +113,9 @@ export function TrackRowItem({
                       <img
                         src={t.cover}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
                         className="hover-lift w-11 h-11 rounded-xl object-cover shadow-[var(--cover-shadow-sm)] shrink-0"
                         draggable={false}
                       />

@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Ban,
   Check,
+  FileDown,
+  FileUp,
   Heart,
   ListChecks,
   ListMusic,
@@ -10,6 +12,7 @@ import {
   Pause,
   Pencil,
   Play,
+  Search,
   Shuffle,
   Trash2,
   Cloud,
@@ -122,6 +125,50 @@ export default function PlaylistDetail({ id }: { id: number }) {
   );
   const reorderPlaylist = useStore((s) => s.reorderPlaylist);
   const renamePlaylist = useStore((s) => s.renamePlaylist);
+  const setSearch = useStore((s) => s.setSearch);
+  // Ctrl+F 聚焦本页搜索框
+  const plSearchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const focus = () => plSearchRef.current?.focus();
+    window.addEventListener("rm:focus-search", focus);
+    return () => window.removeEventListener("rm:focus-search", focus);
+  }, []);
+  const exportM3u = useStore((s) => s.exportPlaylistM3u);
+  const importM3u = useStore((s) => s.importPlaylistM3u);
+
+  // m3u 导出：保存对话框选路径后交后端写文件
+  const doExportM3u = async () => {
+    if (!pl) return;
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const path = await save({
+        title: "导出歌单为 M3U",
+        defaultPath: `${pl.name}.m3u8`,
+        filters: [{ name: "M3U 歌单", extensions: ["m3u8", "m3u"] }],
+      });
+      if (path) await exportM3u(pl.id, path);
+    } catch (e) {
+      toast(String(e), "error");
+    }
+  };
+
+  // m3u 导入：打开对话框选文件，以歌单名（默认文件名）新建列表
+  const doImportM3u = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        title: "导入 M3U 歌单",
+        multiple: false,
+        filters: [{ name: "M3U 歌单", extensions: ["m3u8", "m3u"] }],
+      });
+      if (!picked || typeof picked !== "string") return;
+      const stem = picked.split(/[\\/]/).pop() ?? "导入歌单";
+      const name = stem.replace(/\.(m3u8?|M3U8?)$/, "") || "导入歌单";
+      await importM3u(name, picked);
+    } catch (e) {
+      toast(String(e), "error");
+    }
+  };
 
   const pl = playlists.find((p) => p.id === id);
   const unavailable = useStore((s) => s.unavailable);
@@ -251,8 +298,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
       return;
     }
     const movedRow = list[from]?.entry;
-    if (!movedRow) return;
-    const anchor = list[to + 1]?.entry ?? null; // 插入锚点：目标位置下一行
+    if (!movedRow || from === to) return;
+    // 插入锚点按方向取：向下拖落点在 to，锚点是 to 的下一行（list[to+1]）；
+    // 向上拖正确锚点是 list[to]（新序列中 to+1 位是原 list[to]）——
+    // 此前统一用 list[to+1]，向上拖松手后歌曲落在目标下一行，反复拖越拖越乱
+    const anchor = list[from < to ? to + 1 : to]?.entry ?? null;
     const rows = allEntries.filter((e) => e.rowid !== movedRow.rowid);
     const anchorIdx = anchor ? rows.findIndex((e) => e.rowid === anchor.rowid) : -1;
     const insertAt = anchorIdx >= 0 ? anchorIdx : rows.length;
@@ -405,6 +455,42 @@ export default function PlaylistDetail({ id }: { id: number }) {
               <Trash2 size={13} />
               删除列表
             </button>
+            <button
+              className="btn-secondary"
+              onClick={doExportM3u}
+              disabled={!pl?.entries.length}
+            >
+              <FileDown size={13} />
+              导出 M3U
+            </button>
+            <button className="btn-secondary" onClick={doImportM3u}>
+              <FileUp size={13} />
+              导入 M3U
+            </button>
+            {/* 本页搜索框：过滤逻辑此前就绪但没有入口（全局搜索框只在资料库页） */}
+            <div className="relative w-[220px] max-w-full">
+              <Search
+                size={13}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
+              />
+              <input
+                ref={plSearchRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="在歌单内搜索…（Ctrl+F）"
+                className="w-full h-8 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+              />
+              {search && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
+                  onClick={() => setSearch("")}
+                  title="清除筛选"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
