@@ -58,14 +58,18 @@ pub async fn navidrome_save(state: State<'_, AppState>, req: NdSaveReq) -> Resul
 
 #[tauri::command]
 pub async fn navidrome_connect(
-    state: State<'_, AppState>,
     server: String,
     username: String,
 ) -> Result<(), String> {
-    let _ = state;
-    super::blocking(move || crate::navidrome::ping(&crate::navidrome::norm_base(&server), &username, ""))
-        .await
-        .map_err(|e| format!("连接失败：{e}（请检查服务器地址或重新保存密码）"))
+    let server = crate::navidrome::norm_base(&server);
+    // 从凭据管理器读已存密码再 ping：此前传空密码，任何配置了密码的服务器
+    // 都必然 subsonic error 40（token = md5("" + salt) 永远不对）
+    super::blocking(move || -> Result<(), String> {
+        let pw = crate::navidrome::get_password_pub(&server, &username)?;
+        crate::navidrome::ping(&server, &username, &pw)
+    })
+    .await
+    .map_err(|e| format!("连接失败：{e}（请检查服务器地址或重新保存密码）"))
 }
 
 #[tauri::command]

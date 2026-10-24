@@ -3285,6 +3285,7 @@ version = "0.5.4"
 dependencies = [
  "aes",
  "base64 0.22.1",
+ "encoding_rs",
  "filetime",
  "flate2",
  "hex",

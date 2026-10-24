@@ -176,6 +176,14 @@ pub fn migrate(conn: &Connection) {
         "ALTER TABLE playlists ADD COLUMN sort_pos INTEGER NOT NULL DEFAULT 0",
     );
     let _ = conn.execute("UPDATE playlists SET sort_pos = id WHERE sort_pos = 0", []);
+    // 依赖渐进迁移补上的列的索引不能放 SCHEMA（legacy 库在 SCHEMA 阶段
+    // 还没有该列，CREATE INDEX 会让整批 execute_batch 失败 → 启动失败）：
+    // - playlist_tracks.track_id 反查歌单条目（PK 以 playlist_id 开头用不上）
+    // - online_tracks.last_played “最近播放”倒序取前 N
+    let _ = conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_pt_track ON playlist_tracks(track_id, kind);
+         CREATE INDEX IF NOT EXISTS idx_ot_last_played ON online_tracks(last_played);",
+    );
     // 酷狗榜单时长单位修复：榜单接口的 duration_128 本就是毫秒，曾被误当秒
     // 又乘 1000 入库（403000ms=6:43 的歌被存成 403000000ms=112 小时）。
     // 真实歌长 ≤ ~10 分钟、误乘后 ≥ 30 分钟×1000，阈值 5_000_000（83 分钟）
@@ -289,6 +297,14 @@ pub fn set_lyrics_cache(conn: &Connection, kind: &str, rid: &str, payload: &str)
          ON CONFLICT(kind, rid) DO UPDATE SET payload = excluded.payload",
         params![kind, rid, payload],
     );
+    // 容量封顶：逐字歌词单条可达几十 KB，只增不删会无限膨胀。
+    // 按 rowid 升序淘汰（首插顺序，已缓存的重复写入不重置热度，近似 LRU）
+    let _ = conn.execute(
+        "DELETE FROM lyrics_cache WHERE rowid IN (
+           SELECT rowid FROM lyrics_cache ORDER BY rowid DESC LIMIT -1 OFFSET 2000
+         )",
+        [],
+    );
 }
 
 // ---------- folders ----------
@@ -308,13 +324,41 @@ pub fn list_folders(conn: &Connection) -> Vec<Folder> {
     .unwrap_or_default()
 }
 
-pub fn add_folder(conn: &Connection, path: &str) -> Result<i64, String> {
-    conn.execute(
-        "INSERT OR IGNORE INTO folders(path) VALUES(?1)",
-        params![path],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(conn.last_insert_rowid())
+/// 加入监控文件夹。返回 (id, 是否新添加)：已存在时不重复插入、
+/// 返回既有 id（INSERT OR IGNORE + last_insert_rowid 在冲突时拿到的是
+/// 本连接上一次插入的无关 rowid）
+pub fn add_folder(conn: &Connection, path: &str) -> Result<(i64, bool), String> {
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM folders WHERE path = ?1",
+            params![path],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    if let Some(id) = existing {
+        return Ok((id, false));
+    }
+    match conn.execute("INSERT INTO folders(path) VALUES(?1)", params![path]) {
+        Ok(_) => Ok((conn.last_insert_rowid(), true)),
+        // 并发添加同一路径：INSERT 撞 UNIQUE——回查拿到既有 id（保持幂等）
+        Err(_) => {
+            let id: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM folders WHERE path = ?1",
+                    params![path],
+                    |r| r.get(0),
+                )
+                .optional()
+                .ok()
+                .flatten();
+            match id {
+                Some(id) => Ok((id, false)),
+                None => Err("写入监控文件夹失败".into()),
+            }
+        }
+    }
 }
 
 pub fn remove_folder(conn: &Connection, id: i64) {
@@ -327,13 +371,37 @@ pub fn remove_folder(conn: &Connection, id: i64) {
         .flatten();
     if let Some(p) = path {
         // 软删除该文件夹下的全部曲目（missing=1）：
-        // 记录保留（喜欢/最近播放仍显示），文件夹重新添加后扫描复活
-        let sep = format!("{p}\\");
-        let _ = conn.execute(
-            "UPDATE tracks SET missing = 1
-             WHERE path = ?1 OR substr(path, 1, ?2) = ?3",
-            params![p, sep.len() as i64, sep],
-        );
+        // 记录保留（喜欢/最近播放仍显示），文件夹重新添加后扫描复活。
+        // 前缀匹配在 Rust 侧按小写比较：SQLite substr 按字符数取子串，
+        // 绑定字节长度对含中文的目录永远错位（一个都匹配不上）
+        let pref = format!("{}\\", p).to_lowercase();
+        let pl = p.to_lowercase();
+        let paths: Vec<String> = conn
+            .prepare("SELECT path FROM tracks WHERE missing = 0")
+            .map(|mut s| {
+                s.query_map([], |r| r.get::<_, String>(0))
+                    .map(|rows| rows.filter_map(|x| x.ok()).collect())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        let hit: Vec<String> = paths
+            .into_iter()
+            .filter(|x| {
+                let l = x.to_lowercase();
+                l == pl || l.starts_with(&pref)
+            })
+            .collect();
+        if !hit.is_empty() {
+            if let Ok(tx) = conn.unchecked_transaction() {
+                for x in &hit {
+                    let _ = tx.execute(
+                        "UPDATE tracks SET missing = 1 WHERE path = ?1",
+                        params![x],
+                    );
+                }
+                let _ = tx.commit();
+            }
+        }
     }
     let _ = conn.execute("DELETE FROM folders WHERE id = ?1", params![id]);
 }
@@ -387,34 +455,65 @@ pub fn track_paths(conn: &Connection) -> Vec<(String, i64, i64)> {
         .unwrap_or_default()
 }
 
-/// 文件已不存在时软删除（missing=1）：记录保留（含喜欢/播放统计/歌单引用），
-/// 资料库隐藏；文件重新加入后 upsert 自动复活
-pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, _folder_prefixes: &[String]) {
-    // 凡是不在当前任何监控目录现存文件集合 (seen) 里的 → missing
-    let stale: Vec<String> = track_paths(conn)
-        .into_iter()
-        .map(|(p, _, _)| p)
-        .filter(|p| !seen.contains(p))
-        .collect();
-    // 目录重新添加/文件回归：复活对应记录
-    let revived: Vec<String> = seen
+/// 扫描后的失效标记与复活。
+/// 语义：**只有监控目录范围内的记录参与 missing 判定**——拖拽入库的单曲、
+/// 下载保存目录等不在任何监控文件夹里的文件不归扫描管辖，绝不能因一次
+/// 扫描被误标丢失（“拖入的单曲在下次扫描后从资料库消失”的根因）。
+/// 只更新状态真正变化的行：SQLite 对值未变的 UPDATE 也会重写行弄脏页，
+/// 大库一次扫描曾把整张表无差别重写一遍。
+pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, folder_prefixes: &[String]) {
+    // 前缀小写比较（Windows 路径大小写不敏感）；目录以分隔符结尾匹配子路径
+    let prefixes: Vec<String> = folder_prefixes
         .iter()
-        .cloned()
+        .map(|p| {
+            let l = p.to_lowercase();
+            if l.ends_with('\\') {
+                l
+            } else {
+                format!("{l}\\")
+            }
+        })
         .collect();
-    // 两个批量标记合并进单事务，替代逐行隐式提交
+    let all: Vec<(String, i64)> = match conn.prepare("SELECT path, missing FROM tracks") {
+        Ok(mut s) => s
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map(|rows| rows.filter_map(|x| x.ok()).collect())
+            .unwrap_or_default(),
+        Err(e) => {
+            eprintln!("[db] 读取曲目状态失败: {e}");
+            return;
+        }
+    };
+    let mut to_stale: Vec<String> = Vec::new();
+    let mut to_revive: Vec<String> = Vec::new();
+    for (p, missing) in all {
+        let lower = p.to_lowercase();
+        let in_scope = prefixes.iter().any(|pre| lower.starts_with(pre.as_str()));
+        if !in_scope {
+            continue; // 监控范围之外：扫描无权判定
+        }
+        if !seen.contains(&p) && missing == 0 {
+            to_stale.push(p);
+        } else if seen.contains(&p) && missing != 0 {
+            to_revive.push(p);
+        }
+    }
+    if to_stale.is_empty() && to_revive.is_empty() {
+        return;
+    }
     let Ok(tx) = conn.unchecked_transaction() else {
-        for p in &stale {
+        for p in &to_stale {
             let _ = conn.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![p]);
         }
-        for p in &revived {
+        for p in &to_revive {
             let _ = conn.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", params![p]);
         }
         return;
     };
-    for p in &stale {
+    for p in &to_stale {
         let _ = tx.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![p]);
     }
-    for p in &revived {
+    for p in &to_revive {
         let _ = tx.execute("UPDATE tracks SET missing = 0 WHERE path = ?1", params![p]);
     }
     let _ = tx.commit();
@@ -589,56 +688,108 @@ pub fn record_play(conn: &Connection, id: i64) {
 // ---------- playlists ----------
 
 pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
+    // playlists 与 entries 合并为一次查询（侧边栏每次刷新都走这里，
+    // 逐列表一次 JOIN 的 N+1 在歌单多时是可感知的延迟）
     let mut stmt = match conn.prepare(
-        "SELECT id, name, created_at, remote_kind, remote_pid, origin_name
-         FROM playlists ORDER BY sort_pos, id",
+        "SELECT p.id, p.name, p.created_at, p.remote_kind, p.remote_pid, p.origin_name,
+                COALESCE(pt.rowid, 0), COALESCE(pt.kind, ''), COALESCE(pt.track_id, 0),
+                COALESCE(pt.online_id, ''),
+                COALESCE(t.title, ot.title, '') AS title,
+                COALESCE(t.artist, ot.artist, '') AS artist,
+                COALESCE(t.album, ot.album, '') AS album,
+                COALESCE(t.cover, ot.cover, '') AS cover,
+                COALESCE(t.duration, ot.duration_ms / 1000.0, 0) AS duration,
+                COALESCE(ot.media_mid, '') AS media_mid,
+                COALESCE(ot.vip, 0) AS vip,
+                COALESCE(ot.last_played, 0) AS last_played,
+                COALESCE(l.liked_at, lo.liked_at, 0) AS liked_at
+         FROM playlists p
+         LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+         LEFT JOIN tracks t ON pt.kind = 'local' AND t.id = pt.track_id
+         LEFT JOIN online_tracks ot ON pt.kind != 'local' AND ot.kind = pt.kind AND ot.rid = pt.online_id
+         LEFT JOIN liked l ON pt.kind = 'local' AND l.track_id = pt.track_id
+         LEFT JOIN liked_online lo ON pt.kind != 'local' AND lo.kind = pt.kind AND lo.rid = pt.online_id
+         ORDER BY p.sort_pos, p.id, pt.position, pt.rowid",
     ) {
         Ok(s) => s,
-        Err(_) => return vec![],
+        Err(e) => {
+            eprintln!("[db] 读取播放列表失败: {e}");
+            return vec![];
+        }
     };
-    let mut out: Vec<Playlist> = stmt
+    let rows = stmt
         .query_map([], |r| {
-            Ok(Playlist {
-                id: r.get(0)?,
-                name: r.get(1)?,
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, i64>(6)?,
+                r.get::<_, String>(7)?,
+                r.get::<_, i64>(8)?,
+                r.get::<_, String>(9)?,
+                r.get::<_, String>(10)?,
+                r.get::<_, String>(11)?,
+                r.get::<_, String>(12)?,
+                r.get::<_, String>(13)?,
+                r.get::<_, f64>(14)?,
+                r.get::<_, String>(15)?,
+                r.get::<_, i64>(16)?,
+                r.get::<_, i64>(17)?,
+                r.get::<_, i64>(18)?,
+            ))
+        })
+        .map(|rows| rows.filter_map(|x| x.ok()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    // 折叠分组：首次出现的 playlist id 建槽，行按排序追加
+    let mut order: Vec<i64> = Vec::new();
+    let mut map: std::collections::HashMap<i64, Playlist> = std::collections::HashMap::new();
+    for (id, name, created_at, remote_kind, remote_pid, origin_name, rowid, kind, track_id,
+         online_id, title, artist, album, cover, duration, media_mid, vip, last_played, liked_at) in rows
+    {
+        let pl = map.entry(id).or_insert_with(|| {
+            order.push(id);
+            Playlist {
+                id,
+                name,
                 track_ids: vec![],
                 entries: vec![],
                 cover: String::new(),
-                created_at: r.get(2)?,
-                remote_kind: r.get(3)?,
-                remote_pid: r.get(4)?,
-                origin_name: r.get(5)?,
-            })
-        })
-        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        .unwrap_or_default();
-
-    for pl in out.iter_mut() {
-        for e in playlist_entries(conn, pl.id) {
-            if pl.cover.is_empty() && !e.cover.is_empty() {
-                pl.cover = e.cover.clone();
+                created_at,
+                remote_kind,
+                remote_pid,
+                origin_name,
             }
-            if e.kind == "local" {
-                pl.track_ids.push(e.track_id);
-            }
-            pl.entries.push(crate::models::PlaylistEntryMeta {
-                rowid: e.rowid,
-                kind: e.kind.clone(),
-                track_id: (e.kind == "local").then_some(e.track_id),
-                online_id: (e.kind != "local").then_some(e.online_id.clone()),
-                title: e.title.clone(),
-                artist: e.artist.clone(),
-                album: e.album.clone(),
-                cover: e.cover.clone(),
-                duration: e.duration,
-                media_mid: e.media_mid.clone(),
-                vip: e.vip,
-                last_played: e.last_played,
-                liked_at: e.liked_at,
-            });
+        });
+        // 无条目的播放列表：LEFT JOIN 产生一行全 NULL 的 pt（rowid 为 NULL → 0）
+        if kind.is_empty() {
+            continue;
         }
+        if pl.cover.is_empty() && !cover.is_empty() {
+            pl.cover = cover.clone();
+        }
+        if kind == "local" {
+            pl.track_ids.push(track_id);
+        }
+        pl.entries.push(crate::models::PlaylistEntryMeta {
+            rowid,
+            kind: kind.clone(),
+            track_id: (kind == "local").then_some(track_id),
+            online_id: (kind != "local").then_some(online_id.clone()),
+            title,
+            artist,
+            album,
+            cover,
+            duration,
+            media_mid,
+            vip: vip != 0,
+            last_played,
+            liked_at,
+        });
     }
-    out
+    order.into_iter().filter_map(|id| map.remove(&id)).collect()
 }
 
 pub fn create_playlist(conn: &Connection, name: &str) -> Result<i64, String> {
@@ -750,13 +901,33 @@ pub fn rename_playlist(conn: &Connection, id: i64, name: &str) {
     );
 }
 
-/// 播放列表手动排序：按传入的 id 序列重写 sort_pos（1 起）
+/// 播放列表手动排序：按传入的 id 序列重写 sort_pos（1 起）。
+/// 单事务提交（千条列表拖一次排序不该产生上千个独立写事务），
+/// 且 position 未变的行跳过写入
 pub fn reorder_playlists(conn: &Connection, ids: &[i64]) {
-    for (i, id) in ids.iter().enumerate() {
-        let _ = conn.execute(
-            "UPDATE playlists SET sort_pos = ?1 WHERE id = ?2",
-            params![(i + 1) as i64, id],
-        );
+    if ids.is_empty() {
+        return;
+    }
+    let updates: Vec<(i64, i64)> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| ((i + 1) as i64, *id))
+        .collect();
+    if let Ok(tx) = conn.unchecked_transaction() {
+        for (pos, id) in &updates {
+            let _ = tx.execute(
+                "UPDATE playlists SET sort_pos = ?1 WHERE id = ?2 AND sort_pos != ?1",
+                params![pos, id],
+            );
+        }
+        let _ = tx.commit();
+    } else {
+        for (pos, id) in &updates {
+            let _ = conn.execute(
+                "UPDATE playlists SET sort_pos = ?1 WHERE id = ?2",
+                params![pos, id],
+            );
+        }
     }
 }
 
@@ -826,6 +997,55 @@ pub fn add_source(conn: &Connection, url: &str, title: &str) -> Result<i64, Stri
     Ok(conn.last_insert_rowid())
 }
 
+/// 按 URL 查音源（url 有 UNIQUE 索引，查重一条走索引即可，无需全表拉取）
+pub fn get_source_by_url(conn: &Connection, url: &str) -> Option<SourceItem> {
+    conn.query_row(
+        "SELECT id, url, title, created_at FROM sources WHERE url = ?1",
+        params![url],
+        |r| {
+            Ok(SourceItem {
+                id: r.get(0)?,
+                url: r.get(1)?,
+                title: r.get(2)?,
+                created_at: r.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// 已下载的在线曲目（下载历史视图）：按入库序倒序
+pub fn downloaded_online_list(conn: &Connection) -> Vec<PlaylistEntryRow> {
+    let mut stmt = match conn.prepare(
+        "SELECT kind, rid, title, artist, album, cover, duration_ms, media_mid, vip
+         FROM online_tracks WHERE downloaded = 1 ORDER BY id DESC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    stmt.query_map([], |r| {
+        Ok(PlaylistEntryRow {
+            rowid: 0,
+            kind: r.get(0)?,
+            track_id: 0,
+            online_id: r.get(1)?,
+            title: r.get(2)?,
+            artist: r.get(3)?,
+            album: r.get(4)?,
+            cover: r.get(5)?,
+            duration: r.get::<_, i64>(6).unwrap_or(0) as f64 / 1000.0,
+            media_mid: r.get(7)?,
+            vip: r.get::<_, i64>(8)? != 0,
+            last_played: 0,
+            liked_at: 0,
+        })
+    })
+    .map(|rows| rows.filter_map(|x| x.ok()).collect())
+    .unwrap_or_default()
+}
+
 pub fn delete_source(conn: &Connection, id: i64) {
     let _ = conn.execute("DELETE FROM sources WHERE id = ?1", params![id]);
 }
@@ -876,11 +1096,21 @@ pub fn upsert_online_track(
     media_mid: &str,
     vip: bool,
 ) -> i64 {
+    // “缺省不覆盖”：收藏/加歌单等不带完整元数据的调用（Option 全部
+    // unwrap_or_default 后进来）不能清掉播放/导入路径写入的完整数据
+    //（时长归零、封面丢失、QQ 的 media_mid 清空会导致后续取链失败）。
+    // 播放路径总是带全量字段，行为不变。
     let _ = conn.execute(
         "INSERT INTO online_tracks(kind, rid, title, artist, album, cover, duration_ms, media_mid, vip)
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
          ON CONFLICT(kind, rid) DO UPDATE SET
-           title=?3, artist=?4, album=?5, cover=?6, duration_ms=?7, media_mid=?8, vip=?9",
+           title=COALESCE(NULLIF(excluded.title,''), online_tracks.title),
+           artist=COALESCE(NULLIF(excluded.artist,''), online_tracks.artist),
+           album=COALESCE(NULLIF(excluded.album,''), online_tracks.album),
+           cover=COALESCE(NULLIF(excluded.cover,''), online_tracks.cover),
+           duration_ms=CASE WHEN excluded.duration_ms > 0 THEN excluded.duration_ms ELSE online_tracks.duration_ms END,
+           media_mid=COALESCE(NULLIF(excluded.media_mid,''), online_tracks.media_mid),
+           vip=CASE WHEN excluded.vip THEN 1 ELSE online_tracks.vip END",
         params![kind, rid, title, artist, album, cover, duration_ms, media_mid, vip as i64],
     );
     conn.last_insert_rowid()
@@ -951,6 +1181,7 @@ pub fn recent_online_list(conn: &Connection, limit: i64) -> Vec<PlaylistEntryRow
 
 // ---------- 播放列表条目（本地 + 在线混合） ----------
 
+#[allow(dead_code)] // 保留：单列表条目读取（m3u 导出等单列表场景用）
 #[derive(Debug, Clone)]
 pub struct PlaylistEntryRow {
     pub rowid: i64,
@@ -970,6 +1201,7 @@ pub struct PlaylistEntryRow {
     pub liked_at: i64,
 }
 
+#[allow(dead_code)] // 同上：list_playlists 已折叠为单查询，此函数留给单列表场景
 pub fn playlist_entries(conn: &Connection, pid: i64) -> Vec<PlaylistEntryRow> {
     let mut stmt = match conn
         .prepare(
@@ -1200,12 +1432,32 @@ pub fn manual_order_map(conn: &Connection, list: &str) -> std::collections::Hash
 
 /// 播放列表条目手动排序：按给定 rowid 序列重写 position（全量覆盖）。
 /// 前端总是提交整份序列（含搜索时不可见的行），未提到的行保持原位。
+/// 单事务提交，position 未变的行跳过写入
 pub fn reorder_playlist(conn: &Connection, pid: i64, rowids: &[i64]) {
-    for (i, rid) in rowids.iter().enumerate() {
-        let _ = conn.execute(
-            "UPDATE playlist_tracks SET position = ?3 WHERE rowid = ?2 AND playlist_id = ?1",
-            params![pid, rid, (i + 1) as i64],
-        );
+    if rowids.is_empty() {
+        return;
+    }
+    let updates: Vec<(i64, i64)> = rowids
+        .iter()
+        .enumerate()
+        .map(|(i, rid)| ((i + 1) as i64, *rid))
+        .collect();
+    if let Ok(tx) = conn.unchecked_transaction() {
+        for (pos, rid) in &updates {
+            let _ = tx.execute(
+                "UPDATE playlist_tracks SET position = ?3
+                 WHERE rowid = ?2 AND playlist_id = ?1 AND position != ?3",
+                params![pid, rid, pos],
+            );
+        }
+        let _ = tx.commit();
+    } else {
+        for (pos, rid) in &updates {
+            let _ = conn.execute(
+                "UPDATE playlist_tracks SET position = ?3 WHERE rowid = ?2 AND playlist_id = ?1",
+                params![pid, rid, pos],
+            );
+        }
     }
 }
 

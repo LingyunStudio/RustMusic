@@ -28,8 +28,13 @@ impl Engine {
             // DASH（B 站 fMP4）由 helper 走 symphonia 直连源（rodio 会 panic），
             // 其余格式 rodio 解码 + skip_duration
             let src = self.open_current_source(&info.path, skip_ms)?;
-            let wrapped =
-                EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), skip_ms as f64);
+            let wrapped = EqSource::with_base(
+                src,
+                self.eq.clone(),
+                self.pos_ms.clone(),
+                skip_ms as f64,
+            )
+            .with_fx(self.fx.clone());
             let params = wasapi_out::ExclusiveParams {
                 device_pref: self.device_pref.read().clone(),
                 channels: wrapped.channels().get() as usize,
@@ -135,8 +140,13 @@ impl Engine {
                     return Ok(());
                 }
                 let src = self.open_current_source(&info.path, pos)?;
-                let wrapped =
-                    EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), pos as f64);
+                let wrapped = EqSource::with_base(
+                    src,
+                    self.eq.clone(),
+                    self.pos_ms.clone(),
+                    pos as f64,
+                )
+                .with_fx(self.fx.clone());
                 {
                     let sink = self.sink.read();
                     sink.clear();

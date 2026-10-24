@@ -166,3 +166,12 @@ pub async fn set_eq(
     db::set_setting(&conn, "eq_enabled", &enabled.to_string());
     Ok(())
 }
+
+/// 皮肤音频律动开关：前端在律动层挂载/卸载与窗口可见性变化时调用，
+/// 关闭时分析线程空转（每 tick 一次原子读），不空发事件
+#[tauri::command]
+pub fn fx_set_enabled(state: State<'_, AppState>, enabled: bool) {
+    engine_clone(&state).fx.set_enabled(enabled);
+    #[cfg(debug_assertions)]
+    eprintln!("[fx] spectrum {}", if enabled { "enabled" } else { "disabled" });
+}

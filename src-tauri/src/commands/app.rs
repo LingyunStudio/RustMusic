@@ -280,7 +280,12 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(true)
-        .shadow(false);
+        .shadow(false)
+        // 与主窗一致的低内存目标（Chromium 更积极回收工作集）；
+        // 覆盖式参数需带上 wry 默认禁用的 Edge 附加功能
+        .additional_browser_args(
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --memory-usage-target-level=low",
+        );
     builder
         .build()
         .map_err(|e| format!("创建桌面歌词窗口失败: {e}"))?;
@@ -341,17 +346,16 @@ pub async fn desktop_lyrics_unlock(app: AppHandle) -> Result<(), String> {
 pub async fn desktop_lyrics_is_open(app: AppHandle) -> Result<bool, String> {
     Ok(app.get_webview_window("desktop-lyrics").is_some())
 }
-/// 用系统默认浏览器打开链接（release notes 内的跳转用）
+/// 用系统默认浏览器打开链接（release notes 内的跳转用）。
+/// 走 explorer 而不是 `cmd /C start`：URL 未加引号时 cmd 会把 & | ^ 当
+/// 命令分隔符执行（含查询串的链接直接命令注入），explorer 按单个参数透传
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("不支持的链接".into());
     }
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", &url])
-        .creation_flags(CREATE_NO_WINDOW)
+    std::process::Command::new("explorer")
+        .arg(&url)
         .spawn()
         .map_err(|e| format!("打开链接失败：{e}"))?;
     Ok(())

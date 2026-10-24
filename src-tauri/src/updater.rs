@@ -167,7 +167,9 @@ pub fn download(
     if safe_name.is_empty() {
         return Err("安装包文件名无效".into());
     }
-    let path = std::env::temp_dir().join(&safe_name);
+    // 临时文件名带进程号：固定可预测的路径在多用户机器上可能被其它用户
+    // 预创建/替换（SHA-256 校验是第二道防线，不能当第一道）
+    let path = std::env::temp_dir().join(format!("{}-{safe_name}", std::process::id()));
 
     let resp = github_agent()
         .get(url)

@@ -46,15 +46,23 @@ impl Engine {
                 }
             })
             .unwrap_or_else(|| "d".into());
-        let key = match (info.kind.as_str(), info.nid, info.qid.as_deref()) {
-            ("netease", Some(nid), _) => format!("net-{nid}-{q}"),
-            ("qq", _, Some(qid)) => format!("qq-{qid}-{q}"),
-            ("kugou", _, Some(kgid)) => format!("kug-{kgid}-{q}"),
+        // 酷狗的稳定标识在 kgid 字段（其它源都在 qid/nid）——此前匹配元组
+        // 只看 qid，kugou 臂永远落空，全部退化成 URL 哈希键：CDN 直链带
+        // 轮换签名 → 键每次都变 → 酷狗缓存永远不命中、每次播放都重新下载
+        let key = match (
+            info.kind.as_str(),
+            info.nid,
+            info.qid.as_deref(),
+            info.kgid.as_deref(),
+        ) {
+            ("netease", Some(nid), _, _) => format!("net-{nid}-{q}"),
+            ("qq", _, Some(qid), _) => format!("qq-{qid}-{q}"),
+            ("kugou", _, _, Some(kgid)) => format!("kug-{kgid}-{q}"),
             // B 站：qid 承载 "bvid-cid"，同一分P同一音质只缓存一份
-            ("bilibili", _, Some(qid)) => format!("bili-{qid}-{q}"),
+            ("bilibili", _, Some(qid), _) => format!("bili-{qid}-{q}"),
             // Navidrome：qid 为歌曲 id（流地址里的 salt/token 每次都变，
             // 不能按 URL 哈希，否则永远不命中缓存）
-            ("navidrome", _, Some(qid)) => format!("nd-{qid}-{q}"),
+            ("navidrome", _, Some(qid), _) => format!("nd-{qid}-{q}"),
             // 自定义在线音源没有稳定 ID，仍按 URL 哈希
             _ => {
                 use std::hash::{Hash, Hasher};
@@ -137,7 +145,11 @@ impl Engine {
                 }
                 let armed = engine.want_url.read().as_deref() == Some(url.as_str());
                 if !armed {
-                    // 用户暂已切走：继续等下载完成（重新点播可在完成前再入本分支）
+                    // 用户暂已切走：继续等下载完成（重新点播可在完成前再入本分支）。
+                    // 预缓冲已达标时 wait_prebuffer 会立即返回，直接 continue 会
+                    // 变成无 sleep 的忙等烧满一个核心——改等下载前沿推进（或终态）
+                    let next = shared.snapshot().0 + 1;
+                    shared.wait_prebuffer(next);
                     continue;
                 }
                 // 预缓冲达标：嗅探容器（此时文件头必然已落盘）

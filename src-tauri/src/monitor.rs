@@ -33,31 +33,22 @@ fn emit_to_frontend(app: &AppHandle, event: &str, payload: serde_json::Value, wa
 /// 监听系统默认输出设备变化（耳机插入/拔出、切换默认设备）：
 /// 用户未固定设备时自动重建输出流跟到新默认设备，并通知前端刷新设置页。
 /// cpal/Windows 无设备变更回调，用轮询实现（2s 间隔，仅查名字开销可忽略）。
-#[allow(deprecated)] // 同 engine::build_output：name() 是设备偏好的持久化键
 pub(crate) fn device_watcher(app: AppHandle) {
-    use rodio::cpal::traits::{DeviceTrait, HostTrait};
     let eng = app.state::<AppState>().engine.clone();
-    let mut last_default: String = rodio::cpal::default_host()
-        .default_output_device()
-        .and_then(|d| d.name().ok())
-        .unwrap_or_default();
+    // 用 WASAPI 完整 FriendlyName 比较（cpal name() 对蓝牙等设备只有「耳机」短词，
+    // 不同设备的短名可能相同，会导致变化检测失灵）
+    let mut last_default = crate::engine::default_device_display_name();
     loop {
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let now_default: String = rodio::cpal::default_host()
-            .default_output_device()
-            .and_then(|d| d.name().ok())
-            .unwrap_or_default();
+        let now_default = crate::engine::default_device_display_name();
         if now_default == last_default || now_default.is_empty() {
             continue;
         }
         last_default = now_default.clone();
-        // 用户固定了设备（且该设备仍存在）时不打扰；跟随系统则自动切换
+        // 用户固定了设备（且该设备仍存在）时不打扰；跟随系统则自动切换。
+        // 匹配走 engine 的双通道规则（全名 + 旧版短名兜底）
         if let Some(pref) = eng.device_preference() {
-            let still_there = rodio::cpal::default_host()
-                .output_devices()
-                .map(|mut ds| ds.any(|d| d.name().ok().as_deref() == Some(pref.as_str())))
-                .unwrap_or(false);
-            if still_there {
+            if eng.is_known_device(&pref) {
                 continue;
             }
             eprintln!("[engine] 固定设备「{pref}」已不存在，跟随系统默认");

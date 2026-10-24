@@ -15,12 +15,15 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::eq::{EqShared, EqSource};
+use crate::fx::{self, FxShared};
 use crate::smtc::SmtcMsg;
 use crate::wasapi_out;
 
 mod cache;
 mod exclusive;
 mod output;
+
+pub(crate) use output::default_device_display_name;
 
 #[derive(Clone, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +113,8 @@ pub struct Engine {
     device_pref: RwLock<Option<String>>,
     /// WASAPI 独占模式开关（设置项；切换后下一首生效）
     exclusive_enabled: AtomicBool,
+    /// 皮肤律动采样分接（分析线程见 fx.rs；EqSource 分接、前端开关）
+    pub fx: Arc<FxShared>,
     /// 独占会话建立后置位：共享模式的输出流会被系统标记失效，
     /// 回退/切回共享模式播放前需重建输出流
     shared_broken: AtomicBool,
@@ -128,15 +133,21 @@ impl Engine {
         smtc: Sender<SmtcMsg>,
     ) -> Result<Self, String> {
         let (handle, sink) = Self::build_output(None)?;
+        // 皮肤律动：分接器常驻，分析线程在开关打开前空转（每 tick 一次原子读）
+        let fx_shared = Arc::new(FxShared::new());
+        fx::spawn(app.clone(), fx_shared.clone());
         let downloads_dir = app_data.join("downloads");
         let _ = std::fs::create_dir_all(&downloads_dir);
-        // 旧版缓存按 URL 哈希命名（无 net-/qq- 前缀），链接签名变化导致
-        // 这些文件永不再命中，启动时清掉以免白占磁盘
+        // 旧版缓存按 URL 哈希命名（无稳定前缀），链接签名变化导致
+        // 这些文件永不再命中，启动时清掉以免白占磁盘。
+        // 白名单必须覆盖全部缓存键前缀（net/qq/kug/bili/nd/url，见 cache_key_for），
+        // 漏掉的前缀会被误当旧文件删光——该音源缓存将永远活不过一次重启
         if let Ok(rd) = std::fs::read_dir(&downloads_dir) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
-                let recognized =
-                    name.starts_with("net-") || name.starts_with("qq-") || name.starts_with("url-");
+                let recognized = ["net-", "qq-", "kug-", "bili-", "nd-", "url-"]
+                    .iter()
+                    .any(|p| name.starts_with(p));
                 if !recognized {
                     let _ = std::fs::remove_file(e.path());
                 }
@@ -165,6 +176,7 @@ impl Engine {
             smtc,
             device_pref: RwLock::new(None),
             exclusive_enabled: AtomicBool::new(false),
+            fx: fx_shared,
             shared_broken: AtomicBool::new(false),
             excl: RwLock::new(None),
         })
@@ -233,7 +245,8 @@ impl Engine {
     where
         S: Source<Item = f32> + Send + 'static,
     {
-        let wrapped = EqSource::new(src, self.eq.clone(), self.pos_ms.clone());
+        let wrapped = EqSource::new(src, self.eq.clone(), self.pos_ms.clone())
+            .with_fx(self.fx.clone());
         let diag_sr = wrapped.sample_rate();
         let diag_ch = wrapped.channels();
         let diag_dur = wrapped.total_duration();
@@ -431,7 +444,8 @@ impl Engine {
     /// 边下边播中的曲目同样适用（流读取器按包跳转到目标位置，缺失数据阻塞等待）。
     fn rebuild_at(&self, info: &TrackInfo, ms: u64) -> Result<(), String> {
         let src = self.open_current_source(&info.path, ms)?;
-        let wrapped = EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64);
+        let wrapped = EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64)
+            .with_fx(self.fx.clone());
         self.pos_ms.store(ms, Ordering::Relaxed);
         self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
         let sink = self.sink.read();

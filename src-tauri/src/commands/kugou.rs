@@ -103,8 +103,8 @@ pub(crate) fn kg_prepare(state: &State<AppState>) -> (String, String) {
 
 #[tauri::command]
 pub async fn kugou_search(keyword: String, page: Option<i64>) -> Result<serde_json::Value, String> {
-    let songs =
-        super::blocking(move || crate::kugou::search(&keyword, page.unwrap_or(1))).await?;
+    let page = page.unwrap_or(1).clamp(1, 10_000);
+    let songs = super::blocking(move || crate::kugou::search(&keyword, page)).await?;
     Ok(json!({ "songs": songs }))
 }
 
@@ -119,18 +119,38 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     let state = app.state::<AppState>();
     let quality = {
         let conn = state.db.lock();
-        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+        let q = db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string());
+        super::resolve_quality("kugou", &q)
     };
     let (token, userid) = kg_prepare(&state);
     // 存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查补齐各档
-    // hash，否则 HQ/无损音质设置会静默塌缩到标准
-    let (hq_hash, sq_hash, super_hash) = kugou_hashes_enriched(
-        &track.hash,
-        &track.title,
-        &track.artist,
-        &track.hq_hash,
-        &track.sq_hash,
-        &track.super_hash,
+    // hash，否则 HQ/无损音质设置会静默塌缩到标准。
+    // 匿名（无 token）只有 128k 通道，hq/sq 档用不上——跳过反查，
+    // 省掉点播关键路径上串行的 1-2 次搜索往返
+    let (hq_hash, sq_hash, super_hash) = if token.is_empty() {
+        (track.hq_hash.clone(), track.sq_hash.clone(), track.super_hash.clone())
+    } else {
+        kugou_hashes_enriched(
+            &track.hash,
+            &track.title,
+            &track.artist,
+            &track.hq_hash,
+            &track.sq_hash,
+            &track.super_hash,
+        )
+    };
+    // 档位 hash 诊断（Hi-Res 排查）：行自带 vs 反查补齐后的最终状态
+    eprintln!(
+        "[kugou] 档位hash（{} - {}）：hq={} sq={} super={}（行自带 hq={} sq={} super={}，{}）",
+        track.artist,
+        track.title,
+        hq_hash.len(),
+        sq_hash.len(),
+        super_hash.len(),
+        track.hq_hash.len(),
+        track.sq_hash.len(),
+        track.super_hash.len(),
+        if token.is_empty() { "匿名跳过反查" } else { "已反查" },
     );
     let (url, _ext, quality_label) = crate::kugou::song_url(
         &track.hash,
@@ -144,16 +164,22 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
         &userid,
         &quality,
     )?;
+    let fallback_reason = if token.is_empty() {
+        "酷狗未登录，匿名通道仅提供标准音质".to_string()
+    } else if quality == "hires" && quality_label != "Hi-Res" {
+        match crate::kugou::last_hires_error() {
+            Some(e) => format!("Hi-Res 请求被服务端拒绝（{e}），已回退"),
+            None => "未取得该曲的 Hi-Res 文件标识（super hash），无法请求 Hi-Res".to_string(),
+        }
+    } else {
+        "账号权益或接口风控限制了更高音质".to_string()
+    };
     notify_quality_fallback(
         app,
         "酷狗",
         &quality,
         &quality_label,
-        if token.is_empty() {
-            "酷狗未登录，匿名通道仅提供标准音质"
-        } else {
-            "账号权益或接口风控限制了更高音质"
-        },
+        &fallback_reason,
     );
     // 封面：数据库存的完整 URL 优先（收藏/最近播放已入库），缺失用搜索带的
     let cover = {

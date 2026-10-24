@@ -105,14 +105,28 @@ pub async fn like_online(
 
 /// 下载在线歌曲到保存目录（写标签入库，资料库可见）
 #[tauri::command]
-pub async fn download_online(app: AppHandle, req: OnlineSaveReq) -> Result<String, String> {
+pub async fn download_online(
+    app: AppHandle,
+    req: OnlineSaveReq,
+) -> Result<serde_json::Value, String> {
     let task_app = app.clone();
     super::blocking(move || download_online_task(&task_app, req)).await
 }
 
+/// 正在下载的目标路径集合：同名并发下载会交错写坏同一个文件
+fn downloading_set() -> &'static std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>> {
+    static S: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> =
+        std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        std::sync::Mutex::new(std::collections::HashSet::new())
+    })
+}
+/// 单文件下载上限：防异常响应把磁盘写爆
+const MAX_DOWNLOAD: u64 = 128 * 1024 * 1024;
+
 /// 同步任务体：取链 + 分块下载 + 封面拉取 + 标签写入全是阻塞 IO，
 /// 整体放专用线程池执行（大文件可能持续数分钟，绝不能占用异步 worker）
-fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, String> {
+fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_json::Value, String> {
     let state = app.state::<AppState>();
     let title = req.title.trim().to_string();
     if title.is_empty() {
@@ -122,24 +136,28 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
     // 1) 按当前音质取播放链接
     let quality = {
         let conn = state.db.lock();
-        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+        let q = db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string());
+        super::resolve_quality(&req.kind, &q)
     };
-    let (url, ext) = match req.kind.as_str() {
+    // 第三个元素 = 实际拿到的音质档位（下载完成提示展示，
+    // 用户能直接看到“选了 Hi-Res 实际下到哪一档”）
+    let (url, ext, q_label) = match req.kind.as_str() {
         "netease" => {
             let id: i64 = req
                 .id
                 .parse()
                 .map_err(|_| "网易云歌曲 ID 无效".to_string())?;
             let music_u = netease_cookie(&state);
-            let (u, _br, ext) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
+            let (u, br, ext) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
                 .ok_or("该歌曲暂无可播放链接")?;
-            (u, ext)
+            let label = super::quality_tag(&ext, br).to_string();
+            (u, ext, Some(label))
         }
         "qq" => {
             let (musicid, musickey) = qq_credential(&state)?;
-            let (u, ext, _label) =
+            let (u, ext, label) =
                 crate::qq::song_url(&req.id, &req.media_mid, &musicid, &musickey, &quality, true)?;
-            (u, ext)
+            (u, ext, Some(label.to_string()))
         }
         "kugou" => {
             let (token, userid) = kg_prepare(&state);
@@ -158,15 +176,17 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
                 &req.sq_hash,
                 &req.super_hash,
             );
-            let (u, ext, _label) =
+            let (u, ext, label) =
                 crate::kugou::song_url(&req.id, album_audio_id, 0, &hq, &sq, &sup, true, &token, &userid, &quality)?;
-            (u, ext)
+            (u, ext, Some(label.to_string()))
         }
         "bilibili" => {
-            // rid = "BVxxx-cid"；存为 .m4a（内容是 fragmented MP4，symphonia 可解）
+            // rid = "BVxxx-cid"；存为 .m4a（内容是 fragmented MP4，symphonia 可解）。
+            // 登录态取流：会员内容与更高音质
             let (bvid, cid) = crate::bilibili::parse_rid(&req.id)?;
-            let (u, _q) = crate::bilibili::audio_stream(&bvid, cid)?;
-            (u, "m4a".to_string())
+            let c = super::bilibili::bili_cookies_opt(&state);
+            let (u, _q) = crate::bilibili::audio_stream(&bvid, cid, c.as_ref())?;
+            (u, "m4a".to_string(), None)
         }
         "navidrome" => {
             let conn = state.db.lock();
@@ -185,12 +205,13 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
                 .filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric()))
                 .unwrap_or("mp3")
                 .to_string();
-            (url, ext)
+            (url, ext, None)
         }
         _ => return Err("未知音源类型".into()),
     };
 
-    // 2) 下载到保存目录
+    // 2) 下载到保存目录：先写 .part 临时文件，成功后原子改名——
+    //    直接 create 目标文件会在网络中断时把已有完好文件截断损毁
     let dir = save_dir(&state);
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建保存目录失败: {e}"))?;
     let artist = sanitize_filename(&req.artist);
@@ -205,9 +226,52 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
         ext
     );
     let dest = dir.join(&name);
-    let mut file = std::fs::File::create(&dest).map_err(|e| format!("创建文件失败: {e}"))?;
-    let (total, reader) = http_get_for(&req.kind, &url)?;
-    let mut reader = reader.take(128 * 1024 * 1024);
+    if dest.exists() {
+        return Err(format!("保存目录已存在同名文件：{name}（如需重新下载请先删除旧文件）"));
+    }
+    // 同名并发下载登记：两个线程交错写同一文件必然产出损坏数据。
+    // 键按小写归一：Windows 文件系统大小写不敏感，"A - B.mp3" 与
+    // "a - b.mp3" 是同一个物理文件
+    let reg_key = std::path::PathBuf::from(dest.to_string_lossy().to_lowercase());
+    {
+        let mut dl = downloading_set().lock().unwrap();
+        if dl.contains(&reg_key) {
+            return Err("该歌曲正在下载中".into());
+        }
+        dl.insert(reg_key.clone());
+    }
+    // 任何退出路径都必须解除登记并清理半成品 .part
+    struct Guard(std::path::PathBuf);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            downloading_set().lock().unwrap().remove(&self.0);
+        }
+    }
+    let _guard = Guard(reg_key);
+    let result = download_to_dest(app, &state, &req, &url, &title, &dest);
+    match result {
+        Ok(()) => Ok(serde_json::json!({ "name": name, "quality": q_label })),
+        Err(e) => {
+            // 失败清掉半成品 .part，避免下次扫描把坏文件吸收入库
+            let _ = std::fs::remove_file(dest.with_extension("part"));
+            Err(e)
+        }
+    }
+}
+
+fn download_to_dest(
+    app: &AppHandle,
+    state: &tauri::State<AppState>,
+    req: &OnlineSaveReq,
+    url: &str,
+    title: &str,
+    dest: &std::path::Path,
+) -> Result<(), String> {
+    let part = dest.with_extension("part");
+    let mut file =
+        std::fs::File::create(&part).map_err(|e| format!("创建缓存文件失败: {e}"))?;
+    let (total, reader) = http_get_for(&req.kind, url)?;
+    let mut reader = reader.take(MAX_DOWNLOAD);
     let mut buf = [0u8; 64 * 1024];
     let mut received: u64 = 0;
     let mut last_emit = std::time::Instant::now();
@@ -251,6 +315,14 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
         }
         return Err(e);
     }
+    // 完整性校验：长度不符（连接中途断开被当成 EOF、超上限被截断）不能当成功
+    if total > 0 && received != total {
+        return Err(format!("下载不完整（{received}/{total} 字节），已放弃"));
+    }
+    if received == MAX_DOWNLOAD && (total == 0 || total > received) {
+        return Err("文件超过 128MB 下载上限，已放弃".into());
+    }
+    std::fs::rename(&part, dest).map_err(|e| format!("保存文件失败: {e}"))?;
     let _ = app.emit(
         "download://progress",
         json!({ "url": &title, "received": received, "total": if total == 0 { received } else { total }, "pct": 100, "done": true }),
@@ -261,19 +333,19 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
     let lyrics = match req.kind.as_str() {
         "netease" => crate::netease::lyric(
             req.id.parse::<i64>().unwrap_or(0),
-            netease_cookie(&state).as_deref(),
+            netease_cookie(state).as_deref(),
         )
         .ok()
         .flatten()
         .map(|t| t.lrc),
-        "qq" => crate::qq::lyric(&req.id).ok().flatten(),
+        "qq" => crate::qq::lyric(&req.id).ok().flatten().map(|lt| lt.lrc),
         "kugou" => crate::kugou::lyric(&req.id).ok().flatten(),
         _ => None,
     };
     if req.kind != "bilibili" {
         write_tags(
-            &dest,
-            &title,
+            dest,
+            title,
             &req.artist,
             &req.album,
             &req.cover_url,
@@ -281,8 +353,17 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
         );
     }
 
-    // 4) 解析入库 + 标记已下载 + 保存目录纳入扫描
-    let mut track = crate::library::parse_track(&dest, &state.app_data).ok_or("解析歌曲失败")?;
+    // 4) 解析入库 + 标记已下载 + 保存目录纳入扫描。
+    //    明显坏掉的文件（既解不出时长、前端也没给时长、体积又小）不再
+    //    静默入库——空/半截文件曾以 0 秒坏曲目的身份混进资料库
+    let parsed = crate::library::parse_track(dest, &state.app_data);
+    let mut track = match parsed {
+        Some(t) if t.duration > 0.0 || req.duration_ms > 0 || received >= 64 * 1024 => t,
+        _ => {
+            let _ = std::fs::remove_file(dest);
+            return Err("下载的文件无法解析为有效音频，已删除".into());
+        }
+    };
     // 文件标签缺失时长时，用前端传入的元数据时长兜底
     if track.duration == 0.0 && req.duration_ms > 0 {
         track.duration = req.duration_ms as f64 / 1000.0;
@@ -291,17 +372,20 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<String, S
         let conn = state.db.lock();
         db::upsert_track(&conn, &track);
         db::mark_online_downloaded(&conn, &req.kind, &req.id);
-        let _ = db::add_folder(&conn, &dir.to_string_lossy());
+        let _ = db::add_folder(&conn, &dir_of(dest).to_string_lossy());
     }
-    Ok(name)
+    Ok(())
+}
+
+fn dir_of(p: &std::path::Path) -> &std::path::Path {
+    p.parent().unwrap_or_else(|| std::path::Path::new("."))
 }
 
 /// “我喜欢”列表：在线条目部分
 #[tauri::command]
 pub async fn liked_online_list(
     state: State<'_, AppState>,
-) -> Result<Vec<crate::models::PlaylistEntryMeta>, String> {
-    let conn = state.db.lock();
+) -> Result<Vec<crate::models::PlaylistEntryMeta>, String> {    let conn = state.db.lock();
     Ok(db::liked_online_list(&conn)
         .into_iter()
         .map(|e| crate::models::PlaylistEntryMeta {
@@ -318,6 +402,32 @@ pub async fn liked_online_list(
             vip: e.vip,
             last_played: 0,
             liked_at: e.liked_at,
+        })
+        .collect())
+}
+
+/// 下载历史：已下载到本地的在线曲目（下载管理视图用）
+#[tauri::command]
+pub async fn downloaded_online_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::models::PlaylistEntryMeta>, String> {
+    let conn = state.db.lock();
+    Ok(db::downloaded_online_list(&conn)
+        .into_iter()
+        .map(|e| crate::models::PlaylistEntryMeta {
+            rowid: 0,
+            kind: e.kind,
+            track_id: None,
+            online_id: Some(e.online_id),
+            title: e.title,
+            artist: e.artist,
+            album: e.album,
+            cover: e.cover,
+            duration: e.duration,
+            media_mid: e.media_mid,
+            vip: e.vip,
+            last_played: 0,
+            liked_at: 0,
         })
         .collect())
 }

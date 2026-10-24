@@ -97,6 +97,19 @@ fn quality_tag(ext: &str, br_kbps: i64) -> String {
     }
 }
 
+/// 按音源归一音质档位（只影响“传给取链阶梯”的值，回退提示一律用
+/// 用户选择的原始档位）：
+/// - 网易云：hires 原生支持（v1 接口 hires level）
+/// - 酷狗：hires 原生支持（v5 阶梯 super 档 = Hi-Res FLAC）
+/// - QQ：尚未接入 RS02/RS03 Hi-Res 文件档，hires 映射到无损档——
+///   阶梯匹配遇到未知档位会静默落到 high，反而比无损低
+pub(crate) fn resolve_quality(kind: &str, quality: &str) -> String {
+    if quality == "hires" && kind == "qq" {
+        return "lossless".to_string();
+    }
+    quality.to_string()
+}
+
 /// 音质回退提示：设置的档位未被账号权益满足、实际下发更低档时告知用户
 /// （静默降级曾让"无损"设置实际播放 128k 而用户无从得知）
 fn notify_quality_fallback(
@@ -110,11 +123,16 @@ fn notify_quality_fallback(
         return;
     }
     let wanted = match quality {
+        "hires" => "Hi-Res",
         "lossless" => "无损",
         "high" => "HQ",
         _ => return,
     };
     if actual_label == wanted {
+        return;
+    }
+    // 实际档位比请求的更高不算回退：lossless 阶梯在酷狗可能下发 Hi-Res
+    if (quality == "lossless" || quality == "hires") && actual_label == "Hi-Res" {
         return;
     }
     let _ = app.emit(

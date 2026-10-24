@@ -32,6 +32,11 @@ pub struct SymphoniaSource {
     channels: u16,
     sample_rate: u32,
     total_frames: Option<u64>,
+    /// 交错样本转换缓冲（按需重建，音频线程零分配）
+    sbuf: Option<SampleBuffer<f32>>,
+    /// sbuf 的容量/规格指纹（容量不足或规格变化时才重建）
+    sbuf_cap: usize,
+    sbuf_spec: (u32, usize),
     /// 已产出的帧数（诊断用）
     frames_out: u64,
     /// 文件是否已读到末尾
@@ -95,9 +100,12 @@ impl SymphoniaSource {
         let sample_rate = params.sample_rate.unwrap_or(44_100);
         let time_base = params.time_base;
         let total_frames = params.n_frames.and_then(|n| {
-            params
-                .time_base
-                .map(|tb| (tb.calc_time(n).seconds as f64 * sample_rate as f64) as u64)
+            params.time_base.map(|tb| {
+                // 时长必须含亚秒部分：Time.seconds 是整秒，丢掉 frac 会让
+                // 总时长系统性地少算最多 1 秒（进度条/播完判定偏差）
+                let t = tb.calc_time(n);
+                ((t.seconds as f64 + t.frac) * sample_rate as f64) as u64
+            })
         });
         let decoder = symphonia::default::get_codecs()
             .make(params, &DecoderOptions::default())
@@ -112,6 +120,9 @@ impl SymphoniaSource {
             channels,
             sample_rate,
             total_frames,
+            sbuf: None,
+            sbuf_cap: 0,
+            sbuf_spec: (0, 0),
             frames_out: 0,
             eos: false,
             errors: 0,
@@ -187,12 +198,29 @@ impl SymphoniaSource {
                     self.channels = spec.channels.count() as u16;
                     self.sample_rate = spec.rate;
                     let frames = decoded.frames() as u64;
-                    // SampleBuffer 只在容量不足时重建（避免音频线程分配）
-                    let need = decoded.capacity() as u64;
-                    let mut sbuf = SampleBuffer::<f32>::new(need, spec);
-                    sbuf.copy_interleaved_ref(decoded);
-                    self.frames_out += frames;
-                    self.buf.extend_from_slice(sbuf.samples());
+                    // SampleBuffer 持久复用，只在容量不足/规格变化时重建
+                    //（此前每个包 new 一次 ≈ 8-9KB 堆分配，正是文件头注释
+                    // 声称要避免的音频线程周期性 malloc/free）
+                    let need_frames = decoded.capacity();
+                    let ch_count = spec.channels.count();
+                    let need_samples = need_frames * ch_count;
+                    let spec_fp = (spec.rate, ch_count);
+                    if self.sbuf.is_none()
+                        || self.sbuf_cap < need_samples
+                        || self.sbuf_spec != spec_fp
+                    {
+                        self.sbuf = Some(SampleBuffer::<f32>::new(
+                            need_frames as u64,
+                            spec,
+                        ));
+                        self.sbuf_cap = need_samples;
+                        self.sbuf_spec = spec_fp;
+                    }
+                    if let Some(sbuf) = self.sbuf.as_mut() {
+                        sbuf.copy_interleaved_ref(decoded);
+                        self.frames_out += frames;
+                        self.buf.extend_from_slice(sbuf.samples());
+                    }
                     return true;
                 }
                 Err(SymphoniaError::DecodeError(e)) => {

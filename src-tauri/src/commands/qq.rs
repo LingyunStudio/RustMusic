@@ -64,10 +64,13 @@ pub async fn qq_play(app: AppHandle, track: QqPlayReq) -> Result<(), String> {
 fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
     let state = app.state::<AppState>();
     let (musicid, musickey) = qq_credential(&state)?;
-    let quality = {
+    // quality_setting = 用户选择的原始档位（回退提示用）；quality = 归一后
+    // 传给取链阶梯的值（QQ 暂无 Hi-Res 文件档，hires → lossless 阶梯）
+    let quality_setting = {
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
+    let quality = super::resolve_quality("qq", &quality_setting);
     let (url, ext, quality_label) = crate::qq::song_url(
         &track.songmid,
         &track.media_mid,
@@ -78,6 +81,16 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
     )?;
     if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
         notify_quality_fallback(app, "QQ 音乐", &quality, quality_label, "账号权益未含无损或该曲无 flac");
+    }
+    if quality_setting == "hires" {
+        // 选了 Hi-Res 但 QQ 未接入 Hi-Res 文件档：明确告知按无损取
+        notify_quality_fallback(
+            app,
+            "QQ 音乐",
+            &quality_setting,
+            quality_label,
+            "QQ 音乐暂未接入 Hi-Res 档位，已按无损取链",
+        );
     }
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
     let cover = {
@@ -133,9 +146,12 @@ pub async fn qq_lyric(
     let payload = super::blocking(move || -> Result<LyricsPayload, String> {
         let songmid = songmid_for_task;
         if let Some((musicid, musickey)) = &cred {
-            if let Ok(Some(enhanced)) = crate::qq::lyric_qrc(&songmid, musicid, musickey) {
-                let p = lyrics::parse(&enhanced);
+            if let Ok(Some((enhanced, trans))) = crate::qq::lyric_qrc(&songmid, musicid, musickey) {
+                let mut p = lyrics::parse(&enhanced);
                 if p.synced {
+                    if let Some(t) = &trans {
+                        lyrics::attach_translations(&mut p, t);
+                    }
                     let mut payload = LyricsPayload::new(p.synced, p.lines);
                     payload.source = Some("逐字 QRC".into());
                     return Ok(payload);
@@ -143,11 +159,14 @@ pub async fn qq_lyric(
             }
             eprintln!("[qq] {songmid} QRC 不可用（无权益/解密失败），回落行级 LRC");
         }
-        let text = crate::qq::lyric(&songmid)?.unwrap_or_default();
-        if text.is_empty() {
+        let lt = crate::qq::lyric(&songmid)?;
+        let Some(lt) = lt else {
             return Ok(LyricsPayload::new(false, vec![]));
+        };
+        let mut p = lyrics::parse(&lt.lrc);
+        if let Some(t) = &lt.trans {
+            lyrics::attach_translations(&mut p, t);
         }
-        let p = lyrics::parse(&text);
         let mut payload = LyricsPayload::new(p.synced, p.lines);
         if p.synced {
             payload.source = Some("行级 LRC".into());

@@ -37,9 +37,36 @@ pub fn norm_path(p: &Path) -> String {
     s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
 }
 
+/// 扫描进行中标志 + 补扫请求：add_folder/remove_folder/rescan/drop_paths 都会
+/// 触发扫描，快速连点会并发跑多份 run_scan（进度事件交错、delete_missing
+/// 后写者胜、解析与 IO 全部翻倍）。已在跑时只登记一次补扫，结束后重跑一轮。
+static SCAN_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SCAN_RERUN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn spawn_scan(app: &AppHandle) {
+    use std::sync::atomic::Ordering;
+    if SCAN_RUNNING.swap(true, Ordering::SeqCst) {
+        SCAN_RERUN.store(true, Ordering::SeqCst);
+        return;
+    }
     let a = app.clone();
-    std::thread::spawn(move || run_scan(a));
+    std::thread::spawn(move || {
+        loop {
+            run_scan(a.clone());
+            if !SCAN_RERUN.swap(false, Ordering::SeqCst) {
+                // 收尾竞态：swap 读到 false 之后、RUNNING 置 false 之前，
+                // 新调用方可能登记 RERUN 后离开——置 false 后复查一次，
+                // 有人登记就接管继续跑（lost wakeup 防护）
+                SCAN_RUNNING.store(false, Ordering::SeqCst);
+                if SCAN_RERUN.load(Ordering::SeqCst)
+                    && !SCAN_RUNNING.swap(true, Ordering::SeqCst)
+                {
+                    continue;
+                }
+                break;
+            }
+        }
+    });
 }
 
 pub fn run_scan(app: AppHandle) {
@@ -60,18 +87,21 @@ pub fn run_scan(app: AppHandle) {
     };
 
     if folders.is_empty() {
+        // 没有监控文件夹时不再清空全库：拖拽入库的单曲不在任何监控目录里，
+        // 此时的“扫描”对它们没有管辖权（delete_missing 同样按前缀过滤）
         emit(0, 0, true);
-        {
-            let conn = st.db.lock();
-            let seen = HashSet::new();
-            db::delete_missing(&conn, &seen, &prefixes);
-        }
         emit(0, 0, false);
         return;
     }
 
-    // 收集音频文件
-    let mut files: Vec<PathBuf> = Vec::new();
+    // 收集音频文件（mtime/size 直接取目录枚举自带的 metadata，
+    // 免去每个文件再单独 open 一次；大目录扫描时间约省三分之一）
+    struct Found {
+        path: PathBuf,
+        mtime: i64,
+        size: i64,
+    }
+    let mut files: Vec<Found> = Vec::new();
     for f in &folders {
         for entry in WalkDir::new(&f.path)
             .follow_links(false)
@@ -79,7 +109,22 @@ pub fn run_scan(app: AppHandle) {
             .filter_map(|e| e.ok())
         {
             if entry.file_type().is_file() && is_audio(entry.path()) {
-                files.push(entry.path().to_path_buf());
+                let (mtime, size) = match entry.metadata() {
+                    Ok(m) => (
+                        m.modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0),
+                        m.len() as i64,
+                    ),
+                    Err(_) => (0, 0),
+                };
+                files.push(Found {
+                    path: entry.into_path(),
+                    mtime,
+                    size,
+                });
             }
         }
     }
@@ -97,13 +142,12 @@ pub fn run_scan(app: AppHandle) {
 
     let mut seen: HashSet<String> = HashSet::with_capacity(files.len());
     let mut to_parse: Vec<PathBuf> = Vec::new();
-    for p in &files {
-        let np = norm_path(p);
+    for f in &files {
+        let np = norm_path(&f.path);
         seen.insert(np.clone());
-        let (mtime, size) = file_stat(p);
         match existing.get(&np) {
-            Some((emt, esz)) if *emt == mtime && *esz == size => {}
-            _ => to_parse.push(p.clone()),
+            Some((emt, esz)) if *emt == f.mtime && *esz == f.size => {}
+            _ => to_parse.push(f.path.clone()),
         }
     }
 

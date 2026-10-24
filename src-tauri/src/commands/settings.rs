@@ -10,7 +10,7 @@ use crate::AppState;
 use super::engine_clone;
 #[tauri::command]
 pub async fn set_play_quality(state: State<'_, AppState>, quality: String) -> Result<(), String> {
-    if !matches!(quality.as_str(), "standard" | "high" | "lossless") {
+    if !matches!(quality.as_str(), "standard" | "high" | "lossless" | "hires") {
         return Err("无效的音质选项".into());
     }
     let conn = state.db.lock();

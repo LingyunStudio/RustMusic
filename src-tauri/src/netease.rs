@@ -345,24 +345,40 @@ fn enrich_covers(songs: &mut [NetSong], music_u: Option<&str>) {
     }
 }
 
-/// 按音质请求播放直链（weapi v1，需登录 cookie），按 level 取流并逐级回退
-/// 返回 (url, br, ext)
+/// 按音质请求播放直链（weapi v1），按 level 取流并逐级回退。
+/// 未登录也可播免费曲目（匿名 weapi 取 standard，官方 Web 同款行为，
+/// 与酷狗/QQ 的“匿名播免费”保持一致）；高音质档位需登录权益
 pub fn song_url(
     id: i64,
     music_u: Option<&str>,
     quality: &str,
 ) -> Result<Option<(String, i64, String)>, String> {
     let music_u = music_u.filter(|s| !s.is_empty());
-    if music_u.is_none() {
-        return Err("未登录网易云账号，无法获取播放链接，请先扫码登录".into());
-    }
     // v1 接口按 level 取流：无损权益真实下发 flac（旧接口的 br 阶梯拿不到
     // 无损档），权益不足时服务端降级并在响应 level 字段如实上报；
-    // 仍逐级回退到 standard 兜底
+    // 仍逐级回退到 standard 兜底。hires 档（黑胶 SVIP Hi-Res）也纳入阶梯
+    // 设置档位 = 上限：无损档不含 hires level（此前两档共用 hires 优先
+    // 链，权益够时选“无损”也会下发 Hi-Res，档位失去意义）
     let levels: Vec<(&str, i64)> = match quality {
-        "lossless" => vec![("lossless", 999000), ("exhigh", 320000), ("standard", 128000)],
-        "standard" => vec![("standard", 128000)],
-        _ => vec![("exhigh", 320000), ("standard", 128000)],
+        "hires" => vec![
+            ("hires", 1999_000),
+            ("lossless", 999_000),
+            ("exhigh", 320_000),
+            ("standard", 128_000),
+        ],
+        "lossless" => vec![
+            ("lossless", 999_000),
+            ("exhigh", 320_000),
+            ("standard", 128_000),
+        ],
+        "standard" => vec![("standard", 128_000)],
+        _ => vec![("exhigh", 320_000), ("standard", 128_000)],
+    };
+    // 匿名只请求 standard：更高档位没有权益必然降级，白耗一次往返
+    let levels: Vec<(&str, i64)> = if music_u.is_none() {
+        vec![("standard", 128_000)]
+    } else {
+        levels
     };
     let mut last_hint = String::from("该歌曲没有可播放的音频");
     for (level, default_br) in levels {
@@ -554,6 +570,42 @@ pub fn user_playlists(
         offset += PAGE;
     }
     Ok(out)
+}
+
+/// 歌单/榜单全量歌曲的短 TTL 缓存：榜单分页每翻一页都全量重拉整个歌单
+///（v6 大包 + 每批 200 的详情补全，翻 3 页 = 3 次全量下载）。
+/// 榜单内容分钟级稳定，5 分钟缓存把翻页成本降为内存切片。
+/// 登录态不同不能混用缓存（可见范围/权益不同），键里带 music_u 比对。
+pub fn playlist_tracks_cached(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<i64, (std::time::Instant, String, Vec<NetSong>)>>,
+    > = std::sync::OnceLock::new();
+    const TTL: Duration = Duration::from_secs(5 * 60);
+    const CAP: usize = 16;
+    let slot = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Ok(guard) = slot.lock() {
+        if let Some((at, key_u, songs)) = guard.get(&pid) {
+            if at.elapsed() < TTL && *key_u == music_u {
+                return Ok(songs.clone());
+            }
+        }
+    }
+    let songs = playlist_tracks(pid, music_u)?;
+    if let Ok(mut guard) = slot.lock() {
+        while guard.len() >= CAP {
+            if let Some(oldest) = guard
+                .iter()
+                .min_by_key(|(_, (at, _, _))| *at)
+                .map(|(k, _)| *k)
+            {
+                guard.remove(&oldest);
+            } else {
+                break;
+            }
+        }
+        guard.insert(pid, (std::time::Instant::now(), music_u.to_string(), songs.clone()));
+    }
+    Ok(songs)
 }
 
 /// 获取歌单内的全部歌曲（明文 API v6，字段与搜索一致）。

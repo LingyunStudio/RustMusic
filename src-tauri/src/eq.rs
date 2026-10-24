@@ -5,6 +5,8 @@ use std::time::Duration;
 use parking_lot::RwLock;
 use rodio::Source;
 
+use crate::fx::FxShared;
+
 pub const BAND_FREQS: [f64; 10] = [
     31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
@@ -99,6 +101,7 @@ fn design_band(i: usize, sr: f64, gain_db: f64) -> [f64; 5] {
 }
 
 /// 包裹 rodio 音源的 10 段均衡器，同时负责播放位置统计（供进度条/SMTC 使用）
+/// 与皮肤律动采样分接（FxShared，见 fx.rs）
 pub struct EqSource<S> {
     inner: S,
     channels: usize,
@@ -111,6 +114,9 @@ pub struct EqSource<S> {
     frames: u64,
     base_ms: f64,
     pos_ms: Arc<AtomicU64>,
+    fx: Option<Arc<FxShared>>,
+    /// 当前帧（跨声道）样本和，帧满时取均值推入 fx
+    frame_sum: f32,
 }
 
 impl<S: Source> EqSource<S> {
@@ -139,9 +145,18 @@ impl<S: Source> EqSource<S> {
             frames: 0,
             base_ms,
             pos_ms,
+            fx: None,
+            frame_sum: 0.0,
         };
         s.refresh();
         s
+    }
+
+    /// 挂接皮肤律动采样分接（分析的是 EQ 后的实际输出）
+    pub fn with_fx(mut self, fx: Arc<FxShared>) -> Self {
+        fx.set_rate(self.sr);
+        self.fx = Some(fx);
+        self
     }
 
     fn refresh(&mut self) {
@@ -178,9 +193,15 @@ impl<S: Source> Iterator for EqSource<S> {
         } else {
             x
         };
+        self.frame_sum += out;
         self.cur += 1;
         if self.cur >= self.channels {
             self.cur = 0;
+            // 帧满：声道平均 → 单声道样本推给律动分析（音频线程安全：无锁无分配）
+            if let Some(fx) = &self.fx {
+                fx.push(self.frame_sum / self.channels as f32);
+            }
+            self.frame_sum = 0.0;
             self.frames += 1;
             let pos = self.base_ms + self.frames as f64 * 1000.0 / self.sr;
             self.pos_ms.store(pos.max(0.0) as u64, Ordering::Relaxed);

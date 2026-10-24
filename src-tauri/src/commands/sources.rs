@@ -31,7 +31,7 @@ pub async fn add_source(
         return Err("暂不支持 m3u8/HLS，请使用音频文件直链".into());
     }
     let conn = state.db.lock();
-    if let Some(item) = db::list_sources(&conn).into_iter().find(|s| s.url == url) {
+    if let Some(item) = db::get_source_by_url(&conn, &url) {
         return Ok(item.id);
     }
     db::add_source(&conn, &url, title.as_deref().unwrap_or(""))

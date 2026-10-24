@@ -79,12 +79,14 @@ static GEN_MID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 /// 生成一个新 mid（32 位十六进制含连字符，转十进制大整数）
 fn generate_mid() -> String {
     let mut rng = rand::thread_rng();
+    // 必须是真 hex 字符：`b'0' + 10..=15` 会得到 :;<=>? 而非 a-f
+    const HEX: &[u8] = b"0123456789abcdef";
     let uuid = (0..32)
         .map(|i| {
             if [8, 12, 16, 20].contains(&i) {
                 '-'
             } else {
-                char::from(b'0' + rng.gen_range(0..16))
+                HEX[rng.gen_range(0..16)] as char
             }
         })
         .collect::<String>();
@@ -170,12 +172,14 @@ fn register_dev_once() -> Result<Option<String>, String> {
     const RSA_E: u32 = 65537;
     let (token, userid) = REGISTERED_ACCOUNT.lock().unwrap().clone();
     let mut rng = rand::thread_rng();
+    // 同 generate_mid：必须生成真 hex 字符（a-f），不能是 :;<=>?
+    const HEX: &[u8] = b"0123456789abcdef";
     let guid: String = (0..32)
         .map(|i| {
             if [8, 12, 16, 20].contains(&i) {
                 '-'
             } else {
-                char::from(b'0' + rng.gen_range(0..16))
+                HEX[rng.gen_range(0..16)] as char
             }
         })
         .collect();
@@ -617,7 +621,9 @@ pub fn enrich_hashes(
     sq_hash: &str,
     super_hash: &str,
 ) -> (String, String, String) {
-    if !sq_hash.is_empty() && !hq_hash.is_empty() {
+    // 三档全齐才无需反查：此前 hq/sq 齐但 super 为空就早退，
+    // Hi-Res 的 super hash 永远补不上——音质选无损/Hi-Res 永远只拿到 flac
+    if !sq_hash.is_empty() && !hq_hash.is_empty() && !super_hash.is_empty() {
         return (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string());
     }
     let keyword = if artist.trim().is_empty() {
@@ -644,25 +650,203 @@ pub fn quality_hashes_by_search(hash: &str, keyword: &str) -> Option<(String, St
     if hash.is_empty() || keyword.trim().is_empty() {
         return None;
     }
-    if let Ok(songs) = search_fallback(keyword, 1) {
-        if let Some(s) = songs.iter().find(|s| s.id.eq_ignore_ascii_case(hash)) {
-            if !s.hq_hash.is_empty() || !s.sq_hash.is_empty() {
-                return Some((s.hq_hash.clone(), s.sq_hash.clone(), s.super_hash.clone()));
+    // 结果近静态：内存 TTL 缓存。此前同一首歌每次点播/下载都重新搜索
+    // 1-2 次（串行追加在点播关键路径上），白白多 1-2 个 RTT。
+    // 分级 TTL：三档齐（含 Hi-Res 标识）30 分钟；super 为空只 5 分钟——
+    // 空 super 往往是 v2 瞬时失败/风控，长缓存会把“永远拿不到 Hi-Res”钉死
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<
+            std::collections::HashMap<String, (std::time::Instant, Option<(String, String, String)>)>,
+        >,
+    > = std::sync::OnceLock::new();
+    const TTL_FULL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+    const TTL_NO_HIRES: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+    const CAP: usize = 256;
+    let slot = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Ok(guard) = slot.lock() {
+        if let Some((at, hit)) = guard.get(&hash.to_lowercase()) {
+            let ttl = match hit {
+                Some((_, _, sup)) if !sup.is_empty() => TTL_FULL,
+                _ => TTL_NO_HIRES,
+            };
+            if at.elapsed() < ttl {
+                return hit.clone();
             }
         }
     }
+    let result = quality_hashes_by_search_uncached(hash, keyword);
+    if let Ok(mut guard) = slot.lock() {
+        while guard.len() >= CAP {
+            if let Some(oldest) = guard
+                .iter()
+                .min_by_key(|(_, (at, _))| *at)
+                .map(|(k, _)| k.clone())
+            {
+                guard.remove(&oldest);
+            } else {
+                break;
+            }
+        }
+        guard.insert(
+            hash.to_lowercase(),
+            (std::time::Instant::now(), result.clone()),
+        );
+    }
+    result
+}
+
+fn quality_hashes_by_search_uncached(
+    hash: &str,
+    keyword: &str,
+) -> Option<(String, String, String)> {
+    // v3 主通道：320hash/sqhash 可靠，但 viphash（Hi-Res 标识）经常为空
+    let mut best: Option<(String, String, String)> = None;
+    if let Ok(songs) = search_fallback(keyword, 1) {
+        if let Some(s) = songs.iter().find(|s| s.id.eq_ignore_ascii_case(hash)) {
+            if !s.hq_hash.is_empty() || !s.sq_hash.is_empty() {
+                best = Some((s.hq_hash.clone(), s.sq_hash.clone(), s.super_hash.clone()));
+            }
+        }
+    }
+    // 缺 super（Hi-Res 文件标识）就补查 songsearch_v2：SuperFileHash 是
+    // Hi-Res 取链的可靠来源——此前 v3 命中即返回，super 为空不再查 v2，
+    // Hi-Res 阶梯永远没有 super hash 可用（“有权益却永远拿无损”的根因）
+    if best.as_ref().map_or(true, |(_, _, sup)| sup.is_empty()) {
+        if let Some((h, s, sup)) = hashes_by_songsearch_v2(hash, keyword) {
+            best = Some(match best {
+                Some((bh, bs, _)) => (
+                    if bh.is_empty() { h } else { bh },
+                    if bs.is_empty() { s } else { bs },
+                    sup,
+                ),
+                None => (h, s, sup),
+            });
+        }
+    }
+    // 第三来源：权益接口（get_res_privilege/lite 按 qualities 查询），
+    // 响应条目可能带各档位 hash——容错解析（字段名随端点版本变化，
+    // 递归找 {quality: super/high, hash: ...} 形态的对象）
+    if best.as_ref().map_or(true, |(_, _, sup)| sup.is_empty()) {
+        if let Some(sup) = hires_hash_by_privilege(hash) {
+            eprintln!("[kugou] Hi-Res 标识由权益接口补齐");
+            best = Some(match best {
+                Some((bh, bs, _)) => (bh, bs, sup),
+                None => (String::new(), String::new(), sup),
+            });
+        }
+    }
+    best
+}
+
+/// 权益接口反查 Hi-Res（super/high 档）hash：单个曲目查询，
+/// 递归扫描响应里 “quality ∈ {super, high} 且带非空 hash” 的对象
+fn hires_hash_by_privilege(hash: &str) -> Option<String> {
+    let body = serde_json::json!({
+        "appid": APPID.parse::<i64>().unwrap_or(1005),
+        "area_code": 1,
+        "behavior": "play",
+        "clientver": CLIENTVER.parse::<i64>().unwrap_or(20489),
+        "need_hash_offset": 1,
+        "relate": 1,
+        "support_verify": 1,
+        "resource": [{
+            "type": "audio", "page_id": 0,
+            "hash": hash.to_uppercase(),
+            "album_id": 0,
+        }],
+        "qualities": ["128", "320", "flac", "high", "super"],
+    });
+    let v = gateway("/v2/get_res_privilege/lite", "media.store.kugou.com", &[], Some(&body))
+        .map_err(|e| format!("权益查询失败: {e}"))
+        .ok()?;
+    fn scan(node: &serde_json::Value, out: &mut Option<String>) {
+        if out.is_some() {
+            return;
+        }
+        match node {
+            serde_json::Value::Object(m) => {
+                let q = m
+                    .get("quality")
+                    .or_else(|| m.get("name"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("");
+                if (q == "super" || q == "high") && !q.is_empty() {
+                    if let Some(h) = m.get("hash").and_then(|x| x.as_str()) {
+                        if !h.is_empty() {
+                            *out = Some(h.to_lowercase());
+                            return;
+                        }
+                    }
+                }
+                for v in m.values() {
+                    scan(v, out);
+                    if out.is_some() {
+                        return;
+                    }
+                }
+            }
+            serde_json::Value::Array(a) => {
+                for v in a {
+                    scan(v, out);
+                    if out.is_some() {
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = None;
+    scan(&v, &mut out);
+    if out.is_none() {
+        eprintln!(
+            "[kugou] 权益接口未解析出 Hi-Res hash（resp 前 200 字：{}）",
+            serde_json::to_string(&v)
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>()
+        );
+    }
+    out
+}
+
+/// songsearch_v2 按 128 hash 精确反查各档 hash（SuperFileHash 是 Hi-Res 的可靠来源）
+fn hashes_by_songsearch_v2(hash: &str, keyword: &str) -> Option<(String, String, String)> {
     let url = format!(
         "https://songsearch.kugou.com/song_search_v2?keyword={}&page=1&pagesize=30",
         form_encode(keyword)
     );
-    let v = get_json(&url, "https://www.kugou.com/", UA, "酷狗搜索增强").ok()?;
-    let list = v.pointer("/data/lists").and_then(|x| x.as_array())?;
-    let t = list.iter().find(|t| {
+    let v = match get_json(&url, "https://www.kugou.com/", UA, "酷狗搜索增强") {
+        Ok(v) => v,
+        Err(e) => {
+            // 此处失败被静默吞掉会让 Hi-Res 标识永远补不上——必须留痕
+            eprintln!("[kugou] songsearch_v2 请求失败（kw={keyword}）：{e}");
+            return None;
+        }
+    };
+    let list = match v.pointer("/data/lists").and_then(|x| x.as_array()) {
+        Some(l) => l,
+        None => {
+            eprintln!("[kugou] songsearch_v2 响应无 data/lists（kw={keyword}）");
+            return None;
+        }
+    };
+    let t = match list.iter().find(|t| {
         t.get("FileHash")
             .and_then(|h| h.as_str())
             .map(|h| h.eq_ignore_ascii_case(hash))
             .unwrap_or(false)
-    })?;
+    }) {
+        Some(t) => t,
+        None => {
+            eprintln!(
+                "[kugou] songsearch_v2 结果未命中 FileHash（kw={keyword}，{} 条）",
+                list.len()
+            );
+            return None;
+        }
+    };
     let g = |k: &str| {
         t.get(k)
             .and_then(|x| x.as_str())
@@ -811,6 +995,19 @@ fn url_ext(url: &str) -> String {
         .to_lowercase()
 }
 
+/// 最近一次 Hi-Res 取链失败的服务端原因（如 "no_url:20031"）；成功取到
+/// Hi-Res 或未尝试时为 None。回退提示据此区分“没拿到 Hi-Res 文件标识”
+/// 与“服务端拒绝了 Hi-Res 请求”
+static HIRES_ERR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn set_last_hires_error(v: Option<String>) {
+    *HIRES_ERR.lock().unwrap() = v;
+}
+
+pub fn last_hires_error() -> Option<String> {
+    HIRES_ERR.lock().unwrap().clone()
+}
+
 /// 登录态按音质取直链：tracker /v5/url，从所选音质逐级回退到 128。
 /// 返回 (url, ext, 音质标签)
 fn song_url_v5(
@@ -826,13 +1023,32 @@ fn song_url_v5(
 ) -> Result<(String, String, &'static str), String> {
     // 音质阶梯：越靠前越优先。hash 必须用对应档位文件的 hash（搜索/榜单
     // 返回的 320/sq/super hash），key 也按该 hash 计算，否则触发风控/无链接
+    // 设置档位 = 上限：选无损就绝不向上够 Hi-Res。此前无损档与 Hi-Res 档
+    // 共用同一条 super 优先链——hash 补齐修好后，选“无损”也会先命中
+    // Hi-Res，两档失去区别（切音质永远显示 Hi-Res 的根因）
     let ladder: Vec<(&str, &str, &str)> = match quality {
         "standard" => vec![("128", hash, "标准")],
-        "lossless" => {
+        // Hi-Res 档专属 super 优先链。v5/url 的 Hi-Res 档位参数是 "high"
+        // （酷狗客户端与主流开源实现的既定约定：flac24bit → quality=high
+        // + superFileHash）；"super" 是权益接口的标识，作为兜底再试一次
+        "hires" => {
             let mut l = Vec::new();
             if !super_hash.is_empty() {
+                l.push(("high", super_hash, "Hi-Res"));
                 l.push(("super", super_hash, "Hi-Res"));
             }
+            if !sq_hash.is_empty() {
+                l.push(("flac", sq_hash, "无损"));
+            }
+            if !hq_hash.is_empty() {
+                l.push(("320", hq_hash, "HQ"));
+            }
+            l.push(("128", hash, "标准"));
+            l
+        }
+        // 无损档：16bit FLAC 封顶，只向下回退
+        "lossless" => {
+            let mut l = Vec::new();
             if !sq_hash.is_empty() {
                 l.push(("flac", sq_hash, "无损"));
             }
@@ -851,6 +1067,7 @@ fn song_url_v5(
             l
         }
     };
+    set_last_hires_error(None);
     let mid = mid_of();
     let fetch = |q: &str, h: &str| -> Result<(String, String, &'static str), String> {
         let extra = vec![
@@ -907,7 +1124,7 @@ fn song_url_v5(
             }
         }
         let label = match q {
-            "super" => "Hi-Res",
+            "high" | "super" => "Hi-Res",
             "flac" => "无损",
             "320" => "HQ",
             _ => "标准",
@@ -929,13 +1146,24 @@ fn song_url_v5(
     };
 
     let mut last_err = String::from("无可用链接");
-    for (q, h, _) in ladder.iter() {
+    for (q, h, tier) in ladder.iter() {
         if h.is_empty() {
             continue;
         }
         match fetch(q, h) {
-            Ok(ok) => return Ok(ok),
+            Ok(ok) => {
+                if *tier == "Hi-Res" {
+                    set_last_hires_error(None);
+                }
+                return Ok(ok);
+            }
             Err(e) => {
+                // Hi-Res 档被拒：记下服务端错误码（回退提示用），沿阶梯继续回落
+                if *tier == "Hi-Res" {
+                    let brief = e.split(" resp=").next().unwrap_or(&e).to_string();
+                    eprintln!("[kugou] Hi-Res 取链失败（quality={q}）：{brief}");
+                    set_last_hires_error(Some(brief));
+                }
                 // errcode 20028 = SSA 风控：重新注册设备后重试一次本档
                 if e.contains("no_url:20028") {
                     if let Some(_nd) = re_register() {
@@ -968,17 +1196,29 @@ pub fn song_url(
     userid: &str,
     quality: &str,
 ) -> Result<(String, String, String), String> {
+    let mut v5_err = String::new();
     if !token.is_empty() && !userid.is_empty() {
-        if let Ok((url, ext, label)) = song_url_v5(
+        match song_url_v5(
             token, userid, album_audio_id, album_id, hash, hq_hash, sq_hash, super_hash, quality,
         ) {
-            return Ok((url, ext, label.to_string()));
+            Ok((url, ext, label)) => return Ok((url, ext, label.to_string())),
+            // 登录通道失败（风控/会话失效/权益不足）：继续走匿名通道兜底，
+            // 免费曲目仍可 128k 播放；VIP 曲目会在此得到明确错误
+            Err(e) => v5_err = e,
         }
-        // 登录通道失败（风控/会话失效/权益不足）：继续走匿名通道兜底，
-        // 免费曲目仍可 128k 播放；VIP 曲目会在此得到明确错误
     }
-    let (url, ext) = song_url_free(hash, vip)?;
-    Ok((url, ext, "标准".into()))
+    match song_url_free(hash, vip) {
+        Ok((url, ext)) => Ok((url, ext, "标准".into())),
+        Err(e) => {
+            // 双通道都失败：把登录通道的失败原因一并透出——用户才能区分
+            // “没会员”与“登录态失效”（匿名通道的错误分不出二者）
+            if !v5_err.is_empty() && vip {
+                let brief: String = v5_err.chars().take(120).collect();
+                return Err(format!("{e}；登录通道：{brief}（登录态可能已过期或权益不足，可尝试重新扫码登录）"));
+            }
+            Err(e)
+        }
+    }
 }
 
 // ---------- 歌词（KRC 逐字 → 增强 LRC；回落 LRC） ----------

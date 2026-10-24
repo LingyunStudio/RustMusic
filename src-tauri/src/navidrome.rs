@@ -27,22 +27,51 @@ fn keyring_entry(server: &str, username: &str) -> Result<keyring::Entry, String>
 pub fn save_password(server: &str, username: &str, password: &str) -> Result<(), String> {
     keyring_entry(server, username)?
         .set_password(password)
-        .map_err(|e| format!("凭据保存失败: {e}"))
+        .map_err(|e| format!("凭据保存失败: {e}"))?;
+    pw_cache_invalidate(server, username);
+    Ok(())
 }
 
 /// 从凭据管理器删除密码
 pub fn delete_password(server: &str, username: &str) -> Result<(), String> {
-    match keyring_entry(server, username)?.delete_credential() {
+    let r = match keyring_entry(server, username)?.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(format!("凭据删除失败: {e}")),
+    };
+    pw_cache_invalidate(server, username);
+    r
+}
+
+/// 凭据内存缓存：CredRead 是系统调用，此前每个请求读两遍（封面 URL 一遍、
+/// get_json 鉴权一遍）、一首歌一遍；密码变更只经 save/delete，改即失效
+fn pw_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static C: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+        std::sync::OnceLock::new();
+    C.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn pw_cache_invalidate(server: &str, username: &str) {
+    let key = format!("{}|{username}", norm_base(server));
+    if let Ok(mut m) = pw_cache().lock() {
+        m.remove(&key);
     }
 }
 
 fn get_password(server: &str, username: &str) -> Result<String, String> {
-    keyring_entry(server, username)?
+    let key = format!("{}|{username}", norm_base(server));
+    if let Ok(m) = pw_cache().lock() {
+        if let Some(hit) = m.get(&key) {
+            return Ok(hit.clone());
+        }
+    }
+    let pw = keyring_entry(server, username)?
         .get_password()
-        .map_err(|_| "未找到保存的密码，请重新保存连接".to_string())
+        .map_err(|_| "未找到保存的密码，请重新保存连接".to_string())?;
+    if let Ok(mut m) = pw_cache().lock() {
+        m.insert(key, pw.clone());
+    }
+    Ok(pw)
 }
 
 // ---------- 基础 ----------

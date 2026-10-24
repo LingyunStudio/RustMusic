@@ -23,11 +23,16 @@ const AUDIO_PREF: &[i64] = &[30280, 30232, 30216];
 /// 多P视频一次最多加入的分P数（防止超长合集刷爆列表）
 const MAX_PAGES: usize = 100;
 
-fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(20))
-        .build()
+fn agent() -> &'static ureq::Agent {
+    // 进程级共享连接池：此前每个请求点各建 Agent，连接零复用、每次 TLS 握手
+    // （打开 UP 主空间一次 3-4 个请求全部各自握手）
+    static A: OnceLock<ureq::Agent> = OnceLock::new();
+    A.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(10))
+            .timeout_read(Duration::from_secs(20))
+            .build()
+    })
 }
 
 fn re_bv() -> &'static regex::Regex {
@@ -264,15 +269,42 @@ pub fn parse_rid(rid: &str) -> Result<(String, i64), String> {
     Err("B 站曲目标识无效（应为 BVxxx 或 BVxxx-cid）".into())
 }
 
-/// 取音频直链（bilibili_play / download_online 共用；playurl 响应有 10min 内存缓存）
-pub fn audio_stream(bvid: &str, cid: i64) -> Result<(String, String), String> {
-    fetch_audio(bvid, cid)
+/// 取音频直链（bilibili_play / download_online 共用；playurl 响应有 10min 内存缓存）。
+/// cookies：登录态请求可拿到大会员专稿/付费音频与更高音质；失败回落匿名
+pub fn audio_stream(
+    bvid: &str,
+    cid: i64,
+    cookies: Option<&BiliCookies>,
+) -> Result<(String, String), String> {
+    fetch_audio(bvid, cid, cookies)
 }
 
-/// playurl(fnval=16)：返回 (音频直链, 音质标签)。免登录可用。
-fn fetch_audio(bvid: &str, cid: i64) -> Result<(String, String), String> {
+/// playurl(fnval=16)：返回 (音频直链, 音质标签)。
+fn fetch_audio(bvid: &str, cid: i64, cookies: Option<&BiliCookies>) -> Result<(String, String), String> {
     let url = format!("{PLAYURL_API}?bvid={bvid}&cid={cid}&qn=0&fnval=16&fnver=0&fourk=1");
-    let v = api_json(&url)?;
+    // 登录态与匿名的响应不同，缓存键必须区分
+    let auth = cookies.map(|c| !c.sessdata.is_empty()).unwrap_or(false);
+    let cache_key = if auth {
+        format!("{url}&auth=1")
+    } else {
+        url.clone()
+    };
+    let v = if let Some(hit) = cache_get(&cache_key) {
+        hit
+    } else if let Some(c) = cookies.filter(|c| !c.sessdata.is_empty()) {
+        // 带 cookie 优先；失败回落匿名（匿名裸请求在风控上最稳）。
+        // 回落结果不写 auth 缓存键：一次瞬时风控不该把登录用户钉在
+        // 匿名（低音质）直链上 10 分钟
+        match api_json_auth(&url, Some(c)) {
+            Ok(fetched) => {
+                cache_put(&cache_key, fetched.clone());
+                fetched
+            }
+            Err(_) => api_json(&url)?,
+        }
+    } else {
+        api_json(&url)?
+    };
     if v["code"].as_i64() != Some(0) {
         return Err(bili_error(&v, "获取音频流"));
     }
@@ -378,7 +410,7 @@ pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
         video_title
     };
 
-    let (audio_url, quality) = fetch_audio(&bvid, cid)?;
+    let (audio_url, quality) = fetch_audio(&bvid, cid, None)?;
 
     let info = TrackInfo {
         id: None,
@@ -434,16 +466,26 @@ impl BiliCookies {
 
 /// 登录流程的设备指纹（buvid3）：generate 与 poll 必须携带同一个 buvid3
 /// （浏览器行为即如此），否则确认事件可能对不上轮询会话。
+/// 失败返回空串且**不缓存**：OnceLock 曾把一次网络抖动的空值固化，
+/// 此后整个进程扫码登录都不带 buvid3，只能重启恢复
 pub fn login_buvid3() -> String {
-    static CACHE: OnceLock<String> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            api_json_auth("https://api.bilibili.com/x/frontend/finger/spi", None)
-                .ok()
-                .and_then(|v| v["data"]["b_3"].as_str().map(|s| s.to_string()))
-                .unwrap_or_default()
-        })
-        .clone()
+    static CACHE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    let slot = CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = slot.lock() {
+        if let Some(v) = guard.as_ref() {
+            return v.clone();
+        }
+    }
+    let fetched = api_json_auth("https://api.bilibili.com/x/frontend/finger/spi", None)
+        .ok()
+        .and_then(|v| v["data"]["b_3"].as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+    if !fetched.is_empty() {
+        if let Ok(mut guard) = slot.lock() {
+            *guard = Some(fetched.clone());
+        }
+    }
+    fetched
 }
 
 fn qr_debug_log(msg: &str) {
@@ -629,14 +671,18 @@ fn nav_uname(cookies: &BiliCookies) -> Option<String> {
     (!uname.is_empty()).then(|| uname.to_string())
 }
 
-/// WBI 签名密钥（img+sub 混排前 32 位），缓存 1 小时
+/// WBI 签名密钥（img+sub 混排前 32 位），缓存 1 小时。
+/// 网络请求在锁外进行：nav 接口被风控时退避重试可达数十秒，
+/// 持锁请求会把所有需要 WBI 签名的调用（空间/合集/字幕）串行卡死
 fn wbi_mixin_key() -> Result<String, String> {
     static CACHE: OnceLock<Mutex<Option<(String, Instant)>>> = OnceLock::new();
     let slot = CACHE.get_or_init(|| Mutex::new(None));
-    let mut guard = slot.lock().map_err(|_| "wbi 缓存锁失败")?;
-    if let Some((key, at)) = guard.as_ref() {
-        if at.elapsed() < Duration::from_secs(3600) {
-            return Ok(key.clone());
+    {
+        let guard = slot.lock().map_err(|_| "wbi 缓存锁失败")?;
+        if let Some((key, at)) = guard.as_ref() {
+            if at.elapsed() < Duration::from_secs(3600) {
+                return Ok(key.clone());
+            }
         }
     }
     let v = api_json("https://api.bilibili.com/x/web-interface/nav")?;
@@ -661,7 +707,9 @@ fn wbi_mixin_key() -> Result<String, String> {
         }
     }
     key.truncate(32);
-    *guard = Some((key.clone(), Instant::now()));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some((key.clone(), Instant::now()));
+    }
     Ok(key)
 }
 
@@ -1351,7 +1399,7 @@ mod login_tests {
             println!("--- rid={}", r.bvid);
             let (bvid, cid) = parse_rid(&r.bvid).expect("parse_rid 失败");
             println!("    cid={cid}");
-            let (url, _q) = audio_stream(&bvid, cid).expect("audio_stream 失败");
+            let (url, _q) = audio_stream(&bvid, cid, None).expect("audio_stream 失败");
             println!("    audio ok: {}...", &url[..40.min(url.len())]);
             // 第二首应命中 bvid→cid 缓存（同进程内无重复网络调用）
         }
@@ -1387,7 +1435,7 @@ mod tests {
 
         // 3. CDN 下载（引擎同款：带 Referer/UA，部分边缘节点裸请求 403）
         const CDN_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
-        let mut resp = agent()
+        let resp = agent()
             .get(&audio_url)
             .set("Referer", "https://www.bilibili.com/")
             .set("User-Agent", CDN_UA)

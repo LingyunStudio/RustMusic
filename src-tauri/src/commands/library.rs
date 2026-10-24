@@ -39,11 +39,13 @@ pub async fn add_folder(
         return Err("该路径不是文件夹".into());
     }
     let norm = library::norm_path(&p);
-    {
+    let added = {
         let conn = state.db.lock();
-        db::add_folder(&conn, &norm)?;
+        db::add_folder(&conn, &norm).map(|(_, added)| added)?
+    };
+    if added {
+        library::spawn_scan(&app);
     }
-    library::spawn_scan(&app);
     Ok(())
 }
 
@@ -120,9 +122,11 @@ fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<DropResult, St
         if pb.is_dir() {
             let norm = library::norm_path(&pb);
             let conn = state.db.lock();
-            if db::add_folder(&conn, &norm).is_ok() {
-                folders_added += 1;
-                need_scan = true;
+            if let Ok((_, added)) = db::add_folder(&conn, &norm) {
+                if added {
+                    folders_added += 1;
+                    need_scan = true;
+                }
             }
         } else if library::is_audio(&pb) {
             let app_data = state.app_data.clone();
@@ -149,6 +153,33 @@ fn drop_paths_task(app: &AppHandle, paths: Vec<String>) -> Result<DropResult, St
 pub async fn like_track(state: State<'_, AppState>, id: i64, liked: bool) -> Result<(), String> {
     let conn = state.db.lock();
     db::like_track(&conn, id, liked);
+    Ok(())
+}
+
+/// 批量喜欢/取消喜欢（多选场景）：单事务提交
+#[tauri::command]
+pub async fn like_tracks(
+    state: State<'_, AppState>,
+    ids: Vec<i64>,
+    liked: bool,
+) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let conn = state.db.lock();
+    match conn.unchecked_transaction() {
+        Ok(tx) => {
+            for id in &ids {
+                db::like_track(&tx, *id, liked);
+            }
+            let _ = tx.commit();
+        }
+        Err(_) => {
+            for id in &ids {
+                db::like_track(&conn, *id, liked);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -239,8 +270,14 @@ fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
             };
             if is_cache && cov.exists() {
                 let _ = std::fs::remove_file(&cov);
-                let small = t.cover.replace(".jpg", "_s.jpg");
-                let _ = std::fs::remove_file(small);
+                // 小图路径按文件名推导（不能对全路径 replace(".jpg")：
+                // 上级目录名里含 ".jpg" 时会替换到目录段）
+                if let (Some(stem), Some(ext)) =
+                    (cov.file_stem().and_then(|s| s.to_str()), cov.extension().and_then(|e| e.to_str()))
+                {
+                    let small = cov.with_file_name(format!("{stem}_s.{ext}"));
+                    let _ = std::fs::remove_file(small);
+                }
             }
         }
 

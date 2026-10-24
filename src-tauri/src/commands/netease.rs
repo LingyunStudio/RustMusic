@@ -38,8 +38,10 @@ pub async fn netease_search(
     offset: Option<i64>,
 ) -> Result<crate::netease::NetSearchResult, String> {
     let music_u = netease_cookie(&state);
+    // 前端可控参数做钳制：异常大的 page/offset 会让乘法溢出（debug 直接 panic）
+    let offset = offset.unwrap_or(0).clamp(0, 100_000);
     super::blocking(move || {
-        crate::netease::search(&keyword, 30, offset.unwrap_or(0), music_u.as_deref())
+        crate::netease::search(&keyword, 30, offset, music_u.as_deref())
     })
     .await
 }
@@ -61,11 +63,12 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
         let conn = state.db.lock();
         db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
     };
+    let quality = super::resolve_quality("netease", &quality);
     let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
         .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
     let quality_label = quality_tag(&ext, br);
-    if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
-        notify_quality_fallback(app, "网易云", &quality, &quality_label, "账号权益未含无损或该曲无更高音质");
+    if (quality == "lossless" || quality == "hires") && !ext.eq_ignore_ascii_case("flac") {
+        notify_quality_fallback(app, "网易云", &quality, &quality_label, "账号权益未含该音质或该曲无更高音质");
     }
     let info = TrackInfo {
         id: None,
@@ -223,9 +226,11 @@ pub async fn netease_toplist_tracks(
     page: Option<i64>,
 ) -> Result<serde_json::Value, String> {
     let music_u = netease_cookie(&state).unwrap_or_default();
-    let page = page.unwrap_or(1).max(1);
+    let page = page.unwrap_or(1).clamp(1, 10_000);
     let pagesize = 100i64;
-    let all = super::blocking(move || crate::netease::playlist_tracks(top_id, &music_u)).await?;
+    // 榜单内容分钟级稳定：全量结果走 5 分钟缓存，翻页只是内存切片
+    let all =
+        super::blocking(move || crate::netease::playlist_tracks_cached(top_id, &music_u)).await?;
     let start = ((page - 1) * pagesize) as usize;
     let songs = if start < all.len() {
         all[start..((start + pagesize as usize).min(all.len()))].to_vec()
@@ -281,15 +286,21 @@ fn netease_user_playlists_task(
     if music_u.is_empty() {
         return Err("未登录网易云账号".into());
     }
-    let uid: i64 = if uid.is_empty() {
-        let resolved = crate::netease::resolve_uid(&music_u)?;
-        {
+    // 每次都以登录态解析 uid：旧 uid 只作解析失败时的兜底——
+    // 登出换账号后残留的旧 uid 曾被优先沿用，查到的是上一个账号的歌单。
+    // 解析失败时透传真实错误（网络抖动不该被报成“账号 ID 无效”）
+    let uid: i64 = match crate::netease::resolve_uid(&music_u) {
+        Ok(resolved) => {
             let conn = state.db.lock();
             db::set_setting(&conn, "netease_uid", &resolved.to_string());
+            resolved
         }
-        resolved
-    } else {
-        uid.parse().map_err(|_| "账号 ID 无效".to_string())?
+        Err(e) => {
+            if uid.is_empty() {
+                return Err(e);
+            }
+            uid.parse().map_err(|_| "账号 ID 无效".to_string())?
+        }
     };
     crate::netease::user_playlists(uid, &music_u)
 }
@@ -333,7 +344,8 @@ fn netease_import_playlist_task(
             cover: t.cover_url().unwrap_or_default(),
             duration_ms: t.duration_ms(),
             media_mid: String::new(),
-            vip: t.fee == 1,
+            // fee: 1=VIP 曲、4=需购买专辑，两者免费账号都拿不到链接
+            vip: t.fee == 1 || t.fee == 4,
         })
         .collect();
     let (list_id, added) = {

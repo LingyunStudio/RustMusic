@@ -88,11 +88,19 @@ fn bili_lyric_fetch(
     sessdata: &str,
     buvid3: &str,
 ) -> Result<crate::models::LyricsPayload, String> {
+    // 缓存有上限：单条字幕含全部歌词文本，只增不减会无限膨胀（FIFO 淘汰）
+    const CACHE_CAP: usize = 128;
     static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, crate::models::LyricsPayload>>,
+        std::sync::Mutex<(std::collections::HashMap<String, crate::models::LyricsPayload>, Vec<String>)>,
     > = std::sync::OnceLock::new();
-    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-    if let Some(hit) = cache.lock().ok().and_then(|m| m.get(rid).cloned()) {
+    let cache = CACHE.get_or_init(|| {
+        std::sync::Mutex::new((std::collections::HashMap::new(), Vec::new()))
+    });
+    if let Some(hit) = cache
+        .lock()
+        .ok()
+        .and_then(|g| g.0.get(rid).cloned())
+    {
         return Ok(hit);
     }
     let (bvid, cid) = crate::bilibili::parse_rid(rid)?;
@@ -111,7 +119,15 @@ fn bili_lyric_fetch(
         payload.source = Some("字幕 B站".into());
     }
     if !payload.lines.is_empty() {
-        if let Ok(mut m) = cache.lock() {
+        if let Ok(mut g) = cache.lock() {
+            let (m, order) = &mut *g;
+            if !order.contains(&rid.to_string()) {
+                order.push(rid.to_string());
+                while order.len() > CACHE_CAP {
+                    let oldest = order.remove(0);
+                    m.remove(&oldest);
+                }
+            }
             m.insert(rid.to_string(), payload.clone());
         }
     }
@@ -152,8 +168,9 @@ pub async fn bilibili_lyric(
 
 // ---------- B 站 UP 主空间 ----------
 
-/// 空间登录态 cookie：有 SESSDATA 用登录态；未登录也带 buvid3 指纹降风控
-fn bili_cookies_opt(state: &State<'_, AppState>) -> Option<crate::bilibili::BiliCookies> {
+/// 空间登录态 cookie：有 SESSDATA 用登录态；未登录也带 buvid3 指纹降风控。
+/// playurl 取流/下载也用它：登录态可拿大会员专稿与更高音质
+pub(crate) fn bili_cookies_opt(state: &State<'_, AppState>) -> Option<crate::bilibili::BiliCookies> {
     let conn = state.db.lock();
     let sessdata = db::get_setting(&conn, "bili_sessdata").unwrap_or_default();
     let buvid3 = db::get_setting(&conn, "bili_buvid3").unwrap_or_default();
@@ -400,7 +417,10 @@ pub async fn bilibili_play(app: AppHandle, track: BiliPlayReq) -> Result<(), Str
 fn bilibili_play_task(app: &AppHandle, track: BiliPlayReq) -> Result<(), String> {
     let state = app.state::<AppState>();
     let (bvid, cid) = crate::bilibili::parse_rid(&track.rid)?;
-    let (audio_url, quality) = crate::bilibili::audio_stream(&bvid, cid)?;
+    // 登录态取流：大会员专稿/付费音频与更高音质；未登录时 cookies 无 SESSDATA，
+    // fetch_audio 内部自动走匿名通道
+    let c = bili_cookies_opt(&state);
+    let (audio_url, quality) = crate::bilibili::audio_stream(&bvid, cid, c.as_ref())?;
     // 字幕与音频并行预取：开播时歌词缓存已就绪
     spawn_bili_lyric_warmup(&state, track.rid.clone());
     let info = TrackInfo {

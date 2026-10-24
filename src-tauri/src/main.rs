@@ -5,6 +5,7 @@ mod commands;
 mod db;
 mod engine;
 mod eq;
+mod fx;
 mod kugou;
 mod monitor;
 mod navidrome;
@@ -223,6 +224,7 @@ fn main() {
             commands::drop_paths,
             commands::get_lyrics,
             commands::like_track,
+            commands::like_tracks,
             commands::delete_track,
             commands::delete_tracks,
             commands::list_playlists,
@@ -256,6 +258,9 @@ fn main() {
             commands::kugou_user_playlists,
             commands::kugou_import_playlist,
             commands::add_to_playlist,
+            commands::add_tracks_to_playlist,
+            commands::export_playlist_m3u,
+            commands::import_playlist_m3u,
             commands::remove_from_playlist,
             commands::list_sources,
             commands::add_source,
@@ -294,6 +299,7 @@ fn main() {
             commands::qq_logout,
             commands::like_online,
             commands::download_online,
+            commands::downloaded_online_list,
             commands::liked_online_list,
             commands::recent_online_list,
             commands::save_dir_get,
@@ -327,6 +333,7 @@ fn main() {
             commands::stop,
             commands::seek,
             commands::set_volume,
+            commands::fx_set_enabled,
             commands::set_speed,
             commands::set_eq,
             commands::get_settings,

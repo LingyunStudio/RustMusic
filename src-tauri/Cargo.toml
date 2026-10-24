@@ -43,6 +43,8 @@ windows51 = { package = "windows", version = "0.51", default-features = false }
 qrcode = { version = "0.14", default-features = false, features = ["image"] }
 filetime = "0.2"
 keyring = { version = "~3.6", features = ["windows-native"] }
+# .lrc 歌词文件的 GBK/GB18030 编码支持（Windows 记事本圈常见编码）
+encoding_rs = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 # WebView2 TrySuspend：托盘隐藏时挂起渲染进程回收内存
