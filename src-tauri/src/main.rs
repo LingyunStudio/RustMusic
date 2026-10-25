@@ -25,6 +25,11 @@ mod wasapi_out;
 #[cfg(not(windows))]
 #[path = "wasapi_out_stub.rs"]
 mod wasapi_out;
+#[cfg(windows)]
+mod taskbar_lyric;
+#[cfg(not(windows))]
+#[path = "taskbar_lyric_stub.rs"]
+mod taskbar_lyric;
 mod webview_suspend;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -238,6 +243,8 @@ fn main() {
             let eq = Arc::new(eq::EqShared::new(eq_gains, eq_enabled));
 
             let smtc_tx = smtc::spawn(handle.clone());
+            // 任务栏歌词渲染线程（Windows 常驻控制窗口；其它平台桩为空）
+            taskbar_lyric::spawn();
             let cache_limit: u64 = db::get_setting(&conn, "cache_limit")
                 .and_then(|v| v.parse().ok())
                 // 默认 2GB：无损音质单曲可达几十 MB，无上限会无限膨胀
@@ -413,6 +420,10 @@ fn main() {
             commands::desktop_lyrics_set_always_top,
             commands::dlyrics_menubar_line,
             commands::menubar_extension_install,
+            commands::dlyrics_taskbar_line,
+            commands::taskbar_lyrics_set_enabled,
+            commands::taskbar_lyrics_list_displays,
+            commands::taskbar_lyrics_set_display,
             commands::play_pause,
             commands::get_play_state,
             commands::pause,

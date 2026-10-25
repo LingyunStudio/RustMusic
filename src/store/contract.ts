@@ -239,6 +239,9 @@ export interface Store {
   /** 菜单栏歌词（Linux/GNOME 顶栏）：独立于悬浮歌词窗口的显示位 */
   menubarLyricsOn: boolean;
   setMenubarLyrics(v: boolean): void;
+  /** 任务栏歌词（Windows，托盘折叠图标左侧）：独立于悬浮歌词窗口的显示位 */
+  taskbarLyricsOn: boolean;
+  setTaskbarLyrics(v: boolean): void;
 
   toggleLike(id: number): void;
   addToQueue(item: QueueItem): void;

@@ -15,7 +15,7 @@ let lastText: string | null = null; // null = 尚未写过（下次必写）
 let heartbeat: ReturnType<typeof setInterval> | null = null;
 
 /** 顶栏文本：同步歌词=当前行（行间/前奏为空）；未同步=♪ 标题；无曲目=空 */
-function lineText(s: Pick<Store, "lyrics" | "pos" | "current">): string {
+export function lineText(s: Pick<Store, "lyrics" | "pos" | "current">): string {
   const cur = s.current;
   if (!cur) return "";
   const lines = s.lyrics?.lines ?? [];

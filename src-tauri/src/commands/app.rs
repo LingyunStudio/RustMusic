@@ -631,6 +631,71 @@ pub async fn menubar_extension_install() -> Result<String, String> {
     Err("菜单栏歌词仅支持 Linux（GNOME 顶栏）".into())
 }
 
+// ---------- 任务栏歌词（Windows，托盘折叠图标左侧） ----------
+//
+// 与菜单栏歌词共用前端状态帧管线：行变化才 IPC。Rust 侧维护一个嵌入
+// 任务栏的原生图层窗口（taskbar_lyric 模块），托盘图标增减时自动跟随，
+// 应用退出即销毁，因此无需菜单栏方案的心跳/过期协议。
+
+/// 前端在歌词行变化时调用；非 Windows 静默忽略（命令注册表全平台共用）
+#[tauri::command]
+pub async fn dlyrics_taskbar_line(line: String, color: Option<String>) -> Result<(), String> {
+    #[cfg(windows)]
+    crate::taskbar_lyric::push_line(line, color);
+    #[cfg(not(windows))]
+    {
+        let _ = (line, color);
+    }
+    Ok(())
+}
+
+/// 开关任务栏歌词窗口。任务栏仅 Windows 存在（前端入口仅 Windows 显示，
+/// 其它平台正常不会调用到这里）
+#[tauri::command]
+pub async fn taskbar_lyrics_set_enabled(on: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    crate::taskbar_lyric::set_enabled(on);
+    #[cfg(not(windows))]
+    {
+        let _ = on;
+        return Err("任务栏歌词仅支持 Windows".into());
+    }
+    #[cfg(windows)]
+    {
+        Ok(())
+    }
+}
+
+/// 可选显示器列表（含主屏标记与是否有任务栏），设置界面用于显示器选择
+#[tauri::command]
+pub async fn taskbar_lyrics_list_displays(
+) -> Result<Vec<crate::taskbar_lyric::DisplayInfo>, String> {
+    #[cfg(windows)]
+    {
+        return Ok(crate::taskbar_lyric::list_displays());
+    }
+    #[cfg(not(windows))]
+    {
+        Err("任务栏歌词仅支持 Windows".into())
+    }
+}
+
+/// 任务栏歌词显示在哪些任务栏上（"all" = 全部显示器，其它 = 显示器设备名）
+#[tauri::command]
+pub async fn taskbar_lyrics_set_display(display: String) -> Result<(), String> {
+    #[cfg(windows)]
+    crate::taskbar_lyric::set_display(display);
+    #[cfg(not(windows))]
+    {
+        let _ = display;
+        return Err("任务栏歌词仅支持 Windows".into());
+    }
+    #[cfg(windows)]
+    {
+        Ok(())
+    }
+}
+
 /// 用系统默认浏览器打开链接（release notes 内的跳转用）。
 /// Windows 走 explorer 而不是 `cmd /C start`：URL 未加引号时 cmd 会把 & | ^
 /// 当命令分隔符执行（含查询串的链接直接命令注入），explorer 按单个参数透传；

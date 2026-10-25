@@ -15,6 +15,12 @@ import { api } from "../api";
 import { Select } from "../components/Select";
 import { getMenubarLyricsColor, setMenubarLyricsColor } from "../store/menubar";
 import {
+  getTaskbarLyricsColor,
+  getTaskbarLyricsDisplay,
+  setTaskbarLyricsColor,
+  setTaskbarLyricsDisplay,
+} from "../store/taskbar";
+import {
   ACCENTS,
   loadCustomAccentHex,
   parseCustomAccent,
@@ -90,8 +96,15 @@ export default function SettingsView() {
   const setDlyricsColors = useStore((s) => s.setDlyricsColors);
   const menubarLyricsOn = useStore((s) => s.menubarLyricsOn);
   const setMenubarLyrics = useStore((s) => s.setMenubarLyrics);
+  const taskbarLyricsOn = useStore((s) => s.taskbarLyricsOn);
+  const setTaskbarLyrics = useStore((s) => s.setTaskbarLyrics);
   const [menubarColor, setMenubarColorState] = useState(() => getMenubarLyricsColor());
   const [installingExt, setInstallingExt] = useState(false);
+  const [taskbarColor, setTaskbarColorState] = useState(() => getTaskbarLyricsColor());
+  const [taskbarDisplay, setTaskbarDisplayState] = useState(() => getTaskbarLyricsDisplay());
+  const [taskbarDisplays, setTaskbarDisplays] = useState<
+    { id: string; name: string; primary: boolean; has_taskbar: boolean }[]
+  >([]);
   const clearCache = useStore((s) => s.clearCache);
   const cacheLimit = useStore((s) => s.cacheLimit);
   const setCacheLimit = useStore((s) => s.setCacheLimit);
@@ -161,6 +174,11 @@ export default function SettingsView() {
       })
       .catch(() => {}); // 失败静默为空，不能变成未处理 rejection
     refreshDevices();
+    // 任务栏歌词显示器列表（仅 Windows 提供，失败时下拉只剩"全部显示器"）
+    api
+      .taskbarLyricsListDisplays()
+      .then(setTaskbarDisplays)
+      .catch(() => {});
     api
       .getAppInfo()
       .then((i) => {
@@ -452,6 +470,76 @@ export default function SettingsView() {
               <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
                 在系统顶栏显示当前歌词行，与悬浮歌词相互独立；色块可自定义文字颜色（默认跟随顶栏主题）。
                 首次使用先点「安装 GNOME 扩展」；Wayland 下安装后需注销并重新登录一次扩展才会出现。
+              </p>
+            </>
+          )}
+
+          {/* 任务栏歌词（Windows，托盘折叠图标左侧） */}
+          {platform === "windows" && (
+            <>
+              <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
+                <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">任务栏歌词</span>
+                <button
+                  className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
+                    taskbarLyricsOn
+                      ? "text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                  style={taskbarLyricsOn ? { background: "var(--accent-weak)" } : undefined}
+                  onClick={() => setTaskbarLyrics(!taskbarLyricsOn)}
+                >
+                  {taskbarLyricsOn ? "已开启" : "已关闭"}
+                </button>
+                <Select
+                  value={taskbarDisplay}
+                  className="!h-7 !text-[11.5px] w-[150px]"
+                  options={[
+                    { value: "all", label: "全部显示器" },
+                    ...taskbarDisplays.map((d) => ({
+                      value: d.id,
+                      label: `${d.primary ? "主显示器" : "副屏"} · ${d.name}${d.has_taskbar ? "" : "（无任务栏）"}`,
+                    })),
+                  ]}
+                  onChange={(v) => {
+                    setTaskbarDisplayState(v);
+                    setTaskbarLyricsDisplay(v);
+                  }}
+                />
+                <label
+                  className="relative w-6 h-6 shrink-0 overflow-hidden rounded-md cursor-pointer border border-[var(--line)]"
+                  style={{ background: taskbarColor || "var(--shade-strong)" }}
+                  title="任务栏歌词颜色"
+                >
+                  {!taskbarColor && (
+                    <span className="absolute inset-0 flex items-center justify-center text-[9px] text-[var(--ink-3)]">
+                      默认
+                    </span>
+                  )}
+                  <input
+                    type="color"
+                    value={taskbarColor || "#ffffff"}
+                    onChange={(e) => {
+                      setTaskbarColorState(e.target.value);
+                      setTaskbarLyricsColor(e.target.value);
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </label>
+                {taskbarColor && (
+                  <button
+                    className="btn-secondary !py-1 !px-2.5 !text-[11px]"
+                    onClick={() => {
+                      setTaskbarColorState("");
+                      setTaskbarLyricsColor("");
+                    }}
+                  >
+                    默认
+                  </button>
+                )}
+              </div>
+              <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+                在任务栏右侧托盘图标旁显示当前歌词行，随托盘图标增减自动移动，与悬浮歌词相互独立；
+                色块可自定义文字颜色（默认随任务栏深浅取黑/白）。副屏任务栏无托盘区，歌词紧跟应用图标右侧。
               </p>
             </>
           )}

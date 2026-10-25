@@ -19,6 +19,7 @@ import { loadFxPref, saveFxPref } from "../fx";
 import type { PlayState, ScanState } from "../types";
 import type { Store } from "./contract";
 import { initMenubarLyrics, setMenubarLyricsEnabled, syncMenubarLyrics } from "./menubar";
+import { initTaskbarLyrics, setTaskbarLyricsEnabled, syncTaskbarLyrics } from "./taskbar";
 import { pushDesktopLyrics, resetDesktopLyricsFrame } from "./util";
 
 type SetFn = (partial: Partial<Store> | ((s: Store) => Partial<Store>)) => void;
@@ -51,6 +52,8 @@ type Fields = Pick<
   | "dlyricsColors"
   | "menubarLyricsOn"
   | "setMenubarLyrics"
+  | "taskbarLyricsOn"
+  | "setTaskbarLyrics"
   | "sourcesResult"
   | "sourcesTab"
   | "lyricsShowTrans"
@@ -213,6 +216,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   desktopLyricsOn: false,
   desktopLyricsLock: false,
   menubarLyricsOn: false,
+  taskbarLyricsOn: false,
   dlyricsColors: loadDesktopLyricsColors(),
   lyricsShowTrans:
     ((): boolean => {
@@ -237,6 +241,8 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     initPromise = (async () => {
       // 菜单栏歌词开关恢复（localStorage）：开启时状态帧数据流即接入
       if (initMenubarLyrics()) set({ menubarLyricsOn: true });
+      // 任务栏歌词开关恢复（Windows，localStorage）
+      if (initTaskbarLyrics()) set({ taskbarLyricsOn: true });
     unbinds.push(
       await listenEvent<PlayState>("player://state", (p) => applyPlayState(set, get, p))
     );
@@ -654,6 +660,11 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     set({ menubarLyricsOn: v });
     setMenubarLyricsEnabled(v);
     if (v) syncMenubarLyrics(get());
+  },
+  setTaskbarLyrics(v) {
+    set({ taskbarLyricsOn: v });
+    setTaskbarLyricsEnabled(v);
+    if (v) syncTaskbarLyrics(get());
   },
   setLyricsShowTrans(v) {
     set({ lyricsShowTrans: v });

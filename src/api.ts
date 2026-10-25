@@ -372,6 +372,20 @@ export const api = {
   dlyricsMenubarLine: (line: string, color: string) =>
     invoke<void>("dlyrics_menubar_line", { line, color }),
   menubarExtensionInstall: () => invoke<string>("menubar_extension_install"),
+  /** 任务栏歌词（Windows）：当前行推给嵌入任务栏的原生窗口。
+   *  color 为空 = 随任务栏深浅取默认色 */
+  dlyricsTaskbarLine: (line: string, color: string) =>
+    invoke<void>("dlyrics_taskbar_line", { line, color }),
+  taskbarLyricsSetEnabled: (on: boolean) =>
+    invoke<void>("taskbar_lyrics_set_enabled", { on }),
+  /** 可选显示器列表（主屏在前，标记是否有任务栏） */
+  taskbarLyricsListDisplays: () =>
+    invoke<
+      { id: string; name: string; primary: boolean; has_taskbar: boolean }[]
+    >("taskbar_lyrics_list_displays"),
+  /** 任务栏歌词显示范围（"all" 或显示器设备名） */
+  taskbarLyricsSetDisplay: (display: string) =>
+    invoke<void>("taskbar_lyrics_set_display", { display }),
   desktopLyricsUnlock: () => invoke<void>("desktop_lyrics_unlock"),
   desktopLyricsIsOpen: () => invoke<boolean>("desktop_lyrics_is_open"),
   /** 远程封面经后端下载落盘（绕开 WebKit 系统代理依赖），返回本地路径 */
