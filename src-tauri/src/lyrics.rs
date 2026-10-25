@@ -204,7 +204,10 @@ fn yrc_line_to_enhanced(line: &str) -> Option<String> {
         };
         // 字文本：到下一个 '(' 或行尾
         let start = rp + 1;
-        let end = words_raw[start..].find('(').map(|p| start + p).unwrap_or(words_raw.len());
+        let end = words_raw[start..]
+            .find('(')
+            .map(|p| start + p)
+            .unwrap_or(words_raw.len());
         let text = words_raw[start..end].trim();
         if !text.is_empty() {
             let cs = fmt_lrc_time(ws);
@@ -237,14 +240,20 @@ pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
             continue;
         }
         // 元数据行：[ti:xxx] / [offset:0] —— 冒号形式，跳过
-        let Some(rest) = line.strip_prefix('[') else { continue };
-        let Some(close) = rest.find(']') else { continue };
+        let Some(rest) = line.strip_prefix('[') else {
+            continue;
+        };
+        let Some(close) = rest.find(']') else {
+            continue;
+        };
         let header = &rest[..close];
         let (h0, h1) = match header.split_once(',') {
             Some((a, b)) => (a.trim(), b.trim()),
             None => continue, // 无逗号 = 元数据行
         };
-        let Ok(line_start) = h0.parse::<u64>() else { continue };
+        let Ok(line_start) = h0.parse::<u64>() else {
+            continue;
+        };
         // 行持续时长仅作行头格式校验（词时间是行内偏移，转换后无需行尾时间）
         let Ok(_) = h1.parse::<u64>() else { continue };
         let body = &rest[close + 1..];
@@ -254,18 +263,25 @@ pub fn krc_to_enhanced_lrc(krc: &str) -> Option<String> {
         let mut cursor = 0usize;
         while let Some(lt) = body[cursor..].find('<') {
             let lp = cursor + lt;
-            let Some(rp) = body[lp..].find('>') else { break };
+            let Some(rp) = body[lp..].find('>') else {
+                break;
+            };
             let times: Vec<&str> = body[lp + 1..lp + rp].split(',').collect();
             if times.len() < 2 {
                 break;
             }
-            let (Ok(ws), Ok(wd)) = (times[0].trim().parse::<u64>(), times[1].trim().parse::<u64>())
-            else {
+            let (Ok(ws), Ok(wd)) = (
+                times[0].trim().parse::<u64>(),
+                times[1].trim().parse::<u64>(),
+            ) else {
                 break;
             };
             // 字文本：到下一个 '<' 或行尾
             let start = lp + rp + 1;
-            let end = body[start..].find('<').map(|p| start + p).unwrap_or(body.len());
+            let end = body[start..]
+                .find('<')
+                .map(|p| start + p)
+                .unwrap_or(body.len());
             let text = &body[start..end];
             if !text.is_empty() {
                 // 字时间是行内偏移，加回行起始才是绝对毫秒（见函数注释）

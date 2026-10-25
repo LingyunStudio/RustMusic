@@ -117,9 +117,7 @@ pub async fn download_online(
 fn downloading_set() -> &'static std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>> {
     static S: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> =
         std::sync::OnceLock::new();
-    S.get_or_init(|| {
-        std::sync::Mutex::new(std::collections::HashSet::new())
-    })
+    S.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
 }
 /// 单文件下载上限：防异常响应把磁盘写爆
 const MAX_DOWNLOAD: u64 = 128 * 1024 * 1024;
@@ -176,8 +174,18 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
                 &req.sq_hash,
                 &req.super_hash,
             );
-            let (u, ext, label) =
-                crate::kugou::song_url(&req.id, album_audio_id, 0, &hq, &sq, &sup, true, &token, &userid, &quality)?;
+            let (u, ext, label) = crate::kugou::song_url(
+                &req.id,
+                album_audio_id,
+                0,
+                &hq,
+                &sq,
+                &sup,
+                true,
+                &token,
+                &userid,
+                &quality,
+            )?;
             (u, ext, Some(label.to_string()))
         }
         "bilibili" => {
@@ -227,7 +235,9 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
     );
     let dest = dir.join(&name);
     if dest.exists() {
-        return Err(format!("保存目录已存在同名文件：{name}（如需重新下载请先删除旧文件）"));
+        return Err(format!(
+            "保存目录已存在同名文件：{name}（如需重新下载请先删除旧文件）"
+        ));
     }
     // 同名并发下载登记：两个线程交错写同一文件必然产出损坏数据。
     // 键按小写归一：Windows 文件系统大小写不敏感，"A - B.mp3" 与
@@ -268,8 +278,7 @@ fn download_to_dest(
     dest: &std::path::Path,
 ) -> Result<(), String> {
     let part = dest.with_extension("part");
-    let mut file =
-        std::fs::File::create(&part).map_err(|e| format!("创建缓存文件失败: {e}"))?;
+    let mut file = std::fs::File::create(&part).map_err(|e| format!("创建缓存文件失败: {e}"))?;
     let (total, reader) = http_get_for(&req.kind, url)?;
     let mut reader = reader.take(MAX_DOWNLOAD);
     let mut buf = [0u8; 64 * 1024];
@@ -385,7 +394,8 @@ fn dir_of(p: &std::path::Path) -> &std::path::Path {
 #[tauri::command]
 pub async fn liked_online_list(
     state: State<'_, AppState>,
-) -> Result<Vec<crate::models::PlaylistEntryMeta>, String> {    let conn = state.db.lock();
+) -> Result<Vec<crate::models::PlaylistEntryMeta>, String> {
+    let conn = state.db.lock();
     Ok(db::liked_online_list(&conn)
         .into_iter()
         .map(|e| crate::models::PlaylistEntryMeta {

@@ -1,10 +1,16 @@
 [package]
 name = "rustmusic"
-version = "0.5.4"
+version = "0.5.5"
 description = "RustMusic - 精美的高性能音乐播放器"
 authors = ["RustMusic"]
 license = "Apache-2.0"
 edition = "2021"
+
+[features]
+# 生产构建必须启用（tauri build 会自动追加）：不启用时 generate_context!
+# 走 devUrl（localhost:1420），直接 cargo build --release 出来的产物会黑屏
+# （"Could not connect to localhost"）。手动编译记得 --features custom-protocol
+custom-protocol = ["tauri/custom-protocol"]
 
 [build-dependencies]
 # 锁 minor（~）：Tauri 次版本升级可能带行为变更，升级需显式改这里并全量回归。
@@ -26,7 +32,10 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 ureq = { version = "~2.12", features = ["json"] }
 percent-encoding = "2"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "isomp4"] }
-souvlaki = "0.8"
+# 系统媒体控制：Windows=SMTC；Linux=MPRIS(D-Bus)。
+# 用 zbus 后端（纯 Rust）而非默认的 libdbus：souvlaki 的 dbus/zbus 依赖均为
+# unix 门控，Windows 构建两者都不拉，此改动对 Windows 零影响
+souvlaki = { version = "0.8", default-features = false, features = ["use_zbus"] }
 parking_lot = "0.12"
 base64 = "0.22"
 aes = "0.8"
@@ -38,11 +47,11 @@ sha2 = "0.10"
 hex = "0.4"
 num-bigint = "0.4"
 rand = "0.8"
-wasapi = "0.14"
-windows51 = { package = "windows", version = "0.51", default-features = false }
+# 凭据管理：按平台启用后端（Windows=凭据管理器；Linux=Secret Service，
+# zbus 实现纯 Rust 无 C 依赖；crypto-rust 避免 openssl-sys）
+keyring = { version = "~3.6", default-features = false }
 qrcode = { version = "0.14", default-features = false, features = ["image"] }
 filetime = "0.2"
-keyring = { version = "~3.6", features = ["windows-native"] }
 # .lrc 歌词文件的 GBK/GB18030 编码支持（Windows 记事本圈常见编码）
 encoding_rs = "0.8"
 
@@ -50,6 +59,13 @@ encoding_rs = "0.8"
 # WebView2 TrySuspend：托盘隐藏时挂起渲染进程回收内存
 webview2-com = "0.38"
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_System_ProcessStatus"] }
+# WASAPI 独占输出与 win 错误类型（仅 Windows）
+wasapi = "0.14"
+windows51 = { package = "windows", version = "0.51", default-features = false }
+keyring = { version = "~3.6", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "~3.6", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
 

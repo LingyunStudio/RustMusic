@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 import { api } from "../api";
+import { Select } from "../components/Select";
+import { getMenubarLyricsColor, setMenubarLyricsColor } from "../store/menubar";
 import {
   ACCENTS,
   loadCustomAccentHex,
@@ -86,6 +88,10 @@ export default function SettingsView() {
   const unlockDesktopLyrics = useStore((s) => s.unlockDesktopLyrics);
   const dlyricsColors = useStore((s) => s.dlyricsColors);
   const setDlyricsColors = useStore((s) => s.setDlyricsColors);
+  const menubarLyricsOn = useStore((s) => s.menubarLyricsOn);
+  const setMenubarLyrics = useStore((s) => s.setMenubarLyrics);
+  const [menubarColor, setMenubarColorState] = useState(() => getMenubarLyricsColor());
+  const [installingExt, setInstallingExt] = useState(false);
   const clearCache = useStore((s) => s.clearCache);
   const cacheLimit = useStore((s) => s.cacheLimit);
   const setCacheLimit = useStore((s) => s.setCacheLimit);
@@ -111,6 +117,11 @@ export default function SettingsView() {
   const [customHex, setCustomHex] = useState(loadCustomAccentHex);
   // 关于与更新
   const [appVersion, setAppVersion] = useState("");
+  // 运行平台：先用 UA 即时判定（避免界面闪烁），后端 get_app_info 到达后校正。
+  // WASAPI 独占等平台专属 UI 由此显隐；Windows 上恒为 "windows"，行为不变
+  const [platform, setPlatform] = useState(() =>
+    /windows/i.test(navigator.userAgent) ? "windows" : "other",
+  );
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const refreshDevices = async () => {
@@ -150,7 +161,13 @@ export default function SettingsView() {
       })
       .catch(() => {}); // 失败静默为空，不能变成未处理 rejection
     refreshDevices();
-    api.getAppInfo().then((i) => setAppVersion(i.version)).catch(() => {});
+    api
+      .getAppInfo()
+      .then((i) => {
+        setAppVersion(i.version);
+        if (i.platform) setPlatform(i.platform);
+      })
+      .catch(() => {});
     useStore.getState().refreshCacheBytes();
     // 设备热插拔（插入耳机等）后端自动切换时同步 UI
     let unbind: (() => void) | undefined;
@@ -367,6 +384,77 @@ export default function SettingsView() {
             已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。
             播放页歌词颜色由封面自动适配（取封面主色保证对比可读），不在此设置。
           </p>
+
+          {/* 菜单栏歌词（Linux/GNOME 顶栏） */}
+          {platform === "linux" && (
+            <>
+              <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
+                <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">菜单栏歌词</span>
+                <button
+                  className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
+                    menubarLyricsOn
+                      ? "text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                  style={menubarLyricsOn ? { background: "var(--accent-weak)" } : undefined}
+                  onClick={() => setMenubarLyrics(!menubarLyricsOn)}
+                >
+                  {menubarLyricsOn ? "已开启" : "已关闭"}
+                </button>
+                <button
+                  className="btn-secondary !py-1 !px-2.5 !text-[11px]"
+                  disabled={installingExt}
+                  onClick={async () => {
+                    setInstallingExt(true);
+                    try {
+                      useStore.getState().toast(await api.menubarExtensionInstall(), "info");
+                    } catch (e) {
+                      useStore.getState().toast(String(e), "error");
+                    } finally {
+                      setInstallingExt(false);
+                    }
+                  }}
+                >
+                  {installingExt ? "安装中…" : "安装 GNOME 扩展"}
+                </button>
+                <label
+                  className="relative w-6 h-6 shrink-0 overflow-hidden rounded-md cursor-pointer border border-[var(--line)]"
+                  style={{ background: menubarColor || "var(--shade-strong)" }}
+                  title="顶栏歌词颜色"
+                >
+                  {!menubarColor && (
+                    <span className="absolute inset-0 flex items-center justify-center text-[9px] text-[var(--ink-3)]">
+                      默认
+                    </span>
+                  )}
+                  <input
+                    type="color"
+                    value={menubarColor || "#ffffff"}
+                    onChange={(e) => {
+                      setMenubarColorState(e.target.value);
+                      setMenubarLyricsColor(e.target.value);
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </label>
+                {menubarColor && (
+                  <button
+                    className="btn-secondary !py-1 !px-2.5 !text-[11px]"
+                    onClick={() => {
+                      setMenubarColorState("");
+                      setMenubarLyricsColor("");
+                    }}
+                  >
+                    默认
+                  </button>
+                )}
+              </div>
+              <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
+                在系统顶栏显示当前歌词行，与悬浮歌词相互独立；色块可自定义文字颜色（默认跟随顶栏主题）。
+                首次使用先点「安装 GNOME 扩展」；Wayland 下安装后需注销并重新登录一次扩展才会出现。
+              </p>
+            </>
+          )}
         </section>
 
         {/* 音乐文件夹 */}
@@ -553,21 +641,22 @@ export default function SettingsView() {
           </div>
           <div className="flex items-center gap-3">
             <Headphones size={14} className="text-[var(--ink-2)] shrink-0" />
-            <select
-              className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-2.5 text-[12.5px] text-[var(--ink)] outline-none focus:border-[rgba(240,162,74,0.45)]"
-              value={devicePref ?? ""}
+            <Select
+              className="flex-1"
               disabled={deviceSwitching}
-              onChange={(e) => pickDevice(e.target.value)}
-              title={devicePref ?? deviceCurrent ?? "跟随系统默认"}
-            >
-              <option value="">跟随系统默认{deviceCurrent && devicePref == null ? `（${deviceCurrent}）` : ""}</option>
-              {devices.map((d) => (
-                <option key={d.name} value={d.name}>
-                  {d.name}
-                  {d.isDefault ? "（系统默认）" : ""}
-                </option>
-              ))}
-            </select>
+              value={devicePref ?? ""}
+              onChange={(v) => pickDevice(v)}
+              options={[
+                {
+                  value: "",
+                  label: `跟随系统默认${deviceCurrent && devicePref == null ? `（${deviceCurrent}）` : ""}`,
+                },
+                ...devices.map((d) => ({
+                  value: d.name,
+                  label: `${d.name}${d.isDefault ? "（系统默认）" : ""}`,
+                })),
+              ]}
+            />
             {deviceSwitching && (
               <Loader2 size={14} className="animate-spin text-[var(--accent)] shrink-0" />
             )}
@@ -575,30 +664,34 @@ export default function SettingsView() {
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
             跟随系统默认时，插入耳机等设备热插拔会自动切换并从当前进度续播；固定设备则始终使用所选设备。
           </p>
-          <div className="flex items-center gap-4 mt-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">独占模式</span>
-            <button
-              className={`relative w-10 h-[22px] rounded-full transition-colors ${
-                wasapiExclusive ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
-              }`}
-              onClick={() => setWasapiExclusive(!wasapiExclusive)}
-              title={wasapiExclusive ? "关闭 WASAPI 独占模式" : "开启 WASAPI 独占模式"}
-            >
-              <span
-                className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
-                  wasapiExclusive ? "left-[21px]" : "left-[3px]"
-                }`}
-              />
-            </button>
-            <span className="text-[11.5px] text-[var(--ink-3)]">
-              绕过系统混音器直连声卡（WASAPI Exclusive）
-            </span>
-          </div>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2 leading-relaxed">
-            WASAPI
-            独占模式下，应用将独占声卡、绕过 Windows
-            音量混音器：采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质。注意：独占播放期间其它应用将暂时无法发声；独占需要声卡驱动支持，蓝牙/网络音箱等设备驱动不支持独占，若当前设备不支持或系统禁用了独占授权，该曲目会自动回退普通模式播放（以提示说明原因）；均衡器与音量在独占模式下仍有效；开启后下一首生效，关闭则立即切回普通模式（从当前进度继续播放，其它应用恢复出声）。
-          </p>
+          {platform === "windows" && (
+            <>
+              <div className="flex items-center gap-4 mt-4">
+                <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">独占模式</span>
+                <button
+                  className={`relative w-10 h-[22px] rounded-full transition-colors ${
+                    wasapiExclusive ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
+                  }`}
+                  onClick={() => setWasapiExclusive(!wasapiExclusive)}
+                  title={wasapiExclusive ? "关闭 WASAPI 独占模式" : "开启 WASAPI 独占模式"}
+                >
+                  <span
+                    className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
+                      wasapiExclusive ? "left-[21px]" : "left-[3px]"
+                    }`}
+                  />
+                </button>
+                <span className="text-[11.5px] text-[var(--ink-3)]">
+                  绕过系统混音器直连声卡（WASAPI Exclusive）
+                </span>
+              </div>
+              <p className="text-[11.5px] text-[var(--ink-3)] mt-2 leading-relaxed">
+                WASAPI
+                独占模式下，应用将独占声卡、绕过 Windows
+                音量混音器：采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质。注意：独占播放期间其它应用将暂时无法发声；独占需要声卡驱动支持，蓝牙/网络音箱等设备驱动不支持独占，若当前设备不支持或系统禁用了独占授权，该曲目会自动回退普通模式播放（以提示说明原因）；均衡器与音量在独占模式下仍有效；开启后下一首生效，关闭则立即切回普通模式（从当前进度继续播放，其它应用恢复出声）。
+              </p>
+            </>
+          )}
         </section>
 
         {/* 下载目录 */}
@@ -727,7 +820,7 @@ export default function SettingsView() {
 
         <div className="text-[11.5px] text-[var(--ink-3)] px-1 pb-2">
           RustMusic {appVersion ? `v${appVersion}` : ""} · Rust + Tauri 2 + React ·
-          引擎 rodio / symphonia · 界面仅支持 Windows（架构上保留跨平台能力）
+          引擎 rodio / symphonia · 界面支持 Windows / Linux（WASAPI 独占输出仅 Windows）
         </div>
       </div>
     </div>

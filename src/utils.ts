@@ -214,6 +214,12 @@ function charWeight(c: string): number {
   return 1;
 }
 
+/** 歌词行的视觉宽度估算（半角字宽为单位：CJK=2、拉丁=1、空格 0.4）。
+ *  桌面歌词长行自动缩字号用——与字号基准联动判断这行是否塞得下 */
+export function estimateLyricWidth(text: string): number {
+  return [...text].reduce((s, c) => s + charWeight(c), 0);
+}
+
 /**
  * 歌词行染色推进比例（0~1）：卡拉OK 染色随演唱节奏走。
  * 1) 有逐字时间戳（yrc/QRC/增强 LRC）：按当前时间落在哪个字、
@@ -398,3 +404,7 @@ export function lyricAdaptiveColors(
       : "";
   return { vars, scrim };
 }
+
+/** 远程封面 URL → 后端落盘路径的进程内缓存（Promise 复用，防重复下载）。
+ *  CoverImg 与 NowPlaying 共用：同一封面只发一次 fetch_cover 请求 */
+export const remoteCoverCache = new Map<string, Promise<string | null>>();

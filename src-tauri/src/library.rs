@@ -58,9 +58,7 @@ pub fn spawn_scan(app: &AppHandle) {
                 // 新调用方可能登记 RERUN 后离开——置 false 后复查一次，
                 // 有人登记就接管继续跑（lost wakeup 防护）
                 SCAN_RUNNING.store(false, Ordering::SeqCst);
-                if SCAN_RERUN.load(Ordering::SeqCst)
-                    && !SCAN_RUNNING.swap(true, Ordering::SeqCst)
-                {
+                if SCAN_RERUN.load(Ordering::SeqCst) && !SCAN_RUNNING.swap(true, Ordering::SeqCst) {
                     continue;
                 }
                 break;
@@ -160,7 +158,10 @@ pub fn run_scan(app: AppHandle) {
         let n = std::thread::available_parallelism()
             .map(|n| n.get().min(4))
             .unwrap_or(4);
-        rayon::ThreadPoolBuilder::new().num_threads(n).build().expect("build parse pool")
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .expect("build parse pool")
     });
     let mut done = total - to_parse.len();
     emit(done, total, true);

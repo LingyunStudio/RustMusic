@@ -216,7 +216,8 @@ impl<S: Source> Source for EqSource<S> {
     }
 
     fn channels(&self) -> rodio::ChannelCount {
-        rodio::ChannelCount::new(self.channels as u16).unwrap_or(rodio::ChannelCount::new(2).unwrap())
+        rodio::ChannelCount::new(self.channels as u16)
+            .unwrap_or(rodio::ChannelCount::new(2).unwrap())
     }
 
     fn sample_rate(&self) -> rodio::SampleRate {

@@ -415,7 +415,11 @@ pub fn song_url(
 ) -> Result<(String, String, &'static str), String> {
     // 前缀：M500=128k M800=320k F000=flac；无 media_mid 时按官方规则用 songmid 拼接
     let ladder: Vec<(&str, &str, &'static str)> = match quality {
-        "lossless" => vec![("F000", "flac", "无损"), ("M800", "mp3", "HQ"), ("M500", "mp3", "标准")],
+        "lossless" => vec![
+            ("F000", "flac", "无损"),
+            ("M800", "mp3", "HQ"),
+            ("M500", "mp3", "标准"),
+        ],
         "standard" => vec![("M500", "mp3", "标准")],
         _ => vec![("M800", "mp3", "HQ"), ("M500", "mp3", "标准")],
     };
@@ -837,6 +841,236 @@ fn rand_hex(len: usize) -> String {
     (0..len)
         .map(|_| format!("{:x}", rng.gen_range(0..16)))
         .collect()
+}
+
+// ---------- 微信扫码登录 ----------
+//
+// 与 y.qq.com 网页版同链路（参考官方 login.html / wx_redirect.html 的实现）：
+// qrconnect 页取 uuid → 展示 open.weixin.qq.com 二维码 → lp 长轮询拿 wx_code
+// → musicu.fcg 的 music.login.LoginServer/Login 用 code 换播放凭证
+//（响应 Set-Cookie 携带 qm_keyst / wxuin 登录态，与 QQ 扫码共用存储字段）。
+
+/// QQ 音乐在微信开放平台的网站应用 appid
+const WX_APPID: &str = "wx48db31d50e334801";
+/// lp 长轮询服务端会挂起到状态变化（实测约 15s），客户端超时给足余量
+const WX_LP_TIMEOUT: Duration = Duration::from_secs(35);
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WxQr {
+    pub uuid: String,
+    /// 二维码 data URL（微信返回 JFIF/JPEG）
+    pub qr: String,
+}
+
+/// 生成微信登录二维码：uuid + JPEG data URL
+pub fn wx_qr_create() -> Result<WxQr, String> {
+    let url = format!(
+        "https://open.weixin.qq.com/connect/qrconnect?appid={WX_APPID}&scope=snsapi_login&redirect_uri={}&state=rustmusic",
+        form_encode("https://y.qq.com/wkframe/client/login_success.html")
+    );
+    let html = http_agent()
+        .get(&url)
+        .set("User-Agent", UA)
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| format!("获取微信登录页失败: {e}"))?
+        .into_string()
+        .map_err(|e| format!("微信登录页读取失败: {e}"))?;
+    // 页面二维码 <img src="/connect/qrcode/{uuid}">（兜底：长轮询 URL 的 uuid 参数）
+    let uuid = html
+        .find("/connect/qrcode/")
+        .map(|i| {
+            let rest = &html[i + "/connect/qrcode/".len()..];
+            match rest.find('"') {
+                Some(e) => rest[..e].to_string(),
+                None => String::new(),
+            }
+        })
+        .filter(|u| !u.is_empty())
+        .or_else(|| parse_query_param(&html, "uuid"))
+        .unwrap_or_default();
+    if uuid.is_empty() || uuid.len() > 64 || !uuid.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("微信二维码标识解析失败".into());
+    }
+
+    let img_url = format!("https://open.weixin.qq.com/connect/qrcode/{uuid}");
+    let resp = http_agent()
+        .get(&img_url)
+        .set("User-Agent", UA)
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| format!("获取微信二维码失败: {e}"))?;
+    let mut jpeg = Vec::new();
+    resp.into_reader()
+        .read_to_end(&mut jpeg)
+        .map_err(|e| format!("微信二维码读取失败: {e}"))?;
+    if jpeg.is_empty() {
+        return Err("微信二维码内容为空".into());
+    }
+    Ok(WxQr {
+        uuid,
+        qr: format!("data:image/jpeg;base64,{}", b64_encode(&jpeg)),
+    })
+}
+
+/// 从长轮询响应提取 (errcode, wx_code)：`window.wx_errcode=405;window.wx_code='xxx';`
+fn parse_wx_lp(text: &str) -> (i32, String) {
+    let errcode = text
+        .find("wx_errcode=")
+        .and_then(|i| {
+            let rest = &text[i + "wx_errcode=".len()..];
+            let end = rest.find(';').unwrap_or(rest.len());
+            rest[..end].trim().parse::<i32>().ok()
+        })
+        .unwrap_or(-1);
+    let code = text
+        .find("wx_code='")
+        .and_then(|i| {
+            let rest = &text[i + "wx_code='".len()..];
+            rest.find('\'').map(|e| rest[..e].to_string())
+        })
+        .unwrap_or_default();
+    (errcode, code)
+}
+
+/// 从 Set-Cookie 列表提取 name=value（值可能含 '='，按首个 '=' 切）
+fn cookie_value(cookies: &[String], name: &str) -> Option<String> {
+    cookies.iter().find_map(|c| {
+        let kv = c.split(';').next()?.trim();
+        if kv.starts_with(&format!("{name}=")) {
+            Some(kv[name.len() + 1..].to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// 用 wx_code 换播放凭证：musicu.fcg / music.login.LoginServer.Login。
+/// 凭证优先取响应 JSON（musicid/musickey），缺失时回退 Set-Cookie
+///（qm_keyst=key，wxuin=id），两条路都空才算失败
+fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
+    let payload = serde_json::json!({
+        "comm": {
+            "tmeAppID": "qqmusic",
+            "tmeLoginType": "1",
+            "g_tk": 5381,
+            "platform": "yqq",
+            "ct": 24,
+            "cv": 0
+        },
+        "req": {
+            "module": "music.login.LoginServer",
+            "method": "Login",
+            "param": {"strAppid": WX_APPID, "code": code}
+        }
+    });
+    let resp = http_agent()
+        .post("https://u.y.qq.com/cgi-bin/musicu.fcg")
+        .set("Content-Type", "application/json")
+        .set("Referer", "https://y.qq.com/")
+        .set("Origin", "https://y.qq.com")
+        .set("User-Agent", UA)
+        .timeout(TIMEOUT)
+        .send_string(&payload.to_string())
+        .map_err(|e| format!("微信登录凭证交换失败: {e}"))?;
+    let cookies: Vec<String> = resp
+        .all("Set-Cookie")
+        .into_iter()
+        .map(|c| c.to_string())
+        .collect();
+    let body: serde_json::Value = resp
+        .into_json()
+        .map_err(|e| format!("微信登录响应解析失败: {e}"))?;
+
+    let credential = find_credential(&body);
+    let (musicid, musickey) = match credential {
+        Some(c) => c,
+        None => {
+            let key = cookie_value(&cookies, "qm_keyst");
+            let id = cookie_value(&cookies, "wxuin").or_else(|| cookie_value(&cookies, "uin"));
+            match (id, key) {
+                (Some(id), Some(key)) if !id.is_empty() && !key.is_empty() => (id, key),
+                _ => {
+                    return Err(format!(
+                        "微信登录响应缺少凭证 | {}",
+                        serde_json::to_string(&body)
+                            .unwrap_or_default()
+                            .chars()
+                            .take(200)
+                            .collect::<String>()
+                    ))
+                }
+            }
+        }
+    };
+    let nickname = ["nick", "nickname", "nickName"]
+        .iter()
+        .find_map(|k| find_str_anywhere(&body, k));
+    let encrypt_uin = find_str_anywhere(&body, "encryptUin");
+    Ok(QqQrCheck {
+        status: "success".into(),
+        nickname,
+        musicid: Some(musicid),
+        musickey: Some(musickey),
+        encrypt_uin,
+    })
+}
+
+/// 长轮询一次微信扫码状态（调用方循环调用）：
+/// 408=等待 / 404=已扫码待确认 / 405=已确认（带 wx_code，接交换）/ 402=已过期
+pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
+    if uuid.is_empty() || uuid.len() > 64 || !uuid.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("微信登录标识无效".into());
+    }
+    let url = format!("https://lp.open.weixin.qq.com/connect/l/qrconnect?uuid={uuid}");
+    let text = http_agent()
+        .get(&url)
+        .set("Referer", "https://open.weixin.qq.com/")
+        .set("User-Agent", UA)
+        .timeout(WX_LP_TIMEOUT)
+        .call()
+        .map_err(|e| format!("微信扫码状态查询失败: {e}"))?
+        .into_string()
+        .map_err(|e| format!("微信扫码状态读取失败: {e}"))?;
+    let (errcode, code) = parse_wx_lp(&text);
+    match errcode {
+        408 => Ok(QqQrCheck {
+            status: "waiting".into(),
+            nickname: None,
+            musicid: None,
+            musickey: None,
+            encrypt_uin: None,
+        }),
+        404 => Ok(QqQrCheck {
+            status: "scanned".into(),
+            nickname: None,
+            musicid: None,
+            musickey: None,
+            encrypt_uin: None,
+        }),
+        402 => Ok(QqQrCheck {
+            status: "expired".into(),
+            nickname: None,
+            musicid: None,
+            musickey: None,
+            encrypt_uin: None,
+        }),
+        405 if !code.is_empty() => wx_exchange(&code),
+        _ => {
+            if errcode == 405 {
+                Err("微信授权未返回 code".into())
+            } else {
+                Ok(QqQrCheck {
+                    status: "waiting".into(),
+                    nickname: None,
+                    musicid: None,
+                    musickey: None,
+                    encrypt_uin: None,
+                })
+            }
+        }
+    }
 }
 
 fn plain_get_with_cookie(url: &str, referer: &str, cookie: &str) -> Result<String, String> {
@@ -1379,6 +1613,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_wx_lp_parse() {
+        assert_eq!(
+            parse_wx_lp("window.wx_errcode=405;window.wx_code='abc123';"),
+            (405, "abc123".into())
+        );
+        assert_eq!(
+            parse_wx_lp("window.wx_errcode=408;window.wx_code='';"),
+            (408, "".into())
+        );
+        assert_eq!(parse_wx_lp("garbage"), (-1, "".into()));
+    }
+
+    #[test]
+    fn test_wx_uuid_extract() {
+        let html = r#"<img class="js_qrcode_img" src="/connect/qrcode/Ab12Cd34Ef56Gh78"><script>l/qrconnect?uuid=Ab12Cd34Ef56Gh78</script>"#;
+        let i = html.find("/connect/qrcode/").unwrap();
+        let rest = &html[i + "/connect/qrcode/".len()..];
+        let uuid = &rest[..rest.find('"').unwrap()];
+        assert_eq!(uuid, "Ab12Cd34Ef56Gh78");
+    }
+
+    #[test]
+    fn test_wx_cookie_value() {
+        let cookies = vec![
+            "qm_keyst=Q_H_L_abc.def.ghi; Path=/; HttpOnly".to_string(),
+            "wxuin=2534405790; Path=/".to_string(),
+            "wxrefresh_token=17_AAA=BBB; Path=/".to_string(),
+        ];
+        assert_eq!(cookie_value(&cookies, "qm_keyst"), Some("Q_H_L_abc.def.ghi".into()));
+        assert_eq!(cookie_value(&cookies, "wxuin"), Some("2534405790".into()));
+        assert_eq!(cookie_value(&cookies, "wxrefresh_token"), Some("17_AAA=BBB".into()));
+        assert_eq!(cookie_value(&cookies, "missing"), None);
+    }
+
+    /// 走真实微信接口：取二维码 + 一次长轮询（应返回等待态）。
+    /// 需要网络，手动 `cargo test -- --ignored` 运行；扫码确认后的
+    /// 凭证交换需真人扫码，不在自动化范围
+    #[test]
+    #[ignore]
+    fn test_wx_qr_create_and_poll() {
+        let r = wx_qr_create().expect("wx qr create failed");
+        assert!(!r.uuid.is_empty());
+        assert!(r.qr.starts_with("data:image/jpeg;base64,"));
+        let status = wx_qr_check(&r.uuid).expect("wx qr check failed");
+        assert!(
+            status.status == "waiting" || status.status == "scanned",
+            "unexpected status: {status:?}"
+        );
+    }
+
+    #[test]
     fn test_zzc_sign_vectors() {
         assert_eq!(
             zzc_sign("123").unwrap(),
@@ -1413,7 +1698,8 @@ mod tests {
         println!(
             "lyric[{}] {:?}",
             any.id,
-            lrc.as_ref().map(|t| t.lrc.chars().take(50).collect::<String>())
+            lrc.as_ref()
+                .map(|t| t.lrc.chars().take(50).collect::<String>())
         );
     }
 
@@ -1445,11 +1731,9 @@ mod tests {
 #[ignore]
 fn test_song_url_lossless_audit() {
     let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
-    let conn = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .expect("打开应用数据库失败");
+    let conn =
+        rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("打开应用数据库失败");
     let get = |k: &str| -> String {
         conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
             r.get::<_, String>(0)
@@ -1458,15 +1742,21 @@ fn test_song_url_lossless_audit() {
     };
     let songs = search("风的来信", 1, 1).expect("search failed");
     // 免费歌（非 VIP）走 320 档，VIP 歌在无权益时应明确报错——两种都验证
-    let s = songs
-        .iter()
-        .find(|s| !s.vip)
-        .expect("搜索结果无免费歌曲");
+    let s = songs.iter().find(|s| !s.vip).expect("搜索结果无免费歌曲");
     let songmid = &s.id;
     let media_mid = &s.media_mid;
     println!("试听: {} - {}", s.singer, s.name);
-    let (url, ext, label) =
-        song_url(songmid, media_mid, &get("qq_musicid"), &get("qq_musickey"), "lossless", s.vip)
-            .expect("song_url failed");
-    println!("✓ QQ lossless 实际下发: {label} .{ext} url={}", &url[..url.len().min(80)]);
+    let (url, ext, label) = song_url(
+        songmid,
+        media_mid,
+        &get("qq_musicid"),
+        &get("qq_musickey"),
+        "lossless",
+        s.vip,
+    )
+    .expect("song_url failed");
+    println!(
+        "✓ QQ lossless 实际下发: {label} .{ext} url={}",
+        &url[..url.len().min(80)]
+    );
 }

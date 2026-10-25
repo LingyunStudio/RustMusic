@@ -236,6 +236,9 @@ export interface Store {
   /** 桌面歌词三色（已唱/未唱/下一句） */
   dlyricsColors: DesktopLyricsColors;
   setDlyricsColors(c: DesktopLyricsColors): void;
+  /** 菜单栏歌词（Linux/GNOME 顶栏）：独立于悬浮歌词窗口的显示位 */
+  menubarLyricsOn: boolean;
+  setMenubarLyrics(v: boolean): void;
 
   toggleLike(id: number): void;
   addToQueue(item: QueueItem): void;

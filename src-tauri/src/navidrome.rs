@@ -2,7 +2,7 @@
 //!
 //! 连接用户自建的 Navidrome / Subsonic 服务器：搜索、专辑浏览、播放流。
 //! 认证采用 Subsonic 标准的 salt+token 方案（token = md5(密码 + salt)）；
-//! **密码保存在 Windows 凭据管理器**（keyring），不落数据库、不进前端。
+//! **密码保存在系统凭据管理器**（keyring：Windows 凭据管理器 / Linux Secret Service），不落数据库、不进前端。
 
 use md5::{Digest as Md5Digest, Md5};
 use rand::Rng;
@@ -120,9 +120,17 @@ fn auth_query(server: &str, username: &str) -> Result<String, String> {
     ))
 }
 
-fn get_json(server: &str, username: &str, endpoint: &str, extra: &str) -> Result<serde_json::Value, String> {
+fn get_json(
+    server: &str,
+    username: &str,
+    endpoint: &str,
+    extra: &str,
+) -> Result<serde_json::Value, String> {
     let base = norm_base(server);
-    let url = format!("{base}/rest/{endpoint}?{}&{extra}", auth_query(server, username)?);
+    let url = format!(
+        "{base}/rest/{endpoint}?{}&{extra}",
+        auth_query(server, username)?
+    );
     let resp = ureq::get(&url)
         .timeout(TIMEOUT)
         .call()
@@ -132,7 +140,9 @@ fn get_json(server: &str, username: &str, endpoint: &str, extra: &str) -> Result
         .map_err(|e| format!("Navidrome 响应读取失败: {e}"))?;
     let v: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("Navidrome 响应解析失败: {e}"))?;
-    let status = v.pointer("/subsonic-response/status").and_then(|s| s.as_str());
+    let status = v
+        .pointer("/subsonic-response/status")
+        .and_then(|s| s.as_str());
     if status != Some("ok") {
         let msg = v
             .pointer("/subsonic-response/error/message")
@@ -152,9 +162,7 @@ pub fn search_all(
     _password: &str,
     offset: u64,
 ) -> Result<serde_json::Value, String> {
-    let extra = format!(
-        "query=&songCount=500&artistCount=0&albumCount=0&songOffset={offset}"
-    );
+    let extra = format!("query=&songCount=500&artistCount=0&albumCount=0&songOffset={offset}");
     get_json(server, username, "search3", &extra)
 }
 
@@ -224,10 +232,10 @@ fn album_from(v: &serde_json::Value, server: &str, username: &str, password: &st
     let cover_art = jstr(v, "coverArt");
     NdAlbum {
         id: jstr(v, "id"),
-        name: jstr(v, "name").is_empty().then_some(()).map_or_else(
-            || jstr(v, "name"),
-            |_| jstr(v, "album"),
-        ),
+        name: jstr(v, "name")
+            .is_empty()
+            .then_some(())
+            .map_or_else(|| jstr(v, "name"), |_| jstr(v, "album")),
         artist: jstr(v, "artist"),
         cover_url: cover_art_url(server, username, password, &cover_art),
         song_count: jnum(v, "songCount"),
@@ -246,10 +254,17 @@ pub fn ping(server: &str, username: &str, password: &str) -> Result<(), String> 
         "{base}/rest/ping?u={}&t={token}&s={salt}&v={API_VER}&c={CLIENT}&f=json",
         enc(username)
     );
-    let resp = ureq::get(&url).timeout(TIMEOUT).call().map_err(|e| format!("无法连接服务器: {e}"))?;
+    let resp = ureq::get(&url)
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| format!("无法连接服务器: {e}"))?;
     let text = resp.into_string().map_err(|e| e.to_string())?;
-    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("响应解析失败: {e}"))?;
-    if v.pointer("/subsonic-response/status").and_then(|s| s.as_str()) != Some("ok") {
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("响应解析失败: {e}"))?;
+    if v.pointer("/subsonic-response/status")
+        .and_then(|s| s.as_str())
+        != Some("ok")
+    {
         let msg = v
             .pointer("/subsonic-response/error/message")
             .and_then(|m| m.as_str())
@@ -262,7 +277,10 @@ pub fn ping(server: &str, username: &str, password: &str) -> Result<(), String> 
 /// 搜索歌曲（search3）
 pub fn search_songs(server: &str, username: &str, query: &str) -> Result<Vec<NdSong>, String> {
     let password = get_password(server, username)?;
-    let extra = format!("query={}&songCount=50&artistCount=0&albumCount=0", enc(query));
+    let extra = format!(
+        "query={}&songCount=50&artistCount=0&albumCount=0",
+        enc(query)
+    );
     let v = get_json(server, username, "search3", &extra)?;
     let empty = Vec::new();
     let songs = v
@@ -348,7 +366,11 @@ pub fn cover_art_url(server: &str, username: &str, password: &str, cover_art: &s
 
 /// 歌词：优先 OpenSubsonic getLyricsBySongId（Navidrome 0.54+ 支持同步歌词），
 /// 空则回落旧版 getLyrics（按歌手+曲名模糊匹配，纯文本）
-pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::LyricsPayload, String> {
+pub fn lyrics(
+    server: &str,
+    username: &str,
+    id: &str,
+) -> Result<crate::models::LyricsPayload, String> {
     let password = get_password(server, username)?;
     let base = norm_base(server);
 
@@ -363,17 +385,17 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
     );
     if let Ok(resp) = ureq::get(&url).timeout(TIMEOUT).call() {
         if let Ok(text) = resp.into_string() {
-            eprintln!("[nd-lyric] bySongId 响应: {}", text.chars().take(300).collect::<String>());
+            eprintln!(
+                "[nd-lyric] bySongId 响应: {}",
+                text.chars().take(300).collect::<String>()
+            );
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
                 let sl = v.pointer("/subsonic-response/lyricsList/structuredLyrics/0");
                 if let Some(sl) = sl {
                     let offset = sl.get("offset").and_then(|x| x.as_u64()).unwrap_or(0);
                     let synced = sl.get("synced").and_then(|x| x.as_bool()).unwrap_or(false);
                     let empty = Vec::new();
-                    let lines = sl
-                        .get("line")
-                        .and_then(|x| x.as_array())
-                        .unwrap_or(&empty);
+                    let lines = sl.get("line").and_then(|x| x.as_array()).unwrap_or(&empty);
                     if synced && !lines.is_empty() {
                         let out: Vec<crate::models::LyricLine> = lines
                             .iter()
@@ -397,8 +419,10 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
                             .iter()
                             .filter_map(|l| l.get("value").and_then(|x| x.as_str()))
                             .collect::<Vec<_>>()
-                            .join("
-");
+                            .join(
+                                "
+",
+                            );
                         if !text.trim().is_empty() {
                             let p = crate::lyrics::parse(&text);
                             return Ok(crate::models::LyricsPayload::new(p.synced, p.lines));
@@ -436,14 +460,20 @@ pub fn lyrics(server: &str, username: &str, id: &str) -> Result<crate::models::L
                         );
                         if let Ok(lresp) = ureq::get(&lurl).timeout(TIMEOUT).call() {
                             if let Ok(ltext) = lresp.into_string() {
-                                eprintln!("[nd-lyric] getLyrics 响应: {}", ltext.chars().take(300).collect::<String>());
+                                eprintln!(
+                                    "[nd-lyric] getLyrics 响应: {}",
+                                    ltext.chars().take(300).collect::<String>()
+                                );
                                 if let Ok(lv) = serde_json::from_str::<serde_json::Value>(&ltext) {
-                                    if let Some(value) =
-                                        lv.pointer("/subsonic-response/lyrics/value").and_then(|x| x.as_str())
+                                    if let Some(value) = lv
+                                        .pointer("/subsonic-response/lyrics/value")
+                                        .and_then(|x| x.as_str())
                                     {
                                         if !value.trim().is_empty() {
                                             let p = crate::lyrics::parse(value);
-                                            return Ok(crate::models::LyricsPayload::new(p.synced, p.lines));
+                                            return Ok(crate::models::LyricsPayload::new(
+                                                p.synced, p.lines,
+                                            ));
                                         }
                                     }
                                 }
@@ -468,11 +498,9 @@ mod tests {
         let db = std::path::PathBuf::from(std::env::var("APPDATA").unwrap())
             .join("com.rustmusic.app")
             .join("library.db");
-        let conn = rusqlite::Connection::open_with_flags(
-            &db,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap();
+        let conn =
+            rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
         let get = |k: &str| -> String {
             conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
                 r.get::<_, String>(0)
@@ -497,7 +525,10 @@ mod tests {
     fn norm_base_cases() {
         assert_eq!(norm_base("192.168.1.10:4533"), "http://192.168.1.10:4533");
         assert_eq!(norm_base("http://srv:4533/"), "http://srv:4533");
-        assert_eq!(norm_base("https://music.example.com"), "https://music.example.com");
+        assert_eq!(
+            norm_base("https://music.example.com"),
+            "https://music.example.com"
+        );
     }
 
     #[test]
@@ -511,7 +542,8 @@ mod tests {
         assert!(!songs.is_empty(), "搜索应命中歌曲");
         let albums = album_list(server, "demo").expect("album list 失败");
         assert!(!albums.is_empty(), "专辑列表不应为空");
-        let (name, _artist, songs) = album_songs(server, "demo", &albums[0].id).expect("album 失败");
+        let (name, _artist, songs) =
+            album_songs(server, "demo", &albums[0].id).expect("album 失败");
         assert!(!songs.is_empty(), "专辑应有曲目");
         let url = stream_url(server, u, &songs[0].id).expect("stream_url 失败");
         let _ = delete_password(server, u);

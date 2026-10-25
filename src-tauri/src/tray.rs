@@ -7,8 +7,8 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
-use crate::AppState;
 use crate::webview_suspend::{resume_main_webview, schedule_resuspend, show_main};
+use crate::AppState;
 
 static DLYRICS_ITEM: std::sync::Mutex<Option<MenuItem<tauri::Wry>>> = std::sync::Mutex::new(None);
 
@@ -45,7 +45,11 @@ pub(crate) fn media_control(app: &AppHandle, action: &str, value: Option<f64>) {
 
 /// 更新托盘菜单中桌面歌词控制项的文本（开启 / 关闭 / 解锁）
 pub(crate) fn update_dlyrics_tray(app: &AppHandle) {
-    let is_open = app.get_webview_window("desktop-lyrics").is_some();
+    // 窗口常驻（关闭=隐藏），"开启"以可见性为准
+    let is_open = app
+        .get_webview_window("desktop-lyrics")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
     let is_locked = app
         .state::<AppState>()
         .dlyrics_locked
@@ -75,13 +79,19 @@ pub(crate) fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&show, &dlyrics, &sep1, &pp, &prev, &next, &sep2, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &dlyrics, &sep1, &pp, &prev, &next, &sep2, &quit],
+    )?;
 
     // 监听桌面歌词锁定与关闭事件，实时更新托盘菜单文字
     let app_lock = app.clone();
     app.listen("dlyrics://lock", move |ev| {
         if let Ok(payload) = serde_json::from_str::<serde_json::Value>(ev.payload()) {
-            let locked = payload.get("locked").and_then(|v| v.as_bool()).unwrap_or(false);
+            let locked = payload
+                .get("locked")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             app_lock
                 .state::<AppState>()
                 .dlyrics_locked

@@ -57,10 +57,7 @@ pub async fn navidrome_save(state: State<'_, AppState>, req: NdSaveReq) -> Resul
 }
 
 #[tauri::command]
-pub async fn navidrome_connect(
-    server: String,
-    username: String,
-) -> Result<(), String> {
+pub async fn navidrome_connect(server: String, username: String) -> Result<(), String> {
     let server = crate::navidrome::norm_base(&server);
     // 从凭据管理器读已存密码再 ping：此前传空密码，任何配置了密码的服务器
     // 都必然 subsonic error 40（token = md5("" + salt) 永远不对）
@@ -74,8 +71,10 @@ pub async fn navidrome_connect(
 
 #[tauri::command]
 pub async fn navidrome_forget(server: String, username: String) -> Result<(), String> {
-    super::blocking(move || crate::navidrome::delete_password(&crate::navidrome::norm_base(&server), &username))
-        .await
+    super::blocking(move || {
+        crate::navidrome::delete_password(&crate::navidrome::norm_base(&server), &username)
+    })
+    .await
 }
 
 #[tauri::command]

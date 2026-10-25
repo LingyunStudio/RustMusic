@@ -3,6 +3,7 @@ import { ChevronDown, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-r
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import { api, coverSrc } from "../api";
+import { remoteCoverCache } from "../utils";
 import { extractPalette, lyricAdaptiveColors, lyricLineProgress } from "../utils";
 
 export default function NowPlaying() {
@@ -219,7 +220,37 @@ export default function NowPlaying() {
     }
   }, [syncedLines]);
 
-  const coverUrl = current ? (current.cover ? coverSrc(current.cover) : "") : "";
+  // 远程封面经后端拉取落盘（<img> 直连 CDN 会被用户系统代理设置劫持，
+  // 代理进程未运行时全部加载失败）；本地路径直接走 asset 协议
+  const rawCover = current?.cover ?? "";
+  const isRemote = rawCover.startsWith("http://") || rawCover.startsWith("https://");
+  const [remoteLocal, setRemoteLocal] = useState<string | null>(null);
+  useEffect(() => {
+    setRemoteLocal(null);
+    if (!isRemote || !rawCover) return;
+    let alive = true;
+    remoteCoverCache.get(rawCover)?.then((p) => {
+      if (alive && p) setRemoteLocal(p);
+      return;
+    });
+    if (!remoteCoverCache.has(rawCover)) {
+      const pr = api.fetchCover(rawCover).catch(() => null);
+      remoteCoverCache.set(rawCover, pr as Promise<string>);
+      pr.then((path) => {
+        if (alive && path) setRemoteLocal(path);
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [rawCover, isRemote]);
+  const coverUrl = rawCover
+    ? isRemote
+      ? remoteLocal
+        ? coverSrc(remoteLocal)
+        : ""
+      : coverSrc(rawCover)
+    : "";
   const theme = useStore((s) => s.theme);
 
   // 封面取色 → 动态渐变背景

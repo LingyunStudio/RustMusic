@@ -129,7 +129,11 @@ pub struct LyricsPayload {
 
 impl LyricsPayload {
     pub fn new(synced: bool, lines: Vec<LyricLine>) -> Self {
-        Self { synced, lines, source: None }
+        Self {
+            synced,
+            lines,
+            source: None,
+        }
     }
 }
 

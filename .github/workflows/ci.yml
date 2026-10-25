@@ -33,3 +33,36 @@ jobs:
         # --locked：Cargo.toml 与 Cargo.lock 不同步时直接失败，
         # 版本变更必须经由显式 cargo update 评审，杜绝 CI 顺手升级
         run: cargo test --bin rustmusic --locked
+
+  check-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Tauri Linux 构建依赖（WebKitGTK 4.1 / GTK3 / 托盘 / 图标）
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev \
+            libasound2-dev
+
+      - name: 前端类型检查 + 构建
+        run: |
+          npm ci
+          npm run build
+
+      - name: Rust 单元测试
+        working-directory: src-tauri
+        run: cargo test --bin rustmusic --locked

@@ -256,9 +256,7 @@ fn exclusive_hint(code: u32) -> Option<&'static str> {
 }
 
 fn wasapi_err_hint(what: &str, e: &(dyn std::error::Error + 'static)) -> String {
-    let code = e
-        .downcast_ref::<WinError>()
-        .map(|we| we.code().0 as u32);
+    let code = e.downcast_ref::<WinError>().map(|we| we.code().0 as u32);
     let base = wasapi_err(what, e);
     match code.and_then(exclusive_hint) {
         Some(h) => format!("{base}；{h}"),
@@ -301,10 +299,8 @@ fn try_initialize(
             let aligned = match client.get_bufferframecount() {
                 Ok(frames) => calculate_period_100ns(frames as i64, rate),
                 Err(e2) => {
-                    let msg = wasapi_err_hint(
-                        &format!("{first}；随后获取对齐缓冲也失败"),
-                        e2.as_ref(),
-                    );
+                    let msg =
+                        wasapi_err_hint(&format!("{first}；随后获取对齐缓冲也失败"), e2.as_ref());
                     return Err((client, msg));
                 }
             };
@@ -414,9 +410,7 @@ where
             let valid_bits = accepted.get_validbitspersample();
             let store_bits = accepted.get_bitspersample();
             let fmt_spec = FmtSpec {
-                kind: if accepted.get_subformat().unwrap_or(SampleType::Int)
-                    == SampleType::Float
-                {
+                kind: if accepted.get_subformat().unwrap_or(SampleType::Int) == SampleType::Float {
                     SampleKind::F32
                 } else if store_bits == 16 {
                     // 普通 WAVEFORMATEX 变体的 wValidBitsPerSample 为 0，
@@ -520,12 +514,7 @@ where
             if paused.load(Ordering::Relaxed) {
                 // 暂停：写静音帧，不消耗采样源（进度冻结）
                 let z = silence_bytes(buffer_frames, blockalign);
-                let _ = render.write_to_device(
-                    buffer_frames,
-                    blockalign,
-                    &z,
-                    Some(silent_flags()),
-                );
+                let _ = render.write_to_device(buffer_frames, blockalign, &z, Some(silent_flags()));
                 continue;
             }
             let volume = f32::from_bits(params.volume_bits.load(Ordering::Relaxed));
@@ -546,8 +535,7 @@ where
             }
             // 源耗尽后余下缓冲填静音（保持缓冲完整），随后退出会话
             if written < buffer_frames {
-                bytes
-                    .extend(silence_bytes(buffer_frames - written, blockalign));
+                bytes.extend(silence_bytes(buffer_frames - written, blockalign));
             }
             let _ = render.write_to_device(buffer_frames, blockalign, &bytes, None);
             if ended {

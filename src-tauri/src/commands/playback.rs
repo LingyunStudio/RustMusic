@@ -173,5 +173,8 @@ pub async fn set_eq(
 pub fn fx_set_enabled(state: State<'_, AppState>, enabled: bool) {
     engine_clone(&state).fx.set_enabled(enabled);
     #[cfg(debug_assertions)]
-    eprintln!("[fx] spectrum {}", if enabled { "enabled" } else { "disabled" });
+    eprintln!(
+        "[fx] spectrum {}",
+        if enabled { "enabled" } else { "disabled" }
+    );
 }

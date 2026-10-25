@@ -124,15 +124,13 @@ fn with_cache<T>(f: impl FnOnce(&mut HashMap<String, CacheEntry>) -> T) -> Optio
 fn cache_get(url: &str) -> Option<Value> {
     let ttl = cache_ttl_for(url)?;
     // 读到过期条目顺手删除：直链按 cid 各异，不清会越积越多
-    with_cache(|map| {
-        match map.get(url) {
-            Some(e) if e.at.elapsed() < ttl => Some(Some(e.value.clone())),
-            Some(_) => {
-                map.remove(url);
-                Some(None)
-            }
-            None => Some(None),
+    with_cache(|map| match map.get(url) {
+        Some(e) if e.at.elapsed() < ttl => Some(Some(e.value.clone())),
+        Some(_) => {
+            map.remove(url);
+            Some(None)
         }
+        None => Some(None),
     })?
     .flatten()
 }
@@ -147,17 +145,19 @@ fn cache_put(url: &str, v: Value) {
         // 先清过期，再按插入时间淘汰最旧，保证 map 有界
         map.retain(|_, e| e.at.elapsed() < Duration::from_secs(30 * 60));
         while map.len() >= CACHE_CAP {
-            if let Some(oldest) = map
-                .iter()
-                .min_by_key(|(_, e)| e.at)
-                .map(|(k, _)| k.clone())
-            {
+            if let Some(oldest) = map.iter().min_by_key(|(_, e)| e.at).map(|(k, _)| k.clone()) {
                 map.remove(&oldest);
             } else {
                 break;
             }
         }
-        map.insert(url.to_string(), CacheEntry { value: v, at: Instant::now() });
+        map.insert(
+            url.to_string(),
+            CacheEntry {
+                value: v,
+                at: Instant::now(),
+            },
+        );
     });
 }
 
@@ -280,7 +280,11 @@ pub fn audio_stream(
 }
 
 /// playurl(fnval=16)：返回 (音频直链, 音质标签)。
-fn fetch_audio(bvid: &str, cid: i64, cookies: Option<&BiliCookies>) -> Result<(String, String), String> {
+fn fetch_audio(
+    bvid: &str,
+    cid: i64,
+    cookies: Option<&BiliCookies>,
+) -> Result<(String, String), String> {
     let url = format!("{PLAYURL_API}?bvid={bvid}&cid={cid}&qn=0&fnval=16&fnver=0&fourk=1");
     // 登录态与匿名的响应不同，缓存键必须区分
     let auth = cookies.map(|c| !c.sessdata.is_empty()).unwrap_or(false);
@@ -319,10 +323,12 @@ fn fetch_audio(bvid: &str, cid: i64, cookies: Option<&BiliCookies>) -> Result<(S
             }
         }
         // 偏好档都不可用：取第一个 AAC 流兜底
-        if let Some(a) = audio
-            .iter()
-            .find(|a| a["codecs"].as_str().map(|c| c.starts_with("mp4a")).unwrap_or(false))
-        {
+        if let Some(a) = audio.iter().find(|a| {
+            a["codecs"]
+                .as_str()
+                .map(|c| c.starts_with("mp4a"))
+                .unwrap_or(false)
+        }) {
             if let Some(u) = a["baseUrl"].as_str() {
                 let id = a["id"].as_i64().unwrap_or(30216);
                 return Ok((u.to_string(), quality_label(id)));
@@ -375,9 +381,15 @@ pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
     let view = fetch_view(&id)?;
     let bvid = view["bvid"].as_str().unwrap_or(&id).to_string();
     let video_title = view["title"].as_str().unwrap_or("B站视频").to_string();
-    let artist = view["owner"]["name"].as_str().unwrap_or("B站UP主").to_string();
+    let artist = view["owner"]["name"]
+        .as_str()
+        .unwrap_or("B站UP主")
+        .to_string();
     // 封面统一转 https：WebView 下 http 图片可能被混合内容策略拦截
-    let cover = view["pic"].as_str().unwrap_or("").replace("http://", "https://");
+    let cover = view["pic"]
+        .as_str()
+        .unwrap_or("")
+        .replace("http://", "https://");
 
     // 定位分P（?p=N，默认 P1）；无 pages 数据时用顶层 cid 兜底
     let pages: Vec<Value> = view["pages"].as_array().cloned().unwrap_or_default();
@@ -437,9 +449,9 @@ const PASSPORT_API: &str = "https://passport.bilibili.com";
 
 /// WBI 签名混淆表（B 站前端 JS 固定常量）
 const WBI_TAB: &[usize] = &[
-    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19,
-    29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
-    22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29,
+    28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25,
+    54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
 
 #[derive(Clone, Debug)]
@@ -534,12 +546,9 @@ pub fn login_qr_create() -> Result<(String, String), String> {
         .build();
     let mut png = Vec::new();
     image::DynamicImage::ImageLuma8(img)
-        .write_to(
-            &mut std::io::Cursor::new(&mut png),
-            image::ImageFormat::Png,
-        )
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .map_err(|e| format!("编码二维码图片失败: {e}"))?;
-    
+
     let mut b64 = String::new();
     b64_encode_into(&png, &mut b64);
     qr_debug_log(&format!("gen key={key}"));
@@ -587,16 +596,16 @@ pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
     let mut req = agent().get(&format!(
         "{PASSPORT_API}/x/passport-login/web/qrcode/poll?qrcode_key={key}"
     ));
-    req = req
-        .set("User-Agent", UA_WEB)
-        .set("Referer", REFERER);
+    req = req.set("User-Agent", UA_WEB).set("Referer", REFERER);
     if !buvid3.is_empty() {
         req = req.set("Cookie", &format!("buvid3={buvid3}"));
     }
-    let resp = req
-        .call()
-        .map_err(|e| format!("登录状态查询失败: {e}"))?;
-    let set_cookies: Vec<String> = resp.all("Set-Cookie").into_iter().map(String::from).collect();
+    let resp = req.call().map_err(|e| format!("登录状态查询失败: {e}"))?;
+    let set_cookies: Vec<String> = resp
+        .all("Set-Cookie")
+        .into_iter()
+        .map(String::from)
+        .collect();
     let v: Value = resp
         .into_json()
         .map_err(|e| format!("解析登录响应失败: {e}"))?;
@@ -834,8 +843,14 @@ pub fn subtitle_lyrics(
         .iter()
         .find(|s| s["lan"].as_str() == Some("zh-Hans"))
         .or_else(|| subs.iter().find(|s| s["lan"].as_str() == Some("zh-CN")))
-        .or_else(|| subs.iter().find(|s| s["lan"].as_str().unwrap_or("").starts_with("ai-zh")))
-        .or_else(|| subs.iter().find(|s| s["lan"].as_str().unwrap_or("").starts_with("zh")))
+        .or_else(|| {
+            subs.iter()
+                .find(|s| s["lan"].as_str().unwrap_or("").starts_with("ai-zh"))
+        })
+        .or_else(|| {
+            subs.iter()
+                .find(|s| s["lan"].as_str().unwrap_or("").starts_with("zh"))
+        })
         .or_else(|| subs.first());
     let sub_url = pick
         .and_then(|s| s["subtitle_url"].as_str())
@@ -848,9 +863,7 @@ pub fn subtitle_lyrics(
         })
         .ok_or("字幕项缺少下载地址")?;
     let mut req = agent().get(&sub_url);
-    req = req
-        .set("User-Agent", UA_WEB)
-        .set("Referer", REFERER);
+    req = req.set("User-Agent", UA_WEB).set("Referer", REFERER);
     let sub: Value = req
         .call()
         .map_err(|e| format!("下载字幕失败: {e}"))?
@@ -953,24 +966,21 @@ fn parse_length(s: &str) -> u64 {
 }
 
 fn parse_vlist(v: &Value) -> Vec<SpaceVideo> {
-    (v["list"]["vlist"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default())
-    .iter()
-    .map(|it| SpaceVideo {
-        bvid: it["bvid"].as_str().unwrap_or("").to_string(),
-        title: it["title"].as_str().unwrap_or("").to_string(),
-        cover: it["pic"]
-            .as_str()
-            .unwrap_or("")
-            .replace("http://", "https://"),
-        duration_ms: parse_length(it["length"].as_str().unwrap_or("")),
-        play: it["play"].as_u64().unwrap_or(0),
-        created: it["created"].as_i64().unwrap_or(0),
-    })
-    .filter(|s| !s.bvid.is_empty())
-    .collect()
+    (v["list"]["vlist"].as_array().cloned().unwrap_or_default())
+        .iter()
+        .map(|it| SpaceVideo {
+            bvid: it["bvid"].as_str().unwrap_or("").to_string(),
+            title: it["title"].as_str().unwrap_or("").to_string(),
+            cover: it["pic"]
+                .as_str()
+                .unwrap_or("")
+                .replace("http://", "https://"),
+            duration_ms: parse_length(it["length"].as_str().unwrap_or("")),
+            play: it["play"].as_u64().unwrap_or(0),
+            created: it["created"].as_i64().unwrap_or(0),
+        })
+        .filter(|s| !s.bvid.is_empty())
+        .collect()
 }
 
 /// UP 主投稿列表（WBI 签名；order: pubdate|click|stow，服务端对全部投稿排序）。
@@ -985,7 +995,11 @@ pub fn space_videos(
         return Err("未知排序方式".into());
     }
     let signed = wbi_sign(&format!("mid={mid}&order={order}&pn={pn}&ps=30"))?;
-    let v = api_json_auth_ref(&format!("{SPACE_SEARCH_API}?{signed}"), cookies, SPACE_REFERER)?;
+    let v = api_json_auth_ref(
+        &format!("{SPACE_SEARCH_API}?{signed}"),
+        cookies,
+        SPACE_REFERER,
+    )?;
     if v["code"].as_i64() != Some(0) {
         if v["code"].as_i64() == Some(-352) {
             return Err("按收藏排序需要先登录 B 站（右上角「B站登录」）".into());
@@ -1019,7 +1033,11 @@ pub fn space_seasons(
     cookies: Option<&BiliCookies>,
 ) -> Result<Vec<SpaceCollection>, String> {
     let signed = wbi_sign(&format!("mid={mid}&page_num=1&page_size=20"))?;
-    let v = api_json_auth_ref(&format!("{SEASONS_LIST_API}?{signed}"), cookies, SPACE_REFERER)?;
+    let v = api_json_auth_ref(
+        &format!("{SEASONS_LIST_API}?{signed}"),
+        cookies,
+        SPACE_REFERER,
+    )?;
     if v["code"].as_i64() != Some(0) {
         return Err(bili_error(&v, "获取合集列表"));
     }
@@ -1053,25 +1071,32 @@ pub fn space_season_archives(
     let signed = wbi_sign(&format!(
         "mid={mid}&page_num={pn}&page_size=30&season_id={season_id}"
     ))?;
-    let v = api_json_auth_ref(&format!("{SEASON_ARCHIVES_API}?{signed}"), cookies, SPACE_REFERER)?;
+    let v = api_json_auth_ref(
+        &format!("{SEASON_ARCHIVES_API}?{signed}"),
+        cookies,
+        SPACE_REFERER,
+    )?;
     if v["code"].as_i64() != Some(0) {
         return Err(bili_error(&v, "获取合集视频"));
     }
-    let items: Vec<SpaceVideo> = (v["data"]["archives"].as_array().cloned().unwrap_or_default())
-        .iter()
-        .map(|it| SpaceVideo {
-            bvid: it["bvid"].as_str().unwrap_or("").to_string(),
-            title: it["title"].as_str().unwrap_or("").to_string(),
-            cover: it["pic"]
-                .as_str()
-                .unwrap_or("")
-                .replace("http://", "https://"),
-            duration_ms: (it["duration"].as_u64().unwrap_or(0)) * 1000,
-            play: it["stat"]["view"].as_u64().unwrap_or(0),
-            created: it["pubdate"].as_i64().unwrap_or(0),
-        })
-        .filter(|s| !s.bvid.is_empty())
-        .collect();
+    let items: Vec<SpaceVideo> = (v["data"]["archives"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default())
+    .iter()
+    .map(|it| SpaceVideo {
+        bvid: it["bvid"].as_str().unwrap_or("").to_string(),
+        title: it["title"].as_str().unwrap_or("").to_string(),
+        cover: it["pic"]
+            .as_str()
+            .unwrap_or("")
+            .replace("http://", "https://"),
+        duration_ms: (it["duration"].as_u64().unwrap_or(0)) * 1000,
+        play: it["stat"]["view"].as_u64().unwrap_or(0),
+        created: it["pubdate"].as_i64().unwrap_or(0),
+    })
+    .filter(|s| !s.bvid.is_empty())
+    .collect();
     let total = v["data"]["items_total"]
         .as_u64()
         .unwrap_or(items.len() as u64);
@@ -1094,21 +1119,24 @@ pub fn space_series_archives(
     if v["code"].as_i64() != Some(0) {
         return Err(bili_error(&v, "获取系列视频"));
     }
-    let items: Vec<SpaceVideo> = (v["data"]["archives"].as_array().cloned().unwrap_or_default())
-        .iter()
-        .map(|it| SpaceVideo {
-            bvid: it["bvid"].as_str().unwrap_or("").to_string(),
-            title: it["title"].as_str().unwrap_or("").to_string(),
-            cover: it["pic"]
-                .as_str()
-                .unwrap_or("")
-                .replace("http://", "https://"),
-            duration_ms: (it["duration"].as_u64().unwrap_or(0)) * 1000,
-            play: it["stat"]["view"].as_u64().unwrap_or(0),
-            created: it["pubdate"].as_i64().unwrap_or(0),
-        })
-        .filter(|s| !s.bvid.is_empty())
-        .collect();
+    let items: Vec<SpaceVideo> = (v["data"]["archives"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default())
+    .iter()
+    .map(|it| SpaceVideo {
+        bvid: it["bvid"].as_str().unwrap_or("").to_string(),
+        title: it["title"].as_str().unwrap_or("").to_string(),
+        cover: it["pic"]
+            .as_str()
+            .unwrap_or("")
+            .replace("http://", "https://"),
+        duration_ms: (it["duration"].as_u64().unwrap_or(0)) * 1000,
+        play: it["stat"]["view"].as_u64().unwrap_or(0),
+        created: it["pubdate"].as_i64().unwrap_or(0),
+    })
+    .filter(|s| !s.bvid.is_empty())
+    .collect();
     let total = v["data"]["total"].as_u64().unwrap_or(items.len() as u64);
     let has_more = (pn as u64) * 30 < total;
     Ok((items, total, has_more))
@@ -1306,11 +1334,9 @@ mod login_tests {
             )
             .ok()?;
             let get = |k: &str| -> String {
-                conn.query_row(
-                    "SELECT value FROM settings WHERE key = ?1",
-                    [k],
-                    |r| r.get(0),
-                )
+                conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
+                    r.get(0)
+                })
                 .unwrap_or_default()
             };
             let sessdata = get("bili_sessdata");
@@ -1325,13 +1351,15 @@ mod login_tests {
         let mid = parse_space("https://space.bilibili.com/229733301").expect("解析 mid 失败");
         let (name, _face, fans, total) = space_card(&mid).expect("card 失败");
         println!("card: {name} {fans} total={total}");
-        let (rows, _t, has_more) = space_videos(&mid, "pubdate", 1, cookies.as_ref()).expect("列表失败");
+        let (rows, _t, has_more) =
+            space_videos(&mid, "pubdate", 1, cookies.as_ref()).expect("列表失败");
         assert!(!rows.is_empty(), "应有视频");
         assert!(has_more, "629 个视频第一页应有更多");
         assert!(!rows[0].title.is_empty());
         assert!(rows[0].duration_ms > 0, "时长解析: {:?}", rows[0]);
         println!("pubdate first: {} play={}", rows[0].title, rows[0].play);
-        let (rows2, _t2, _h2) = space_videos(&mid, "click", 1, cookies.as_ref()).expect("播放排序失败");
+        let (rows2, _t2, _h2) =
+            space_videos(&mid, "click", 1, cookies.as_ref()).expect("播放排序失败");
         assert!(!rows2.is_empty());
         println!("click first: {} play={}", rows2[0].title, rows2[0].play);
         let seasons = space_seasons(&mid, cookies.as_ref()).expect("合集失败");
@@ -1383,14 +1411,19 @@ mod login_tests {
             )
             .ok()?;
             let get = |k: &str| -> String {
-                conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| r.get(0))
-                    .unwrap_or_default()
+                conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
+                    r.get(0)
+                })
+                .unwrap_or_default()
             };
             let sessdata = get("bili_sessdata");
             if sessdata.is_empty() {
                 return None;
             }
-            Some(BiliCookies { sessdata, buvid3: get("bili_buvid3") })
+            Some(BiliCookies {
+                sessdata,
+                buvid3: get("bili_buvid3"),
+            })
         })();
         let mid = parse_space("https://space.bilibili.com/229733301").expect("解析 mid 失败");
         let (rows, _t, _h) = space_videos(&mid, "pubdate", 1, cookies.as_ref()).expect("列表失败");
@@ -1420,7 +1453,10 @@ mod tests {
         let rows = resolve_pages("https://www.bilibili.com/video/BV1PFe26bEzt?t=185.7")
             .expect("resolve_pages 失败");
         assert!(!rows.is_empty(), "至少解析出一个分P");
-        assert!(rows[0].0.starts_with("bili://"), "存储链接应为 bili:// 协议");
+        assert!(
+            rows[0].0.starts_with("bili://"),
+            "存储链接应为 bili:// 协议"
+        );
 
         // 2. 播放解析：直链 + 元数据
         let (audio_url, info) = resolve(&rows[0].0)
@@ -1446,14 +1482,19 @@ mod tests {
         resp.into_reader()
             .read_to_end(&mut buf)
             .expect("读取音频流失败");
-        assert!(buf.len() > 2 * 1024 * 1024, "音频流过短: {} 字节", buf.len());
+        assert!(
+            buf.len() > 2 * 1024 * 1024,
+            "音频流过短: {} 字节",
+            buf.len()
+        );
         assert_eq!(&buf[4..8], b"ftyp", "应为 MP4 容器");
 
         // 4. 缓存为 m4s 并用引擎同款解码源验证
         let tmp = std::env::temp_dir().join("rustmusic_bili_test.m4s");
         std::fs::write(&tmp, &buf).unwrap();
         let path = tmp.to_string_lossy().into_owned();
-        let mut src = crate::symdec::SymphoniaSource::open(&path).expect("SymphoniaSource 打开失败");
+        let mut src =
+            crate::symdec::SymphoniaSource::open(&path).expect("SymphoniaSource 打开失败");
         let mut n = 0usize;
         let mut peak = 0f32;
         for s in src.by_ref() {
@@ -1469,6 +1510,9 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
         assert!(n > 2_000_000, "解码样本过少: {n}");
         assert!(peak > 0.05, "峰值过低: {peak}");
-        println!("e2e ok: samples={n} peak={peak:.3} title={} dur={}ms", info.title, info.duration_ms);
+        println!(
+            "e2e ok: samples={n} peak={peak:.3} title={} dur={}ms",
+            info.title, info.duration_ms
+        );
     }
 }

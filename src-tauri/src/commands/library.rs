@@ -69,7 +69,7 @@ pub async fn rescan(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 在资源管理器中打开文件夹
+/// 在系统文件管理器中打开文件夹
 #[tauri::command]
 pub async fn open_folder(path: String) -> Result<(), String> {
     let p = std::path::PathBuf::from(&path);
@@ -79,17 +79,21 @@ pub async fn open_folder(path: String) -> Result<(), String> {
     if !p.is_dir() {
         return Err("该路径不是文件夹".into());
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        // explorer 已打开该目录时聚焦，否则新开窗口
-        std::process::Command::new("explorer")
-            .arg(&path)
+        #[cfg(target_os = "windows")]
+        let mut cmd = {
+            // explorer 已打开该目录时聚焦，否则新开窗口
+            std::process::Command::new("explorer")
+        };
+        #[cfg(target_os = "linux")]
+        let mut cmd = std::process::Command::new("xdg-open");
+        cmd.arg(&path)
             .spawn()
-            .map_err(|e| format!("打开资源管理器失败: {e}"))?;
+            .map_err(|e| format!("打开文件管理器失败: {e}"))?;
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-        let _ = p;
         return Err("当前平台不支持".into());
     }
     Ok(())
@@ -213,13 +217,16 @@ fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
     let engine = super::engine_clone(&state);
 
     // 如果正在播放其中某首，先停止播放释放文件句柄
-    let current_id = engine.current.read().as_ref().and_then(|info| {
-        if info.kind == "track" {
-            info.id
-        } else {
-            None
-        }
-    });
+    let current_id =
+        engine.current.read().as_ref().and_then(
+            |info| {
+                if info.kind == "track" {
+                    info.id
+                } else {
+                    None
+                }
+            },
+        );
     if let Some(cid) = current_id {
         if ids.contains(&cid) {
             engine.stop();
@@ -263,7 +270,8 @@ fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
         if !t.cover.is_empty() {
             let cov = std::path::PathBuf::from(&t.cover);
             let covers_dir = state.app_data.join("covers");
-            let is_cache = if let (Ok(p1), Ok(p2)) = (cov.canonicalize(), covers_dir.canonicalize()) {
+            let is_cache = if let (Ok(p1), Ok(p2)) = (cov.canonicalize(), covers_dir.canonicalize())
+            {
                 p1.starts_with(p2)
             } else {
                 cov.starts_with(&covers_dir)
@@ -272,9 +280,10 @@ fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
                 let _ = std::fs::remove_file(&cov);
                 // 小图路径按文件名推导（不能对全路径 replace(".jpg")：
                 // 上级目录名里含 ".jpg" 时会替换到目录段）
-                if let (Some(stem), Some(ext)) =
-                    (cov.file_stem().and_then(|s| s.to_str()), cov.extension().and_then(|e| e.to_str()))
-                {
+                if let (Some(stem), Some(ext)) = (
+                    cov.file_stem().and_then(|s| s.to_str()),
+                    cov.extension().and_then(|e| e.to_str()),
+                ) {
                     let small = cov.with_file_name(format!("{stem}_s.{ext}"));
                     let _ = std::fs::remove_file(small);
                 }

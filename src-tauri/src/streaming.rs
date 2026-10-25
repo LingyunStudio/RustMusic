@@ -40,7 +40,12 @@ pub struct StreamingDownload {
 impl StreamingDownload {
     pub fn new(part: PathBuf, dest: PathBuf) -> Arc<Self> {
         Arc::new(Self {
-            state: Mutex::new(State { ready: 0, total: 0, done: false, failed: false }),
+            state: Mutex::new(State {
+                ready: 0,
+                total: 0,
+                done: false,
+                failed: false,
+            }),
             cv: Condvar::new(),
             part,
             dest,
@@ -113,14 +118,23 @@ impl StreamingDownload {
         let mut st = self.state.lock().unwrap();
         loop {
             if st.failed {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "download failed"));
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "download failed",
+                ));
             }
             if st.done {
                 let len = if st.total > 0 { st.total } else { st.ready };
-                return Ok(Frontier { len, eof: pos >= len });
+                return Ok(Frontier {
+                    len,
+                    eof: pos >= len,
+                });
             }
             if pos < st.ready {
-                return Ok(Frontier { len: st.ready, eof: false });
+                return Ok(Frontier {
+                    len: st.ready,
+                    eof: false,
+                });
             }
             let (guard, _) = self
                 .cv
@@ -319,7 +333,10 @@ mod tests {
         );
         assert!(total > 0, "no samples decoded");
         // 数据以约 2MB/s 供给且解码快于供给：断言解码经历了等待而非一次性读完
-        assert!(elapsed.as_secs_f64() > 1.0, "解码未经历阻塞等待，疑似一次性读完");
+        assert!(
+            elapsed.as_secs_f64() > 1.0,
+            "解码未经历阻塞等待，疑似一次性读完"
+        );
         writer.join().unwrap();
         let _ = std::fs::remove_file(&dest);
     }

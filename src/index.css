@@ -82,6 +82,9 @@ html[data-theme="light"] {
   --ink-t: #2b3546;
   --ink-2-t: #5d6a7e;
   --ink-3-t: #8d99ab;
+  /* 播放页歌词未唱行的浅色默认：封面取色失败（无自适应变量）时，
+     深色主题的奶油色默认在白底上几乎不可见 */
+  --lyric-dim: rgba(21, 24, 31, 0.62);
   --bar-tint: rgba(238, 241, 247, 0.88);
   --bar-glass: rgba(43, 53, 70, 0.07);
   --bar-line: rgba(43, 53, 70, 0.12);
@@ -198,17 +201,6 @@ body.dragging-rows * {
    · inset 0 0 Npx 暗色 = 内圈柔和暗影（参考的 ::before 模糊暗环）
    · 对角高光渐变 = 参考 ::after 的 45° 白色渐变（端点亮、中部透）
    · 外阴影浮起 */
-
-/* 浅色下的下拉选项底色（原生下拉需要实底） */
-html[data-theme="light"] select option {
-  background: #f6f8fc;
-  color: var(--ink);
-}
-
-html[data-theme="light"] select option {
-  background: #f6f8fc;
-  color: var(--ink);
-}
 
 /* 浅色下的网格纹理层——不采用：参考 demo 的网格仅是展示背景，
    玻璃效果本身只依赖背景色与高光栈 */
@@ -363,6 +355,12 @@ html[data-theme="light"][data-skin="on"] {
 html[data-skin="on"] .glass {
   backdrop-filter: blur(9px) saturate(1.12);
   -webkit-backdrop-filter: blur(9px) saturate(1.12);
+}
+
+/* 皮肤启用时歌词未唱行跟随各皮肤适配后的 --ink-3（与上方注释意图一致；
+   不加此规则时 :root 的固定值会在取色失败的白底浅色场景下几乎不可见） */
+html[data-skin="on"] {
+  --lyric-dim: var(--ink-3);
 }
 
 /* ---------- 皮肤 × 主题 文字适配 ----------
@@ -649,10 +647,10 @@ input[type="url"] {
   outline: none;
 }
 
-/* 输入框/下拉统一无描边：模块化由底色表达 */
+/* 输入框/下拉统一无描边：模块化由底色表达。
+   （下拉选择已组件化：components/Select.tsx，无原生 <select>） */
 input[type="text"],
-input[type="url"],
-select {
+input[type="url"] {
   border-color: transparent !important;
 }
 

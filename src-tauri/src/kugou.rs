@@ -123,11 +123,7 @@ pub fn current_mid() -> String {
 
 /// 当前生效的 dfid（命令层持久化用；未注册时为空串）
 pub fn current_dfid() -> String {
-    REGISTERED_DFID
-        .lock()
-        .unwrap()
-        .clone()
-        .unwrap_or_default()
+    REGISTERED_DFID.lock().unwrap().clone().unwrap_or_default()
 }
 
 /// 当前 dfid；未注册时立即走 register_dev 注册
@@ -283,7 +279,11 @@ fn aes_128_cbc_encrypt(plain: &[u8], key: &str, iv: &str) -> Vec<u8> {
 }
 
 /// AES-128-CBC 解密（PKCS7），解析为 JSON
-fn aes_128_cbc_decrypt(cipher_bytes: &[u8], key: &str, iv: &str) -> Result<serde_json::Value, String> {
+fn aes_128_cbc_decrypt(
+    cipher_bytes: &[u8],
+    key: &str,
+    iv: &str,
+) -> Result<serde_json::Value, String> {
     use aes::cipher::{BlockDecrypt, KeyInit};
     use aes::Block;
     if cipher_bytes.is_empty() || cipher_bytes.len() % 16 != 0 {
@@ -468,7 +468,9 @@ fn gateway_ex(
             None => pairs.push((k.clone(), v.clone())),
         }
     }
-    let data = body.map(|b| serde_json::to_string(b).unwrap_or_default()).unwrap_or_default();
+    let data = body
+        .map(|b| serde_json::to_string(b).unwrap_or_default())
+        .unwrap_or_default();
     pairs.push(("signature".into(), sign_android(&pairs, &data)));
 
     let query = pairs
@@ -517,10 +519,7 @@ fn gateway_ex(
             .or_else(|| v.get("error"))
             .and_then(|m| m.as_str())
             .unwrap_or("");
-        let code = v
-            .get("error_code")
-            .and_then(|c| c.as_i64())
-            .unwrap_or(0);
+        let code = v.get("error_code").and_then(|c| c.as_i64()).unwrap_or(0);
         return Err(format!("酷狗接口请求失败（{code} {msg}）"));
     }
     Ok(v)
@@ -624,7 +623,11 @@ pub fn enrich_hashes(
     // 三档全齐才无需反查：此前 hq/sq 齐但 super 为空就早退，
     // Hi-Res 的 super hash 永远补不上——音质选无损/Hi-Res 永远只拿到 flac
     if !sq_hash.is_empty() && !hq_hash.is_empty() && !super_hash.is_empty() {
-        return (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string());
+        return (
+            hq_hash.to_string(),
+            sq_hash.to_string(),
+            super_hash.to_string(),
+        );
     }
     let keyword = if artist.trim().is_empty() {
         title.to_string()
@@ -633,11 +636,27 @@ pub fn enrich_hashes(
     };
     match quality_hashes_by_search(hash, &keyword) {
         Some((h, s, sup)) => (
-            if hq_hash.is_empty() { h } else { hq_hash.to_string() },
-            if sq_hash.is_empty() { s } else { sq_hash.to_string() },
-            if super_hash.is_empty() { sup } else { super_hash.to_string() },
+            if hq_hash.is_empty() {
+                h
+            } else {
+                hq_hash.to_string()
+            },
+            if sq_hash.is_empty() {
+                s
+            } else {
+                sq_hash.to_string()
+            },
+            if super_hash.is_empty() {
+                sup
+            } else {
+                super_hash.to_string()
+            },
         ),
-        None => (hq_hash.to_string(), sq_hash.to_string(), super_hash.to_string()),
+        None => (
+            hq_hash.to_string(),
+            sq_hash.to_string(),
+            super_hash.to_string(),
+        ),
     }
 }
 
@@ -656,7 +675,10 @@ pub fn quality_hashes_by_search(hash: &str, keyword: &str) -> Option<(String, St
     // 空 super 往往是 v2 瞬时失败/风控，长缓存会把“永远拿不到 Hi-Res”钉死
     static CACHE: std::sync::OnceLock<
         std::sync::Mutex<
-            std::collections::HashMap<String, (std::time::Instant, Option<(String, String, String)>)>,
+            std::collections::HashMap<
+                String,
+                (std::time::Instant, Option<(String, String, String)>),
+            >,
         >,
     > = std::sync::OnceLock::new();
     const TTL_FULL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
@@ -756,9 +778,14 @@ fn hires_hash_by_privilege(hash: &str) -> Option<String> {
         }],
         "qualities": ["128", "320", "flac", "high", "super"],
     });
-    let v = gateway("/v2/get_res_privilege/lite", "media.store.kugou.com", &[], Some(&body))
-        .map_err(|e| format!("权益查询失败: {e}"))
-        .ok()?;
+    let v = gateway(
+        "/v2/get_res_privilege/lite",
+        "media.store.kugou.com",
+        &[],
+        Some(&body),
+    )
+    .map_err(|e| format!("权益查询失败: {e}"))
+    .ok()?;
     fn scan(node: &serde_json::Value, out: &mut Option<String>) {
         if out.is_some() {
             return;
@@ -937,7 +964,11 @@ fn search_fallback(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                duration_ms: t.get("duration").and_then(|v| v.as_i64()).unwrap_or(0).max(0) as u64
+                duration_ms: t
+                    .get("duration")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0)
+                    .max(0) as u64
                     * 1000,
                 cover: cover_sized(
                     t.pointer("/trans_param/union_cover")
@@ -949,9 +980,21 @@ fn search_fallback(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
                 album_audio_id: json_num(t.get("album_audio_id")),
                 album_id: json_num(t.get("album_id")),
                 // v3 搜索自带各档 hash（320hash/sqhash/viphash），登录后按音质取链必需
-                hq_hash: t.get("320hash").and_then(|v| v.as_str()).unwrap_or("").to_lowercase(),
-                sq_hash: t.get("sqhash").and_then(|v| v.as_str()).unwrap_or("").to_lowercase(),
-                super_hash: t.get("viphash").and_then(|v| v.as_str()).unwrap_or("").to_lowercase(),
+                hq_hash: t
+                    .get("320hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase(),
+                sq_hash: t
+                    .get("sqhash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase(),
+                super_hash: t
+                    .get("viphash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_lowercase(),
             });
         }
     }
@@ -1088,7 +1131,10 @@ fn song_url_v5(
             ("cdnBackup".into(), "1".into()),
             ("module".into(), String::new()),
             ("clientver".into(), "11430".into()),
-            ("key".into(), md5_hex(&format!("{h}{SALT_URL_KEY}{APPID}{mid}{userid}"))),
+            (
+                "key".into(),
+                md5_hex(&format!("{h}{SALT_URL_KEY}{APPID}{mid}{userid}")),
+            ),
             ("token".into(), token.to_string()),
             ("userid".into(), userid.to_string()),
         ];
@@ -1140,7 +1186,11 @@ fn song_url_v5(
                 .unwrap_or(0);
             Err(format!(
                 "no_url:{ec} resp={}",
-                serde_json::to_string(&v).unwrap_or_default().chars().take(300).collect::<String>()
+                serde_json::to_string(&v)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(300)
+                    .collect::<String>()
             ))
         }
     };
@@ -1199,7 +1249,15 @@ pub fn song_url(
     let mut v5_err = String::new();
     if !token.is_empty() && !userid.is_empty() {
         match song_url_v5(
-            token, userid, album_audio_id, album_id, hash, hq_hash, sq_hash, super_hash, quality,
+            token,
+            userid,
+            album_audio_id,
+            album_id,
+            hash,
+            hq_hash,
+            sq_hash,
+            super_hash,
+            quality,
         ) {
             Ok((url, ext, label)) => return Ok((url, ext, label.to_string())),
             // 登录通道失败（风控/会话失效/权益不足）：继续走匿名通道兜底，
@@ -1214,7 +1272,9 @@ pub fn song_url(
             // “没会员”与“登录态失效”（匿名通道的错误分不出二者）
             if !v5_err.is_empty() && vip {
                 let brief: String = v5_err.chars().take(120).collect();
-                return Err(format!("{e}；登录通道：{brief}（登录态可能已过期或权益不足，可尝试重新扫码登录）"));
+                return Err(format!(
+                    "{e}；登录通道：{brief}（登录态可能已过期或权益不足，可尝试重新扫码登录）"
+                ));
             }
             Err(e)
         }
@@ -1453,7 +1513,10 @@ fn song_from_kmr(t: &serde_json::Value) -> Option<KgSong> {
             .max(0) as u64,
         cover,
         vip: false,
-        album_audio_id: t.get("album_audio_id").and_then(|v| v.as_u64()).unwrap_or(0),
+        album_audio_id: t
+            .get("album_audio_id")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
         album_id,
         hq_hash: info("hash_320"),
         sq_hash: info("hash_flac"),
@@ -1493,8 +1556,13 @@ fn special_recommend(category_id: i64, page: i64) -> Result<Vec<KgPublicPlaylist
         "retrun_min": 5,
         "return_special_falg": 1,
     });
-    let v = gateway("/v2/special_recommend", "specialrec.service.kugou.com", &[], Some(&body))
-        .map_err(|e| format!("获取歌单推荐失败: {e}"))?;
+    let v = gateway(
+        "/v2/special_recommend",
+        "specialrec.service.kugou.com",
+        &[],
+        Some(&body),
+    )
+    .map_err(|e| format!("获取歌单推荐失败: {e}"))?;
     let mut out = Vec::new();
     if let Some(list) = v.pointer("/data/special_list").and_then(|x| x.as_array()) {
         for p in list {
@@ -1633,8 +1701,13 @@ fn privilege_map(
                 .collect::<Vec<_>>(),
             "qualities": ["128", "320", "flac", "high", "super"],
         });
-        let v = gateway("/v2/get_res_privilege/lite", "media.store.kugou.com", &[], Some(&body))
-            .map_err(|e| format!("权益查询失败: {e}"))?;
+        let v = gateway(
+            "/v2/get_res_privilege/lite",
+            "media.store.kugou.com",
+            &[],
+            Some(&body),
+        )
+        .map_err(|e| format!("权益查询失败: {e}"))?;
         // 响应结构：{data: [ {...,hash, pay_type, album_audio_id}, ... ]}
         let list = v
             .pointer("/data")
@@ -1659,7 +1732,10 @@ fn privilege_map(
                         .or_else(|| x.as_u64())
                 })
                 .unwrap_or(0);
-            let album_audio_id = it.get("album_audio_id").and_then(|x| x.as_u64()).unwrap_or(0);
+            let album_audio_id = it
+                .get("album_audio_id")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0);
             out.insert(hash, (pay_type == 3, album_id, album_audio_id));
         }
     }
@@ -1733,7 +1809,11 @@ fn song_from_playlist(t: &serde_json::Value) -> Option<KgSong> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        duration_ms: t.get("timelen").and_then(|v| v.as_i64()).unwrap_or(0).max(0) as u64,
+        duration_ms: t
+            .get("timelen")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .max(0) as u64,
         cover: cover_sized(t.get("cover").and_then(|v| v.as_str()).unwrap_or(""), 240),
         // 歌单通道的 privilege 对全部歌曲恒为 10，无法判定 VIP，置 false
         //（播放失败时错误信息已按权益明确分类）
@@ -1943,7 +2023,10 @@ pub fn qr_check(key: &str) -> Result<KgQrCheck, String> {
         UA,
         "酷狗扫码状态",
     )?;
-    let status_code = v.pointer("/data/status").and_then(|s| s.as_i64()).unwrap_or(1);
+    let status_code = v
+        .pointer("/data/status")
+        .and_then(|s| s.as_i64())
+        .unwrap_or(1);
     let status = match status_code {
         0 => "expired",
         2 => "scanned",
@@ -1999,10 +2082,7 @@ mod tests {
             ("mid".to_string(), "12345".to_string()),
             ("uuid".to_string(), "-".to_string()),
         ];
-        assert_eq!(
-            sign_android(&pairs, ""),
-            "58cfefe77313a1706ffadca4f3b4ff06"
-        );
+        assert_eq!(sign_android(&pairs, ""), "58cfefe77313a1706ffadca4f3b4ff06");
         let pairs2 = vec![
             ("appid".to_string(), "1005".to_string()),
             ("clientver".to_string(), "20489".to_string()),
@@ -2045,8 +2125,19 @@ mod tests {
         assert!(!songs[0].id.is_empty());
         // 付费曲目报“需要 VIP/付费”，免费曲目拿到直链
         let free = songs.iter().find(|s| !s.vip).expect("有免费曲目");
-        let (url, _ext, _label) =
-            song_url(&free.id, free.album_audio_id, free.album_id, &free.hq_hash, &free.sq_hash, &free.super_hash, false, "", "", "high").unwrap();
+        let (url, _ext, _label) = song_url(
+            &free.id,
+            free.album_audio_id,
+            free.album_id,
+            &free.hq_hash,
+            &free.sq_hash,
+            &free.super_hash,
+            false,
+            "",
+            "",
+            "high",
+        )
+        .unwrap();
         assert!(url.starts_with("http"));
         let lyric = lyric(&free.id).unwrap();
         let _ = lyric; // 有无歌词均可（有词时应包含时间标签）
@@ -2068,8 +2159,12 @@ mod tests {
         // 词时间必须是绝对毫秒（词首 ≥ 行首）：线上 KRC 词时间是相对行首的
         // 偏移，转换器漏加行首的话词首全落在 0 附近，前端逐词染色失效
         for l in p.lines.iter() {
-            let Some(words) = l.words.as_ref() else { continue };
-            let Some(first) = words.iter().find(|w| !w.text.is_empty()) else { continue };
+            let Some(words) = l.words.as_ref() else {
+                continue;
+            };
+            let Some(first) = words.iter().find(|w| !w.text.is_empty()) else {
+                continue;
+            };
             assert!(
                 first.start_ms + 100 >= l.time_ms.unwrap_or(0),
                 "词时间应为绝对毫秒：行首 {:?}，词首 {}（{}）",
@@ -2080,14 +2175,12 @@ mod tests {
         }
     }
 
-
     #[test]
     #[ignore] // 需要网络 + 本机应用数据库
     fn test_full_app_path_with_real_account() {
         // 直接复现应用路径：读本机库里的登录凭证 → 注册/注入 dfid →
         // 搜索 → 挑 VIP 曲目 → 按当前音质取链接
-        let db_path = std::env::var("APPDATA").unwrap()
-            + r"\com.rustmusic.app\library.db";
+        let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
         let conn = rusqlite::Connection::open_with_flags(
             &db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -2128,10 +2221,21 @@ mod tests {
         assert!(!vip_list.is_empty(), "搜索结果应含 VIP 曲目");
 
         let v = &vip_list[0];
-        println!("试播 VIP: {} - {} (album_audio_id={})", v.singer, v.name, v.album_audio_id);
+        println!(
+            "试播 VIP: {} - {} (album_audio_id={})",
+            v.singer, v.name, v.album_audio_id
+        );
         let (url, ext, label) = song_url(
-            &v.id, v.album_audio_id, v.album_id, &v.hq_hash, &v.sq_hash,
-            &v.super_hash, v.vip, &token, &userid, "lossless",
+            &v.id,
+            v.album_audio_id,
+            v.album_id,
+            &v.hq_hash,
+            &v.sq_hash,
+            &v.super_hash,
+            v.vip,
+            &token,
+            &userid,
+            "lossless",
         )
         .expect("VIP 曲目取链接失败");
         println!("✓ {label} .{ext} {}...", &url[..url.len().min(70)]);
@@ -2143,7 +2247,10 @@ mod tests {
         // 七里香（VIP 正版）的歌词：应返回 KRC 转换的增强 LRC
         let r = lyric("9218d81686c6ac681bc7ca621958ad6d");
         match r {
-            Ok(Some(text)) => println!("lyric ok, head: {}", text.chars().take(200).collect::<String>()),
+            Ok(Some(text)) => println!(
+                "lyric ok, head: {}",
+                text.chars().take(200).collect::<String>()
+            ),
             Ok(None) => println!("lyric: None（无歌词）"),
             Err(e) => println!("lyric error: {e}"),
         }
@@ -2191,10 +2298,7 @@ mod tests {
         // 匿名搜索也必须能看到 VIP 曲目（回归：songsearch_v2 主通道会
         // 把 pay_type==3 的歌整体过滤掉）
         let songs = search("七里香", 1).unwrap();
-        assert!(
-            songs.iter().any(|s| s.vip),
-            "搜索结果应包含 VIP 曲目"
-        );
+        assert!(songs.iter().any(|s| s.vip), "搜索结果应包含 VIP 曲目");
     }
 
     #[test]
@@ -2225,7 +2329,12 @@ fn test_quality_hashes_by_search_audit() {
     // 反查（存档行补齐用）：可能因同名多版本匹配失败，仅观察
     match quality_hashes_by_search(&s.id, &s.name) {
         Some((h, sq, sup)) => {
-            println!("✓ 反查成功: hq={} sq={} super={}", h.len(), sq.len(), sup.len())
+            println!(
+                "✓ 反查成功: hq={} sq={} super={}",
+                h.len(),
+                sq.len(),
+                sup.len()
+            )
         }
         None => println!("反查未命中（同名多版本，属已知局限）"),
     }
@@ -2237,11 +2346,9 @@ fn test_quality_hashes_by_search_audit() {
 #[ignore]
 fn test_kugou_download_quality_audit() {
     let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
-    let conn = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .expect("打开应用数据库失败");
+    let conn =
+        rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("打开应用数据库失败");
     let get = |k: &str| -> String {
         conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
             r.get::<_, String>(0)
@@ -2267,11 +2374,32 @@ fn test_kugou_download_quality_audit() {
         s.super_hash.len()
     );
     // 下载路径：存档行无各档 hash，按标题反查补齐
-    let (hq, sq, sup) = enrich_hashes(&s.id, &s.name, &s.singer, &s.hq_hash, &s.sq_hash, &s.super_hash);
-    println!("补齐后: hq={} sq={} super={}", hq.len(), sq.len(), sup.len());
+    let (hq, sq, sup) = enrich_hashes(
+        &s.id,
+        &s.name,
+        &s.singer,
+        &s.hq_hash,
+        &s.sq_hash,
+        &s.super_hash,
+    );
+    println!(
+        "补齐后: hq={} sq={} super={}",
+        hq.len(),
+        sq.len(),
+        sup.len()
+    );
     // 带真实 album_audio_id（修复后的下载路径）
     let (url, ext, label) = song_url(
-        &s.id, s.album_audio_id, s.album_id, &hq, &sq, &sup, s.vip, &token, &userid, "lossless",
+        &s.id,
+        s.album_audio_id,
+        s.album_id,
+        &hq,
+        &sq,
+        &sup,
+        s.vip,
+        &token,
+        &userid,
+        "lossless",
     )
     .expect("song_url failed");
     let agent = ureq::AgentBuilder::new().build();
@@ -2279,9 +2407,16 @@ fn test_kugou_download_quality_audit() {
         .head(&url)
         .call()
         .ok()
-        .and_then(|r| r.header("content-length").and_then(|v| v.parse::<u64>().ok()))
+        .and_then(|r| {
+            r.header("content-length")
+                .and_then(|v| v.parse::<u64>().ok())
+        })
         .unwrap_or(0);
-    println!("✓ 带 album_audio_id={}: {label} .{ext} 大小={}", s.album_audio_id, bytes_mb(size));
+    println!(
+        "✓ 带 album_audio_id={}: {label} .{ext} 大小={}",
+        s.album_audio_id,
+        bytes_mb(size)
+    );
     // 存档行场景（最近播放/收藏下载）：只有 128 hash，按"标题+歌手"反查补齐
     let (hq2, sq2, sup2) = enrich_hashes(&s.id, &s.name, &s.singer, "", "", "");
     println!(
@@ -2292,15 +2427,23 @@ fn test_kugou_download_quality_audit() {
         sq2.len(),
         sup2.len()
     );
-    match song_url(&s.id, 0, 0, &hq2, &sq2, &sup2, s.vip, &token, &userid, "lossless") {
+    match song_url(
+        &s.id, 0, 0, &hq2, &sq2, &sup2, s.vip, &token, &userid, "lossless",
+    ) {
         Ok((url0, ext0, label0)) => {
             let size0 = agent
                 .head(&url0)
                 .call()
                 .ok()
-                .and_then(|r| r.header("content-length").and_then(|v| v.parse::<u64>().ok()))
+                .and_then(|r| {
+                    r.header("content-length")
+                        .and_then(|v| v.parse::<u64>().ok())
+                })
                 .unwrap_or(0);
-            println!("✓ 存档行反查后取链: {label0} .{ext0} 大小={}", bytes_mb(size0));
+            println!(
+                "✓ 存档行反查后取链: {label0} .{ext0} 大小={}",
+                bytes_mb(size0)
+            );
         }
         Err(e) => println!("✗ 存档行反查后取链仍失败（{e}）"),
     }
@@ -2345,7 +2488,10 @@ fn test_playlist_tracks_count_audit() {
                 ("type".into(), "1".into()),
                 ("mode".into(), "1".into()),
                 ("personal_switch".into(), "1".into()),
-                ("extend_fields".into(), "abtags,hot_cmt,popularization".into()),
+                (
+                    "extend_fields".into(),
+                    "abtags,hot_cmt,popularization".into(),
+                ),
                 ("pagesize".into(), pagesize.to_string()),
                 ("global_collection_id".into(), pick.id.clone()),
             ];
