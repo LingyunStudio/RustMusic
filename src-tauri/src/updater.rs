@@ -52,6 +52,9 @@ pub struct UpdateInfo {
     pub asset_size: u64,
     /// 附件哈希（GitHub 返回 "sha256:<hex>"；缺省 = 无法校验，仅剩大小检查）
     pub asset_digest: Option<String>,
+    /// 签名附件（<安装包>.sig，ed25519）；缺失 = 更新被拒绝（见 download），
+    /// 仅当发布流水线签名缺失时才会发生
+    pub asset_sig_url: Option<String>,
     pub published_at: String,
     /// 当前安装方式能否应用内自动更新（false → 前端引导前往发布页）
     pub can_install: bool,
@@ -231,6 +234,15 @@ pub fn fetch_latest(current_version: &str) -> Result<Option<UpdateInfo>, String>
         Some((name, url, size, digest)) => (Some(name), Some(url), size, digest),
         None => (None, None, 0, None),
     };
+    // 签名附件：<安装包名>.sig（发布流水线自动生成）
+    let asset_sig_url = asset_name.as_ref().and_then(|n| {
+        let sig_name = format!("{n}.sig");
+        assets.iter().find_map(|a| {
+            (a["name"].as_str() == Some(sig_name.as_str()))
+                .then(|| a["browser_download_url"].as_str().map(|s| s.to_string()))
+                .flatten()
+        })
+    });
 
     Ok(Some(UpdateInfo {
         version: tag
@@ -242,6 +254,7 @@ pub fn fetch_latest(current_version: &str) -> Result<Option<UpdateInfo>, String>
         asset_url,
         asset_size,
         asset_digest,
+        asset_sig_url,
         published_at: release["published_at"]
             .as_str()
             .unwrap_or_default()
@@ -261,15 +274,35 @@ fn download_dir() -> PathBuf {
 }
 
 /// 下载安装包到下载目录，期间通过 `update://progress` 事件上报进度。
-/// 返回下载文件的完整路径。校验：文件大小与声明一致；声明了 SHA-256
-///（GitHub 附件 digest，形如 "sha256:<hex>"）时逐块计算并比对——
-/// 校验通过才允许进入静默安装，摘要不符视为下载被篡改/损坏。
+/// 更新包 ed25519 验签公钥（hex）。私钥由发布方离线保管
+///（installer/signing.key，不入库），发布流水线对安装包签名并随附件上传
+///（<安装包名>.sig）。公钥内置使更新校验不依赖 GitHub 的可信度：
+/// 发布账号被盗也只能推送会被验签拒绝的文件
+const UPDATE_PUBKEY: &str = "cd75f7f605c81473c5096f4da54436782bb9531f678984637ab7d99c79fd0033";
+
+/// 校验下载文件的 ed25519 签名（sig 为 64 字节签名 hex）
+fn verify_signature(file: &std::path::Path, sig_hex: &str, pubkey_hex: &str) -> Result<(), String> {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    let mut pk = [0u8; 32];
+    hex::decode_to_slice(pubkey_hex, &mut pk).map_err(|_| "内置公钥格式错误".to_string())?;
+    let vk = VerifyingKey::from_bytes(&pk).map_err(|_| "内置公钥无效".to_string())?;
+    let sig_bytes = hex::decode(sig_hex.trim()).map_err(|_| "签名格式错误".to_string())?;
+    let sig = Signature::from_slice(&sig_bytes).map_err(|_| "签名格式错误".to_string())?;
+    let data = std::fs::read(file).map_err(|e| format!("读取安装包失败: {e}"))?;
+    vk.verify(&data, &sig)
+        .map_err(|_| "更新包签名校验失败，已删除下载文件".to_string())
+}
+
+/// 返回下载文件的完整路径。校验链：大小一致 → SHA-256（GitHub 附件
+/// digest，形如 "sha256:<hex>"，防传输损坏）→ ed25519 签名（公钥内置，
+/// 防发布源被冒充）——全部通过才允许进入静默安装，任一不符即删除下载文件
 pub fn download(
     app: &AppHandle,
     url: &str,
     name: &str,
     expected_size: u64,
     expected_digest: Option<&str>,
+    sig_url: Option<&str>,
 ) -> Result<PathBuf, String> {
     use sha2::Digest as _;
     DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
@@ -348,6 +381,28 @@ pub fn download(
         if !expected.is_empty() && actual != expected {
             let _ = std::fs::remove_file(&path);
             return Err("安装包校验失败（SHA-256 不符），已删除下载文件".into());
+        }
+    }
+    // 签名校验：正常发布必有 <安装包>.sig 附件（build.ps1 自动签名）；
+    // 缺失视为发布异常，拒绝安装（fail-closed）
+    match sig_url {
+        Some(u) => {
+            let sig = github_agent()
+                .get(u)
+                .set("User-Agent", UA)
+                .timeout(Duration::from_secs(20))
+                .call()
+                .map_err(|e| format!("下载更新包签名失败：{e}"))?
+                .into_string()
+                .map_err(|e| format!("读取更新包签名失败：{e}"))?;
+            if let Err(e) = verify_signature(&path, &sig, UPDATE_PUBKEY) {
+                let _ = std::fs::remove_file(&path);
+                return Err(e);
+            }
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+            return Err("更新包未签名，已取消安装；请前往发布页手动下载".into());
         }
     }
     Ok(path)
@@ -524,6 +579,24 @@ mod tests {
 
     /// 走真实 GitHub API 的集成验证：需要网络，手动 `cargo test -- --ignored` 运行。
     /// 设置 RUSTMUSIC_UPDATE_REPO 后也会对测试仓库生效（发布测试版时验证整条链路用）
+    #[test]
+    fn signature_roundtrip_and_tamper() {
+        use ed25519_dalek::{Signer, SigningKey};
+        let dir = std::env::temp_dir().join(format!("rustmusic-sigtest-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("asset.bin");
+        let payload = b"rustmusic update payload";
+        std::fs::write(&file, payload).unwrap();
+        let sk = SigningKey::from_bytes(&[0x42u8; 32]);
+        let sig = hex::encode(sk.sign(payload).to_bytes());
+        let pk = hex::encode(sk.verifying_key().to_bytes());
+        assert!(verify_signature(&file, &sig, &pk).is_ok());
+        // 内容篡改后必须失败
+        std::fs::write(&file, b"tampered payload").unwrap();
+        assert!(verify_signature(&file, &sig, &pk).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     #[ignore]
     fn fetch_latest_against_github() {

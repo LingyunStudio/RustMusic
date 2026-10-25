@@ -57,10 +57,11 @@ pub async fn download_update(
     name: String,
     size: u64,
     digest: Option<String>,
+    sig_url: Option<String>,
 ) -> Result<String, String> {
     // 下载可能持续数分钟：放到阻塞线程池，避免占用异步运行时
     tauri::async_runtime::spawn_blocking(move || {
-        updater::download(&app, &url, &name, size, digest.as_deref())
+        updater::download(&app, &url, &name, size, digest.as_deref(), sig_url.as_deref())
     })
     .await
     .map_err(|e| format!("下载任务失败：{e}"))?

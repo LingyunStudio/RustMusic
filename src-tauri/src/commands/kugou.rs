@@ -58,7 +58,7 @@ pub struct KgPlayReq {
 fn kg_credential(state: &State<AppState>) -> (String, String) {
     let conn = state.db.lock();
     (
-        db::get_setting(&conn, "kg_token").unwrap_or_default(),
+        crate::credentials::get("kg_token").unwrap_or_default(),
         db::get_setting(&conn, "kg_userid").unwrap_or_default(),
     )
 }
@@ -280,7 +280,8 @@ pub async fn kugou_qr_check(
         if let (Some(token), Some(userid)) = (&r.token, &r.userid) {
             crate::kugou::set_account(token, userid);
             let conn = state.db.lock();
-            db::set_setting(&conn, "kg_token", token);
+            crate::credentials::set("kg_token", &token)
+                .map_err(|e| format!("登录成功但凭据保存失败: {e}"))?;
             db::set_setting(&conn, "kg_userid", userid);
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "kg_nickname", nick);
@@ -296,7 +297,7 @@ pub async fn kugou_qr_check(
 #[tauri::command]
 pub async fn kugou_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let conn = state.db.lock();
-    let token = db::get_setting(&conn, "kg_token").unwrap_or_default();
+    let token = crate::credentials::get("kg_token").unwrap_or_default();
     let nickname = db::get_setting(&conn, "kg_nickname").unwrap_or_default();
     Ok(json!({ "loggedIn": !token.is_empty(), "nickname": nickname }))
 }
@@ -304,7 +305,7 @@ pub async fn kugou_status(state: State<'_, AppState>) -> Result<serde_json::Valu
 #[tauri::command]
 pub async fn kugou_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
-    db::set_setting(&conn, "kg_token", "");
+    crate::credentials::clear("kg_token");
     db::set_setting(&conn, "kg_userid", "");
     db::set_setting(&conn, "kg_nickname", "");
     db::set_setting(&conn, "kg_vip_type", "");

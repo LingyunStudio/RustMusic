@@ -30,12 +30,12 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https: http:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob: https: http:; font-src 'self' data:; connect-src 'self' ws: http://localhost:1420 ipc: http://ipc.localhost",
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPDATA/**",
-          "$HOME/**"
+          "$APPDATA/**"
         ]
       }
     }

@@ -4,7 +4,6 @@ use serde_json::json;
 use tauri::State;
 
 use crate::db;
-use crate::engine::TrackInfo;
 use crate::AppState;
 
 use super::engine_clone;
@@ -37,6 +36,64 @@ pub async fn set_output_device(
 }
 // ---------- 播放控制 ----------
 
+/// 曲库元数据 → 引擎播放信息（play_track 与预载共用）
+fn track_info_from_meta(
+    meta: crate::models::TrackMeta,
+    local_quality: &str,
+) -> crate::engine::TrackInfo {
+    crate::engine::TrackInfo {
+        id: Some(meta.id),
+        kind: "track".into(),
+        path: meta.path,
+        title: meta.title,
+        artist: meta.artist,
+        album: meta.album,
+        cover: meta.cover,
+        duration_ms: (meta.duration * 1000.0) as u64,
+        nid: None,
+        qid: None,
+        kgid: None,
+        quality: (!local_quality.is_empty()).then_some(local_quality.to_string()),
+    }
+}
+
+/// 预载"自然播完后的下一曲"（仅本库曲目可由引擎直接起播）：
+/// 自然播完引擎直接续播，挂起期间也无缝；在线曲目取链需要前端
+///（登录态+网络），前端传 None 走原有唤醒编排路径
+#[derive(serde::Deserialize)]
+pub struct PreloadTrack {
+    pub id: i64,
+}
+
+#[tauri::command]
+pub async fn engine_preload_next(
+    state: State<'_, AppState>,
+    item: Option<PreloadTrack>,
+) -> Result<(), String> {
+    let info = match item {
+        Some(q) => {
+            let conn = state.db.lock();
+            db::get_track(&conn, q.id).map(|meta| {
+                let local_quality = if meta.bit_depth >= 16 && meta.sample_rate >= 44100 {
+                    format!(
+                        "{}kHz/{}bit",
+                        meta.sample_rate / 1000,
+                        meta.bit_depth.max(16)
+                    )
+                } else if meta.bitrate > 0 {
+                    format!("{}kbps", meta.bitrate / 1000)
+                } else {
+                    String::new()
+                };
+                track_info_from_meta(meta, &local_quality)
+            })
+        }
+        None => None,
+    };
+    engine_clone(&state).set_preload(info);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     let meta = {
@@ -54,21 +111,7 @@ pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), Strin
     } else {
         String::new()
     };
-    let info = TrackInfo {
-        id: Some(meta.id),
-        kind: "track".into(),
-        path: meta.path,
-        title: meta.title,
-        artist: meta.artist,
-        album: meta.album,
-        cover: meta.cover,
-        duration_ms: (meta.duration * 1000.0) as u64,
-        nid: None,
-        qid: None,
-        kgid: None,
-        quality: (!local_quality.is_empty()).then_some(local_quality),
-    };
-    let r = engine_clone(&state).play_file(info);
+    let r = engine_clone(&state).play_file(track_info_from_meta(meta, &local_quality));
     // 开播成功才计入播放次数/最近播放：文件损坏等播放失败不计
     if r.is_ok() {
         let conn = state.db.lock();

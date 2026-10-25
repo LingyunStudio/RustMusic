@@ -2,6 +2,7 @@
 
 mod bilibili;
 mod commands;
+mod credentials;
 mod db;
 mod engine;
 mod eq;
@@ -218,6 +219,9 @@ fn main() {
 
             let conn = db::init(&app_data.join("library.db"))?;
 
+            // 存量明文凭据迁移：settings 表 → 系统凭据管理器（成功即清库内残留）
+            credentials::migrate_legacy(&conn);
+
             // 读取用户设置
             let volume: f32 = db::get_setting(&conn, "volume")
                 .and_then(|v| v.parse().ok())
@@ -420,6 +424,7 @@ fn main() {
             commands::desktop_lyrics_set_always_top,
             commands::dlyrics_menubar_line,
             commands::menubar_extension_install,
+            commands::engine_preload_next,
             commands::dlyrics_taskbar_line,
             commands::taskbar_lyrics_set_enabled,
             commands::taskbar_lyrics_list_displays,

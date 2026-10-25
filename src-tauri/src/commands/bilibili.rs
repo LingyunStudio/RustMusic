@@ -49,9 +49,9 @@ pub async fn bilibili_qr_check(
     let r = super::blocking(move || crate::bilibili::login_qr_check(&key)).await?;
     if r.status == "success" {
         if let Some(c) = &r.cookies {
+            crate::credentials::set("bili_sessdata", &c.sessdata)?;
+            crate::credentials::set("bili_buvid3", &c.buvid3)?;
             let conn = state.db.lock();
-            db::set_setting(&conn, "bili_sessdata", &c.sessdata);
-            db::set_setting(&conn, "bili_buvid3", &c.buvid3);
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "bili_nickname", nick);
             }
@@ -63,7 +63,7 @@ pub async fn bilibili_qr_check(
 #[tauri::command]
 pub async fn bilibili_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let conn = state.db.lock();
-    let sessdata = db::get_setting(&conn, "bili_sessdata").unwrap_or_default();
+    let sessdata = crate::credentials::get("bili_sessdata").unwrap_or_default();
     let nickname = db::get_setting(&conn, "bili_nickname").unwrap_or_default();
     Ok(json!({
         "loggedIn": !sessdata.is_empty(),
@@ -74,8 +74,8 @@ pub async fn bilibili_status(state: State<'_, AppState>) -> Result<serde_json::V
 #[tauri::command]
 pub async fn bilibili_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
-    db::set_setting(&conn, "bili_sessdata", "");
-    db::set_setting(&conn, "bili_buvid3", "");
+    crate::credentials::clear("bili_sessdata");
+    crate::credentials::clear("bili_buvid3");
     db::set_setting(&conn, "bili_nickname", "");
     Ok(())
 }
@@ -136,10 +136,10 @@ fn bili_lyric_fetch(
 /// 失败静默——播放不受影响，前端随后请求时再重试。
 pub(crate) fn spawn_bili_lyric_warmup(state: &State<'_, AppState>, rid: String) {
     let (sessdata, buvid3) = {
-        let conn = state.db.lock();
+        let _conn = state.db.lock();
         (
-            db::get_setting(&conn, "bili_sessdata").unwrap_or_default(),
-            db::get_setting(&conn, "bili_buvid3").unwrap_or_default(),
+            crate::credentials::get("bili_sessdata").unwrap_or_default(),
+            crate::credentials::get("bili_buvid3").unwrap_or_default(),
         )
     };
     std::thread::spawn(move || {
@@ -155,10 +155,10 @@ pub async fn bilibili_lyric(
     rid: String,
 ) -> Result<crate::models::LyricsPayload, String> {
     let (sessdata, buvid3) = {
-        let conn = state.db.lock();
+        let _conn = state.db.lock();
         (
-            db::get_setting(&conn, "bili_sessdata").unwrap_or_default(),
-            db::get_setting(&conn, "bili_buvid3").unwrap_or_default(),
+            crate::credentials::get("bili_sessdata").unwrap_or_default(),
+            crate::credentials::get("bili_buvid3").unwrap_or_default(),
         )
     };
     super::blocking(move || bili_lyric_fetch(&rid, &sessdata, &buvid3)).await
@@ -169,12 +169,10 @@ pub async fn bilibili_lyric(
 /// 空间登录态 cookie：有 SESSDATA 用登录态；未登录也带 buvid3 指纹降风控。
 /// playurl 取流/下载也用它：登录态可拿大会员专稿与更高音质
 pub(crate) fn bili_cookies_opt(
-    state: &State<'_, AppState>,
+    _state: &State<'_, AppState>,
 ) -> Option<crate::bilibili::BiliCookies> {
-    let conn = state.db.lock();
-    let sessdata = db::get_setting(&conn, "bili_sessdata").unwrap_or_default();
-    let buvid3 = db::get_setting(&conn, "bili_buvid3").unwrap_or_default();
-    drop(conn);
+    let sessdata = crate::credentials::get("bili_sessdata").unwrap_or_default();
+    let buvid3 = crate::credentials::get("bili_buvid3").unwrap_or_default();
     if sessdata.is_empty() && buvid3.is_empty() {
         return Some(crate::bilibili::BiliCookies {
             sessdata: String::new(),

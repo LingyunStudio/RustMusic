@@ -109,9 +109,6 @@ static LYRIC_WINDOWS: Mutex<Vec<(isize, isize)>> = Mutex::new(Vec::new());
 /// monitor 线程按引擎播放位置驱动（auto_tick），不依赖前端逐行推送
 static AUTO_LINES: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
 
-/// 自动推进的上一行文本（去重，避免每 120ms 重复触发渲染）
-static LAST_AUTO_TEXT: Mutex<String> = Mutex::new(String::new());
-
 /// 前端推送的同步歌词行
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

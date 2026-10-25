@@ -33,3 +33,4 @@ src-tauri/rust_url.txt
 *.log.bak
 .zcodeignore
 .zcode/
+installer/signing.key

@@ -26,9 +26,8 @@ pub struct NeteasePlayReq {
     #[serde(default)]
     pub duration_ms: u64,
 }
-pub(crate) fn netease_cookie(state: &State<AppState>) -> Option<String> {
-    let conn = state.db.lock();
-    db::get_setting(&conn, "netease_music_u").filter(|s| !s.is_empty())
+pub(crate) fn netease_cookie(_state: &State<AppState>) -> Option<String> {
+    crate::credentials::get("netease_music_u")
 }
 
 #[tauri::command]
@@ -92,7 +91,7 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
 #[tauri::command]
 pub async fn netease_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let conn = state.db.lock();
-    let music_u = db::get_setting(&conn, "netease_music_u").unwrap_or_default();
+    let music_u = crate::credentials::get("netease_music_u").unwrap_or_default();
     let nickname = db::get_setting(&conn, "netease_nickname").unwrap_or_default();
     Ok(json!({
         "loggedIn": !music_u.is_empty(),
@@ -115,7 +114,8 @@ pub async fn netease_qr_check(
     if r.status == "success" {
         if let Some(music_u) = &r.music_u {
             let conn = state.db.lock();
-            db::set_setting(&conn, "netease_music_u", music_u);
+            crate::credentials::set("netease_music_u", &music_u)
+                .map_err(|e| format!("登录成功但凭据保存失败: {e}"))?;
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "netease_nickname", nick);
             }
@@ -136,7 +136,7 @@ pub async fn netease_like_list(state: State<'_, AppState>) -> Result<Vec<i64>, S
         let conn = state.db.lock();
         (
             db::get_setting(&conn, "netease_uid").unwrap_or_default(),
-            db::get_setting(&conn, "netease_music_u").unwrap_or_default(),
+            crate::credentials::get("netease_music_u").unwrap_or_default(),
         )
     };
     if uid.is_empty() || music_u.is_empty() {
@@ -208,7 +208,7 @@ pub async fn netease_lyric(state: State<'_, AppState>, id: i64) -> Result<Lyrics
 #[tauri::command]
 pub async fn netease_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
-    db::set_setting(&conn, "netease_music_u", "");
+    crate::credentials::clear("netease_music_u");
     db::set_setting(&conn, "netease_nickname", "");
     Ok(())
 }
@@ -280,7 +280,7 @@ fn netease_user_playlists_task(
         let conn = state.db.lock();
         (
             db::get_setting(&conn, "netease_uid").unwrap_or_default(),
-            db::get_setting(&conn, "netease_music_u").unwrap_or_default(),
+            crate::credentials::get("netease_music_u").unwrap_or_default(),
         )
     };
     if music_u.is_empty() {
@@ -326,10 +326,7 @@ fn netease_import_playlist_task(
     name: String,
 ) -> Result<(i64, i64), String> {
     let state = app.state::<AppState>();
-    let music_u = {
-        let conn = state.db.lock();
-        db::get_setting(&conn, "netease_music_u").unwrap_or_default()
-    };
+    let music_u = crate::credentials::get("netease_music_u").unwrap_or_default();
     if music_u.is_empty() {
         return Err("未登录网易云账号".into());
     }

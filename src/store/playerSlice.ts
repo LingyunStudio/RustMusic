@@ -1,7 +1,7 @@
 //! 播放器域：播放队列、切歌/上一首/自动跳过失败项、进度与音量倍速、均衡器、歌词加载。
 import type { StateCreator } from "zustand";
 import { api } from "../api";
-import type { PlaylistEntryMeta, QueueItem } from "../types";
+import type { CurrentTrack, PlaylistEntryMeta, QueueItem } from "../types";
 import type { Store } from "./contract";
 import { capOnlineCache, pinnedIdsOf } from "./onlineCache";
 import { pushDesktopLyrics } from "./util";
@@ -116,6 +116,52 @@ function titleOfQueueItem(
     return caches.biliCache[item.id as string]?.title ?? `B站 #${item.id}`;
   }
   return caches.sources.find((s) => s.id === item.id)?.title ?? `音源 #${item.id}`;
+}
+
+/** 下一曲索引选择（纯函数，无副作用）：next() 与引擎预载共用同一套判定，
+ *  逻辑只能改这里。返回 null = 队列按当前模式已尽（或单曲循环重播场景）。
+ *  shuffle 在计划时掷骰——与推进时掷骰语义等价（预载路径下随机结果固定为
+ *  计划值，队列/状态变化都会触发重算）。 */
+export function peekNextIdx(
+  s: {
+    queue: QueueItem[];
+    qIndex: number;
+    repeat: "off" | "all" | "one";
+    shuffle: boolean;
+    unavailable: Record<string, string>;
+    failStreak: number;
+    current: CurrentTrack | null;
+  },
+  auto = false,
+  bypassRepeatOne = false,
+): number | null {
+  const { queue, qIndex, repeat, shuffle, unavailable, failStreak, current } = s;
+  if (!queue.length) return null;
+  if (auto && !bypassRepeatOne && repeat === "one" && current) {
+    // 单曲循环：重新播放当前曲目（qIndex 可能为 -1——当前项刚被删除，取 0）
+    return Math.max(0, qIndex);
+  }
+  let idx: number;
+  if (shuffle && queue.length > 1) {
+    do {
+      idx = Math.floor(Math.random() * queue.length);
+    } while (idx === qIndex);
+  } else {
+    idx = qIndex + 1;
+  }
+  // 跳过已知失败的在线曲目（无版权/下架），最多检查一整圈防止死循环
+  let guard = queue.length;
+  while (guard-- > 0) {
+    if (idx >= queue.length) {
+      if (repeat === "all") idx = 0;
+      else return null;
+    }
+    if (unavailable[`${queue[idx].kind}:${queue[idx].id}`] == null) return idx;
+    idx++;
+  }
+  if (idx < queue.length) return idx;
+  if (repeat === "all" && failStreak === 0) return 0;
+  return null;
 }
 
 export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get) => ({
@@ -613,58 +659,29 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   next(auto = false, ended = false, bypassRepeatOne = false) {
-    const { queue, qIndex, repeat, shuffle, current } = get();
+    const { queue } = get();
     if (!queue.length) return;
 
-    if (auto && repeat === "one" && !bypassRepeatOne && current) {
-      // 单曲循环：重新播放当前曲目（qIndex 可能为 -1——当前项刚被删除，取 0）
-      get().playQueueIndex(Math.max(0, qIndex));
+    const idx = peekNextIdx(get(), auto, bypassRepeatOne);
+    if (idx == null) {
+      // 引擎可能仍在放换队列前的歌（在线播放失败场景），此时不能
+      // 把 playing/pos 一把清掉；引擎空闲时该分支本就是幂等复位。
+      // ended=true 表示由"自然播完"事件驱动、引擎已空闲：立即复位，
+      // 不必等看门狗数秒后纠正（否则按钮卡"播放中"、进度冻结）
+      if (ended || !get().playing) set({ playing: false, pos: 0 });
+      if (ended) {
+        // 自然播完：彻底收停引擎（stopped=true、清流式关联、SMTC 同步）。
+        // 此前引擎停在"空闲但未停"的暧昧态——媒体键/系统浮窗的"播放"
+        // 会让 resume() 无声无息把最后一首从头重播（用户感知就是
+        // "歌单明明播完了还在响，界面又没在放什么"）
+        set({ queueFinished: true });
+        api.stop().catch(() => {});
+      }
       return;
-    }
-
-    let idx: number;
-    if (shuffle && queue.length > 1) {
-      do {
-        idx = Math.floor(Math.random() * queue.length);
-      } while (idx === qIndex);
-    } else {
-      idx = qIndex + 1;
-    }
-    // 跳过已知失败的在线曲目（无版权/下架），最多检查一整圈防止死循环
-    let guard = queue.length;
-    while (guard-- > 0) {
-      if (idx >= queue.length) {
-        if (repeat === "all") idx = 0;
-        else break;
-      }
-      const q = queue[idx];
-      if (get().unavailable[`${q.kind}:${q.id}`] == null) break;
-      idx++;
-    }
-    if (idx >= queue.length) {
-      if (repeat === "all" && get().failStreak === 0) {
-        idx = 0;
-      } else {
-        // 引擎可能仍在放换队列前的歌（在线播放失败场景），此时不能
-        // 把 playing/pos 一把清掉；引擎空闲时该分支本就是幂等复位。
-        // ended=true 表示由"自然播完"事件驱动、引擎已空闲：立即复位，
-        // 不必等看门狗数秒后纠正（否则按钮卡"播放中"、进度冻结）
-        if (ended || !get().playing) set({ playing: false, pos: 0 });
-        if (ended) {
-          // 自然播完：彻底收停引擎（stopped=true、清流式关联、SMTC 同步）。
-          // 此前引擎停在"空闲但未停"的暧昧态——媒体键/系统浮窗的“播放”
-          // 会让 resume() 无声无息把最后一首从头重播（用户感知就是
-          // “歌单明明播完了还在响，界面又没在放什么”）
-          set({ queueFinished: true });
-          api.stop().catch(() => {});
-        }
-        return;
-      }
     }
     set((s) => ({ qIndex: idx, history: [...s.history.slice(-50), s.qIndex] }));
     get().playQueueIndex(idx);
   },
-
   prev() {
     const { queue, qIndex, shuffle, history } = get();
     if (!queue.length) return;

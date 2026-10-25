@@ -1,6 +1,7 @@
 //! 输出设备管理：共享模式输出流构建/重建、设备偏好持久化与热切换、设备枚举。
 #![allow(deprecated)] // cpal name() 已废弃但仍作展示名兜底；设备名持久化以全名匹配
 use std::collections::HashMap;
+use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -86,10 +87,14 @@ pub(crate) fn default_device_display_name() -> String {
         .unwrap_or_default()
 }
 
+/// 已泄漏的输出流句柄按设备名登记：同一设备再次启用时复用既有流，
+/// 把泄漏量从「切换次数」收敛到「使用过的不同设备数」（rodio 的
+/// Player::connect_new 不借用 Mixer，复用安全； MixerDeviceSink 非 Send
+/// 不能入 Engine 状态，泄漏保活是 API+线程安全约束下的既定做法）
+static LEAKED_SINKS: Mutex<Vec<(String, &'static MixerDeviceSink)>> = Mutex::new(Vec::new());
+
 impl Engine {
     /// 按设备偏好创建输出流与 Player；None = 系统默认设备。
-    /// MixerDeviceSink 持有 cpal Stream（非 Send）：泄漏保活整个进程周期
-    /// （与旧实现一致），设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
     pub(super) fn build_output(
         pref: Option<&str>,
     ) -> Result<(&'static MixerDeviceSink, Player), String> {
@@ -106,11 +111,21 @@ impl Engine {
                 .default_output_device()
                 .ok_or("没有可用的音频输出设备")?,
         };
+        let device_name = device.name().unwrap_or_default();
+        // 同一设备已有泄漏句柄：复用（旧 Player 已 stop， mixer 仍活着）
+        if let Some((_, sink)) = LEAKED_SINKS.lock().iter().find(|(k, _)| *k == device_name) {
+            let player = Player::connect_new(sink.mixer());
+            player.pause();
+            return Ok((sink, player));
+        }
         let leaked: &'static MixerDeviceSink = Box::leak(Box::new(
             rodio::DeviceSinkBuilder::from_device(device)
                 .and_then(|b| b.open_stream())
                 .map_err(|e| format!("打开输出设备失败: {e}"))?,
         ));
+        LEAKED_SINKS
+            .lock()
+            .push((device_name.clone(), leaked));
         let sink = Player::connect_new(leaked.mixer());
         sink.pause();
         Ok((leaked, sink))

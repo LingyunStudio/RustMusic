@@ -99,6 +99,9 @@ pub struct Engine {
     /// start() 换曲瞬间（clear 与 append 之间）置位，避免 monitor 误判"播完"
     pub switching: Arc<AtomicBool>,
     pub current: Arc<RwLock<Option<TrackInfo>>>,
+    /// 自然播完后直接续播的预载下一曲（仅本库曲目可预载；前端规划，
+    /// monitor 在播完判定时取出起播，无需唤醒前端做切歌决策）
+    preload: RwLock<Option<TrackInfo>>,
     volume: Arc<AtomicU32>,
     speed: Arc<AtomicU32>,
     play_seq: AtomicU64,
@@ -166,6 +169,7 @@ impl Engine {
             rebuilding: Arc::new(AtomicBool::new(false)),
             switching: Arc::new(AtomicBool::new(false)),
             current: Arc::new(RwLock::new(None)),
+            preload: RwLock::new(None),
             volume: Arc::new(AtomicU32::new(volume.to_bits())),
             speed: Arc::new(AtomicU32::new(speed.to_bits())),
             play_seq: AtomicU64::new(0),
@@ -293,6 +297,18 @@ impl Engine {
             },
         );
         Ok(())
+    }
+
+    /// 设置"自然播完后直接续播"的预载下一曲（None = 清除，走前端编排路径）。
+    /// 仅覆盖引擎可直接起播的本地曲目；在线曲目取链需要前端（登录态+网络），
+    /// 保持原唤醒编排路径
+    pub fn set_preload(&self, info: Option<TrackInfo>) {
+        *self.preload.write() = info;
+    }
+
+    /// 自然播完时取出预载曲（一次性）
+    pub fn take_preload(&self) -> Option<TrackInfo> {
+        self.preload.write().take()
     }
 
     pub fn pause(&self) {

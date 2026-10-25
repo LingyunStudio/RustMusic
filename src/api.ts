@@ -297,8 +297,13 @@ export const api = {
   /** 手动检查：有更新返回信息，已是最新返回 null */
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   /** 下载安装包到临时目录，进度走 update://progress 事件，返回文件路径 */
-  downloadUpdate: (req: { url: string; name: string; size: number; digest: string | null }) =>
-    invoke<string>("download_update", req),
+  downloadUpdate: (req: {
+    url: string;
+    name: string;
+    size: number;
+    digest: string | null;
+    sigUrl: string | null;
+  }) => invoke<string>("download_update", req),
   cancelUpdateDownload: () => invoke<void>("cancel_update_download"),
   /** 安装并重启应用（安装位置不变，安装完成后自动重启） */
   installUpdate: (path: string) => invoke<void>("install_update", { path }),
@@ -376,6 +381,10 @@ export const api = {
    *  color 为空 = 随任务栏深浅取默认色 */
   dlyricsTaskbarLine: (line: string, color: string) =>
     invoke<void>("dlyrics_taskbar_line", { line, color }),
+  /** 预载"自然播完后的下一曲"（仅本库曲目可由引擎直接起播；null = 清除，
+   *  走原有前端编排路径）：自然播完引擎直接续播，挂起期间也无缝 */
+  enginePreloadNext: (item: { id: number } | null) =>
+    invoke<void>("engine_preload_next", { item }),
   /** 整包推送同步歌词行（歌词加载/切歌时一次）；行推进由 Rust monitor
    *  按播放位置自动完成——挂起期间前端停摆也能继续更新 */
   dlyricsTaskbarSetLines: (lines: { timeMs: number; text: string }[]) =>

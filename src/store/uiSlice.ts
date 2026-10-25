@@ -20,6 +20,8 @@ import type { PlayState, ScanState } from "../types";
 import type { Store } from "./contract";
 import { initMenubarLyrics, setMenubarLyricsEnabled, syncMenubarLyrics } from "./menubar";
 import { initTaskbarLyrics, setTaskbarLyricsEnabled, syncTaskbarLyrics } from "./taskbar";
+import { peekNextIdx } from "./playerSlice";
+import { useStore } from ".";
 import { pushDesktopLyrics, resetDesktopLyricsFrame } from "./util";
 
 type SetFn = (partial: Partial<Store> | ((s: Store) => Partial<Store>)) => void;
@@ -167,6 +169,14 @@ function applyPlayState(set: SetFn, get: GetFn, p: PlayState, posOverride?: numb
   // lastPlayed/playCount（后端 record_play 已在开播时落库）——
   // 不再全量拉取曲目列表（大曲库下每首歌一次全量 IPC + 整表重渲染）
   if (isFreshStart && p.kind !== "track") get().refreshRecentOnline();
+  // 引擎自动续播（预载下一曲）时队列指针跟随：状态帧的本地曲目即队列里的
+  // 下一首——按 kind:id 对位（对不上保持原位：手动播放不入队单曲等场景）
+  if (isFreshStart && p.kind === "track" && p.id != null) {
+    const qi = get().queue.findIndex(
+      (q) => q.kind === "track" && q.id === p.id,
+    );
+    if (qi >= 0 && qi !== get().qIndex) set({ qIndex: qi });
+  }
   if (isFreshStart && p.kind === "track" && p.id != null) {
     const now = Math.floor(Date.now() / 1000);
     set((s) => ({
@@ -243,6 +253,36 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       if (initMenubarLyrics()) set({ menubarLyricsOn: true });
       // 任务栏歌词开关恢复（Windows，localStorage）
       if (initTaskbarLyrics()) set({ taskbarLyricsOn: true });
+
+      // 引擎预载下一曲（仅本库曲目）：队列/模式/定时停止变化即重算并下发。
+      // 自然播完由引擎直接续播（monitor 驱动），挂起期间也无缝连续；
+      // 在线曲目取链需要前端，传 null 走原有唤醒编排路径
+      let lastPreloadKey = "";
+      const planPreload = () => {
+        const st = get();
+        const key = [
+          st.sleepStopAfterTrack,
+          st.sleepStopAfterQueue,
+          st.repeat,
+          st.shuffle,
+          st.qIndex,
+          st.queue.length,
+          st.current ? `${st.current.kind}:${st.current.id}` : "",
+        ].join("|");
+        if (key === lastPreloadKey) return;
+        lastPreloadKey = key;
+        const item =
+          !st.sleepStopAfterTrack && !st.sleepStopAfterQueue
+            ? peekNextIdx(st, true, false)
+            : null;
+        const payload =
+          item != null && st.queue[item]?.kind === "track"
+            ? { id: st.queue[item].id as number }
+            : null;
+        void api.enginePreloadNext(payload).catch(() => {});
+      };
+      planPreload();
+      unbinds.push(useStore.subscribe(planPreload));
     unbinds.push(
       await listenEvent<PlayState>("player://state", (p) => applyPlayState(set, get, p))
     );

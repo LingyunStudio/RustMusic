@@ -464,16 +464,23 @@ pub fn song_url(
             let url = if purl.starts_with("http") {
                 purl.to_string()
             } else {
+                // 优先 https 流媒体前缀（接口可能同时返回 http/https 两个前缀），
+                // 明文前缀仅作无 https 时的回落；基址回落同样走 https
                 let sip = resp
                     .pointer("/req_1/data/sip")
                     .and_then(|v| v.as_array())
                     .and_then(|a| {
-                        a.iter()
-                            .filter_map(|v| v.as_str())
-                            .find(|s| s.starts_with("http"))
+                        let list: Vec<&str> =
+                            a.iter().filter_map(|v| v.as_str()).collect();
+                        list.iter()
+                            .copied()
+                            .find(|s| s.starts_with("https"))
+                            .or_else(|| {
+                                list.iter().copied().find(|s| s.starts_with("http"))
+                            })
+                            .map(|s| s.to_string())
                     })
-                    .unwrap_or("http://ws.stream.qqmusic.qq.com/")
-                    .to_string();
+                    .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
                 format!("{}{}", sip, purl)
             };
             return Ok((url, ext.to_string(), label));

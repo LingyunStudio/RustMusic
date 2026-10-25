@@ -38,7 +38,7 @@ pub(crate) fn qq_credential(state: &State<AppState>) -> Result<(String, String),
         let conn = state.db.lock();
         (
             db::get_setting(&conn, "qq_musicid").unwrap_or_default(),
-            db::get_setting(&conn, "qq_musickey").unwrap_or_default(),
+            crate::credentials::get("qq_musickey").unwrap_or_default(),
         )
     };
     if musicid.is_empty() || musickey.is_empty() {
@@ -188,14 +188,15 @@ pub async fn qq_lyric(
     Ok(payload)
 }
 /// 登录成功后把凭证写入本机设置（QQ 扫码与微信扫码共用）
-fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) {
+fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) -> Result<(), String> {
     if r.status != "success" {
-        return;
+        return Ok(());
     }
     if let (Some(musicid), Some(musickey)) = (&r.musicid, &r.musickey) {
         let conn = state.db.lock();
         db::set_setting(&conn, "qq_musicid", musicid);
-        db::set_setting(&conn, "qq_musickey", musickey);
+        crate::credentials::set("qq_musickey", &musickey)
+            .map_err(|e| format!("登录成功但凭据保存失败: {e}"))?;
         // 拉取“我喜欢/收藏”夹需要加密 uin（登录响应里带，错过就没了）
         if let Some(euin) = &r.encrypt_uin {
             db::set_setting(&conn, "qq_encrypt_uin", euin);
@@ -204,6 +205,7 @@ fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) {
             db::set_setting(&conn, "qq_nickname", nick);
         }
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -218,7 +220,7 @@ pub async fn qq_qr_check(
     qrsig: String,
 ) -> Result<serde_json::Value, String> {
     let r = super::blocking(move || crate::qq::qr_check(&qrsig)).await?;
-    save_qq_credential(&state, &r);
+    save_qq_credential(&state, &r)?;
     Ok(json!({ "status": r.status, "nickname": r.nickname }))
 }
 
@@ -235,7 +237,7 @@ pub async fn qq_wx_qr_check(
     uuid: String,
 ) -> Result<serde_json::Value, String> {
     let r = super::blocking(move || crate::qq::wx_qr_check(&uuid)).await?;
-    save_qq_credential(&state, &r);
+    save_qq_credential(&state, &r)?;
     Ok(json!({ "status": r.status, "nickname": r.nickname }))
 }
 
@@ -251,7 +253,7 @@ pub async fn qq_status(state: State<'_, AppState>) -> Result<serde_json::Value, 
 pub async fn qq_logout(state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.lock();
     db::set_setting(&conn, "qq_musicid", "");
-    db::set_setting(&conn, "qq_musickey", "");
+    crate::credentials::clear("qq_musickey");
     db::set_setting(&conn, "qq_encrypt_uin", "");
     db::set_setting(&conn, "qq_nickname", "");
     Ok(())

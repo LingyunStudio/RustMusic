@@ -123,8 +123,18 @@ pub(crate) fn monitor(app: AppHandle) {
             && !rebuilding
             && !switching
         {
-            // 队列/循环逻辑在前端：挂起中也要唤醒投递，否则托盘播放不连续
-            emit_to_frontend(&app, "player://ended", serde_json::json!({}), true);
+            // 预载下一曲（本库曲目）：引擎直接起播，挂起期间也无缝连续，
+            // 前端通过 player://state 事件同步（start() 内部发出）。
+            // 预载缺失/起播失败 → 原有编排路径：唤醒前端做切歌决策
+            if let Some(info) = eng.take_preload() {
+                if let Err(e) = eng.play_file(info) {
+                    eprintln!("[monitor] 预载续播失败: {e} → 回落前端编排");
+                    emit_to_frontend(&app, "player://ended", serde_json::json!({}), true);
+                }
+            } else {
+                // 队列/循环逻辑在前端：挂起中也要唤醒投递，否则托盘播放不连续
+                emit_to_frontend(&app, "player://ended", serde_json::json!({}), true);
+            }
         }
         was_active = active || rebuilding || switching;
     }

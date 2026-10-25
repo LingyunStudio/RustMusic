@@ -54,6 +54,8 @@ qrcode = { version = "0.14", default-features = false, features = ["image"] }
 filetime = "0.2"
 # .lrc 歌词文件的 GBK/GB18030 编码支持（Windows 记事本圈常见编码）
 encoding_rs = "0.8"
+# 更新包 ed25519 签名校验（updater 验签 + examples/asset_signer 签名工具）
+ed25519-dalek = "2"
 
 [target.'cfg(windows)'.dependencies]
 # WebView2 TrySuspend：托盘隐藏时挂起渲染进程回收内存

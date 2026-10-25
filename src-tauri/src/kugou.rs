@@ -928,13 +928,13 @@ fn enrich_from_songsearch(songs: &mut [KgSong], keyword: &str, page: i64) {
     }
 }
 
-/// 备用搜索：mobilecdn v3 明文接口（无多音质 hash）
+/// 搜索：mobiles v3 接口（https；无多音质 hash，songsearch 仅做元数据增强）
 fn search_fallback(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
     let url = format!(
-        "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword={}&page={page}&pagesize=30",
+        "https://mobiles.kugou.com/api/v3/search/song?format=json&keyword={}&page={page}&pagesize=30",
         form_encode(keyword)
     );
-    let v = get_json(&url, "http://mobilecdn.kugou.com/", UA, "酷狗搜索")?;
+    let v = get_json(&url, "https://mobiles.kugou.com/", UA, "酷狗搜索")?;
     if v.get("status").and_then(|s| s.as_i64()) != Some(1) {
         return Err("酷狗搜索失败".into());
     }
@@ -1006,10 +1006,10 @@ fn search_fallback(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
 /// 匿名播放信息（免费曲目 128k 直链），返回 (url, ext)
 fn song_url_free(hash: &str, vip: bool) -> Result<(String, String), String> {
     let url = format!(
-        "http://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash={}",
+        "https://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash={}",
         form_encode(hash)
     );
-    let v = get_json(&url, "http://m.kugou.com/", UA, "酷狗歌曲信息")?;
+    let v = get_json(&url, "https://m.kugou.com/", UA, "酷狗歌曲信息")?;
     let play_url = v
         .get("url")
         .and_then(|u| u.as_str())
@@ -1311,10 +1311,10 @@ fn decrypt_krc(content_b64: &str) -> Result<String, String> {
 /// LRC（content 为 base64）。无歌词返回 Ok(None)
 pub fn lyric(hash: &str) -> Result<Option<String>, String> {
     let search_url = format!(
-        "http://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=&hash={}",
+        "https://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=&hash={}",
         form_encode(hash)
     );
-    let text = get_text(&search_url, "http://krcs.kugou.com/", UA)?;
+    let text = get_text(&search_url, "https://krcs.kugou.com/", UA)?;
     let v = parse_json(&text, "酷狗歌词检索")?;
     let cand = v
         .pointer("/candidates/0")
@@ -1342,10 +1342,10 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
 
     // KRC 逐字：解密/解析失败回落 LRC（回落原因落 stderr，便于诊断"没有逐词"类反馈）
     let krc_url = format!(
-        "http://krcs.kugou.com/download?ver=1&client=mobi&fmt=krc&charset=utf8&id={id}&accesskey={accesskey}"
+        "https://krcs.kugou.com/download?ver=1&client=mobi&fmt=krc&charset=utf8&id={id}&accesskey={accesskey}"
     );
     match (|| -> Result<String, String> {
-        let text = get_text(&krc_url, "http://krcs.kugou.com/", UA)?;
+        let text = get_text(&krc_url, "https://krcs.kugou.com/", UA)?;
         let v = parse_json(&text, "酷狗 KRC 下载")?;
         let content = v
             .get("content")
@@ -1363,9 +1363,9 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
 
     // LRC 行级
     let dl_url = format!(
-        "http://krcs.kugou.com/download?ver=1&client=pc&fmt=lrc&charset=utf8&id={id}&accesskey={accesskey}"
+        "https://krcs.kugou.com/download?ver=1&client=pc&fmt=lrc&charset=utf8&id={id}&accesskey={accesskey}"
     );
-    let text = get_text(&dl_url, "http://krcs.kugou.com/", UA)?;
+    let text = get_text(&dl_url, "https://krcs.kugou.com/", UA)?;
     let v = parse_json(&text, "酷狗歌词下载")?;
     let content = v
         .get("content")
@@ -1394,8 +1394,8 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
 /// 官方榜单列表（TOP500 / 飙升榜 / 热歌榜等，老明文接口免签名）
 pub fn toplists() -> Result<Vec<KgToplist>, String> {
     let v = get_json(
-        "http://mobilecdn.kugou.com/api/v3/rank/list?format=json",
-        "http://mobilecdn.kugou.com/",
+        "https://mobiles.kugou.com/api/v3/rank/list?format=json",
+        "https://mobiles.kugou.com/",
         UA,
         "酷狗榜单列表",
     )?;

@@ -403,6 +403,8 @@ export interface UpdateInfo {
   assetSize: number;
   /** 附件 SHA-256（GitHub 返回 "sha256:<hex>"；缺省 = 无法校验） */
   assetDigest: string | null;
+  /** 签名附件（<安装包>.sig，ed25519）；缺失时应用内更新被拒绝 */
+  assetSigUrl: string | null;
   publishedAt: string;
   /** 当前安装方式能否应用内自动更新（false → 弹窗引导前往发布页） */
   canInstall: boolean;
