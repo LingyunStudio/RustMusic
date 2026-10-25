@@ -696,6 +696,38 @@ pub async fn taskbar_lyrics_set_display(display: String) -> Result<(), String> {
     }
 }
 
+/// 整包推送同步歌词行（歌词加载/切歌时一次；空 = 无同步歌词用 ♪ 标题回落）。
+/// 挂起期间前端停摆，行推进由 monitor 线程按引擎位置驱动，不依赖前端逐行推送
+#[tauri::command]
+pub async fn dlyrics_taskbar_set_lines(
+    lines: Vec<crate::taskbar_lyric::TaskbarLine>,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    crate::taskbar_lyric::set_lines(
+        lines
+            .into_iter()
+            .map(|l| (l.time_ms, l.text))
+            .collect(),
+    );
+    #[cfg(not(windows))]
+    {
+        let _ = lines;
+    }
+    Ok(())
+}
+
+/// 任务栏歌词颜色变更（设置页取色时）
+#[tauri::command]
+pub async fn dlyrics_taskbar_color(color: Option<String>) -> Result<(), String> {
+    #[cfg(windows)]
+    crate::taskbar_lyric::set_color(color);
+    #[cfg(not(windows))]
+    {
+        let _ = color;
+    }
+    Ok(())
+}
+
 /// 用系统默认浏览器打开链接（release notes 内的跳转用）。
 /// Windows 走 explorer 而不是 `cmd /C start`：URL 未加引号时 cmd 会把 & | ^
 /// 当命令分隔符执行（含查询串的链接直接命令注入），explorer 按单个参数透传；

@@ -74,6 +74,16 @@ pub(crate) fn monitor(app: AppHandle) {
         let active = eng.is_active();
         let paused = eng.user_paused.load(Ordering::Relaxed);
 
+        // 任务栏歌词自动换行：WebView 挂起（托盘隐藏）期间前端停摆、
+        // 进度事件被丢弃，由本循环按引擎位置直接驱动（行数据由前端
+        // 在歌词加载/切歌时整包推送，见 taskbar_lyric::set_lines）
+        let fallback = eng
+            .current
+            .read()
+            .as_ref()
+            .map(|t| format!("♪ {}", t.title.trim()));
+        crate::taskbar_lyric::auto_tick(eng.pos_ms.load(Ordering::Relaxed), fallback);
+
         diag += 1;
         if cfg!(debug_assertions) && diag % 40 == 0 {
             eprintln!(

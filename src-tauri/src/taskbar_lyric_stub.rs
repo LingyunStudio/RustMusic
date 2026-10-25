@@ -12,6 +12,14 @@ pub struct DisplayInfo {
     pub has_taskbar: bool,
 }
 
+/// 与 taskbar_lyric.rs 同构的歌词行（命令入参类型签名需要）
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskbarLine {
+    pub time_ms: u64,
+    pub text: String,
+}
+
 #[allow(dead_code)]
 pub fn spawn() {}
 
@@ -19,3 +27,12 @@ pub fn spawn() {}
 pub fn list_displays() -> Vec<DisplayInfo> {
     Vec::new()
 }
+
+#[allow(dead_code)]
+pub fn set_lines(_lines: Vec<(u64, String)>) {}
+
+#[allow(dead_code)]
+pub fn set_color(_color: Option<String>) {}
+
+#[allow(dead_code)]
+pub fn auto_tick(_pos_ms: u64, _fallback: Option<String>) {}

@@ -14,17 +14,31 @@ let enabled = false;
 let color = ""; // 空 = 默认色（Rust 侧随任务栏深浅取黑/白）
 let display = "all"; // "all" = 全部显示器；其它 = 显示器设备名
 let lastText: string | null = null; // null = 尚未写过（下次必写）
+let lastLyrics: unknown = null; // 歌词对象身份（变化时整包推行）
 
-/** 状态帧同步：文本变化才 IPC（250ms 一帧，仅行切换时产生调用） */
+/** 状态帧同步：歌词对象变化时整包推行（Rust monitor 按位置自动推进，
+ *  挂起期间前端停摆也能继续更新）；当前行仅在开启/换词瞬间即时推一次 */
 export function syncTaskbarLyrics(s: Pick<Store, "lyrics" | "pos" | "current">) {
   if (!enabled) return;
+  if (s.lyrics !== lastLyrics) {
+    lastLyrics = s.lyrics;
+    const lines = s.lyrics?.synced
+      ? (s.lyrics.lines ?? []).map((l) => ({
+          timeMs: l.timeMs ?? 0,
+          text: l.text.trim(),
+        }))
+      : [];
+    void api.dlyricsTaskbarSetLines(lines).catch(() => {});
+    lastText = null; // 行数据已换，下面的当前行推送立即生效
+  }
   const text = lineText(s);
   if (text === lastText) return;
   lastText = text;
   void api.dlyricsTaskbarLine(text, color).catch(() => {});
 }
 
-/** 歌词颜色（空 = 默认随任务栏深浅）：改后 lastText 置空，≤250ms 内生效 */
+/** 歌词颜色（空 = 默认随任务栏深浅）：独立命令即时生效，当前行由
+ *  monitor 按存储色重渲染（ULW 每次渲染都读最新色） */
 export function setTaskbarLyricsColor(c: string) {
   color = c.trim();
   try {
@@ -33,6 +47,7 @@ export function setTaskbarLyricsColor(c: string) {
     // localStorage 不可用：仅本次会话生效
   }
   lastText = null;
+  void api.dlyricsTaskbarColor(color).catch(() => {});
 }
 
 export function getTaskbarLyricsColor(): string {

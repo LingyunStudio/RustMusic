@@ -376,6 +376,13 @@ export const api = {
    *  color 为空 = 随任务栏深浅取默认色 */
   dlyricsTaskbarLine: (line: string, color: string) =>
     invoke<void>("dlyrics_taskbar_line", { line, color }),
+  /** 整包推送同步歌词行（歌词加载/切歌时一次）；行推进由 Rust monitor
+   *  按播放位置自动完成——挂起期间前端停摆也能继续更新 */
+  dlyricsTaskbarSetLines: (lines: { timeMs: number; text: string }[]) =>
+    invoke<void>("dlyrics_taskbar_set_lines", { lines }),
+  /** 任务栏歌词颜色变更（无需随行携带） */
+  dlyricsTaskbarColor: (color: string) =>
+    invoke<void>("dlyrics_taskbar_color", { color }),
   taskbarLyricsSetEnabled: (on: boolean) =>
     invoke<void>("taskbar_lyrics_set_enabled", { on }),
   /** 可选显示器列表（主屏在前，标记是否有任务栏） */

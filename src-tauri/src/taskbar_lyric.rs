@@ -104,6 +104,22 @@ const CTL_CLASS: PCWSTR = w!("RustMusic_TaskbarLyricCtl");
 /// 已嵌入的歌词窗口（tray hwnd → lyric hwnd），渲染线程私有
 static LYRIC_WINDOWS: Mutex<Vec<(isize, isize)>> = Mutex::new(Vec::new());
 
+/// 同步歌词行（毫秒, 文本）：前端在歌词加载/切歌时整包推送。
+/// WebView 挂起期间前端停摆（托盘挂起回收渲染内存），行推进改由
+/// monitor 线程按引擎播放位置驱动（auto_tick），不依赖前端逐行推送
+static AUTO_LINES: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
+
+/// 自动推进的上一行文本（去重，避免每 120ms 重复触发渲染）
+static LAST_AUTO_TEXT: Mutex<String> = Mutex::new(String::new());
+
+/// 前端推送的同步歌词行
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskbarLine {
+    pub time_ms: u64,
+    pub text: String,
+}
+
 static SPAWNED: AtomicBool = AtomicBool::new(false);
 
 /// DWrite/D2D 渲染上下文（渲染线程私有；COM 指针不跨线程使用）
@@ -152,6 +168,57 @@ pub fn push_line(text: String, color: Option<String>) {
 /// 命令线程入口：更新显示器选择（"all" 或显示器设备名）
 pub fn set_display(display: String) {
     SHARED.lock().display = display;
+    wake_render();
+}
+
+/// 前端整包推送同步歌词行（歌词加载/切歌时一次；空 = 无同步歌词，
+/// 用 ♪ 标题回落）。行推进由 monitor 线程 auto_tick 驱动
+pub fn set_lines(lines: Vec<(u64, String)>) {
+    *AUTO_LINES.lock() = lines;
+}
+
+/// 前端改色（设置页取色时）；当前行文本由 auto_tick / 既有推送保持
+pub fn set_color(color: Option<String>) {
+    SHARED.lock().color = color;
+    wake_render();
+}
+
+/// monitor 线程每帧调用：按引擎播放位置推进当前行。
+/// fallback = 无同步歌词时的显示文本（♪ 标题，调用方从引擎当前曲目取）
+pub fn auto_tick(pos_ms: u64, fallback: Option<String>) {
+    let text = {
+        let lines = AUTO_LINES.lock();
+        if lines.is_empty() {
+            match fallback {
+                Some(t) if !t.is_empty() => t,
+                _ => String::new(),
+            }
+        } else {
+            // 当前行二分：最后一个 timeMs <= pos（前奏/间奏为空 → 隐藏）
+            let mut lo = 0usize;
+            let mut hi = lines.len();
+            let mut idx: Option<usize> = None;
+            while lo < hi {
+                let mid = (lo + hi) / 2;
+                if lines[mid].0 <= pos_ms {
+                    idx = Some(mid);
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            match idx {
+                Some(i) => lines[i].1.clone(),
+                None => String::new(),
+            }
+        }
+    };
+    let mut s = SHARED.lock();
+    if !s.enabled || s.text == text {
+        return;
+    }
+    s.text = text;
+    drop(s);
     wake_render();
 }
 

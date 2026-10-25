@@ -424,6 +424,8 @@ fn main() {
             commands::taskbar_lyrics_set_enabled,
             commands::taskbar_lyrics_list_displays,
             commands::taskbar_lyrics_set_display,
+            commands::dlyrics_taskbar_set_lines,
+            commands::dlyrics_taskbar_color,
             commands::play_pause,
             commands::get_play_state,
             commands::pause,
