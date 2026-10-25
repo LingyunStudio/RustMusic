@@ -707,6 +707,9 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   seek(ms) {
     // scrubbing 保持锁定直到后端 seek 完成（FLAC 重建耗时数百 ms）
     set({ pos: ms });
+    // 暂停中拖动进度条不会有后续 pos 事件帧（引擎只在播放中发）：
+    // 主动推一帧，否则桌面歌词停在旧行不动
+    pushDesktopLyrics(get());
     api
       .seek(Math.round(ms))
       .catch((e) => get().toast(`跳转失败：${e}`, "error"))

@@ -99,7 +99,9 @@ export default function SkinPicker({
       <button
         key={key}
         onClick={() => setSkin(key)}
-        className="relative aspect-video rounded-xl overflow-hidden text-left transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+        // pt-[56.25%] 撑出 16:9（aspect-ratio 在 WebKitGTK 的 button 上不可靠，
+        // 高度会塌陷成 0 导致卡片内容相互叠压）；百分比 padding 全引擎行为一致
+        className="relative w-full pt-[56.25%] rounded-xl overflow-hidden text-left transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
         style={bg}
         title={desc}
       >
@@ -151,7 +153,7 @@ export default function SkinPicker({
                 setActiveImg(img);
                 setSkin(CUSTOM_SKIN);
               }}
-              className={`group relative aspect-video rounded-xl overflow-hidden cursor-pointer transition-all duration-200 hover:scale-[1.03] hover:shadow-lg ${
+              className={`group relative w-full pt-[56.25%] rounded-xl overflow-hidden cursor-pointer transition-all duration-200 hover:scale-[1.03] hover:shadow-lg ${
                 active ? "" : "opacity-80"
               }`}
               style={{
@@ -187,7 +189,7 @@ export default function SkinPicker({
         {/* 添加图片 */}
         <button
           onClick={pickImage}
-          className="relative aspect-video rounded-xl overflow-hidden transition-all duration-200 hover:scale-[1.03]"
+          className="relative w-full pt-[56.25%] rounded-xl overflow-hidden transition-all duration-200 hover:scale-[1.03]"
           style={{ background: "var(--shade)" }}
           title="添加图片"
         >

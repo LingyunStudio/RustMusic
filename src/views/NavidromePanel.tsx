@@ -423,7 +423,7 @@ export default function NavidromePanel() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && connect()}
-              placeholder="密码（保存在 Windows 凭据管理器）"
+              placeholder="密码（保存在系统凭据管理器）"
               className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
             />
             <button className="btn-primary h-10" onClick={connect} disabled={connecting}>
@@ -432,8 +432,8 @@ export default function NavidromePanel() {
             </button>
           </div>
           <div className="text-[11px] text-[var(--ink-3)] max-w-[360px] text-center leading-relaxed">
-            兼容 Navidrome 及所有 Subsonic API 服务器。密码仅保存在本机 Windows
-            凭据管理器中，不上传、不落明文。
+            兼容 Navidrome 及所有 Subsonic API 服务器。密码仅保存在本机系统
+            凭据管理器中（Windows 凭据管理器 / Linux Secret Service），不上传、不落明文。
           </div>
         </div>
       ) : (

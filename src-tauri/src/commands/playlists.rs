@@ -185,9 +185,7 @@ pub async fn add_tracks_to_playlist(
         )
         .unwrap_or(0);
     let mut added = 0usize;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     for tid in &track_ids {
         pos += 1;
         let inserted = tx
@@ -337,12 +335,11 @@ pub async fn import_playlist_m3u(
     let mut parsed = parsed;
     for (i, p) in local_paths.iter().enumerate() {
         let norm = crate::library::norm_path(std::path::Path::new(p));
-        let tid: Option<i64> = match conn
-            .query_row(
-                "SELECT id FROM tracks WHERE path = ?1",
-                rusqlite::params![norm],
-                |r| r.get(0),
-            ) {
+        let tid: Option<i64> = match conn.query_row(
+            "SELECT id FROM tracks WHERE path = ?1",
+            rusqlite::params![norm],
+            |r| r.get(0),
+        ) {
             Ok(id) => Some(id),
             Err(_) => {
                 let t = std::mem::take(&mut parsed[i]);

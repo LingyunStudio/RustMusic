@@ -25,6 +25,8 @@ interface UpdateStore {
   setProgress(received: number, total: number): void;
 }
 
+const RELEASES_URL = "https://github.com/LingyunStudio/RustMusic/releases/latest";
+
 const useUpdateStore = create<UpdateStore>()((set, get) => ({
   open: false,
   phase: "available",
@@ -58,6 +60,14 @@ const useUpdateStore = create<UpdateStore>()((set, get) => ({
   async confirm() {
     const { info } = get();
     if (!info || get().phase === "downloading" || get().phase === "installing") return;
+    // 无法应用内更新（Linux deb 安装、或 release 没有本平台附件）：带用户去发布页
+    if (!info.canInstall || !info.assetUrl || !info.assetName) {
+      set({ open: false });
+      api.openUrl(RELEASES_URL).catch((e) =>
+        useStore.getState().toast(String(e), "error"),
+      );
+      return;
+    }
     set({ phase: "downloading", received: 0, total: info.assetSize, error: "" });
     try {
       const path = await api.downloadUpdate({
@@ -226,7 +236,7 @@ export default function UpdateDialog() {
                 </button>
                 <button className="btn-primary" onClick={() => useUpdateStore.getState().confirm()}>
                   <Download size={14} />
-                  立即更新
+                  {info.canInstall ? "立即更新" : "前往发布页"}
                 </button>
               </>
             )}

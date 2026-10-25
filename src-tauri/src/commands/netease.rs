@@ -40,17 +40,11 @@ pub async fn netease_search(
     let music_u = netease_cookie(&state);
     // 前端可控参数做钳制：异常大的 page/offset 会让乘法溢出（debug 直接 panic）
     let offset = offset.unwrap_or(0).clamp(0, 100_000);
-    super::blocking(move || {
-        crate::netease::search(&keyword, 30, offset, music_u.as_deref())
-    })
-    .await
+    super::blocking(move || crate::netease::search(&keyword, 30, offset, music_u.as_deref())).await
 }
 
 #[tauri::command]
-pub async fn netease_play(
-    app: AppHandle,
-    track: NeteasePlayReq,
-) -> Result<(), String> {
+pub async fn netease_play(app: AppHandle, track: NeteasePlayReq) -> Result<(), String> {
     let task_app = app.clone();
     super::blocking(move || netease_play_task(&task_app, track)).await
 }
@@ -68,7 +62,13 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
         .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
     let quality_label = quality_tag(&ext, br);
     if (quality == "lossless" || quality == "hires") && !ext.eq_ignore_ascii_case("flac") {
-        notify_quality_fallback(app, "网易云", &quality, &quality_label, "账号权益未含该音质或该曲无更高音质");
+        notify_quality_fallback(
+            app,
+            "网易云",
+            &quality,
+            &quality_label,
+            "账号权益未含该音质或该曲无更高音质",
+        );
     }
     let info = TrackInfo {
         id: None,
@@ -350,7 +350,13 @@ fn netease_import_playlist_task(
         .collect();
     let (list_id, added) = {
         let conn = state.db.lock();
-        super::playlists::import_online_tracks(&conn, "netease", &remote_pid.to_string(), &name, &rows)?
+        super::playlists::import_online_tracks(
+            &conn,
+            "netease",
+            &remote_pid.to_string(),
+            &name,
+            &rows,
+        )?
     };
     Ok((list_id, added))
 }

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "appimage"]
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "RustMusic",
+        "width": 1280,
+        "height": 880,
+        "minWidth": 1000,
+        "minHeight": 660,
+        "center": true,
+        "decorations": false,
+        "resizable": true,
+        "dragDropEnabled": true,
+        "backgroundColor": "#0b0b10",
+        "visible": false
+      }
+    ]
+  }
+}

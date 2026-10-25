@@ -37,57 +37,75 @@ pub(crate) fn show_main(app: &AppHandle) {
 }
 /// 挂起主窗口 WebView（WebView2 TrySuspend）：托盘隐藏时冻结并释放渲染进程内存。
 /// 音频由后端 rodio 播放，不依赖 WebView，挂起不影响播放。
-/// 桌面歌词开着时不挂起：悬浮窗的歌词/暂停状态依赖主 WebView 的推送。
+/// 桌面歌词"开启"（显示中）时不挂起：悬浮窗的歌词/暂停状态依赖主 WebView
+/// 的推送。窗口本体常驻（关闭=隐藏），以可见性为准——按存在性判断的话，
+/// 关掉歌词后主窗口会永远无法挂起回收内存
 pub(crate) fn suspend_main_webview(app: &AppHandle) {
-    if app.get_webview_window("desktop-lyrics").is_some() {
+    let dlyrics_visible = app
+        .get_webview_window("desktop-lyrics")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if dlyrics_visible {
         return;
     }
-    let st = app.state::<AppState>();
-    if st.webview_suspended.swap(true, Ordering::SeqCst) {
-        return; // 已挂起
-    }
-    drop(st);
-    let Some(win) = app.get_webview_window("main") else {
-        return;
-    };
-    if let Err(e) = win.with_webview(|webview| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
-        use windows::core::Interface as _;
-        let controller = webview.controller();
-        unsafe {
-            let Ok(core) = controller.CoreWebView2() else {
-                eprintln!("[webview] CoreWebView2() 失败");
-                return;
-            };
-            let Ok(cwv3) = core.cast::<ICoreWebView2_3>() else {
-                eprintln!("[webview] cast ICoreWebView2_3 失败");
-                return;
-            };
-            // IsVisible=false 是 TrySuspend 的前置条件
-            let _ = controller.SetIsVisible(false);
-            let handler = webview2_com::TrySuspendCompletedHandler::create(Box::new(|hr, ok| {
-                eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
-                if ok {
-                    // 冻结后 Windows 仍惰性裁剪工作集（实测半分钟才落到底），
-                    // 主动换出物理页让内存即刻回落；进程已冻结，操作安全
-                    std::thread::spawn(|| {
-                        std::thread::sleep(Duration::from_millis(800));
-                        trim_webview_working_sets();
-                    });
-                }
-                Ok(())
-            }));
-            if let Err(e) = cwv3.TrySuspend(&handler) {
-                eprintln!("[webview] 挂起失败: {e}");
-            }
+    #[cfg(windows)]
+    {
+        let st = app.state::<AppState>();
+        if st.webview_suspended.swap(true, Ordering::SeqCst) {
+            return; // 已挂起
         }
-    }) {
-        eprintln!("[webview] with_webview 失败: {e}");
+        drop(st);
+        let Some(win) = app.get_webview_window("main") else {
+            return;
+        };
+        if let Err(e) = win.with_webview(|webview| {
+            use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
+            use windows::core::Interface as _;
+            let controller = webview.controller();
+            unsafe {
+                let Ok(core) = controller.CoreWebView2() else {
+                    eprintln!("[webview] CoreWebView2() 失败");
+                    return;
+                };
+                let Ok(cwv3) = core.cast::<ICoreWebView2_3>() else {
+                    eprintln!("[webview] cast ICoreWebView2_3 失败");
+                    return;
+                };
+                // IsVisible=false 是 TrySuspend 的前置条件
+                let _ = controller.SetIsVisible(false);
+                let handler =
+                    webview2_com::TrySuspendCompletedHandler::create(Box::new(|hr, ok| {
+                        eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
+                        if ok {
+                            // 冻结后 Windows 仍惰性裁剪工作集（实测半分钟才落到底），
+                            // 主动换出物理页让内存即刻回落；进程已冻结，操作安全
+                            std::thread::spawn(|| {
+                                std::thread::sleep(Duration::from_millis(800));
+                                trim_webview_working_sets();
+                            });
+                        }
+                        Ok(())
+                    }));
+                if let Err(e) = cwv3.TrySuspend(&handler) {
+                    eprintln!("[webview] 挂起失败: {e}");
+                }
+            }
+        }) {
+            eprintln!("[webview] with_webview 失败: {e}");
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        // WebKitGTK 无 WebView2 TrySuspend 对应机制：Linux 上主 WebView 保持
+        // 后台运行（仅隐藏窗口）。webview_suspended 保持 false，事件推送、
+        // 托盘控制、后台切歌路径全部按未挂起流程走，行为正确
+        let _ = app;
     }
 }
 /// 把本应用派生的全部 WebView2 子进程（浏览器/GPU/渲染/实用工具）的工作集
 /// 换出到待命列表。TrySuspend 冻结进程后 Windows 要几十秒才惰性裁剪完物理页，
 /// EmptyWorkingSet 立即完成这一步；恢复时页面从待命列表软错误换回，代价可忽略
+#[cfg(windows)]
 fn trim_webview_working_sets() {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -165,6 +183,7 @@ pub(crate) fn resume_main_webview(app: &AppHandle, notify: bool) {
         }
     }
     if let Some(win) = app.get_webview_window("main") {
+        #[cfg(windows)]
         let _ = win.with_webview(|webview| {
             use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
             use windows::core::Interface as _;
@@ -180,6 +199,8 @@ pub(crate) fn resume_main_webview(app: &AppHandle, notify: bool) {
                 let _ = controller.SetIsVisible(true);
             }
         });
+        #[cfg(not(windows))]
+        let _ = win;
     }
     if notify {
         let app2 = app.clone();

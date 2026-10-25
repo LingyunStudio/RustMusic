@@ -91,16 +91,14 @@ fn bili_lyric_fetch(
     // 缓存有上限：单条字幕含全部歌词文本，只增不减会无限膨胀（FIFO 淘汰）
     const CACHE_CAP: usize = 128;
     static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<(std::collections::HashMap<String, crate::models::LyricsPayload>, Vec<String>)>,
+        std::sync::Mutex<(
+            std::collections::HashMap<String, crate::models::LyricsPayload>,
+            Vec<String>,
+        )>,
     > = std::sync::OnceLock::new();
-    let cache = CACHE.get_or_init(|| {
-        std::sync::Mutex::new((std::collections::HashMap::new(), Vec::new()))
-    });
-    if let Some(hit) = cache
-        .lock()
-        .ok()
-        .and_then(|g| g.0.get(rid).cloned())
-    {
+    let cache =
+        CACHE.get_or_init(|| std::sync::Mutex::new((std::collections::HashMap::new(), Vec::new())));
+    if let Some(hit) = cache.lock().ok().and_then(|g| g.0.get(rid).cloned()) {
         return Ok(hit);
     }
     let (bvid, cid) = crate::bilibili::parse_rid(rid)?;
@@ -170,7 +168,9 @@ pub async fn bilibili_lyric(
 
 /// 空间登录态 cookie：有 SESSDATA 用登录态；未登录也带 buvid3 指纹降风控。
 /// playurl 取流/下载也用它：登录态可拿大会员专稿与更高音质
-pub(crate) fn bili_cookies_opt(state: &State<'_, AppState>) -> Option<crate::bilibili::BiliCookies> {
+pub(crate) fn bili_cookies_opt(
+    state: &State<'_, AppState>,
+) -> Option<crate::bilibili::BiliCookies> {
     let conn = state.db.lock();
     let sessdata = db::get_setting(&conn, "bili_sessdata").unwrap_or_default();
     let buvid3 = db::get_setting(&conn, "bili_buvid3").unwrap_or_default();
@@ -201,7 +201,11 @@ fn space_items(rows: Vec<crate::bilibili::SpaceVideo>, up: &str) -> Vec<BiliSpac
         .map(|v| BiliSpaceItem {
             rid: v.bvid.clone(),
             title: v.title,
-            artist: if up.is_empty() { "哔哩哔哩".into() } else { up.to_string() },
+            artist: if up.is_empty() {
+                "哔哩哔哩".into()
+            } else {
+                up.to_string()
+            },
             cover: v.cover,
             duration_ms: v.duration_ms,
             play: v.play,
@@ -220,17 +224,22 @@ pub async fn bilibili_space(
     let mid = crate::bilibili::parse_space(&input)?;
     let c = bili_cookies_opt(&state);
     let mid2 = mid.clone();
-    let (name, face, fans, card_total, rows, list_total, has_more, seasons) = super::blocking(
-        move || -> Result<_, String> {
+    let (name, face, fans, card_total, rows, list_total, has_more, seasons) =
+        super::blocking(move || -> Result<_, String> {
             let (name, face, fans, card_total) = crate::bilibili::space_card(&mid2)?;
             let (rows, list_total, has_more) =
                 crate::bilibili::space_videos(&mid2, &order, 1, c.as_ref())?;
             let seasons = crate::bilibili::space_seasons(&mid2, c.as_ref()).unwrap_or_default();
-            Ok((name, face, fans, card_total, rows, list_total, has_more, seasons))
-        },
-    )
-    .await?;
-    let total = if list_total > 0 { list_total } else { card_total };
+            Ok((
+                name, face, fans, card_total, rows, list_total, has_more, seasons,
+            ))
+        })
+        .await?;
+    let total = if list_total > 0 {
+        list_total
+    } else {
+        card_total
+    };
     Ok(json!({
         "mid": mid,
         "name": name,
@@ -261,7 +270,11 @@ pub async fn bilibili_space_more(
             Ok((rows, list_total, has_more, name, _face, _fans, card_total))
         })
         .await?;
-    let total = if list_total > 0 { list_total } else { card_total };
+    let total = if list_total > 0 {
+        list_total
+    } else {
+        card_total
+    };
     Ok(json!({
         "total": total,
         "hasMore": has_more,
@@ -387,7 +400,6 @@ pub async fn bilibili_video_info(input: String) -> Result<Vec<BiliSpaceItem>, St
         })
         .collect())
 }
-
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

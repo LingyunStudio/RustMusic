@@ -26,7 +26,7 @@ pub enum SmtcMsg {
     RefreshCover,
 }
 
-/// 启动 SMTC（Windows 系统媒体传输控制）线程，返回消息发送端
+/// 启动系统媒体控制线程（Windows=SMTC，Linux=MPRIS/D-Bus），返回消息发送端
 pub fn spawn(app: AppHandle) -> Sender<SmtcMsg> {
     let (tx, rx) = channel::<SmtcMsg>();
     let run_tx = tx.clone();
@@ -35,10 +35,14 @@ pub fn spawn(app: AppHandle) -> Sender<SmtcMsg> {
 }
 
 fn run(app: AppHandle, rx: Receiver<SmtcMsg>, tx: Sender<SmtcMsg>) {
+    // hwnd 仅 Windows SMTC 需要（souvlaki 在非 Windows 平台忽略该字段）
+    #[cfg(windows)]
     let hwnd = app
         .get_webview_window("main")
         .and_then(|w| w.hwnd().ok())
         .map(|h| h.0 as *mut std::ffi::c_void);
+    #[cfg(not(windows))]
+    let hwnd: Option<*mut std::ffi::c_void> = None;
 
     let ev_app = app.clone();
     let handler = move |ev: MediaControlEvent| {
@@ -243,10 +247,7 @@ fn cover_uri(p: &str, app: &AppHandle, refresh: Sender<SmtcMsg>) -> Option<Strin
     // 期间进度刷新与媒体键事件全部卡死）。缓存命中直接用；未命中交给
     // 后台线程下载，完成后发 RefreshCover 重刷元数据补上封面
     if let Some(hit) = cover_cache().lock().unwrap().get(p) {
-        return hit
-            .as_ref()
-            .and_then(|d| d.to_str())
-            .map(file_uri);
+        return hit.as_ref().and_then(|d| d.to_str()).map(file_uri);
     }
     if cover_inflight().lock().unwrap().insert(p.to_string()) {
         let key = p.to_string();

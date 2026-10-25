@@ -578,7 +578,9 @@ pub fn user_playlists(
 /// 登录态不同不能混用缓存（可见范围/权益不同），键里带 music_u 比对。
 pub fn playlist_tracks_cached(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> {
     static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<i64, (std::time::Instant, String, Vec<NetSong>)>>,
+        std::sync::Mutex<
+            std::collections::HashMap<i64, (std::time::Instant, String, Vec<NetSong>)>,
+        >,
     > = std::sync::OnceLock::new();
     const TTL: Duration = Duration::from_secs(5 * 60);
     const CAP: usize = 16;
@@ -603,7 +605,14 @@ pub fn playlist_tracks_cached(pid: i64, music_u: &str) -> Result<Vec<NetSong>, S
                 break;
             }
         }
-        guard.insert(pid, (std::time::Instant::now(), music_u.to_string(), songs.clone()));
+        guard.insert(
+            pid,
+            (
+                std::time::Instant::now(),
+                music_u.to_string(),
+                songs.clone(),
+            ),
+        );
     }
     Ok(songs)
 }
@@ -1125,7 +1134,10 @@ mod tests {
             (31810, 32100, "趁")
         );
         assert_eq!((real[1].start_ms, real[1].end_ms), (32100, 32390));
-        assert_eq!((real[2].start_ms, real[2].end_ms, real[2].text.as_str()), (32390, 32680, "少"));
+        assert_eq!(
+            (real[2].start_ms, real[2].end_ms, real[2].text.as_str()),
+            (32390, 32680, "少")
+        );
         // 末字结束=自己元组的结束；行 dur 只作格式校验，不参与配对
         let l2 = &p.lines[1];
         assert_eq!(l2.text, "春风");
@@ -1243,20 +1255,23 @@ mod playlist_tests {
 #[ignore]
 fn test_song_url_lossless_audit() {
     let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
-    let conn = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .expect("打开应用数据库失败");
+    let conn =
+        rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("打开应用数据库失败");
     let music_u: String = conn
-        .query_row("SELECT value FROM settings WHERE key='netease_music_u'", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT value FROM settings WHERE key='netease_music_u'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or_default();
     let (url, br, ext) = song_url(347230, Some(&music_u), "lossless")
         .expect("song_url failed")
         .expect("no url");
-    println!("✓ 网易云 lossless 实际下发: br={br}kbps ext={ext} url={}", &url[..url.len().min(70)]);
+    println!(
+        "✓ 网易云 lossless 实际下发: br={br}kbps ext={ext} url={}",
+        &url[..url.len().min(70)]
+    );
 }
 
 /// 端到端对齐回归：真实 yrc（需要网络 + 本机网易云登录）→ 转换 → 解析，
@@ -1266,22 +1281,22 @@ fn test_song_url_lossless_audit() {
 #[ignore]
 fn test_yrc_word_alignment() {
     let db_path = std::env::var("APPDATA").unwrap() + r"\com.rustmusic.app\library.db";
-    let conn = rusqlite::Connection::open_with_flags(
-        &db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .expect("打开应用数据库失败");
+    let conn =
+        rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("打开应用数据库失败");
     let music_u: String = conn
-        .query_row("SELECT value FROM settings WHERE key='netease_music_u'", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT value FROM settings WHERE key='netease_music_u'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or_default();
     assert!(!music_u.is_empty(), "本机应有网易云登录凭证");
 
     // 用户最近播过的网易云曲目（本机库）+ 搜索兜底：逐个试到有 yrc 为止
     let mut ids: Vec<i64> = vec![
-        1465288702, 1465290469, 3342319503, 3440528018, 3440529001, 3440528000,
-        1851652156, 3416333610, 2097443876, 2600493765,
+        1465288702, 1465290469, 3342319503, 3440528018, 3440529001, 3440528000, 1851652156,
+        3416333610, 2097443876, 2600493765,
     ];
     let songs = search("晴天", 5, 0, None).expect("search failed");
     ids.extend(songs.songs.iter().map(|s| s.id));
@@ -1295,7 +1310,10 @@ fn test_yrc_word_alignment() {
         .to_string();
         let resp = weapi_post("/weapi/song/lyric/v1?tagVer=1", &payload, Some(&music_u))
             .expect("yrc fetch failed");
-        let t = resp.pointer("/yrc/lyric").and_then(|v| v.as_str()).unwrap_or("");
+        let t = resp
+            .pointer("/yrc/lyric")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if !t.trim().is_empty() {
             yrc = Some(t.to_string());
             break;
@@ -1309,12 +1327,21 @@ fn test_yrc_word_alignment() {
     let checked = p
         .lines
         .iter()
-        .filter(|l| l.words.as_ref().map(|ws| ws.iter().any(|w| !w.text.is_empty())).unwrap_or(false))
+        .filter(|l| {
+            l.words
+                .as_ref()
+                .map(|ws| ws.iter().any(|w| !w.text.is_empty()))
+                .unwrap_or(false)
+        })
         .count();
     assert!(checked > 5, "逐字行过少: {checked}");
     for l in p.lines.iter() {
-        let Some(words) = l.words.as_ref() else { continue };
-        let Some(first) = words.iter().find(|w| !w.text.is_empty()) else { continue };
+        let Some(words) = l.words.as_ref() else {
+            continue;
+        };
+        let Some(first) = words.iter().find(|w| !w.text.is_empty()) else {
+            continue;
+        };
         assert!(
             first.start_ms + 100 >= l.time_ms.unwrap_or(0),
             "首字起始应≈行首：行首 {:?}，首字 {}（{}）",

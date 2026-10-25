@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::AppState;
 use crate::webview_suspend::{resume_main_webview, schedule_resuspend};
+use crate::AppState;
 
 /// 发送需要前端处理的事件。挂起中可丢的事件（如进度帧）直接跳过；
 /// 必须处理的事件（如“播完自动切歌”）先唤醒 WebView 再延迟投递。

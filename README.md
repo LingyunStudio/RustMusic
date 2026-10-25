@@ -2,7 +2,7 @@
 
 一款用 **Rust + Tauri 2 + React** 打造的高性能、精美界面的桌面音乐播放器。
 
-![Rust](https://img.shields.io/badge/Rust-1.87%2B-DEA584?logo=rust&logoColor=white) ![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white) ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black) ![Node](https://img.shields.io/badge/Node-20%2B-5FA04E?logo=nodedotjs&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-1.87%2B-DEA584?logo=rust&logoColor=white) ![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white) ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black) ![Node](https://img.shields.io/badge/Node-20%2B-5FA04E?logo=nodedotjs&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6)
 
 
 
@@ -16,7 +16,7 @@
 - **播放控制**：播放 / 暂停 / 上一首 / 下一首、任意拖动定位（seek）、快退 / 快进 5 秒、音量、播放速度（界面提供 0.75x–2x 五档）、定时停止
 - **播放模式**：顺序 / 列表循环 / 单曲循环 / 随机播放
 - **输出设备**：可选指定输出设备，或跟随系统默认设备自动切换（耳机插拔后自动跟随）
-- **WASAPI 独占模式**（可选，默认关闭）：绕过 Windows 系统混音器直连声卡，采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质；本地与全部在线音源（含 B 站 DASH 流）统一支持，独占会话内 seek / 倍速 / 切换设备即时生效；需要声卡驱动支持独占（蓝牙 / 网络音箱等驱动不支持），不支持的设备自动回退普通模式并提示原因；关闭独占立即把设备交还系统，其它应用即刻恢复出声
+- **WASAPI 独占模式**（可选，默认关闭，仅 Windows）：绕过 Windows 系统混音器直连声卡，采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质；本地与全部在线音源（含 B 站 DASH 流）统一支持，独占会话内 seek / 倍速 / 切换设备即时生效；需要声卡驱动支持独占（蓝牙 / 网络音箱等驱动不支持），不支持的设备自动回退普通模式并提示原因；关闭独占立即把设备交还系统，其它应用即刻恢复出声。Linux 上该设置项自动隐藏（系统混音由 PipeWire/PulseAudio 管理，不存在独占机制）
 - **10 段均衡器**：实时 DSP（RBJ 双二阶滤波器），内置流行 / 摇滚 / 古典 / 爵士 / 电子 / 人声预设，支持自定义
 - **播放队列**：下一首播放、加入队列、点击跳转、移除单曲、清空；网易云 / QQ / 酷狗、B 站、Navidrome 的分页列表播到本页末尾时自动加载下一页并追加进队列
 - **快捷键**：空格 播放 / 暂停，← / → 快退 / 快进 5 秒（长按连续步进），L 开关 / 解锁桌面歌词，Esc 退出全屏歌词页
@@ -44,11 +44,12 @@
 - 全屏播放页逐行滚动、当前行高亮、点击歌词跳转播放位置；歌词颜色按封面取色自适应，并标注当前歌词来源（逐字 KRC / 逐字 YRC / 行级 LRC / 字幕）
 - **桌面歌词**：独立透明悬浮窗口，逐字 / 逐行着色（已唱 / 未唱 / 下一句可自定义配色），支持拖动、缩放、置顶、鼠标穿透锁定（主窗口 L 键或托盘菜单开关 / 解锁）
 
-### 桌面集成（Windows）
+### 桌面集成
 
-- **系统媒体控制（SMTC）**：键盘媒体键、系统媒体浮窗显示曲名 / 艺术家 / 封面 / 进度
+- **系统媒体控制**：Windows 走 SMTC（键盘媒体键、系统媒体浮窗显示曲名 / 艺术家 / 封面 / 进度）；Linux 走 MPRIS（GNOME/KDE 等桌面媒体控件、`playerctl` 均可控制）
 - **系统托盘**：托盘菜单可显示主界面、开关 / 解锁桌面歌词、播放 / 暂停 / 上一首 / 下一首、退出，左键回到主界面；点击关闭按钮时可在设置中选择最小化到托盘或直接退出
-- **自动更新**：检查 GitHub Release 新版本，应用内下载（带进度、SHA-256 校验）并静默安装重启
+- **自动更新**（Windows / Linux AppImage）：检查 GitHub Release 新版本，按当前平台挑选安装包（Windows `*setup*.exe` / Linux AppImage，架构自动匹配），应用内下载（带进度、SHA-256 校验）并静默安装重启；Linux AppImage 为原地原子替换，deb 安装或 release 无本平台附件时引导前往发布页手动下载
+- **凭据管理**：Navidrome 密码存入系统凭据管理器（Windows 凭据管理器 / Linux Secret Service，keyring）
 - **窗口**：无边框自绘标题栏、拖拽文件 / 文件夹直接导入资料库
 
 ### 界面
@@ -113,9 +114,11 @@
         └── updater.rs       # GitHub Release 自动更新（下载 + SHA-256 校验 + 静默安装）
 ```
 
-**选型说明**：Tauri 2 = Rust 高性能后端 + Web 渲染的精美界面；框架天然支持 Windows / macOS / Linux（当前只做 Windows 构建），未来可低成本扩展。
+**选型说明**：Tauri 2 = Rust 高性能后端 + Web 渲染的精美界面；框架天然支持 Windows / macOS / Linux（当前支持 Windows 与 Linux 构建），未来可低成本扩展。
 
-### 💡 核心设计亮点：WebView2 TrySuspend 深度休眠与事件驱动后台切歌
+### 💡 核心设计亮点：WebView2 TrySuspend 深度休眠与事件驱动后台切歌（Windows）
+
+> Linux 说明：WebKitGTK 没有 WebView2 的 TrySuspend 机制，Linux 构建下托盘隐藏仅隐藏窗口、WebView 保持后台运行（播放事件与托盘控制路径全部照常工作），内存优化仅在 Windows 上生效。
 
 许多桌面开发者在处理混合架构（如 Tauri / Electron）的“后台播放与内存占用”时常面临两难：
 
@@ -132,17 +135,32 @@ RustMusic 设计了一套高效的**事件驱动状态唤醒 + 延迟重休眠**
 
 ## 📦 下载安装
 
-前往 [Releases](https://github.com/LingyunStudio/RustMusic/releases/latest) 下载 `RustMusic_<版本>_x64-setup.exe`（Windows 10/11 x64，Inno Setup 安装器）。已安装的旧版本会通过应用内自动更新提示升级（下载带 SHA-256 校验，静默安装后自动重启）。
+前往 [Releases](https://github.com/LingyunStudio/RustMusic/releases/latest) 下载对应平台安装包：
+
+- **Windows**（10/11 x64）：`RustMusic_<版本>_x64-setup.exe`（Inno Setup 安装器）
+- **Linux** x64：`RustMusic_<版本>_amd64.deb`（Debian/Ubuntu 系）或 `RustMusic_<版本>_amd64.AppImage`（免安装，`chmod +x` 后直接运行）
+
+已安装的旧版本会通过应用内自动更新提示升级（按平台挑选安装包，下载带 SHA-256 校验，静默安装后自动重启；Linux deb 安装会在弹窗中引导前往发布页）。
 
 ## 🚀 开发与构建
 
 ```bash
 npm install          # 安装前端依赖
 npm run tauri dev    # 开发模式（热更新）
-npm run tauri build  # 构建发布版可执行文件（前端资源内嵌进 exe，无打包步骤）
+npm run tauri build  # 构建发布版（Windows：exe；Linux：deb / AppImage）
 ```
 
-要求：Rust (MSVC) **1.87+**（依赖 `rodio 0.22` 的最低版本要求）、Node **20+**、WebView2 Runtime（Win10/11 通常自带）。
+要求：Rust (MSVC) **1.87+**（依赖 `rodio 0.22` 的最低版本要求）、Node **20+**；Windows 需 WebView2 Runtime（Win10/11 通常自带）。
+
+Linux 还需要系统构建依赖（Debian / Ubuntu）：
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+                 librsvg2-dev libxdo-dev libdbus-1-dev libasound2-dev \
+                 pkg-config build-essential
+```
+
+（Rust 侧的其它 D-Bus 用途——MPRIS 媒体控制——走纯 Rust 的 zbus；音频输出经 cpal 走 ALSA/PipeWire，故需要 `libasound2-dev`。WebKitGTK 的 WebView 内媒体元素依赖 GStreamer 插件，建议一并安装：`sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good`。）
 
 测试（与 CI 一致）：
 
@@ -158,9 +176,14 @@ cd src-tauri && cargo test --bin rustmusic --locked
 - 修改应用图标：编辑 `scripts/icon-tool/app-icon-new.svg`，然后在**工具目录内**重新生成（图标工具有独立的 `package.json`，需先安装依赖；`render.js` 使用相对路径，必须在该目录下运行）：
 
   ```bash
-  cd scripts/icon-toolnpm installnode render.jscd ../..npm run tauri icon scripts/icon-tool/icon-1024.png   # 重新生成全平台图标
+  cd scripts/icon-tool
+  npm install
+  node render.js
+  cd ../..
+  npm run tauri icon scripts/icon-tool/icon-1024.png   # 重新生成全平台图标
   ```
 
+- 自动更新源默认为 `LingyunStudio/RustMusic`，可用环境变量 `RUSTMUSIC_UPDATE_REPO`（`owner/name`）指向测试 / 内部仓库。
 - Windows 安装包：需先安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，并把 `installer/build.ps1` 中的 `$Iscc` 改成本机 `ISCC.exe` 的路径（默认 `D:\InnoSetup6\ISCC.exe`），然后运行 `powershell -ExecutionPolicy Bypass -File installer\build.ps1` （输出于 `installer/output/`；加 `-SkipBuild` 可跳过构建直接用现有产物打包）
 
 ## ⚖️ 音源与版权
@@ -172,10 +195,11 @@ cd src-tauri && cargo test --bin rustmusic --locked
 - [ ] HLS / m3u8 流媒体支持
 - [ ] QQ / 酷狗 / Navidrome 歌词翻译（网易云已支持）
 - [ ] 音频转码 / 标签批量编辑
-- [ ] macOS / Linux 构建
+- [x] Linux 构建
+- [ ] macOS 构建
 
 ## 📄 许可证
 
-本项目基于 [Apache-2.0](https://claude.ai/chat/LICENSE) 许可证发布。
+本项目基于 [Apache-2.0](LICENSE) 许可证发布。
 
 其中 `src-tauri/src/qrc.rs`（QQ QRC 歌词解密）来自开源项目 [navidrome-lyrics-plugin](https://github.com/J0R6IT0/navidrome-lyrics-plugin)（MIT）， 按 Apache-2.0 修改后并入，文件头部保留原始版权声明。

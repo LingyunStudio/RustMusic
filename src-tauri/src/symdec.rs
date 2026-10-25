@@ -209,10 +209,7 @@ impl SymphoniaSource {
                         || self.sbuf_cap < need_samples
                         || self.sbuf_spec != spec_fp
                     {
-                        self.sbuf = Some(SampleBuffer::<f32>::new(
-                            need_frames as u64,
-                            spec,
-                        ));
+                        self.sbuf = Some(SampleBuffer::<f32>::new(need_frames as u64, spec));
                         self.sbuf_cap = need_samples;
                         self.sbuf_spec = spec_fp;
                     }
@@ -275,8 +272,8 @@ impl Iterator for SymphoniaSource {
 
 impl rodio::Source for SymphoniaSource {
     fn current_span_len(&self) -> Option<usize> {
-        let remaining = (self.buf.len() - self.idx.min(self.buf.len()))
-            / self.channels.max(1) as usize;
+        let remaining =
+            (self.buf.len() - self.idx.min(self.buf.len())) / self.channels.max(1) as usize;
         if self.eos && remaining == 0 {
             Some(0)
         } else {

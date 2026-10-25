@@ -394,10 +394,7 @@ pub fn remove_folder(conn: &Connection, id: i64) {
         if !hit.is_empty() {
             if let Ok(tx) = conn.unchecked_transaction() {
                 for x in &hit {
-                    let _ = tx.execute(
-                        "UPDATE tracks SET missing = 1 WHERE path = ?1",
-                        params![x],
-                    );
+                    let _ = tx.execute("UPDATE tracks SET missing = 1 WHERE path = ?1", params![x]);
                 }
                 let _ = tx.commit();
             }
@@ -746,8 +743,27 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
     // 折叠分组：首次出现的 playlist id 建槽，行按排序追加
     let mut order: Vec<i64> = Vec::new();
     let mut map: std::collections::HashMap<i64, Playlist> = std::collections::HashMap::new();
-    for (id, name, created_at, remote_kind, remote_pid, origin_name, rowid, kind, track_id,
-         online_id, title, artist, album, cover, duration, media_mid, vip, last_played, liked_at) in rows
+    for (
+        id,
+        name,
+        created_at,
+        remote_kind,
+        remote_pid,
+        origin_name,
+        rowid,
+        kind,
+        track_id,
+        online_id,
+        title,
+        artist,
+        album,
+        cover,
+        duration,
+        media_mid,
+        vip,
+        last_played,
+        liked_at,
+    ) in rows
     {
         let pl = map.entry(id).or_insert_with(|| {
             order.push(id);

@@ -18,6 +18,7 @@ import { applySkin, loadSkin, saveSkin } from "../skins";
 import { loadFxPref, saveFxPref } from "../fx";
 import type { PlayState, ScanState } from "../types";
 import type { Store } from "./contract";
+import { initMenubarLyrics, setMenubarLyricsEnabled, syncMenubarLyrics } from "./menubar";
 import { pushDesktopLyrics, resetDesktopLyricsFrame } from "./util";
 
 type SetFn = (partial: Partial<Store> | ((s: Store) => Partial<Store>)) => void;
@@ -48,6 +49,8 @@ type Fields = Pick<
   | "desktopLyricsOn"
   | "desktopLyricsLock"
   | "dlyricsColors"
+  | "menubarLyricsOn"
+  | "setMenubarLyrics"
   | "sourcesResult"
   | "sourcesTab"
   | "lyricsShowTrans"
@@ -209,6 +212,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   sourcesTab: "bilibili",
   desktopLyricsOn: false,
   desktopLyricsLock: false,
+  menubarLyricsOn: false,
   dlyricsColors: loadDesktopLyricsColors(),
   lyricsShowTrans:
     ((): boolean => {
@@ -231,6 +235,8 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   async init() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
+      // 菜单栏歌词开关恢复（localStorage）：开启时状态帧数据流即接入
+      if (initMenubarLyrics()) set({ menubarLyricsOn: true });
     unbinds.push(
       await listenEvent<PlayState>("player://state", (p) => applyPlayState(set, get, p))
     );
@@ -643,6 +649,11 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     saveDesktopLyricsColors(c);
     // 即时生效：推一帧新颜色给悬浮窗（窗口没开时 push 内部自跳过）
     pushDesktopLyrics(get());
+  },
+  setMenubarLyrics(v) {
+    set({ menubarLyricsOn: v });
+    setMenubarLyricsEnabled(v);
+    if (v) syncMenubarLyrics(get());
   },
   setLyricsShowTrans(v) {
     set({ lyricsShowTrans: v });

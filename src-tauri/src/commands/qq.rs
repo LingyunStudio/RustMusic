@@ -49,8 +49,7 @@ pub(crate) fn qq_credential(state: &State<AppState>) -> Result<(String, String),
 
 #[tauri::command]
 pub async fn qq_search(keyword: String, page: Option<i64>) -> Result<serde_json::Value, String> {
-    let songs =
-        super::blocking(move || crate::qq::search(&keyword, 30, page.unwrap_or(1))).await?;
+    let songs = super::blocking(move || crate::qq::search(&keyword, 30, page.unwrap_or(1))).await?;
     Ok(json!({ "songs": songs }))
 }
 
@@ -80,7 +79,13 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
         track.vip,
     )?;
     if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
-        notify_quality_fallback(app, "QQ 音乐", &quality, quality_label, "账号权益未含无损或该曲无 flac");
+        notify_quality_fallback(
+            app,
+            "QQ 音乐",
+            &quality,
+            quality_label,
+            "账号权益未含无损或该曲无 flac",
+        );
     }
     if quality_setting == "hires" {
         // 选了 Hi-Res 但 QQ 未接入 Hi-Res 文件档：明确告知按无损取
@@ -182,6 +187,25 @@ pub async fn qq_lyric(
     }
     Ok(payload)
 }
+/// 登录成功后把凭证写入本机设置（QQ 扫码与微信扫码共用）
+fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) {
+    if r.status != "success" {
+        return;
+    }
+    if let (Some(musicid), Some(musickey)) = (&r.musicid, &r.musickey) {
+        let conn = state.db.lock();
+        db::set_setting(&conn, "qq_musicid", musicid);
+        db::set_setting(&conn, "qq_musickey", musickey);
+        // 拉取“我喜欢/收藏”夹需要加密 uin（登录响应里带，错过就没了）
+        if let Some(euin) = &r.encrypt_uin {
+            db::set_setting(&conn, "qq_encrypt_uin", euin);
+        }
+        if let Some(nick) = &r.nickname {
+            db::set_setting(&conn, "qq_nickname", nick);
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn qq_qr_create() -> Result<serde_json::Value, String> {
     let (qrsig, qr) = super::blocking(crate::qq::qr_create).await?;
@@ -194,20 +218,24 @@ pub async fn qq_qr_check(
     qrsig: String,
 ) -> Result<serde_json::Value, String> {
     let r = super::blocking(move || crate::qq::qr_check(&qrsig)).await?;
-    if r.status == "success" {
-        if let (Some(musicid), Some(musickey)) = (&r.musicid, &r.musickey) {
-            let conn = state.db.lock();
-            db::set_setting(&conn, "qq_musicid", musicid);
-            db::set_setting(&conn, "qq_musickey", musickey);
-            // 拉取“我喜欢/收藏”夹需要加密 uin（登录响应里带，错过就没了）
-            if let Some(euin) = &r.encrypt_uin {
-                db::set_setting(&conn, "qq_encrypt_uin", euin);
-            }
-            if let Some(nick) = &r.nickname {
-                db::set_setting(&conn, "qq_nickname", nick);
-            }
-        }
-    }
+    save_qq_credential(&state, &r);
+    Ok(json!({ "status": r.status, "nickname": r.nickname }))
+}
+
+#[tauri::command]
+pub async fn qq_wx_qr_create() -> Result<serde_json::Value, String> {
+    let r = super::blocking(crate::qq::wx_qr_create).await?;
+    Ok(json!({ "uuid": r.uuid, "qr": r.qr }))
+}
+
+/// 微信扫码状态：一次调用 = 一次长轮询（服务端挂起约 15s），前端循环调用
+#[tauri::command]
+pub async fn qq_wx_qr_check(
+    state: State<'_, AppState>,
+    uuid: String,
+) -> Result<serde_json::Value, String> {
+    let r = super::blocking(move || crate::qq::wx_qr_check(&uuid)).await?;
+    save_qq_credential(&state, &r);
     Ok(json!({ "status": r.status, "nickname": r.nickname }))
 }
 
@@ -238,7 +266,10 @@ pub async fn qq_toplists() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn qq_toplist_tracks(top_id: i64, page: Option<i64>) -> Result<serde_json::Value, String> {
+pub async fn qq_toplist_tracks(
+    top_id: i64,
+    page: Option<i64>,
+) -> Result<serde_json::Value, String> {
     let page = page.unwrap_or(1).max(1);
     let songs = super::blocking(move || crate::qq::toplist_tracks(top_id, page)).await?;
     Ok(json!({ "songs": songs, "hasMore": songs.len() as i64 >= 100 }))

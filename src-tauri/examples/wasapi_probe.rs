@@ -1,4 +1,6 @@
 //! WASAPI 独占模式探测：用 wasapi crate 官方示例的模式实测本机默认设备
+//! （Windows 专属工具，其它平台编译为空）
+#![cfg(windows)]
 use wasapi::*;
 
 fn main() {
@@ -7,7 +9,10 @@ fn main() {
     println!("== 渲染设备列表 ==");
     let collection = DeviceCollection::new(&Direction::Render).unwrap();
     for d in &collection {
-        println!("  - {}", d.expect("dev").get_friendlyname().unwrap_or_default());
+        println!(
+            "  - {}",
+            d.expect("dev").get_friendlyname().unwrap_or_default()
+        );
     }
 
     let device = get_default_device(&Direction::Render).unwrap();
@@ -73,12 +78,8 @@ fn main() {
                 .map(|w| format!("0x{:08X}", w.code().0 as u32))
         });
         match result {
-            Ok(_) => println!(
-                "  [成功] {rate}Hz {store}/{valid} {kind:?} → 初始化 OK（{isfs}）"
-            ),
-            Err(_) => println!(
-                "  [失败] {rate}Hz {store}/{valid} {kind:?} → {code:?}（{isfs}）"
-            ),
+            Ok(_) => println!("  [成功] {rate}Hz {store}/{valid} {kind:?} → 初始化 OK（{isfs}）"),
+            Err(_) => println!("  [失败] {rate}Hz {store}/{valid} {kind:?} → {code:?}（{isfs}）"),
         }
         drop(client);
     }

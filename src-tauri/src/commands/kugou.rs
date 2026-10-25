@@ -128,7 +128,11 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     // 匿名（无 token）只有 128k 通道，hq/sq 档用不上——跳过反查，
     // 省掉点播关键路径上串行的 1-2 次搜索往返
     let (hq_hash, sq_hash, super_hash) = if token.is_empty() {
-        (track.hq_hash.clone(), track.sq_hash.clone(), track.super_hash.clone())
+        (
+            track.hq_hash.clone(),
+            track.sq_hash.clone(),
+            track.super_hash.clone(),
+        )
     } else {
         kugou_hashes_enriched(
             &track.hash,
@@ -150,7 +154,11 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
         track.hq_hash.len(),
         track.sq_hash.len(),
         track.super_hash.len(),
-        if token.is_empty() { "匿名跳过反查" } else { "已反查" },
+        if token.is_empty() {
+            "匿名跳过反查"
+        } else {
+            "已反查"
+        },
     );
     let (url, _ext, quality_label) = crate::kugou::song_url(
         &track.hash,
@@ -174,13 +182,7 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     } else {
         "账号权益或接口风控限制了更高音质".to_string()
     };
-    notify_quality_fallback(
-        app,
-        "酷狗",
-        &quality,
-        &quality_label,
-        &fallback_reason,
-    );
+    notify_quality_fallback(app, "酷狗", &quality, &quality_label, &fallback_reason);
     // 封面：数据库存的完整 URL 优先（收藏/最近播放已入库），缺失用搜索带的
     let cover = {
         let conn = state.db.lock();
@@ -242,7 +244,14 @@ pub async fn kugou_lyric(
     let word_level = p.lines.iter().any(|l| l.words.is_some());
     let mut payload = LyricsPayload::new(p.synced, p.lines);
     if p.synced {
-        payload.source = Some(if word_level { "逐字 KRC" } else { "行级 LRC" }.into());
+        payload.source = Some(
+            if word_level {
+                "逐字 KRC"
+            } else {
+                "行级 LRC"
+            }
+            .into(),
+        );
     }
     if !payload.lines.is_empty() {
         if let Ok(json) = serde_json::to_string(&payload) {

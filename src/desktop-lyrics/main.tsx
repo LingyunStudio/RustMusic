@@ -7,10 +7,10 @@
  * 数据链路：主窗口 store emit "dlyrics://push"（250ms/帧 + 歌词加载完成）。
  * 播放控制：emit "media://control"（主窗口 store 处理，与托盘一致）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { LyricLine } from "../types";
-import { lyricLineProgress } from "../utils";
+import { estimateLyricWidth, lyricLineProgress } from "../utils";
 import "../index.css";
 
 interface PushPayload {
@@ -44,6 +44,26 @@ const DEFAULT_COLORS = {
 document.documentElement.style.background = "transparent";
 document.body.style.background = "transparent";
 
+/* Linux：WebKitGTK 的窗口透明在部分显卡/驱动（虚拟机 vmwgfx 等）上不可用，
+   透明背景会渲染成整块灰/黑阴影。Linux 一律用实色底（悬浮栏形态），
+   显示效果在任何机器上都确定；Windows 保持纯悬浮文字形态不变 */
+const IS_LINUX = !/windows/i.test(navigator.userAgent);
+// 虚拟机（后端已禁用 WebKit 合成）走透明悬浮形态：URL 带 transparent=1
+const TRANSPARENT =
+  !IS_LINUX || new URLSearchParams(location.search).get("transparent") === "1";
+
+/** 置顶偏好持久化 key（歌词窗口与主窗口同源，localStorage 共享） */
+const ALWAYS_TOP_KEY = "rustmusic.dlyrics.alwaysTop";
+/** 调试钩子：localStorage 置 rustmusic.dlyrics.debugHover=1 时控制条常显
+ *  （无头环境截屏验证布局用；正常用户不会设，无行为影响） */
+const DEBUG_HOVER = (() => {
+  try {
+    return localStorage.getItem("rustmusic.dlyrics.debugHover") === "1";
+  } catch {
+    return false;
+  }
+})();
+
 async function mediaControl(action: string) {
   const { emit } = await import("@tauri-apps/api/event");
   await emit("media://control", { action });
@@ -61,6 +81,10 @@ function DesktopLyrics() {
   });
   const [locked, setLocked] = useState(false);
   const [hover, setHover] = useState(false);
+  // 置顶状态：以窗口真实状态为唯一事实源（后端创建时设了置顶，但
+  // WM 对"隐藏后 re-show"的窗口可能丢弃 always-on-top——猜出来的
+  // 初始值会和实际相反，按钮金色"已置顶"实际却在别的窗口下面）。
+  // 启动 effect 里查询真实值并回写 localStorage
   const [alwaysTop, setAlwaysTop] = useState(true);
   // 窗口内尺寸（缩放时字号等比跟随：以宽度 800 为基准）
   const [winW, setWinW] = useState(800);
@@ -117,13 +141,22 @@ function DesktopLyrics() {
     };
   }, []);
 
-  // 窗口尺寸监听（缩放 → 字号基准）
+  // 窗口尺寸监听（缩放 → 字号基准）。初始尺寸主动查一次：位置记忆恢复的
+  // 窗口宽度未必是 800，等不到第一次 resize 事件的话字号基准会一直错
   useEffect(() => {
     let disposed = false;
     let un: (() => void) | undefined;
-    import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+    import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
       if (disposed) return;
-      return getCurrentWindow().onResized(({ payload }) => {
+      const w = getCurrentWindow();
+      try {
+        const factor = await w.scaleFactor();
+        const size = await w.innerSize();
+        if (!disposed) setWinW(size.width / factor);
+      } catch {
+        /* 查询失败保持默认基准，resize 后自然纠正 */
+      }
+      return w.onResized(({ payload }) => {
         setWinW(payload.width / (window.devicePixelRatio || 1));
       });
     }).then((u) => {
@@ -133,6 +166,56 @@ function DesktopLyrics() {
     return () => {
       disposed = true;
       un?.();
+    };
+  }, []);
+
+  // hover 判定：mouseenter/mouseleave/mousemove 事件（跟随真实光标）+
+  // 空闲兜底（3s 无任何鼠标活动即收起半透明底）。绝不读光标位置：
+  // cursorPosition 取的是 X 服务器指针，XTest 合成输入会把该指针永久
+  // 卡死在窗口内某点（真实鼠标是 Wayland 指针，影响不到它），轮询式
+  // 判定会因此永远认为"光标在窗口内"——灰底永远不消失
+  const lastMouseAt = useRef(0);
+  useEffect(() => {
+    const mark = () => {
+      lastMouseAt.current = Date.now();
+    };
+    // 光标在窗口内停止移动时 X11 不再派发 mousemove，这里主动记一次
+    // "光标曾在窗口内"，之后的收起判定只依赖"多久没有新活动"
+    mark();
+    window.addEventListener("mousemove", mark);
+    window.addEventListener("mouseout", mark);
+    const timer = setInterval(() => {
+      // 800ms 无活动即收起：离开窗口后灰底很快消失；光标静止在窗口内
+      // 会被 mouseout/Enter 交叉刷新，不会误收
+      if (Date.now() - lastMouseAt.current > 800) setHover(false);
+    }, 300);
+    return () => {
+      window.removeEventListener("mousemove", mark);
+      window.removeEventListener("mouseout", mark);
+      clearInterval(timer);
+    };
+  }, []);
+
+  // 启动：以窗口真实置顶状态为准对齐 UI 与偏好记忆。
+  // 显隐语义下窗口常驻，"隐藏再显示"后 WM 可能丢弃 always-on-top：
+  // 真实为真 → 再断言一次（修复丢失）；真实为假 → 撤销创建时的硬编码
+  // 置顶（否则按钮显示已置顶、窗口却在别窗口下面）
+  useEffect(() => {
+    let disposed = false;
+    import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        const w = getCurrentWindow();
+        const real = await w.isAlwaysOnTop().catch(() => true);
+        if (disposed) return;
+        setAlwaysTop(real);
+        try {
+          localStorage.setItem(ALWAYS_TOP_KEY, real ? "1" : "0");
+        } catch {}
+        if (real) await w.setAlwaysOnTop(true).catch(() => {});
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
     };
   }, []);
 
@@ -161,8 +244,14 @@ function DesktopLyrics() {
     data.pos + (data.playing ? (performance.now() - posAtRef.current) * speed : 0);
   const posNow = data.dur > 0 ? Math.min(rawPos, data.dur) : rawPos;
 
-  const syncedLines = (data.lines ?? []).filter(
-    (l) => l.timeMs != null && l.text.trim()
+  // 有时间轴的行（与播放栏一致按时间排序：个别歌词源乱序，不排会跳行）。
+  // memo 化：lines 引用在两次推送之间稳定，避免 20fps 渲染每帧重建数组
+  const syncedLines = useMemo(
+    () =>
+      (data.lines ?? [])
+        .filter((l) => l.timeMs != null && l.text.trim())
+        .sort((a, b) => (a.timeMs ?? 0) - (b.timeMs ?? 0)),
+    [data.lines]
   );
   let activeIdx = -1;
   if (data.synced && syncedLines.length) {
@@ -186,12 +275,25 @@ function DesktopLyrics() {
       )
     : 0;
 
-  // 字号随窗口宽度等比缩放（800 为基准）
+  // 字号随窗口宽度等比缩放（800 为基准）；超宽行再按视觉宽度折减——
+  // 塞不下的行硬裁会切掉半句词，宁可缩小完整显示
   const scale = Math.max(0.6, Math.min(2, winW / 800));
-  const mainFont = Math.round(34 * scale);
+  const lineUnits = active ? estimateLyricWidth(active.text) : 0;
+  // 一个"半角字宽"约 0.55*fontSize：窗口能容纳的视觉宽度单位数
+  const maxUnits = Math.max(14, (winW - 48) / (34 * scale * 0.55));
+  const fitScale = lineUnits > maxUnits ? Math.max(0.5, maxUnits / lineUnits) : 1;
+  const mainFont = Math.round(34 * scale * fitScale);
   const nextFont = Math.round(15 * scale);
   // 三色（设置页可改，随 push 载荷实时更新）
   const colors = { ...DEFAULT_COLORS, ...(data.colors ?? {}) };
+
+  // 无当前行可显示时的兜底：曲名·艺术家（前奏、纯音乐、无时间轴歌词），
+  // 什么都没推过来才显示占位文案
+  const headerText =
+    data.title && data.artist
+      ? `${data.title} · ${data.artist}`
+      : data.title || data.artist;
+  const idleText = data.playing ? "纯音乐，请欣赏" : "等待播放…";
 
   const close = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -215,42 +317,67 @@ function DesktopLyrics() {
   const toggleTop = async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const w = getCurrentWindow();
-    await w.setAlwaysOnTop(!alwaysTop);
-    setAlwaysTop(!alwaysTop);
+    const next = !alwaysTop;
+    try {
+      await w.setAlwaysOnTop(next);
+    } catch {
+      return; // 状态切换失败：保持原状态，不给假反馈
+    }
+    // 置顶偏好双写：localStorage 供本窗口 UI 快显，DB 供后端 re-show
+    // 时断言（localStorage 在 WebKit 数据目录，DB 更可靠）
+    try {
+      localStorage.setItem(ALWAYS_TOP_KEY, next ? "1" : "0");
+    } catch {}
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) =>
+        invoke("desktop_lyrics_set_always_top", { on: next })
+      )
+      .catch(() => {});
+    setAlwaysTop(next);
+    // 置顶切换触发 remap 后鼠标事件链可能短暂中断：3s 空闲兜底会收起
+    // 灰底；光标真实移开的 mouseleave 也会正常触发
   };
-  const startResize = async (e: React.PointerEvent) => {
+  const startResize = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().startResizeDragging("SouthEast");
+    void (async () => {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().startResizeDragging("SouthEast");
+    })();
   };
-
-  const idleText = data.playing ? "纯音乐，请欣赏" : "等待播放…";
 
   return (
-    // 全窗拖拽热区（含歌词上方空白）；hover 才浮现半透明底与控制条
+    // 全窗拖拽热区（含歌词上方空白）；hover 才浮现半透明底与控制条。
+    // 拖动走系统 WM 协议（data-tauri-drag-region）——原生、零 IPC 压力
     <div
       data-tauri-drag-region
-      className="h-full w-full flex flex-col select-none relative transition-colors duration-200"
-      style={{
-        background: hover ? "rgba(16, 12, 8, 0.42)" : "transparent",
-        backdropFilter: hover ? "blur(10px)" : undefined,
-        borderRadius: 14,
-      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onMouseMove={() => setHover(true)}
+      className="h-full w-full flex flex-col select-none relative"
+      style={{
+        background: TRANSPARENT
+          ? "transparent"
+          : hover
+            ? "#241d15"
+            : "#1a1510",
+        borderRadius: TRANSPARENT ? 0 : 0,
+        border: TRANSPARENT ? undefined : "1px solid rgba(255, 244, 220, 0.06)",
+      }}
     >
-      {/* 控制条常驻预留区（40px，不 hover 时完全透明）：hover 时按钮出现在
-          这里，与歌词完全分离。预留区永远存在，歌词位置锁定不动——
-          不做任何异步窗口尺寸操作（无失败模式，也不会闪）。
-          pointer-events-none：整行空白处穿透到底层 drag-region 可长按拖拽 */}
-      <div
-        className="shrink-0 flex items-center justify-center z-10 pointer-events-none"
-        style={{ height: 40 }}
-      >
-        {!locked && hover && (
+      {/* 右下角缩放手柄 */}      {/* 歌词主体：hover 时只给"歌词内容"包一条紧凑玻璃底，静止时纯悬浮
+          文字。控制条药丸 absolute 锚定在玻璃条正上方 8px——按钮贴着歌词，
+          不再有顶部预留区的遥远距离；absolute 不占布局，歌词零跳动。
+          pointer-events-none 让空白处点击穿透到根层 drag-region 拖动 */}
+      {/* 底部锚定：桌面歌词常规形态。SE 角缩放拖的是底边/右边，内容
+          钉在底边 → 拖动缩放时按钮与歌词纹丝不动（居中布局会整组跟着
+          窗口高度重新居中，看起来像按钮在"缩放"）。
+          不加 overflow-hidden：控制条药丸在布局流内，窗口边界自然裁剪 */}
+      <div className="flex-1 min-h-0 flex flex-col justify-end pb-1.5 pointer-events-none">
+        <div className="relative flex flex-col items-center self-center w-fit">
+        {!locked && (hover || DEBUG_HOVER) && (
           <div
             data-tauri-drag-region
-            className="flex items-center gap-0.5 px-1.5 py-1 rounded-2xl pointer-events-auto"
+            className="mb-2 flex items-center gap-0.5 px-1.5 py-1 rounded-2xl pointer-events-auto z-10"
             style={{
               background: "rgba(20, 16, 12, 0.55)",
               border: "1px solid rgba(255,255,255,0.16)",
@@ -282,18 +409,22 @@ function DesktopLyrics() {
           </button>
           <span className="w-px h-4 mx-1" style={{ background: "rgba(255,255,255,0.2)" }} />
           <button
-            className="text-[13px] w-7 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
+            className="text-[13px] w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
             style={{ color: "rgba(255,255,255,0.85)" }}
             onClick={toggleLock}
-            title="锁定（鼠标穿透，主窗口按 L 解锁）"
+            title="锁定：鼠标穿透歌词窗口（控制条随之隐藏），主窗口按 L 或托盘菜单解锁"
           >
-            🔒
+            🔓
           </button>
           <button
-            className="text-[13px] w-7 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
-            style={{ color: alwaysTop ? colors.sung : "rgba(255,255,255,0.85)" }}
+            className="text-[13px] w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+            style={
+              alwaysTop
+                ? { background: colors.sung, color: "#1a1206" }
+                : { color: "rgba(255,255,255,0.85)" }
+            }
             onClick={toggleTop}
-            title="置顶"
+            title={alwaysTop ? "已置顶（点击取消）" : "置顶（点击后窗口总在最前）"}
           >
             📌
           </button>
@@ -307,36 +438,21 @@ function DesktopLyrics() {
           </button>
           </div>
         )}
-      </div>
-
-      {/* 右下角缩放手柄 */}
-      {!locked && (
         <div
-          onPointerDown={startResize}
-          className="absolute bottom-1 right-1 w-[20px] h-[20px] cursor-nwse-resize z-10 flex items-center justify-center"
-          title="拖动缩放"
+          className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-2xl pointer-events-none"
+          style={{
+            background: TRANSPARENT
+              ? hover
+                ? "rgba(14, 10, 6, 0.55)"
+                : "transparent"
+              : "transparent",
+            border: TRANSPARENT && hover ? "1px solid rgba(255,255,255,0.14)" : "1px solid transparent",
+          }}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: hover ? 0.9 : 0 }}>
-            <path
-              d="M9 1.5 L9 9 L1.5 9"
-              stroke="rgba(255,255,255,0.6)"
-              strokeWidth="1.5"
-              fill="none"
-            />
-          </svg>
-        </div>
-      )}
-
-      {/* 歌词主体（pointer-events-none：点击穿透到父层 drag-region，
-          全区任意位置可拖；控制条/手柄单独恢复交互）。
-          flex-1 居中：控制条出现时歌词在剩余空间内居中；
-          overflow-hidden：窗口较矮时歌词宁可裁剪也不向上溢出压住控制条 */}
-      <div className="flex-1 min-h-0 flex flex-col justify-center overflow-hidden pointer-events-none">
-        <div className="flex flex-col items-center gap-1.5 px-6 pointer-events-none">
         {data.synced && active ? (
           <>
             <div
-              className="relative max-w-full"
+              className="relative max-w-full overflow-hidden"
               style={{ textShadow: "0 2px 14px rgba(0,0,0,0.55)" }}
             >
               <div
@@ -370,7 +486,19 @@ function DesktopLyrics() {
                 </div>
               </div>
             </div>
-            {next && (
+            {/* 副行：有翻译优先显示翻译（三行同屏会超高被裁，翻译比预览下一句更有用） */}
+            {active.trans ? (
+              <div
+                className="whitespace-nowrap max-w-full overflow-hidden"
+                style={{
+                  fontSize: nextFont,
+                  color: colors.next,
+                  textShadow: "0 1px 6px rgba(0,0,0,0.45)",
+                }}
+              >
+                {active.trans}
+              </div>
+            ) : next ? (
               <div
                 className="whitespace-nowrap max-w-full overflow-hidden"
                 style={{
@@ -381,8 +509,20 @@ function DesktopLyrics() {
               >
                 {next.text}
               </div>
-            )}
+            ) : null}
           </>
+        ) : headerText ? (
+          <div
+            className="whitespace-nowrap max-w-full overflow-hidden"
+            style={{
+              fontSize: Math.round(26 * scale),
+              fontWeight: 700,
+              color: "rgba(255,255,255,0.85)",
+              textShadow: "0 2px 12px rgba(0,0,0,0.5)",
+            }}
+          >
+            {headerText}
+          </div>
         ) : (
           <div
             className="whitespace-nowrap"
@@ -394,6 +534,24 @@ function DesktopLyrics() {
             }}
           >
             {idleText}
+          </div>
+        )}
+        </div>
+        {/* 缩放手柄：贴在歌词框自身右下角（跟随歌词框而非窗口角） */}
+        {!locked && (
+          <div
+            onMouseDown={startResize}
+            className="absolute right-0 bottom-0 w-[20px] h-[20px] cursor-nwse-resize z-10 flex items-center justify-center pointer-events-auto"
+            title="拖动缩放"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: hover || DEBUG_HOVER ? 0.9 : 0 }}>
+              <path
+                d="M9 1.5 L9 9 L1.5 9"
+                stroke="rgba(255,255,255,0.6)"
+                strokeWidth="1.5"
+                fill="none"
+              />
+            </svg>
           </div>
         )}
         </div>

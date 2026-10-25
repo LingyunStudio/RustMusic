@@ -8,13 +8,14 @@ use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{MixerDeviceSink, Player};
 
 use super::{Engine, OutputDeviceInfo};
-use crate::wasapi_out;
 use crate::eq::EqSource;
+use crate::wasapi_out;
 
 /// WASAPI 渲染端点集合：端点 ID → 完整 FriendlyName（PKEY_Device_FriendlyName，
 /// 形如「耳机 (WH-1000XM5 立体声)」）。
 /// cpal 0.17 的 name() 优先取 DeviceDesc，蓝牙耳机等设备只会得到「耳机」
 /// 这类短词——设备展示与匹配一律以这里的全名为准。
+#[cfg(windows)]
 fn wasapi_name_map() -> HashMap<String, String> {
     let mut m = HashMap::new();
     let _ = wasapi::initialize_mta();
@@ -29,6 +30,12 @@ fn wasapi_name_map() -> HashMap<String, String> {
         }
     }
     m
+}
+
+/// 非 Windows：无 WASAPI 全名可用，统一走 cpal 展示名（ALSA/PulseAudio 名）
+#[cfg(not(windows))]
+fn wasapi_name_map() -> HashMap<String, String> {
+    HashMap::new()
 }
 
 /// 单个 cpal 设备的展示名（WASAPI 全名优先，cpal 短名兜底）
@@ -54,6 +61,7 @@ fn device_matches(dev: &rodio::cpal::Device, names: &HashMap<String, String>, pr
 }
 
 /// 系统默认输出设备的展示名（WASAPI 全名优先，cpal 短名兜底）
+#[cfg(windows)]
 pub(crate) fn default_device_display_name() -> String {
     let _ = wasapi::initialize_mta();
     let full = wasapi::get_default_device(&wasapi::Direction::Render)
@@ -69,11 +77,22 @@ pub(crate) fn default_device_display_name() -> String {
         .unwrap_or_default()
 }
 
+/// 非 Windows：cpal 默认输出设备名（device_watcher 的轮询比较基准）
+#[cfg(not(windows))]
+pub(crate) fn default_device_display_name() -> String {
+    rodio::cpal::default_host()
+        .default_output_device()
+        .and_then(|d| d.name().ok())
+        .unwrap_or_default()
+}
+
 impl Engine {
     /// 按设备偏好创建输出流与 Player；None = 系统默认设备。
     /// MixerDeviceSink 持有 cpal Stream（非 Send）：泄漏保活整个进程周期
     /// （与旧实现一致），设备切换时旧 stream 一起泄漏（仅结构体大小，代价可忽略）。
-    pub(super) fn build_output(pref: Option<&str>) -> Result<(&'static MixerDeviceSink, Player), String> {
+    pub(super) fn build_output(
+        pref: Option<&str>,
+    ) -> Result<(&'static MixerDeviceSink, Player), String> {
         let host = rodio::cpal::default_host();
         let device = match pref {
             Some(name) => {

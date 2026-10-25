@@ -193,6 +193,10 @@ export const api = {
   qqQrCreate: () => invoke<{ qrsig: string; qr: string }>("qq_qr_create"),
   qqQrCheck: (qrsig: string) =>
     invoke<{ status: string; nickname?: string }>("qq_qr_check", { qrsig }),
+  /** 微信扫码登录：check 为长轮询，一次调用挂起约 15s，前端循环调用 */
+  qqWxQrCreate: () => invoke<{ uuid: string; qr: string }>("qq_wx_qr_create"),
+  qqWxQrCheck: (uuid: string) =>
+    invoke<{ status: string; nickname?: string }>("qq_wx_qr_check", { uuid }),
   qqStatus: () => invoke<{ loggedIn: boolean; nickname: string }>("qq_status"),
   qqLogout: () => invoke<void>("qq_logout"),
   neteaseLikeList: () => invoke<number[]>("netease_like_list"),
@@ -357,11 +361,23 @@ export const api = {
     invoke<{ bytes: number; files: number }>("cache_stats"),
   setCacheLimit: (bytes: number) =>
     invoke<void>("set_cache_limit", { bytes }),
-  getAppInfo: () => invoke<{ version: string; dataDir: string }>("get_app_info"),
+  getAppInfo: () =>
+    invoke<{ version: string; dataDir: string; platform: string }>(
+      "get_app_info",
+    ),
   desktopLyricsOpen: () => invoke<void>("desktop_lyrics_open"),
   desktopLyricsClose: () => invoke<void>("desktop_lyrics_close"),
+  /** 菜单栏歌词（Linux）：当前行写入运行时文件，GNOME 扩展轮询显示。
+   *  color 为空 = 顶栏主题默认色 */
+  dlyricsMenubarLine: (line: string, color: string) =>
+    invoke<void>("dlyrics_menubar_line", { line, color }),
+  menubarExtensionInstall: () => invoke<string>("menubar_extension_install"),
   desktopLyricsUnlock: () => invoke<void>("desktop_lyrics_unlock"),
   desktopLyricsIsOpen: () => invoke<boolean>("desktop_lyrics_is_open"),
+  /** 远程封面经后端下载落盘（绕开 WebKit 系统代理依赖），返回本地路径 */
+  fetchCover: (url: string) => invoke<string>("fetch_cover", { url }),
+  desktopLyricsSetAlwaysTop: (on: boolean) =>
+    invoke<void>("desktop_lyrics_set_always_top", { on }),
 };
 
 export { convertFileSrc };

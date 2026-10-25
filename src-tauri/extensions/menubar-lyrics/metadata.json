@@ -1,0 +1,7 @@
+{
+  "uuid": "rustmusic-lyrics@lingyunstudio",
+  "name": "RustMusic 菜单栏歌词",
+  "description": "在 GNOME 顶栏显示 RustMusic 当前播放的歌词行。由 RustMusic 应用写入实时数据，应用退出后自动隐藏。",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/LingyunStudio/RustMusic"
+}

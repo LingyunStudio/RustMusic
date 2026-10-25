@@ -77,8 +77,8 @@ impl FxShared {
         let w = self.write.load(Ordering::Acquire);
         let n = out.len().min(w as usize);
         for i in 0..n {
-            let bits = self.buf[(w - n as u64 + i as u64 & RING_MASK) as usize]
-                .load(Ordering::Relaxed);
+            let bits =
+                self.buf[(w - n as u64 + i as u64 & RING_MASK) as usize].load(Ordering::Relaxed);
             out[i] = f32::from_bits(bits);
         }
         n

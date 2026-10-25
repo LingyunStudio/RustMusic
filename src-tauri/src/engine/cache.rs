@@ -29,8 +29,7 @@ impl Engine {
             .filter(|e| {
                 matches!(
                     e.as_str(),
-                    "mp3" | "flac" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "mp4" | "m4b"
-                        | "m4s"
+                    "mp3" | "flac" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "mp4" | "m4b" | "m4s"
                 )
             })
             .unwrap_or_else(|| "bin".into());
@@ -122,10 +121,8 @@ impl Engine {
 
         // 边下边播：下载照常落盘 .part，预缓冲达标（或整段完成）即起播，
         // 播放端读取器越过下载前沿时阻塞等待新数据，无需等整段下完。
-        let shared = crate::streaming::StreamingDownload::new(
-            cache.with_extension("part"),
-            cache.clone(),
-        );
+        let shared =
+            crate::streaming::StreamingDownload::new(cache.with_extension("part"), cache.clone());
         let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         // 监视线程：预缓冲达标后以流式源起播（仅当用户仍在等这首）。
@@ -208,8 +205,7 @@ impl Engine {
                             .as_ref()
                             .map_or(false, |(p, _)| *p == part_str);
                     if !streaming_active {
-                        let still_wanted =
-                            engine.want_url.read().as_deref() == Some(url.as_str());
+                        let still_wanted = engine.want_url.read().as_deref() == Some(url.as_str());
                         if still_wanted {
                             let mut info = info;
                             info.path = cache.to_string_lossy().into_owned();

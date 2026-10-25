@@ -391,18 +391,21 @@ export interface SettingsPayload {
   wasapiExclusive: boolean;
 }
 
-/** GitHub 最新 release 的可安装更新信息 */
+/** GitHub 最新 release 的更新信息（asset 为本平台安装包） */
 export interface UpdateInfo {
   /** 最新版本号（不含 v 前缀） */
   version: string;
   /** release notes（markdown 原文） */
   notes: string;
-  assetName: string;
-  assetUrl: string;
+  /** 本平台安装包附件；release 没有本平台附件时为 null */
+  assetName: string | null;
+  assetUrl: string | null;
   assetSize: number;
   /** 附件 SHA-256（GitHub 返回 "sha256:<hex>"；缺省 = 无法校验） */
   assetDigest: string | null;
   publishedAt: string;
+  /** 当前安装方式能否应用内自动更新（false → 弹窗引导前往发布页） */
+  canInstall: boolean;
 }
 
 export interface UserPlaylistMeta {

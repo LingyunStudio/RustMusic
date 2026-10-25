@@ -214,7 +214,11 @@ impl Engine {
     }
     /// 按当前曲目打开采样源：若该曲目正由流式下载供数（边下边播），
     /// 走阻塞式流读取器（读到下载前沿等待新数据），否则直接打开本地文件。
-    fn open_current_source(&self, path: &str, skip_ms: u64) -> Result<Box<dyn Source + Send>, String> {
+    fn open_current_source(
+        &self,
+        path: &str,
+        skip_ms: u64,
+    ) -> Result<Box<dyn Source + Send>, String> {
         let streaming = self.active_streaming.read().clone();
         if let Some((spath, shared)) = streaming {
             if spath == path {
@@ -245,8 +249,8 @@ impl Engine {
     where
         S: Source<Item = f32> + Send + 'static,
     {
-        let wrapped = EqSource::new(src, self.eq.clone(), self.pos_ms.clone())
-            .with_fx(self.fx.clone());
+        let wrapped =
+            EqSource::new(src, self.eq.clone(), self.pos_ms.clone()).with_fx(self.fx.clone());
         let diag_sr = wrapped.sample_rate();
         let diag_ch = wrapped.channels();
         let diag_dur = wrapped.total_duration();
@@ -593,10 +597,7 @@ fn sink_play_common(sink: &RwLock<Player>, volume_bits: u32, speed_bits: u32) {
 
 /// 按文件类型打开可播放采样源：MP4 容器（m4a/mp4、B 站 DASH 缓存）走
 /// symphonia 直连源（symdec），其余（mp3/flac/wav/ogg 等）走 rodio 解码。
-fn open_playable_source(
-    path: &str,
-    skip_ms: u64,
-) -> Result<Box<dyn rodio::Source + Send>, String> {
+fn open_playable_source(path: &str, skip_ms: u64) -> Result<Box<dyn rodio::Source + Send>, String> {
     if is_mp4_container(path) {
         return Ok(Box::new(crate::symdec::SymphoniaSource::open_at(
             path, skip_ms,
