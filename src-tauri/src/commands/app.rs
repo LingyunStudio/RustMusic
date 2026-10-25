@@ -622,6 +622,15 @@ pub async fn menubar_extension_install() -> Result<String, String> {
     })
     .await
 }
+
+/// 非 Linux 无 GNOME 顶栏：占位实现（main.rs 的命令注册表是全平台共用的）；
+/// 前端入口仅在 Linux 显示，正常不会调用到这里
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn menubar_extension_install() -> Result<String, String> {
+    Err("菜单栏歌词仅支持 Linux（GNOME 顶栏）".into())
+}
+
 /// 用系统默认浏览器打开链接（release notes 内的跳转用）。
 /// Windows 走 explorer 而不是 `cmd /C start`：URL 未加引号时 cmd 会把 & | ^
 /// 当命令分隔符执行（含查询串的链接直接命令注入），explorer 按单个参数透传；
