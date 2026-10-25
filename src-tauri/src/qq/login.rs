@@ -325,7 +325,7 @@ pub fn wx_qr_create() -> Result<WxQr, String> {
 }
 
 /// 从长轮询响应提取 (errcode, wx_code)：`window.wx_errcode=405;window.wx_code='xxx';`
-fn parse_wx_lp(text: &str) -> (i32, String) {
+pub(super) fn parse_wx_lp(text: &str) -> (i32, String) {
     let errcode = text
         .find("wx_errcode=")
         .and_then(|i| {
@@ -345,7 +345,7 @@ fn parse_wx_lp(text: &str) -> (i32, String) {
 }
 
 /// 从 Set-Cookie 列表提取 name=value（值可能含 '='，按首个 '=' 切）
-fn cookie_value(cookies: &[String], name: &str) -> Option<String> {
+pub(super) fn cookie_value(cookies: &[String], name: &str) -> Option<String> {
     cookies.iter().find_map(|c| {
         let kv = c.split(';').next()?.trim();
         if kv.starts_with(&format!("{name}=")) {
