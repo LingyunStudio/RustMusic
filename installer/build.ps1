@@ -37,11 +37,11 @@ $Installer = Get-ChildItem (Join-Path $Root "installer\output\*.exe") |
 # 的恶意更新包。密钥缺失时首次运行自动生成（公钥需与 updater.rs 一致）
 $KeyFile = Join-Path $PSScriptRoot "signing.key"
 if (-not (Test-Path $KeyFile)) {
-    cargo run --quiet --example asset_signer -- genkey $KeyFile
+    cargo run --quiet --manifest-path src-tauri/Cargo.toml --example asset_signer -- genkey $KeyFile
     if ($LASTEXITCODE -ne 0) { throw "签名密钥生成失败" }
     Write-Host "已生成签名密钥：$KeyFile（请离线备份；公钥须与 updater.rs 的 UPDATE_PUBKEY 一致）" -ForegroundColor Yellow
 }
-cargo run --quiet --example asset_signer -- sign $Installer.FullName $KeyFile
+cargo run --quiet --manifest-path src-tauri/Cargo.toml --example asset_signer -- sign $Installer.FullName $KeyFile
 if ($LASTEXITCODE -ne 0) { throw "安装包签名失败" }
 
 Write-Host ""
