@@ -715,6 +715,25 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     });
   const selectedRows = rows.filter((r) => sel.has(selKeyOf(r)));
 
+  // 批量模式下 Ctrl+A 全选 / Ctrl+D 清空选择
+  useEffect(() => {
+    if (!batchMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable)
+        return;
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
+        e.preventDefault();
+        setSel(new Set(rows.map(selKeyOf)));
+      } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyD") {
+        e.preventDefault();
+        setSel(new Set());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [batchMode, rows]);
+
   const batchQueue = () => {
     for (const row of selectedRows) menuAction(row, "queue");
     toast(`已把 ${selectedRows.length} 首加入队列`, "success");
@@ -976,6 +995,15 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <span className="text-[12.5px] text-[var(--ink-2)] mr-1">
                 已选 {sel.size} 首
               </span>
+              <button
+                className="btn-secondary !py-1.5 !px-3"
+                disabled={!rows.length}
+                onClick={() => setSel(new Set(rows.map(selKeyOf)))}
+                title="全选当前列表（Ctrl+A）"
+              >
+                <ListChecks size={13} />
+                全选
+              </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
                 disabled={!sel.size}

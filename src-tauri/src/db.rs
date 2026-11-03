@@ -442,12 +442,12 @@ pub fn upsert_track(conn: &Connection, t: &NewTrack) {
     );
 }
 
-pub fn track_paths(conn: &Connection) -> Vec<(String, i64, i64)> {
-    let mut stmt = match conn.prepare("SELECT path, mtime, size FROM tracks") {
+pub fn track_paths(conn: &Connection) -> Vec<(String, i64, i64, f64)> {
+    let mut stmt = match conn.prepare("SELECT path, mtime, size, duration FROM tracks") {
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default()
 }

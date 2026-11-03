@@ -3,6 +3,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use lofty::config::{ParseOptions, ParsingMode};
 use lofty::prelude::*;
 use rayon::prelude::*;
 
@@ -130,11 +131,11 @@ pub fn run_scan(app: AppHandle) {
     emit(0, total, true);
 
     // 现有库记录
-    let existing: HashMap<String, (i64, i64)> = {
+    let existing: HashMap<String, (i64, i64, f64)> = {
         let conn = st.db.lock();
         db::track_paths(&conn)
             .into_iter()
-            .map(|(p, mt, sz)| (p, (mt, sz)))
+            .map(|(p, mt, sz, dur)| (p, (mt, sz, dur)))
             .collect()
     };
 
@@ -144,7 +145,9 @@ pub fn run_scan(app: AppHandle) {
         let np = norm_path(&f.path);
         seen.insert(np.clone());
         match existing.get(&np) {
-            Some((emt, esz)) if *emt == f.mtime && *esz == f.size => {}
+            // duration<=0 说明上次元数据解析失败（标签里一个坏字段会让 lofty 整体报错），
+            // 文件未变也重新解析，让历史坏记录在下次扫描时自愈
+            Some((emt, esz, edur)) if *emt == f.mtime && *esz == f.size && *edur > 0.0 => {}
             _ => to_parse.push(f.path.clone()),
         }
     }
@@ -251,7 +254,14 @@ pub fn parse_track(path: &Path, app_data: &Path) -> Option<NewTrack> {
         lrc_path = lrc_candidate.to_string_lossy().into_owned();
     }
 
-    let tagged = lofty::read_from_path(path).ok();
+    // Relaxed：个别文件内嵌标签字段不规范（如年份非 4 位数字），默认模式整体
+    // 解析失败导致时长/标签全丢，宽松模式跳过坏字段照常出结果
+    let tagged = lofty::probe::Probe::open(path)
+        .and_then(|p| {
+            p.options(ParseOptions::new().parsing_mode(ParsingMode::Relaxed))
+                .read()
+        })
+        .ok();
     if let Some(tagged) = &tagged {
         let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
         if let Some(tag) = tag {
