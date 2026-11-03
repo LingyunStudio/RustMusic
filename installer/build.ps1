@@ -8,10 +8,19 @@ param([switch]$SkipBuild)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$Iscc = "D:\InnoSetup6\ISCC.exe"
-
-if (-not (Test-Path $Iscc)) {
-    throw "未找到 Inno Setup 编译器：$Iscc"
+# ISCC 位置：优先原固定路径，其次常见安装位置（机器级 / 用户级），最后查 PATH
+$Iscc = @(
+    "D:\InnoSetup6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $Iscc) {
+    $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+    if ($cmd) { $Iscc = $cmd.Source }
+}
+if (-not $Iscc) {
+    throw "未找到 Inno Setup 编译器（ISCC.exe），请安装 Inno Setup 6"
 }
 
 if (-not $SkipBuild) {
