@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-react";
+import { ChevronDown, Disc3, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-react";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
+import VUMeter from "./VUMeter";
+import Tonearm from "./Tonearm";
 import { api, coverSrc } from "../api";
 import { remoteCoverCache } from "../utils";
 import { extractPalette, lyricAdaptiveColors, lyricLineProgress } from "../utils";
+import { setFxWanted } from "../fx";
 
 export default function NowPlaying() {
   const current = useStore((s) => s.current);
@@ -28,19 +31,21 @@ export default function NowPlaying() {
   const setLyricsShowTrans = useStore((s) => s.setLyricsShowTrans);
   const lyricsFontScale = useStore((s) => s.lyricsFontScale);
   const setLyricsFontScale = useStore((s) => s.setLyricsFontScale);
+  const theme = useStore((s) => s.theme);
 
-  // 歌词逐字染色完全脱离 React 渲染（同桌面歌词）：
-  // - 不订阅 s.pos（250ms 一次会让整页重渲染，挤压歌词渲染帧预算），
-  //   锚点在 store 订阅回调里写 ref；
-  // - 行样式/染色边界全部由 rAF 直接写 DOM，循环只在播放中运行。
+  // 挂载时开启后端音频频谱分析（驱动 VU 表和电平指示），卸载时关闭
+  useEffect(() => {
+    setFxWanted(true);
+    return () => {
+      setFxWanted(false);
+    };
+  }, []);
+
+  // 歌词逐字染色脱离 React 重渲染
   const anchorRef = useRef({ pos: 0, at: performance.now() });
   useEffect(() => {
-    // 挂载即对齐当前进度（播放中打开播放页不用等下一个 pos 事件）
     const st0 = useStore.getState();
     anchorRef.current = { pos: st0.pos, at: performance.now() };
-    // 只有 pos/playing 真正变化才移动锚点：订阅整个 store 的话，
-    // toast/下载进度等无关 set 也会重置锚点时间戳，外推被反复拉回，
-    // 染色边界出现回跳抖动
     let lastPos = st0.pos;
     let lastPlaying = st0.playing;
     return useStore.subscribe((s) => {
@@ -55,11 +60,9 @@ export default function NowPlaying() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const lastActiveRef = useRef(-1);
-  // 单帧渲染函数（rAF tick 主体）：暂停中循环不跑，点歌词行 seek 后
-  // 手动调一次让高亮/染色立即跟上
   const renderFrameRef = useRef<() => void>(() => {});
 
-  // 歌词键：本地曲目 / 网易云 / QQ / 酷狗 / Navidrome 在线曲目
+  // 歌词键：本地曲目 / 网易云 / QQ / 酷狗 / B站 / Navidrome
   const lyricsKey =
     current?.kind === "track" && current.id != null
       ? `track-${current.id}`
@@ -83,8 +86,6 @@ export default function NowPlaying() {
     }
   }, [lyricsKey, loadLyricsByKey]);
 
-  // 当前歌词是否带翻译（决定“译”按钮可用态——没有翻译数据时置灰，
-  // 避免按了没反应被误认为功能失效）
   const hasTrans = useMemo(
     () => (lyrics?.lines ?? []).some((l) => l.trans != null && l.trans !== ""),
     [lyrics]
@@ -100,23 +101,16 @@ export default function NowPlaying() {
     [lyrics]
   );
 
-  // 逐帧驱动：外推进度 → 定位当前行 → 行样式直接写 DOM。
-  // 播放中才跑循环（暂停时染色冻结，不空转——同桌面歌词），
-  // 但 tick 主体保留为单帧渲染入口（暂停点歌词行用）
+  // 逐帧驱动歌词渲染
   useEffect(() => {
     if (!syncedLines.length) return;
     const tick = () => {
       const a = anchorRef.current;
-      // 外推封顶在曲目时长：托盘挂起恢复后锚点时间戳涵盖整段挂起时长，
-      // 不封顶的话进度/歌词会瞬间冲到很远（表现为“没声音但歌词狂飙”）
       const dur = useStore.getState().dur;
-      // 外推必须乘播放速度：2x 下按 1x 墙钟外推，两次 pos 帧之间染色持续
-      // 滞后并锯齿跳变（进度实际走得比外推快一倍）
       const speed = useStore.getState().speed;
       const raw = a.pos + (performance.now() - a.at) * speed;
       const posNow = dur > 0 ? Math.min(raw, dur) : raw;
 
-      // 当前行二分（行数据是排好序的）
       let activeIdx = -1;
       let lo = 0;
       let hi = syncedLines.length - 1;
@@ -132,7 +126,6 @@ export default function NowPlaying() {
 
       const prevActive = lastActiveRef.current;
       if (activeIdx !== prevActive) {
-        // 行切换：旧当前行还原成普通行样式（染色层随 .active 移除而隐藏）
         const prevEl = lineRefs.current[prevActive];
         if (prevEl) {
           prevEl.classList.remove("active");
@@ -144,32 +137,25 @@ export default function NowPlaying() {
           prevEl.style.transform = "";
           prevEl.style.removeProperty("--fill");
         }
-        // 新当前行升级样式（will-change 合成层由 .active 类自动挂上）
         const el = lineRefs.current[activeIdx];
         if (el) {
           el.classList.add("active");
-          // 当前行文字色 = 「未唱」自定义色（空时回落主题正文色，CSS 变量即时生效）
           el.style.color = "var(--lyric-unsung, var(--ink))";
-          // 字号固定 25px：整体缩放由滚动容器的 zoom 统一负责
-          //（再乘 scale 会双重缩放，字号档位失衡）
-          el.style.fontSize = "25px";
+          el.style.fontSize = "24px";
           el.style.fontWeight = "800";
           el.style.opacity = "1";
           el.style.filter = "none";
-          el.style.transform = "scale(1)";
+          el.style.transform = "scale(1.02)";
         }
-        // 周边行透明度/缩放（只在新行附近的几行，代价小）；下一句行用「下一句」色
-        // 远行透明度下限 0.5：封面调色板背景上 0.4 的远行几乎不可辨
         for (let i = 0; i < syncedLines.length; i++) {
           const r = lineRefs.current[i];
           if (!r || i === activeIdx) continue;
           const dist = Math.abs(i - activeIdx);
-          r.style.opacity = String(Math.max(0.5, 0.78 - dist * 0.06));
-          r.style.transform = `scale(${Math.max(0.94, 1 - dist * 0.015)})`;
+          r.style.opacity = String(Math.max(0.42, 0.78 - dist * 0.08));
+          r.style.transform = `scale(${Math.max(0.92, 1 - dist * 0.018)})`;
           r.style.color =
             i === activeIdx + 1 ? "var(--lyric-next, var(--ink-2))" : "";
         }
-        // 滚动到中心（只在行切换时触发一次，不逐帧滚动）
         const cur = lineRefs.current[activeIdx];
         const container = scrollRef.current;
         if (cur && container) {
@@ -180,7 +166,6 @@ export default function NowPlaying() {
         lastActiveRef.current = activeIdx;
       }
 
-      // 当前行染色边界：与桌面歌词同款插值（逐字时间戳精确贴合演唱）
       const el = lineRefs.current[activeIdx];
       if (el) {
         const line = syncedLines[activeIdx];
@@ -204,7 +189,7 @@ export default function NowPlaying() {
     return () => cancelAnimationFrame(raf);
   }, [syncedLines, playing]);
 
-  // 换曲 / 歌词重载：重置行内残留样式（rAF 循环会重建新状态）
+  // 重置行样式
   useEffect(() => {
     lastActiveRef.current = -1;
     for (const r of lineRefs.current) {
@@ -220,8 +205,7 @@ export default function NowPlaying() {
     }
   }, [syncedLines]);
 
-  // 远程封面经后端拉取落盘（<img> 直连 CDN 会被用户系统代理设置劫持，
-  // 代理进程未运行时全部加载失败）；本地路径直接走 asset 协议
+  // 封面与调色板
   const rawCover = current?.cover ?? "";
   const isRemote = rawCover.startsWith("http://") || rawCover.startsWith("https://");
   const [remoteLocal, setRemoteLocal] = useState<string | null>(null);
@@ -244,6 +228,7 @@ export default function NowPlaying() {
       alive = false;
     };
   }, [rawCover, isRemote]);
+
   const coverUrl = rawCover
     ? isRemote
       ? remoteLocal
@@ -251,19 +236,11 @@ export default function NowPlaying() {
         : ""
       : coverSrc(rawCover)
     : "";
-  const theme = useStore((s) => s.theme);
 
-  // 封面取色 → 动态渐变背景
-  // 远程 http(s) 封面一律走后端提取（QQ 的 y.gtimg.cn 无 CORS，前端 canvas 会被污染）；
-  // asset:// 本地封面是 WebView 虚拟主机，后端 ureq 连不上，只能前端采样
   const [palette, setPalette] = useState<string[]>([]);
-  // 播放页歌词配色：由封面调色板自适应决定（无手动设置）。
-  // 策略实现见 utils.lyricAdaptiveColors：最坏情况对比度选文字色 +
-  // 阴影/远行透明度/柔边遮罩三档补偿 + 卡拉OK染色跟封面走。
-  // 变量挂在最外层容器上：歌词、歌名、歌手一并继承文字阴影。
   const adaptive = palette.length >= 2 ? lyricAdaptiveColors(palette, theme) : null;
   const lyricVars = (adaptive?.vars ?? {}) as React.CSSProperties;
-  const scrim = adaptive?.scrim ?? "";
+
   useEffect(() => {
     if (!coverUrl) {
       setPalette([]);
@@ -279,8 +256,6 @@ export default function NowPlaying() {
           } catch {
             colors = [];
           }
-          // 后端失败时用 canvas 兜底：网易 CDN 带 CORS 头可行；
-          // QQ 封面域无 CORS 会被污染抛错 → extractPalette 内部接住返回空
           if (colors.length < 2) colors = await extractPalette(coverUrl, 4);
         } else {
           colors = await extractPalette(coverUrl, 4);
@@ -296,418 +271,436 @@ export default function NowPlaying() {
     };
   }, [coverUrl]);
 
-  // 注意：hooks 必须在条件 return 之前调用（React Hooks 规则）
-  // 背景流动动画全走 CSS @keyframes（slowSpin 纯 transform，合成器执行）：
-  // 此前用 rAF 每帧写 style.filter（120px blur 常驻 + 每帧重设），
-  // 是播放页歌词掉帧的元凶之一
   if (!current) return null;
+
+  const isLiked =
+    current.kind === "track" && current.id != null
+      ? !!current.liked
+      : current.kind === "netease" && current.nid != null
+        ? !!neteaseLiked[current.nid]
+        : current.kind === "qq" && current.qid != null
+          ? !!savedOnline[`qq-${current.qid}`]
+          : current.kind === "kugou" && current.kgid != null
+            ? !!savedOnline[`kugou-${current.kgid}`]
+            : current.kind === "bilibili" && current.qid != null
+              ? !!savedOnline[`bilibili-${current.qid}`]
+              : current.kind === "navidrome" && current.qid != null
+                ? !!savedOnline[`navidrome-${current.qid}`]
+                : false;
+
+  const handleToggleLike = () => {
+    if (current.kind === "track" && current.id != null) {
+      toggleLike(current.id);
+    } else if (current.kind === "netease" && current.nid != null) {
+      neteaseToggleLike(current.nid);
+    } else if (current.kind === "qq" && current.qid != null) {
+      const entry = [...likedOnline, ...recentOnline].find(
+        (e) => e.kind === "qq" && e.onlineId === current.qid
+      );
+      toggleLikeOnline({
+        kind: "qq",
+        id: current.qid,
+        name: current.title,
+        artist: current.artist,
+        album: current.album,
+        cover: current.cover,
+        durationMs: current.durationMs,
+        mediaMid: entry?.mediaMid ?? "",
+        vip: entry?.vip ?? false,
+      });
+    } else if (current.kind === "kugou" && current.kgid != null) {
+      const entry = [...likedOnline, ...recentOnline].find(
+        (e) => e.kind === "kugou" && e.onlineId === current.kgid
+      );
+      toggleLikeOnline({
+        kind: "kugou",
+        id: current.kgid,
+        name: current.title,
+        artist: current.artist,
+        album: current.album,
+        cover: current.cover,
+        durationMs: current.durationMs,
+        mediaMid: "",
+        vip: entry?.vip ?? false,
+      });
+    } else if (current.kind === "bilibili" && current.qid != null) {
+      toggleLikeOnline({
+        kind: "bilibili",
+        id: current.qid,
+        name: current.title,
+        artist: current.artist,
+        album: current.album,
+        cover: current.cover,
+        durationMs: current.durationMs,
+        mediaMid: "",
+        vip: false,
+      });
+    } else if (current.kind === "navidrome" && current.qid != null) {
+      toggleLikeOnline({
+        kind: "navidrome",
+        id: current.qid,
+        name: current.title,
+        artist: current.artist,
+        album: current.album,
+        cover: current.cover,
+        durationMs: current.durationMs,
+        mediaMid: "",
+        vip: false,
+      });
+    }
+  };
+
+  const platformBadge =
+    current.kind === "netease"
+      ? "网易云音乐"
+      : current.kind === "qq"
+        ? "QQ音乐"
+        : current.kind === "kugou"
+          ? "酷狗音乐"
+          : current.kind === "bilibili"
+            ? "B站音频"
+            : current.kind === "navidrome"
+              ? "Navidrome"
+              : "本地音源";
 
   return (
     <div
-      className="absolute inset-0 z-40 anim-np overflow-hidden"
-      style={{ background: "var(--bg)", ...(lyricVars as React.CSSProperties) }}
+      className="absolute inset-0 z-40 anim-np overflow-hidden select-none"
+      style={{
+        background: "var(--bg)",
+        ...(lyricVars as React.CSSProperties),
+      }}
     >
-      {/* 背景：封面取色的流动渐变（色相旋转 + 光斑漂移） */}
-      <div className="absolute inset-0 overflow-hidden">
-        {palette.length < 2 && (
-          <div
-            className="absolute inset-0 transition-colors duration-1000"
-            style={{
-              background:
-                "linear-gradient(180deg, var(--backdrop-1) 0%, var(--backdrop-2) 55%, var(--bg) 100%)",
-            }}
-          />
-        )}
-        {palette.length >= 2 && (
-          <>
-            {/* 大对流渐变层：缓慢旋转（CSS keyframes 纯 transform，合成器执行；
-                不再用 rAF 每帧写 filter——那会持续重光栅化 120px blur，
-                挤压歌词渲染的帧预算） */}
-            <div
-              className="absolute -inset-[25%] dynamic-gradient-layer"
-              style={{
-                background: `conic-gradient(from 0deg at 30% 35%, ${palette[0]}, ${palette[1] ?? palette[0]}, ${palette[2] ?? palette[0]}, ${palette[3] ?? palette[1] ?? palette[0]}, ${palette[0]})`,
-                opacity: 0.55,
-                filter: "blur(120px) saturate(1.35)",
-                animation: "slowSpin 40s linear infinite",
-              }}
-            />
-            {/* 双光斑漂移层 */}
-            <div
-              className="absolute rounded-full"
-              style={{
-                background: `radial-gradient(circle at center, ${palette[0]} 0%, transparent 62%)`,
-                width: "56%",
-                height: "52%",
-                left: "4%",
-                top: "-8%",
-                filter: "blur(85px)",
-                animation: "blobDrift 17s ease-in-out infinite",
-                ["--blob-a" as string]: 0.4,
-              }}
-            />
-            <div
-              className="absolute rounded-full"
-              style={{
-                background: `radial-gradient(circle at center, ${palette[1]} 0%, transparent 62%)`,
-                width: "52%",
-                height: "48%",
-                left: "48%",
-                top: "46%",
-                filter: "blur(95px)",
-                animation: "blobDrift 21s ease-in-out infinite",
-                animationDelay: "-7s",
-                ["--blob-a" as string]: 0.35,
-              }}
-            />
-          </>
-        )}
+      {/* 拟物机架拉丝金属底板 */}
+      <div className="absolute inset-0 skeuo-chassis-bg pointer-events-none" />
+
+      {/* 胆机/仪表发光氛围衬底：由封面主色温润晕染，杜绝生硬大色块 */}
+      {palette.length >= 2 && (
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 pointer-events-none transition-opacity duration-1000"
           style={{
-            background:
-              "radial-gradient(ellipse 130% 110% at 50% 45%, transparent 55%, var(--vignette) 100%)",
+            background: `radial-gradient(ellipse 90% 70% at 50% 38%, ${palette[0]}2e 0%, ${palette[1]}16 55%, transparent 80%)`,
+            opacity: theme === "light" ? 0.35 : 0.65,
           }}
         />
-      </div>
+      )}
 
-      {/* 顶栏（标题栏浮在渐变之上；全屏时窗口按钮被隐藏，提供自身控制） */}
-      <div className="relative flex items-center justify-between px-8 pt-12 h-24">
-        <span className="text-[11px] text-[var(--ink-3)] tracking-[0.26em] flex items-center gap-2.5">
-          <Music4 size={14} />
-          正在播放
-        </span>
+      {/* 物理机箱四角紧固车削螺丝 */}
+      <div className="skeuo-screw absolute top-3.5 left-4 z-20 pointer-events-none" />
+      <div className="skeuo-screw absolute top-3.5 right-4 z-20 pointer-events-none" />
+
+      {/* 顶栏：发烧级硬件机架式状态栏 */}
+      <div className="relative flex items-center justify-between px-8 pt-2.5 h-14 z-20 border-b border-[var(--sk-divider)] shadow-[inset_0_1px_0_var(--sk-divider-hi)]">
+        {/* 左侧：物理指示灯与母带工作模式 */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] shadow-[var(--sk-groove-shadow)]">
+            <div className={playing ? "skeuo-led-on" : "skeuo-led-off"} />
+            <span className="text-[10px] font-black tracking-[0.2em] text-[var(--accent-strong)] uppercase">
+              {playing ? "PHONO ACTIVE · 33⅓ RPM" : "DECK STANDBY"}
+            </span>
+          </div>
+          <span className="text-[11px] font-mono font-semibold text-[var(--ink-3)] hidden md:inline-block tracking-wider">
+            HI-FI DIRECT DRIVE MONITOR
+          </span>
+        </div>
+
+        {/* 中间：机架金属名牌 */}
+        <div className="skeuo-nameplate px-3.5 py-1 rounded-md hidden lg:flex items-center gap-2">
+          <Disc3 size={13} className="text-[var(--accent-strong)]" />
+          <span className="text-[10.5px] font-black tracking-[0.25em] text-[var(--ink)]">
+            RUSTMUSIC REFERENCE SYSTEM
+          </span>
+        </div>
+
+        {/* 右侧：金属微倒角窗口操作键 */}
         <div className="flex items-center gap-2">
           <button
-            className="btn-ghost w-10 h-10 !rounded-full"
+            className="titlebar-btn !w-8 !h-7 !rounded-lg"
             onClick={() => toggleFullscreen()}
             title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
           >
-            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
           <button
-            className="btn-ghost w-10 h-10 !rounded-full"
+            className="titlebar-btn !w-8 !h-7 !rounded-lg"
             onClick={() => {
               if (fullscreen) toggleFullscreen(false);
               setNowPlayingOpen(false);
             }}
             title="收起播放页"
           >
-            <ChevronDown size={20} />
+            <ChevronDown size={17} />
           </button>
         </div>
       </div>
 
-      {/* 主体 */}
-      <div className="relative flex gap-14 px-14 pb-8 items-stretch h-[calc(100%-96px)]">
-        {/* 左：封面 */}
-        <div className="w-[40%] max-w-[440px] flex flex-col items-center justify-center gap-5">
-          <div className="relative">
-            <div
-              className="absolute -inset-10 rounded-[48px] opacity-40 blur-3xl transition-colors duration-1000"
-              style={{
-                background: coverUrl
-                  ? `url(${coverUrl}) center/cover`
-                  : "linear-gradient(135deg, var(--accent), var(--accent-strong))",
-              }}
-            />
-            <CoverImg
-              src={current.cover}
-              seed={current.title}
-              className="w-[min(36vh,340px)] h-[min(36vh,340px)] rounded-[28px] shadow-[var(--cover-shadow-lg)] relative"
-              iconSize={56}
-            />
-          </div>
-          <div className="text-center max-w-full np-shadowed">
-            <div className="text-[22px] font-bold text-[var(--ink)] truncate">
-              {current.title}
+      {/* 主体机台：双舱布局（左：直驱黑胶唱机工作台；右：精密声学监听歌词舱） */}
+      <div className="relative flex flex-col lg:flex-row gap-8 xl:gap-14 px-8 xl:px-14 pt-4 pb-28 items-center justify-center h-[calc(100%-56px)] z-10 max-w-[1580px] mx-auto w-full">
+        {/* 左舱：直驱黑胶唱机工作台 */}
+        <div className="w-full lg:w-[48%] max-w-[540px] flex flex-col items-center justify-center shrink-0">
+          {/* 拟物机架唱机台基座 */}
+          <div className="skeuo-turntable-deck rounded-2xl p-5 relative w-full flex flex-col items-center">
+            {/* 机台四角固定螺丝 */}
+            <div className="skeuo-screw absolute top-3 left-3" />
+            <div className="skeuo-screw absolute top-3 right-3" />
+            <div className="skeuo-screw absolute bottom-3 left-3" />
+            <div className="skeuo-screw absolute bottom-3 right-3" />
+
+            {/* 机台顶部铭牌与测速状态 */}
+            <div className="w-full flex items-center justify-between text-[10px] font-black tracking-widest text-[var(--ink-3)] px-3 mb-3 border-b border-[var(--sk-divider)] pb-2">
+              <span className="flex items-center gap-1.5 text-[var(--accent-strong)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                PRECISION TURNTABLE
+              </span>
+              <span className="font-mono">MODEL PT-9800</span>
             </div>
-            <div className="text-[13px] text-[var(--ink-2)] mt-1 truncate">
-              {current.artist}
-            </div>
-            <div className="flex items-center justify-center gap-2.5 mt-2.5">
-              {current.kind === "track" && current.id != null && (
-                <button
-                  className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() => toggleLike(current.id!)}
-                >
-                  <Heart
-                    size={16}
-                    className={
-                      current.liked ? "fill-[#e0533f] text-[#e0533f]" : ""
-                    }
+
+            {/* 唱盘与唱臂交互核心区 */}
+            <div className="relative flex items-center justify-center my-2 w-full">
+              {/* 实体黑胶唱片封套（厚纸板装帧、哑光光泽与压痕） */}
+              <div className="relative z-10 rounded-xl p-1.5 skeuo-jacket shrink-0 -mr-16 xl:-mr-20 transition-transform duration-500 hover:scale-[1.01]">
+                <div className="relative rounded-lg overflow-hidden shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
+                  <CoverImg
+                    src={current.cover}
+                    seed={current.title}
+                    className="w-[min(30vh,250px)] h-[min(30vh,250px)] object-cover block"
+                    iconSize={48}
                   />
-                </button>
-              )}
-              {current.kind === "netease" && current.nid != null && (
-                <button
-                  className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() => neteaseToggleLike(current.nid!)}
-                  title={neteaseLiked[current.nid] ? "取消收藏" : "收藏到“我喜欢”"}
-                >
-                  <Heart
-                    size={16}
-                    className={
-                      neteaseLiked[current.nid]
-                        ? "fill-[#e0533f] text-[#e0533f]"
-                        : ""
-                    }
+                  {/* 封套哑光反光层 */}
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.02) 40%, transparent 60%)",
+                    }}
                   />
-                </button>
-              )}
-              {current.kind === "qq" && current.qid != null && (
-                <button
-                  className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() => {
-                    const entry = [ ...likedOnline, ...recentOnline ].find(
-                      (e) => e.kind === "qq" && e.onlineId === current.qid
-                    );
-                    toggleLikeOnline({
-                      kind: "qq",
-                      id: current.qid!,
-                      name: current.title,
-                      artist: current.artist,
-                      album: current.album,
-                      cover: current.cover,
-                      durationMs: current.durationMs,
-                      mediaMid: entry?.mediaMid ?? "",
-                      vip: entry?.vip ?? false,
-                    });
+                  {/* 书脊折痕光影 */}
+                  <div className="absolute top-0 bottom-0 left-2 w-px bg-white/20 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* 沉入式转盘凹槽（Turntable Well） */}
+              <div className="relative w-[min(34vh,280px)] h-[min(34vh,280px)] rounded-full skeuo-turntable-well flex items-center justify-center shrink-0">
+                {/* 频闪测速外圈（Strobe dots rim） */}
+                <div className="absolute inset-1 rounded-full skeuo-strobe-rim pointer-events-none opacity-45" />
+
+                {/* 旋转黑胶唱片 */}
+                <div
+                  className={`relative w-[min(31vh,255px)] h-[min(31vh,255px)] rounded-full shadow-[0_12px_32px_rgba(0,0,0,0.85)] flex items-center justify-center transition-transform ${
+                    playing ? "animate-[slowSpin_22s_linear_infinite]" : ""
+                  }`}
+                  style={{
+                    background:
+                      "repeating-radial-gradient(circle at center, #090b0e 0px, #090b0e 1px, #14181f 2px, #090b0e 3px)",
+                    border: "2px solid rgba(255, 255, 255, 0.08)",
                   }}
-                  title={savedOnline[`qq-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
                 >
-                  <Heart
-                    size={16}
-                    className={
-                      savedOnline[`qq-${current.qid}`]
-                        ? "fill-[#e0533f] text-[#e0533f]"
-                        : ""
-                    }
+                  {/* 黑胶各向异性蝴蝶领结高光 */}
+                  <div
+                    className="absolute inset-0 rounded-full pointer-events-none"
+                    style={{
+                      background:
+                        "conic-gradient(from 40deg at 50% 50%, rgba(255,255,255,0.18) 0deg, rgba(255,255,255,0.02) 30deg, transparent 50deg, transparent 150deg, rgba(255,255,255,0.02) 170deg, rgba(255,255,255,0.18) 180deg, rgba(255,255,255,0.02) 210deg, transparent 230deg, transparent 330deg, rgba(255,255,255,0.02) 350deg, rgba(255,255,255,0.18) 360deg)",
+                    }}
                   />
-                </button>
-              )}
-              {current.kind === "kugou" && current.kgid != null && (
-                <button
-                  className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() => {
-                    const entry = [...likedOnline, ...recentOnline].find(
-                      (e) => e.kind === "kugou" && e.onlineId === current.kgid
-                    );
-                    toggleLikeOnline({
-                      kind: "kugou",
-                      id: current.kgid!,
-                      name: current.title,
-                      artist: current.artist,
-                      album: current.album,
-                      cover: current.cover,
-                      durationMs: current.durationMs,
-                      mediaMid: "",
-                      vip: entry?.vip ?? false,
-                    });
-                  }}
-                  title={savedOnline[`kugou-${current.kgid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
-                >
-                  <Heart
-                    size={16}
-                    className={
-                      savedOnline[`kugou-${current.kgid}`]
-                        ? "fill-[#e0533f] text-[#e0533f]"
-                        : ""
-                    }
-                  />
-                </button>
-              )}
-              {current.kind === "bilibili" && current.qid != null && (
-                <button
-                  className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() =>
-                    toggleLikeOnline({
-                      kind: "bilibili",
-                      id: current.qid!,
-                      name: current.title,
-                      artist: current.artist,
-                      album: current.album,
-                      cover: current.cover,
-                      durationMs: current.durationMs,
-                      mediaMid: "",
-                      vip: false,
-                    })
-                  }
-                  title={
-                    savedOnline[`bilibili-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"
-                  }
-                >
-                  <Heart
-                    size={16}
-                    className={
-                      savedOnline[`bilibili-${current.qid}`]
-                        ? "fill-[#e0533f] text-[#e0533f]"
-                        : ""
-                    }
-                  />
-                </button>
-              )}
-              {current.kind === "navidrome" && current.qid != null && (
-                <button
-                  className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() =>
-                    toggleLikeOnline({
-                      kind: "navidrome",
-                      id: current.qid!,
-                      name: current.title,
-                      artist: current.artist,
-                      album: current.album,
-                      cover: current.cover,
-                      durationMs: current.durationMs,
-                      mediaMid: "",
-                      vip: false,
-                    })
-                  }
-                  title={
-                    savedOnline[`navidrome-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"
-                  }
-                >
-                  <Heart
-                    size={16}
-                    className={
-                      savedOnline[`navidrome-${current.qid}`]
-                        ? "fill-[#e0533f] text-[#e0533f]"
-                        : ""
-                    }
-                  />
-                </button>
-              )}
-              {current.kind === "track" && (
-                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
-                  {current.album || "未知专辑"}
-                </span>
-              )}
-              {current.kind === "netease" && (
-                <span className="text-[11px] text-[var(--accent)] px-2.5 py-0.5 rounded-full bg-[var(--accent-weak)]">
-                  网易云 · {current.album || "在线曲库"}
-                </span>
-              )}
-              {current.kind === "qq" && current.album && (
-                <span className="text-[11px] text-[var(--ink-2)] px-2.5 py-0.5 rounded-full bg-[var(--shade)]">
-                  {current.album}
-                </span>
-              )}
-              {current.kind === "bilibili" && (
-                <span className="text-[11px] text-[#fb7299] px-2.5 py-0.5 rounded-full bg-[rgba(251,114,153,0.14)]">
-                  哔哩哔哩
-                </span>
-              )}
+
+                  {/* 唱片中心纸标 */}
+                  <div className="relative w-[86px] h-[86px] rounded-full overflow-hidden border-2 border-white/20 shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]">
+                    <CoverImg
+                      src={current.cover}
+                      seed={current.title}
+                      small
+                      className="w-full h-full object-cover scale-110"
+                      iconSize={20}
+                    />
+                    <div className="absolute inset-0 bg-black/20" />
+                  </div>
+
+                  {/* 拟物实心黄铜/铬合金唱片金属压镇（Record Clamp） */}
+                  <div className="absolute w-10 h-10 rounded-full skeuo-record-clamp flex items-center justify-center z-10 pointer-events-none">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#111] border border-white/60 shadow-[inset_0_1px_2px_#000]" />
+                  </div>
+                </div>
+
+                {/* 动态唱臂与唱针系统（播时旋入黑胶，暂停时升起归位） */}
+                <Tonearm
+                  playing={playing}
+                  className="absolute -top-7 -right-11 z-20"
+                />
+              </div>
             </div>
-            <div className="mt-3 flex items-center justify-center gap-3 text-[10.5px] tracking-wide text-[var(--ink-3)] opacity-80 select-none">
-              {lyricSource && <span>歌词来源：{lyricSource}</span>}
-              <button
-                disabled={!hasTrans}
-                className={`px-1.5 py-0.5 rounded transition-colors ${
-                  !hasTrans
-                    ? "opacity-40 cursor-not-allowed"
-                    : lyricsShowTrans
-                      ? "text-[var(--accent-strong)] font-semibold hover:text-[var(--ink)]"
-                      : "hover:text-[var(--ink)]"
-                }`}
-                onClick={() => setLyricsShowTrans(!lyricsShowTrans)}
-                title={
-                  hasTrans
-                    ? "显示 / 隐藏歌词翻译"
-                    : "当前歌曲没有翻译歌词（网易云 / QQ 曲目通常带官方翻译）"
-                }
-              >
-                译
-              </button>
-              <button
-                className="px-1 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-semibold"
-                onClick={() => setLyricsFontScale(lyricsFontScale - 0.1)}
-                title="减小歌词字号"
-              >
-                A-
-              </button>
-              <button
-                className="px-1 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-semibold"
-                onClick={() => setLyricsFontScale(lyricsFontScale + 0.1)}
-                title="增大歌词字号"
-              >
-                A+
-              </button>
+
+            {/* 歌曲主信息与硬件控制仓 */}
+            <div className="w-full text-center mt-3 px-2 flex flex-col items-center">
+              <h1 className="text-[21px] xl:text-[23px] font-black text-[var(--ink)] tracking-tight truncate max-w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] leading-tight">
+                {current.title}
+              </h1>
+              <div className="text-[13px] text-[var(--ink-2)] font-semibold mt-1 truncate max-w-full">
+                {current.artist}
+              </div>
+
+              {/* 拟物金属凹槽集成控制台 */}
+              <div className="flex items-center gap-2.5 mt-3.5 px-3.5 py-1.5 rounded-xl skeuo-well">
+                {/* 物理收藏按钮（带红宝石指示灯点亮） */}
+                <button
+                  className="btn-ghost !w-7 !h-7 !rounded-lg relative flex items-center justify-center shrink-0"
+                  onClick={handleToggleLike}
+                  title={isLiked ? "取消收藏" : "收藏至“我喜欢”"}
+                >
+                  <Heart
+                    size={14}
+                    className={
+                      isLiked
+                        ? "fill-[#ef4444] text-[#ef4444]"
+                        : "text-[var(--ink-3)] group-hover:text-[var(--ink-2)]"
+                    }
+                  />
+                  {isLiked && (
+                    <span className="skeuo-led-on absolute -top-0.5 -right-0.5 !w-1.5 !h-1.5" />
+                  )}
+                </button>
+
+                {/* 音源/专辑金属铭牌 */}
+                <span className="text-[10.5px] font-bold text-[var(--ink-2)] px-2.5 py-0.5 rounded-md bg-[var(--shade-strong)] border border-[var(--sk-edge)] max-w-[150px] truncate">
+                  {current.album ? `${platformBadge} · ${current.album}` : platformBadge}
+                </span>
+
+                <div className="w-px h-3.5 bg-[var(--sk-divider)]" />
+
+                {/* 歌词翻译硬件切换键 */}
+                <button
+                  disabled={!hasTrans}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                    !hasTrans
+                      ? "opacity-35 cursor-not-allowed text-[var(--ink-3)]"
+                      : lyricsShowTrans
+                        ? "bg-[var(--accent)] text-white shadow-sm"
+                        : "btn-ghost"
+                  }`}
+                  onClick={() => setLyricsShowTrans(!lyricsShowTrans)}
+                  title={hasTrans ? "显示 / 隐藏歌词翻译" : "当前曲目无翻译"}
+                >
+                  {hasTrans && (
+                    <span
+                      className={`!w-1.5 !h-1.5 ${
+                        lyricsShowTrans ? "skeuo-led-on" : "skeuo-led-off"
+                      }`}
+                    />
+                  )}
+                  译
+                </button>
+
+                <div className="w-px h-3.5 bg-[var(--sk-divider)]" />
+
+                {/* 字号步进按键 */}
+                <div className="flex items-center gap-1">
+                  <button
+                    className="btn-ghost !w-6 !h-6 !rounded-md text-[10.5px] font-black"
+                    onClick={() => setLyricsFontScale(Math.max(0.8, lyricsFontScale - 0.1))}
+                    title="减小歌词字号"
+                  >
+                    A-
+                  </button>
+                  <button
+                    className="btn-ghost !w-6 !h-6 !rounded-md text-[10.5px] font-black"
+                    onClick={() => setLyricsFontScale(Math.min(1.5, lyricsFontScale + 0.1))}
+                    title="增大歌词字号"
+                  >
+                    A+
+                  </button>
+                </div>
+              </div>
+
+              {lyricSource && (
+                <div className="text-[9.5px] font-mono text-[var(--ink-3)] tracking-wider mt-2 opacity-70">
+                  LYRICS SOURCE: {lyricSource}
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 右：歌词 */}
-        <div className="flex-1 min-w-0 relative">
-          {/* 柔边遮罩：对比不足时垫在歌词后面（颜色/浓度由配色策略给出），
-              radial 软边缘不产生生硬矩形感 */}
-          {scrim && (
+        {/* 右舱：精密声学监听歌词舱（集成双通道模拟 VU 表与平滑母带歌词流） */}
+        <div className="w-full lg:flex-1 min-w-0 h-[min(72vh,580px)] flex flex-col skeuo-display rounded-2xl p-4 sm:p-5 relative shadow-[0_20px_45px_rgba(0,0,0,0.65)]">
+          {/* 四角机架沉头螺栓 */}
+          <div className="skeuo-screw absolute top-3 left-3 z-20 pointer-events-none" />
+          <div className="skeuo-screw absolute top-3 right-3 z-20 pointer-events-none" />
+          <div className="skeuo-screw absolute bottom-3 left-3 z-20 pointer-events-none" />
+          <div className="skeuo-screw absolute bottom-3 right-3 z-20 pointer-events-none" />
+
+          {/* 顶舱：双通道模拟 VU 动圈电平表与音频状态 */}
+          <div className="shrink-0 mb-3 px-1 z-10">
+            <VUMeter playing={playing} />
+          </div>
+
+          {/* 底舱：沉浸声学歌词视窗（无滚动条，平滑逐字推进） */}
+          <div className="relative flex-1 min-h-0 w-full rounded-xl overflow-hidden skeuo-well p-1">
             <div
-              aria-hidden
-              className="absolute inset-0 pointer-events-none"
+              ref={scrollRef}
+              className="relative h-full overflow-y-auto py-[22%] lyrics-mask px-4 text-center"
               style={{
-                background: `radial-gradient(115% 95% at 50% 50%, ${scrim} 42%, transparent 96%)`,
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                zoom: lyricsFontScale,
               }}
-            />
-          )}
-          <div
-            ref={scrollRef}
-            className="relative h-full overflow-y-auto py-[28%] lyrics-mask pr-3"
-            style={{ scrollbarWidth: "none", zoom: lyricsFontScale }}
-          >
-            {lyricsLoading && (
-              <div className="text-[var(--ink-3)] text-[13px] text-center pt-20">
-                正在加载歌词…
-              </div>
-            )}
-            {!lyricsLoading && syncedLines.length === 0 && (
-              <div className="flex flex-col items-center gap-4 text-[var(--ink-3)] pt-[30%]">
-                <Mic2 size={28} />
-                {lyrics && lyrics.lines.length
-                  ? lyrics.lines.map((l, i) => (
-                      <p
-                        key={i}
-                        className="text-[15px] text-[var(--ink-2)] text-center leading-relaxed"
-                      >
-                        {l.text}
-                      </p>
-                    ))
-                  : "暂无歌词"}
-              </div>
-            )}
-            {/* Apple Music 式歌词：当前行逐字点亮。染色边界由 rAF 循环写
-                --fill 变量（clipPath 叠加层，与桌面歌词同机制），React 不参与
-                逐帧渲染；active/透明度/缩放也是 rAF 直接写 style。
-                染色层是真实 DOM 双层：外层铺满本行对齐布局，内层 inline-block
-                收缩到文字实际宽度——clip 百分比基准是文字而非整行，
-                居中行的逐字进度才不会被左右空白稀释（桌面歌词同构） */}
-            {syncedLines.map((l, i) => {
-              const text = l.text || "···";
-              return (
-                <div
-                  key={i}
-                  ref={(el) => {
-                    lineRefs.current[i] = el;
-                  }}
-                  onClick={() => {
-                    if (l.timeMs == null) return;
-                    seek(l.timeMs);
-                    // 暂停中 rAF 循环不在跑：手动渲染一帧，高亮/染色立即跟上
-                    renderFrameRef.current();
-                  }}
-                  className="lyric-line lyric-fill px-4 py-[9px] text-center cursor-pointer"
-                >
-                  {text}
-                  {lyricsShowTrans && l.trans && (
-                    <div className="text-[12.5px] leading-snug mt-0.5 opacity-80">
-                      {l.trans}
-                    </div>
-                  )}
-                  <div className="lyric-fill-ov" aria-hidden>
-                    <span>{text}</span>
+            >
+              {lyricsLoading && (
+                <div className="text-[var(--ink-3)] text-[13px] text-center pt-24 tracking-wider flex flex-col items-center gap-3">
+                  <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+                  正在校准声学歌词母带…
+                </div>
+              )}
+
+              {!lyricsLoading && syncedLines.length === 0 && (
+                <div className="flex flex-col items-center gap-3.5 text-[var(--ink-3)] pt-[24%] select-none">
+                  <div className="w-12 h-12 rounded-full bg-[var(--shade-strong)] border border-[var(--sk-groove-border)] flex items-center justify-center shadow-[var(--sk-groove-shadow)]">
+                    <Mic2 size={22} className="text-[var(--ink-2)]" />
+                  </div>
+                  <div className="text-[13.5px] font-medium tracking-wide">
+                    {lyrics && lyrics.lines.length
+                      ? lyrics.lines.map((l, i) => (
+                          <p
+                            key={i}
+                            className="text-[14px] text-[var(--ink-2)] text-center leading-relaxed"
+                          >
+                            {l.text}
+                          </p>
+                        ))
+                      : "暂无同步歌词"}
                   </div>
                 </div>
-              );
-            })}
+              )}
+
+              {syncedLines.map((l, i) => {
+                const text = l.text || "···";
+                return (
+                  <div
+                    key={i}
+                    ref={(el) => {
+                      lineRefs.current[i] = el;
+                    }}
+                    onClick={() => {
+                      if (l.timeMs == null) return;
+                      seek(l.timeMs);
+                      renderFrameRef.current();
+                    }}
+                    className="lyric-line lyric-fill px-4 py-[9px] text-center cursor-pointer select-none transition-all duration-200"
+                  >
+                    <span className="inline-block transition-transform duration-300">
+                      {text}
+                    </span>
+                    {lyricsShowTrans && l.trans && (
+                      <div className="text-[12.5px] leading-snug mt-1 opacity-70 font-normal tracking-normal">
+                        {l.trans}
+                      </div>
+                    )}
+                    <div className="lyric-fill-ov" aria-hidden>
+                      <span>{text}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

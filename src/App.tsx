@@ -95,13 +95,7 @@ function DynamicBackdrop() {
           <div className="absolute inset-0" style={{ background: "var(--skin-scrim)" }} />
         </>
       ) : (
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 120% 100% at 50% -20%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%)",
-          }}
-        />
+        <div className="absolute inset-0 skeuo-chassis-bg" />
       )}
       {/* 封面主色微光（低饱和、低调；皮肤上保留，让壁纸跟着音乐呼吸） */}
       <div

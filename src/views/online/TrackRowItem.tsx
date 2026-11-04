@@ -184,7 +184,7 @@ export function TrackRowItem({
                         className={
                           saved
                             ? "fill-[#e0533f] text-[#e0533f]"
-                            : "opacity-0 group-hover:opacity-100"
+                            : "text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors"
                         }
                       />
                     </button>
@@ -195,16 +195,17 @@ export function TrackRowItem({
                     >
                       <Play
                         size={14}
-                        className="opacity-0 group-hover:opacity-100"
+                        className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors"
                       />
                     </button>
                     <button
                       className="btn-ghost w-8 h-8"
                       onClick={onMore}
+                      title="更多选项"
                     >
                       <MoreHorizontal
                         size={16}
-                        className="opacity-0 group-hover:opacity-100"
+                        className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors"
                       />
                     </button>
                   </div>

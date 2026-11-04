@@ -7,98 +7,143 @@
 }
 
 /* ---------- 主题变量 ----------
-   :root 为暗色（默认）；html[data-theme="light"] 为浅色。
+   :root 为暗色（拟物复古音响风格）；html[data-theme="light"] 为浅色（经典阳极氧化铝与象牙白风格）。
    --accent 系列由 JS 按用户选择的强调色写入。 */
 
 :root {
-  --bg: #0f0c09;
-  --ink: #f3ede3;
-  --ink-2: #b3a897;
-  --ink-3: #7d7365;
-  --line: rgba(243, 233, 216, 0.09);
-  --glass-bg: rgba(13, 10, 8, 0.38);
-  --glass-bg-strong: rgba(26, 21, 16, 0.72);
-  --glass-line: rgba(243, 233, 216, 0.1);
-  --shade: rgba(243, 233, 216, 0.05);
-  --shade-strong: rgba(243, 233, 216, 0.09);
-  --shade-hover: rgba(243, 233, 216, 0.045);
-  --vignette: rgba(5, 3, 2, 0.55);
-  --backdrop-1: #241a10;
-  --backdrop-2: #14100b;
-  /* 主题固定文字色（皮肤设置弹窗等需要"不随皮肤变化"的界面用） */
-  --ink-t: #f3ede3;
-  --ink-2-t: #b3a897;
-  --ink-3-t: #7d7365;
-  /* 播放页歌词未唱行的暗色默认：--ink-3 在氛围渐变上太暗（无皮肤时生效；
-     皮肤启用时未定义此变量，跟随各皮肤适配后的 --ink-3） */
-  --lyric-dim: rgba(243, 237, 227, 0.62);
-  --bar-tint: rgba(15, 12, 9, 0.82);
-  --bar-glass: rgba(26, 21, 16, 0.45);
-  --bar-line: rgba(243, 233, 216, 0.08);
-  --bar-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55);
-  --cover-shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.45);
-  --cover-shadow-lg: 0 36px 90px rgba(0, 0, 0, 0.7);
-  --glow: #c2570f;
-  --blob-warm: #8a3d1f;
-  --noise-opacity: 0.3;
-  --play-btn-bg: #f3ede3;
-  --play-btn-on: #241505;
+  --bg: #111418;
+  --ink: #f4efe6;
+  --ink-2: #a8b0bd;
+  --ink-3: #6c7584;
+  --line: rgba(255, 255, 255, 0.07);
+  --glass-bg: linear-gradient(180deg, rgba(35, 40, 48, 0.95) 0%, rgba(20, 23, 28, 0.97) 100%);
+  --glass-bg-strong: linear-gradient(180deg, rgba(42, 48, 58, 0.97) 0%, rgba(24, 28, 34, 0.99) 100%);
+  --glass-line: rgba(0, 0, 0, 0.85);
+  --shade: rgba(0, 0, 0, 0.38);
+  --shade-strong: rgba(0, 0, 0, 0.65);
+  --shade-hover: rgba(255, 255, 255, 0.06);
+  --vignette: rgba(3, 4, 6, 0.75);
+  --backdrop-1: #1a1e25;
+  --backdrop-2: #0f1216;
+  /* 主题固定文字色 */
+  --ink-t: #f4efe6;
+  --ink-2-t: #a8b0bd;
+  --ink-3-t: #6c7584;
+  --lyric-dim: rgba(244, 239, 230, 0.58);
+  --bar-tint: rgba(18, 21, 26, 0.95);
+  --bar-glass: linear-gradient(180deg, #2b313b 0%, #1c2027 50%, #13161b 100%);
+  --bar-line: rgba(0, 0, 0, 0.9);
+  --bar-shadow: 0 -3px 12px rgba(0, 0, 0, 0.5), 0 20px 48px -6px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.85);
+  --cover-shadow-sm: 0 6px 14px -2px rgba(0, 0, 0, 0.7), 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  --cover-shadow-lg: 0 26px 64px -10px rgba(0, 0, 0, 0.9), 0 8px 20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  --glow: #d97706;
+  --blob-warm: #92400e;
+  --noise-opacity: 0.22;
+  --play-btn-bg: #f4efe6;
+  --play-btn-on: #1a150e;
   color-scheme: dark;
-  /* 皮肤纱（每套皮肤由 JS 注入各自的 --skin-scrim-dark/-light，按主题取用）：
-     深色主题压暗保证浅色文字可读 */
   --skin-scrim-dark: linear-gradient(
     180deg,
-    rgba(12, 10, 18, 0.16) 0%,
-    rgba(12, 10, 18, 0.3) 55%,
-    rgba(12, 10, 18, 0.45) 100%
+    rgba(14, 17, 22, 0.3) 0%,
+    rgba(14, 17, 22, 0.5) 55%,
+    rgba(14, 17, 22, 0.65) 100%
   );
   --skin-scrim-light: linear-gradient(
     180deg,
-    rgba(252, 252, 254, 0.6) 0%,
-    rgba(252, 252, 254, 0.7) 100%
+    rgba(240, 244, 248, 0.7) 0%,
+    rgba(240, 244, 248, 0.8) 100%
   );
   --skin-scrim: var(--skin-scrim-dark);
 }
 
-/* ---------- 液态玻璃浅色主题 ----------
-   参考「纯CSS液态玻璃」：浅色网格底 + 多层内高光 + 对角高光渐变 + 内圈暗影。
-   参考实现依赖父级 contrast(3) 放大微弱阴影（会毁掉文字/封面），
-   这里将对比度直接预调进各阴影/渐变值。 */
+/* ---------- 经典 Dieter Rams / Braun 拟物浅色主题 ---------- */
 html[data-theme="light"] {
-  --bg: #eef1f7;
-  --ink: #2b3546;
-  --ink-2: #5d6a7e;
-  --ink-3: #8d99ab;
-  --line: rgba(43, 53, 70, 0.1);
-  --glass-bg: rgba(43, 53, 70, 0.05);
-  --glass-bg-strong: rgba(236, 240, 247, 0.97);
-  --glass-line: transparent;
-  --shade: rgba(43, 53, 70, 0.055);
-  --shade-strong: rgba(43, 53, 70, 0.1);
-  --shade-hover: rgba(43, 53, 70, 0.045);
-  --vignette: rgba(154, 170, 193, 0.2);
-  --backdrop-1: #e7ecf4;
-  --backdrop-2: #eef1f7;
-  --ink-t: #2b3546;
-  --ink-2-t: #5d6a7e;
-  --ink-3-t: #8d99ab;
-  /* 播放页歌词未唱行的浅色默认：封面取色失败（无自适应变量）时，
-     深色主题的奶油色默认在白底上几乎不可见 */
-  --lyric-dim: rgba(21, 24, 31, 0.62);
-  --bar-tint: rgba(238, 241, 247, 0.88);
-  --bar-glass: rgba(43, 53, 70, 0.07);
-  --bar-line: rgba(43, 53, 70, 0.12);
-  --bar-shadow: 0 12px 32px -12px rgba(37, 50, 68, 0.28);
-  --cover-shadow-sm: 0 4px 14px rgba(37, 50, 68, 0.22);
-  --cover-shadow-lg: 0 36px 90px -18px rgba(37, 50, 68, 0.42);
-  --glow: #9db4d4;
-  --blob-warm: #c3cfdf;
-  --noise-opacity: 0.08;
+  --bg: #e2e6eb;
+  --ink: #1e242d;
+  --ink-2: #4f5867;
+  --ink-3: #828c9b;
+  --line: rgba(0, 0, 0, 0.08);
+  --glass-bg: linear-gradient(180deg, rgba(252, 253, 255, 0.96) 0%, rgba(234, 238, 245, 0.98) 100%);
+  --glass-bg-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 242, 248, 0.99) 100%);
+  --glass-line: rgba(0, 0, 0, 0.16);
+  --shade: rgba(0, 0, 0, 0.05);
+  --shade-strong: rgba(0, 0, 0, 0.1);
+  --shade-hover: rgba(0, 0, 0, 0.035);
+  --vignette: rgba(140, 155, 175, 0.25);
+  --backdrop-1: #ebedf2;
+  --backdrop-2: #dde2e9;
+  --ink-t: #1e242d;
+  --ink-2-t: #4f5867;
+  --ink-3-t: #828c9b;
+  --lyric-dim: rgba(30, 36, 45, 0.62);
+  --bar-tint: rgba(240, 243, 248, 0.95);
+  --bar-glass: linear-gradient(180deg, #f7f9fc 0%, #e8edf3 50%, #dce1e8 100%);
+  --bar-line: rgba(0, 0, 0, 0.18);
+  --bar-shadow: 0 14px 36px -8px rgba(35, 48, 68, 0.25), 0 3px 8px rgba(35, 48, 68, 0.1), inset 0 1px 0 #ffffff, inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  --cover-shadow-sm: 0 5px 14px rgba(35, 48, 68, 0.2), inset 0 1px 0 #ffffff;
+  --cover-shadow-lg: 0 32px 75px -16px rgba(35, 48, 68, 0.38), inset 0 1px 0 #ffffff;
+  --glow: #cbd5e1;
+  --blob-warm: #d5dde8;
+  --noise-opacity: 0.05;
   --play-btn-bg: #ffffff;
-  --play-btn-on: #2b3546;
+  --play-btn-on: #1e242d;
   color-scheme: light;
-  /* 浅色主题：取用该皮肤的"提亮纱"，把背景洗成柔和粉彩保证深色文字可读 */
   --skin-scrim: var(--skin-scrim-light);
+}
+
+/* ---------- 拟物材质令牌（随主题切换） ----------
+   组件内不再硬编码黑/白半透明阴影：凹槽、按下态、分隔线、封面描边等
+   统一走这里的变量，浅色主题才不会出现「深色阴影糊在银色面板上」。
+   · groove   = 凹槽（滑轨、推子槽、旋钮底座、计数徽标）
+   · pressed  = 按下 / 选中态（侧栏选中项、开关点亮的按键）
+   · divider  = 面板接缝（暗线 + 亮线 = 一道刻槽）
+   · cover    = 封面 / 小图描边与投影 */
+:root {
+  --sk-edge: rgba(0, 0, 0, 0.55);
+  --sk-groove-bg: #0c0f13;
+  --sk-groove-border: rgba(0, 0, 0, 0.75);
+  --sk-groove-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9), inset 0 1px 1px #000, 0 1px 0 rgba(255, 255, 255, 0.08);
+  --sk-pressed-bg: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.24) 100%);
+  --sk-pressed-border: rgba(0, 0, 0, 0.72);
+  --sk-pressed-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.07);
+  --sk-divider: rgba(0, 0, 0, 0.45);
+  --sk-divider-hi: rgba(255, 255, 255, 0.05);
+  --sk-cover-border: rgba(0, 0, 0, 0.5);
+  --sk-cover-shadow: 0 3px 8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --sk-row-hover-bg: rgba(0, 0, 0, 0.2);
+  --sk-row-hover-border: rgba(0, 0, 0, 0.3);
+  --sk-row-hover-shadow: 0 2px 6px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --sk-row-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --sk-knob-metal: linear-gradient(180deg, #ffffff 0%, #cbd2da 45%, #88909b 100%);
+  --sk-knob-shadow: 0 3px 6px rgba(0, 0, 0, 0.6), inset 0 1px 0 #ffffff, inset 0 -1px 1px rgba(0, 0, 0, 0.35);
+  --sk-emboss: 0 1px 1px rgba(0, 0, 0, 0.8);
+  /* 播放页歌词视窗：极薄的烟色玻璃，不压住封面取色背景 */
+  --sk-window-bg: rgba(6, 8, 12, 0.26);
+  --sk-window-border: rgba(0, 0, 0, 0.45);
+  --sk-window-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+html[data-theme="light"] {
+  --sk-edge: rgba(30, 40, 55, 0.16);
+  --sk-groove-bg: #d2d8e0;
+  --sk-groove-border: rgba(30, 40, 55, 0.18);
+  --sk-groove-shadow: inset 0 1px 3px rgba(35, 48, 68, 0.3), inset 0 1px 1px rgba(35, 48, 68, 0.16), 0 1px 0 #ffffff;
+  --sk-pressed-bg: linear-gradient(180deg, #d3d9e1 0%, #e1e5eb 100%);
+  --sk-pressed-border: rgba(30, 40, 55, 0.15);
+  --sk-pressed-shadow: inset 0 2px 4px rgba(35, 48, 68, 0.2), inset 0 1px 1px rgba(35, 48, 68, 0.1), 0 1px 0 #ffffff;
+  --sk-divider: rgba(30, 40, 55, 0.11);
+  --sk-divider-hi: rgba(255, 255, 255, 0.75);
+  --sk-cover-border: rgba(30, 40, 55, 0.12);
+  --sk-cover-shadow: 0 3px 8px rgba(35, 48, 68, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --sk-row-hover-bg: rgba(35, 48, 68, 0.045);
+  --sk-row-hover-border: rgba(30, 40, 55, 0.07);
+  --sk-row-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(35, 48, 68, 0.06);
+  --sk-row-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 6px rgba(35, 48, 68, 0.08);
+  --sk-knob-shadow: 0 2px 5px rgba(35, 48, 68, 0.35), inset 0 1px 0 #ffffff, inset 0 -1px 1px rgba(0, 0, 0, 0.2);
+  --sk-emboss: 0 1px 0 rgba(255, 255, 255, 0.9);
+  --sk-window-bg: rgba(255, 255, 255, 0.3);
+  --sk-window-border: rgba(255, 255, 255, 0.55);
+  --sk-window-shadow: inset 0 2px 8px rgba(35, 48, 68, 0.1), 0 10px 30px -12px rgba(35, 48, 68, 0.25);
 }
 
 /* 默认强调色（琥珀），启动时 JS 会覆盖为用户选择 */
@@ -159,40 +204,59 @@ body.dragging-rows * {
   background: var(--accent-soft);
 }
 
-/* ---------- 滚动条 ---------- */
+/* ---------- 全局彻底隐藏滚动条（保留正常平滑滚动） ---------- */
 
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+*::-webkit-scrollbar,
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--shade-strong);
-  border-radius: 5px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-3);
-  border: 3px solid transparent;
-  background-clip: padding-box;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
-/* ---------- 面板 ---------- */
+/* ---------- 拟物风格面板 ---------- */
 
 .glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid var(--glass-line);
+  box-shadow:
+    0 8px 24px -4px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .glass-strong {
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(32px) saturate(1.25);
-  -webkit-backdrop-filter: blur(32px) saturate(1.25);
   border: 1px solid var(--glass-line);
+  box-shadow:
+    0 16px 36px -6px rgba(0, 0, 0, 0.65),
+    0 4px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+html[data-theme="light"] .glass {
+  box-shadow:
+    0 8px 20px -4px rgba(35, 48, 68, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme="light"] .glass-strong {
+  box-shadow:
+    0 16px 36px -6px rgba(35, 48, 68, 0.22),
+    0 4px 10px rgba(35, 48, 68, 0.1),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
 }
 
 /* ---------- 液态玻璃（浅色主题特化） ----------
@@ -440,39 +504,39 @@ html[data-custom-text="dark"] {
   animation: indicatorIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
-/* 侧栏项 hover：左侧滑入高光 + 文字滑移（所有侧栏按钮统一） */
+/* 侧栏项（.nav-item）：仿录音室机架推键与琴键开关 */
 .nav-item {
   position: relative;
   overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid transparent;
   transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.nav-item::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 0%,
-    var(--shade-hover) 35%,
-    var(--shade-strong) 50%,
-    var(--shade-hover) 65%,
-    transparent 100%
-  );
-  transform: translateX(-100%);
-  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-  pointer-events: none;
-}
-.nav-item:hover::before {
-  transform: translateX(100%);
+    background 0.16s ease,
+    color 0.16s ease,
+    transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.14s ease,
+    border-color 0.14s ease;
 }
 .nav-item:hover {
-  transform: translateX(2px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(0, 0, 0, 0.2) 100%);
+  border-color: rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+html[data-theme="light"] .nav-item:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #edf1f6 50%, #dce2ea 100%);
+  border-color: rgba(0, 0, 0, 0.14);
+  box-shadow:
+    0 2px 4px rgba(35, 48, 68, 0.1),
+    inset 0 1px 0 #ffffff;
 }
 .nav-item:active {
-  transform: translateX(2px) scale(0.985);
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .nav-item > svg {
   transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -642,139 +706,548 @@ html[data-custom-text="dark"] {
 
 /* ---------- 控件 ---------- */
 
+/* ---------- 拟物风格控件与按键 ---------- */
+
 input[type="text"],
 input[type="url"] {
   outline: none;
+  background: rgba(10, 13, 17, 0.75);
+  border: 1px solid rgba(0, 0, 0, 0.8) !important;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.85),
+    inset 0 1px 2px rgba(0, 0, 0, 0.95),
+    0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  transition: border-color 0.16s, box-shadow 0.16s;
 }
 
-/* 输入框/下拉统一无描边：模块化由底色表达。
-   （下拉选择已组件化：components/Select.tsx，无原生 <select>） */
-input[type="text"],
-input[type="url"] {
-  border-color: transparent !important;
+html[data-theme="light"] input[type="text"],
+html[data-theme="light"] input[type="url"] {
+  background: rgba(235, 239, 245, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.18) !important;
+  box-shadow:
+    inset 0 2px 4px rgba(35, 48, 68, 0.2),
+    inset 0 1px 2px rgba(35, 48, 68, 0.15),
+    0 1px 0 #ffffff;
 }
 
+input[type="text"]:focus,
+input[type="url"]:focus {
+  border-color: var(--accent) !important;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.8),
+    0 0 0 2px var(--accent-weak),
+    0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* 拟物物理按键（.btn-ghost）：微倒角按键，有顶边高光、底边投影与按下凹陷反馈 */
 .btn-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 10px;
+  border-radius: 9px;
   color: var(--ink-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 48%, rgba(0, 0, 0, 0.24) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
   transition:
     background 0.16s,
     color 0.16s,
-    transform 0.12s;
-}
-.btn-ghost:hover {
-  background: var(--shade-strong);
-  color: var(--ink);
-}
-.btn-ghost:active {
-  transform: scale(0.94);
+    transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.12s;
 }
 
+html[data-theme="light"] .btn-ghost {
+  background: linear-gradient(180deg, #ffffff 0%, #edf1f6 50%, #dce2ea 100%);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow:
+    0 2px 4px rgba(35, 48, 68, 0.12),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.btn-ghost:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.05) 48%, rgba(0, 0, 0, 0.18) 100%);
+  color: var(--ink);
+  box-shadow:
+    0 3px 7px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+html[data-theme="light"] .btn-ghost:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f6fa 50%, #e3e8ef 100%);
+  box-shadow:
+    0 3px 6px rgba(35, 48, 68, 0.16),
+    inset 0 1px 0 #ffffff;
+}
+
+.btn-ghost:active {
+  transform: translateY(1.5px) scale(0.96);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.15) 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.75),
+    inset 0 1px 2px rgba(0, 0, 0, 0.85),
+    0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="light"] .btn-ghost:active {
+  background: linear-gradient(180deg, #cbd2dc 0%, #dde2e9 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(35, 48, 68, 0.28),
+    0 1px 0 #ffffff;
+}
+
+/* 拟物发光/阳极氧化金属主按键（.btn-primary） */
 .btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 12px;
-  padding: 9px 18px;
+  border-radius: 10px;
+  padding: 8px 18px;
   font-weight: 700;
   font-size: 13px;
   color: #fff;
-  background: linear-gradient(120deg, var(--accent) 0%, var(--accent-strong) 100%);
+  background: linear-gradient(180deg, var(--accent-strong) 0%, var(--accent) 52%, color-mix(in srgb, var(--accent) 72%, #000) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.45);
   box-shadow:
-    0 6px 22px -6px var(--accent-soft),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  transition:
-    filter 0.16s,
-    transform 0.12s;
-}
-.btn-primary:hover {
-  filter: brightness(1.08);
-}
-.btn-primary:active {
-  transform: scale(0.97);
+    0 4px 12px -2px var(--accent-soft),
+    0 2px 5px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.45);
+  transition: filter 0.16s, transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.12s;
 }
 
+.btn-primary:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    0 6px 16px -2px var(--accent-soft),
+    0 3px 6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.btn-primary:active {
+  transform: translateY(1.5px) scale(0.97);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.25);
+  filter: brightness(0.95);
+}
+
+/* 拟物机架副按键（.btn-secondary） */
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 12px;
-  padding: 9px 15px;
-  font-weight: 500;
-  font-size: 13px;
+  border-radius: 10px;
+  padding: 8px 15px;
+  font-weight: 600;
+  font-size: 12.5px;
   color: var(--ink);
-  background: var(--shade);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(0, 0, 0, 0.25) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
   transition:
     background 0.16s,
     color 0.16s,
-    border-color 0.16s;
-}
-.btn-secondary:hover {
-  background: var(--shade-strong);
-  border-color: var(--glass-line);
-  color: var(--ink);
+    transform 0.1s,
+    box-shadow 0.12s;
 }
 
+html[data-theme="light"] .btn-secondary {
+  background: linear-gradient(180deg, #ffffff 0%, #edf1f6 50%, #dbe1e9 100%);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow:
+    0 2px 4px rgba(35, 48, 68, 0.1),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.btn-secondary:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 50%, rgba(0, 0, 0, 0.2) 100%);
+  color: var(--ink);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.btn-secondary:active {
+  transform: translateY(1.5px) scale(0.97);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 拟物胶囊标签（.chip） */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 5px 13px;
   border-radius: 999px;
   font-size: 12px;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.22) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition: background 0.15s, color 0.15s, transform 0.1s, box-shadow 0.12s;
 }
 
+html[data-theme="light"] .chip {
+  background: linear-gradient(180deg, #ffffff 0%, #edf1f6 50%, #dce2ea 100%);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 2px 4px rgba(35, 48, 68, 0.08),
+    inset 0 1px 0 #ffffff;
+  color: var(--ink-2);
+}
+html[data-theme="light"] .chip:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f6fa 50%, #e3e8ef 100%);
+  color: var(--ink);
+}
+
+.chip:active {
+  transform: translateY(1px) scale(0.96);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 拟物推子与旋钮滑槽（input[type="range"]） */
 input[type="range"] {
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
-  height: 18px;
+  height: 20px;
 }
 /* 轨道 */
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--shade-strong);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sk-groove-bg);
+  border: 1px solid var(--sk-groove-border);
+  box-shadow: var(--sk-groove-shadow);
 }
-/* 已填充段（用 accent 渐变打底，宽度由 accentcolor 动态设定） */
-input[type="range"]::-webkit-slider-runnable-track {
-  background: linear-gradient(
-    to right,
-    var(--accent) 0%,
-    var(--accent) var(--fill, 0%),
-    var(--shade-strong) var(--fill, 100%)
-  );
-}
-/* 滑块 */
+/* 滑块（车削阳极铝质感推子头） */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: #fff;
-  border: none;
-  margin-top: -5px;
-  box-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(0, 0, 0, 0.06);
+  background: var(--sk-knob-metal);
+  border: 1px solid var(--sk-edge);
+  margin-top: -6px;
+  box-shadow: var(--sk-knob-shadow);
   cursor: pointer;
-  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s;
 }
 input[type="range"]:hover::-webkit-slider-thumb {
   transform: scale(1.15);
 }
 input[type="range"]:active::-webkit-slider-thumb {
-  transform: scale(0.92);
+  transform: scale(0.94);
+}
+
+/* ---------- 拟物专属微质感类 ---------- */
+
+/* 1) 螺丝 / 铆钉：模拟机架面板四角沉头车削螺栓（微调切槽多向散射） */
+.skeuo-screw {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #8e96a2 0%, #464d57 55%, #252a32 100%);
+  border: 1px solid rgba(0, 0, 0, 0.65);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45);
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.skeuo-screw::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 1.2px;
+  background: #111418;
+  transform: translate(-50%, -50%) rotate(38deg);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+/* 螺丝刀口自然旋转差异（告别呆板一律 38 度） */
+.skeuo-screw:nth-of-type(2n)::after {
+  transform: translate(-50%, -50%) rotate(124deg);
+}
+.skeuo-screw:nth-of-type(3n)::after {
+  transform: translate(-50%, -50%) rotate(71deg);
+}
+.skeuo-screw:nth-of-type(4n)::after {
+  transform: translate(-50%, -50%) rotate(162deg);
+}
+
+html[data-theme="light"] .skeuo-screw {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #cbd2db 55%, #949da8 100%);
+  border: 1px solid rgba(35, 48, 68, 0.25);
+  box-shadow: 0 1px 2px rgba(35, 48, 68, 0.15), inset 0 1px 1px #ffffff;
+}
+html[data-theme="light"] .skeuo-screw::after {
+  background: #414a58;
+  box-shadow: 0 1px 0 #ffffff;
+}
+
+/* 2) 荧光/液晶内嵌显示屏（VFD/OLED）：双主题均保证自发光高亮可读性与防反光面罩 */
+.skeuo-display {
+  --ink: #f1f5f9;
+  --ink-2: #94a3b8;
+  --ink-3: #64748b;
+  background: radial-gradient(ellipse at 50% 25%, rgba(18, 30, 26, 0.98) 0%, rgba(7, 13, 11, 0.99) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.85);
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.95),
+    inset 0 1px 2px #000000,
+    0 1px 0 rgba(255, 255, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+.skeuo-display::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, transparent 45%);
+  pointer-events: none;
+}
+/* 微弱的 VFD 光栅网纹 */
+.skeuo-display::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.18) 0px,
+    rgba(0, 0, 0, 0.18) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+html[data-theme="light"] .skeuo-display {
+  --ink: #111827;
+  --ink-2: #374151;
+  --ink-3: #6b7280;
+  background: linear-gradient(180deg, #dbe2ea 0%, #edf2f8 40%, #f6f8fb 100%);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow:
+    inset 0 2px 4px rgba(35, 48, 68, 0.18),
+    inset 0 1px 1px rgba(35, 48, 68, 0.12),
+    0 1px 0 #ffffff;
+}
+
+html[data-theme="light"] .skeuo-display::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, transparent 45%);
+}
+
+html[data-theme="light"] .skeuo-display::after {
+  opacity: 0.16;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(35, 48, 68, 0.08) 0px,
+    rgba(35, 48, 68, 0.08) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+/* 屏幕舱内微型操作键（深色模式：自发光/微透；浅色模式：精细金属按键） */
+.skeuo-display .btn-ghost {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--ink-2) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+}
+.skeuo-display .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+}
+.skeuo-display .btn-ghost:active {
+  background: rgba(0, 0, 0, 0.4) !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8) !important;
+}
+
+html[data-theme="light"] .skeuo-display .btn-ghost {
+  background: linear-gradient(180deg, #ffffff 0%, #e9eef5 100%) !important;
+  border-color: rgba(0, 0, 0, 0.14) !important;
+  color: var(--ink-2) !important;
+  box-shadow: 0 1px 2px rgba(35, 48, 68, 0.12), inset 0 1px 0 #ffffff !important;
+}
+html[data-theme="light"] .skeuo-display .btn-ghost:hover {
+  background: #ffffff !important;
+  color: var(--ink) !important;
+  box-shadow: 0 2px 4px rgba(35, 48, 68, 0.16), inset 0 1px 0 #ffffff !important;
+}
+html[data-theme="light"] .skeuo-display .btn-ghost:active {
+  background: #d8e0eb !important;
+  box-shadow: inset 0 1px 3px rgba(35, 48, 68, 0.25) !important;
+}
+
+/* 3) 沉槽阱（凹入式区域）：用于列表托盘、搜索框外围或控制凹陷区 */
+.skeuo-well {
+  background: var(--sk-groove-bg);
+  border: 1px solid var(--sk-groove-border);
+  box-shadow: var(--sk-groove-shadow);
+}
+
+/* 4) 物理状态 LED 指示灯点亮与熄灭（带金属安装衬圈） */
+.skeuo-led-on {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff 0%, #ffc470 35%, #f59e0b 70%, #b45309 100%);
+  box-shadow:
+    0 0 6px 1px #ff9400,
+    0 0 12px 2px rgba(245, 158, 11, 0.4),
+    inset 0 1px 1px #ffffff,
+    0 0 0 1px rgba(0, 0, 0, 0.65),
+    0 0 0 2px rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+.skeuo-led-off {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #2a313d 0%, #151920 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.75),
+    0 0 0 2px rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+html[data-theme="light"] .skeuo-led-off {
+  background: radial-gradient(circle at 35% 35%, #c8d0db 0%, #8c96a4 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 0 0 2px #ffffff;
+}
+
+/* 5) 铭牌效果（金属铭牌印刷字体） */
+.skeuo-nameplate {
+  background: linear-gradient(180deg, #323842 0%, #1e2229 55%, #14171d 100%);
+  border: 1px solid rgba(0, 0, 0, 0.75);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+}
+html[data-theme="light"] .skeuo-nameplate {
+  background: linear-gradient(180deg, #ffffff 0%, #e8ecf2 55%, #d5dbe4 100%);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 2px 5px rgba(35, 48, 68, 0.15),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* 6) 拟物物理轻触拨动开关（.skeuo-switch） */
+.skeuo-switch {
+  position: relative;
+  width: 42px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--sk-groove-bg);
+  border: 1px solid var(--sk-groove-border);
+  box-shadow: var(--sk-groove-shadow);
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.skeuo-switch.active {
+  background: linear-gradient(180deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 70%, #000) 100%);
+  border-color: color-mix(in srgb, var(--accent) 80%, #000);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 0 8px var(--accent-soft);
+}
+.skeuo-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sk-knob-metal);
+  border: 1px solid var(--sk-edge);
+  box-shadow: var(--sk-knob-shadow);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.skeuo-switch.active .skeuo-switch-thumb {
+  transform: translateX(20px);
+}
+
+/* 7) 拟物分段选择底槽（.skeuo-segmented） */
+.skeuo-segmented {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--sk-groove-bg);
+  border: 1px solid var(--sk-groove-border);
+  box-shadow: var(--sk-groove-shadow);
+  gap: 2px;
+}
+.skeuo-segmented-btn {
+  padding: 4px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+.skeuo-segmented-btn:hover {
+  color: var(--ink);
+}
+.skeuo-segmented-btn.active {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 100%);
+  color: var(--ink);
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+html[data-theme="light"] .skeuo-segmented-btn.active {
+  background: linear-gradient(180deg, #ffffff 0%, #edf1f6 100%);
+  color: #1e242d;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  box-shadow: 0 1px 3px rgba(35, 48, 68, 0.12), inset 0 1px 0 #ffffff;
+}
+
+/* 8) 拟物列表行样式（.skeuo-row） */
+.skeuo-row {
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+.skeuo-row:hover {
+  background: var(--sk-row-hover-bg) !important;
+  border-color: var(--sk-row-hover-border) !important;
+  box-shadow: var(--sk-row-hover-shadow) !important;
+}
+.skeuo-row.active {
+  background: linear-gradient(90deg, var(--accent-weak) 0%, transparent 100%) !important;
+  border-left: 3px solid var(--accent-strong) !important;
+  box-shadow: var(--sk-row-active-shadow) !important;
+}
+.skeuo-row.checked {
+  background: var(--accent-weak) !important;
+  border-color: color-mix(in srgb, var(--accent-strong) 40%, transparent) !important;
 }
 
 /* ---------- 全局按钮动效兜底 ----------
@@ -807,9 +1280,42 @@ button:not(.btn-primary):not(.btn-ghost):not(.nav-item):active {
   filter: brightness(0.95);
 }
 
-/* 4) 标题栏窗口按钮：专属动效（背景 hover 已有，补按下缩放） */
+/* 4) 标题栏窗口按钮：拟物微倒角金属键 */
+.titlebar-btn {
+  width: 28px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.25) 100%);
+  border: 1px solid var(--sk-edge);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.14s ease;
+}
+.titlebar-btn:hover {
+  color: var(--ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, rgba(0, 0, 0, 0.18) 100%);
+}
+.titlebar-btn.close-btn:hover {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+  color: #fff;
+  border-color: rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
 .titlebar-btn:active {
-  transform: scale(0.88);
+  transform: translateY(1px) scale(0.92);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme="light"] .titlebar-btn {
+  background: linear-gradient(180deg, #ffffff 0%, #edf1f6 50%, #dbe1e9 100%);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  box-shadow: 0 1px 2px rgba(35, 48, 68, 0.12), inset 0 1px 0 #ffffff;
+}
+html[data-theme="light"] .titlebar-btn:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f6fa 50%, #e3e8ef 100%);
 }
 
 /* ---------- 自动更新：release notes（markdown）渲染样式 ---------- */
@@ -892,3 +1398,168 @@ button:not(.btn-primary):not(.btn-ghost):not(.nav-item):active {
 .release-notes > :first-child { margin-top: 0; }
 .release-notes > :last-child { margin-bottom: 0; }
 .release-notes .rn-empty { color: var(--ink-3); margin: 0; }
+
+/* 拟物机箱拉丝金属纹理底板 */
+.skeuo-chassis-bg {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(ellipse 120% 80% at 50% -10%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%);
+}
+html[data-theme="light"] .skeuo-chassis-bg {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.02) 0px,
+      rgba(0, 0, 0, 0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(ellipse 120% 80% at 50% -10%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%);
+}
+
+/* ---------- 播放页：发烧级黑胶唱机与模拟监听台专属材质 ---------- */
+
+/* 1) 唱机基座台板（沉重压铸机架铝合金面板，带四角机架螺栓与高光倒角） */
+.skeuo-turntable-deck {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.01) 0px,
+      rgba(255, 255, 255, 0.01) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    linear-gradient(180deg, #242a34 0%, #171b22 45%, #111419 100%);
+  border: 1px solid rgba(0, 0, 0, 0.85);
+  box-shadow:
+    0 24px 50px -10px rgba(0, 0, 0, 0.75),
+    0 8px 20px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.9);
+}
+html[data-theme="light"] .skeuo-turntable-deck {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.015) 0px,
+      rgba(0, 0, 0, 0.015) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    linear-gradient(180deg, #ffffff 0%, #edf1f7 45%, #dde3ec 100%);
+  border: 1px solid rgba(35, 48, 68, 0.22);
+  box-shadow:
+    0 16px 36px -8px rgba(35, 48, 68, 0.22),
+    0 4px 12px rgba(35, 48, 68, 0.1),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* 2) 唱盘沉槽（重装沉入式转盘凹陷槽） */
+.skeuo-turntable-well {
+  background: radial-gradient(circle at center, #07090c 0%, #101319 75%, #1b2028 100%);
+  border: 2px solid rgba(0, 0, 0, 0.95);
+  box-shadow:
+    inset 0 8px 24px rgba(0, 0, 0, 0.95),
+    inset 0 2px 6px #000000,
+    0 1px 0 rgba(255, 255, 255, 0.15);
+}
+html[data-theme="light"] .skeuo-turntable-well {
+  background: radial-gradient(circle at center, #bcc6d4 0%, #cfd7e3 75%, #e1e7f0 100%);
+  border: 2px solid rgba(35, 48, 68, 0.35);
+  box-shadow:
+    inset 0 6px 18px rgba(35, 48, 68, 0.35),
+    inset 0 2px 4px rgba(35, 48, 68, 0.2),
+    0 1px 0 #ffffff;
+}
+
+/* 3) 转盘频闪测速点边缘（Strobe Dots） */
+.skeuo-strobe-rim {
+  background: repeating-conic-gradient(
+    rgba(255, 255, 255, 0.28) 0deg 1.2deg,
+    transparent 1.2deg 2.4deg
+  );
+}
+html[data-theme="light"] .skeuo-strobe-rim {
+  background: repeating-conic-gradient(
+    rgba(35, 48, 68, 0.35) 0deg 1.2deg,
+    transparent 1.2deg 2.4deg
+  );
+}
+
+/* 4) 拟物金属唱片压镇（Record Clamp / Stabilizer） */
+.skeuo-record-clamp {
+  background:
+    radial-gradient(circle at 32% 30%, #fff2d1 0%, #d4af37 32%, #85691d 72%, #42340b 100%);
+  border: 1.5px solid rgba(0, 0, 0, 0.75);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.8),
+    inset 0 1px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.6);
+}
+html[data-theme="light"] .skeuo-record-clamp {
+  background:
+    radial-gradient(circle at 32% 30%, #ffffff 0%, #cbd4e0 35%, #8893a3 75%, #505967 100%);
+  border: 1.5px solid rgba(35, 48, 68, 0.35);
+  box-shadow:
+    0 3px 8px rgba(35, 48, 68, 0.35),
+    inset 0 1px 2px #ffffff,
+    inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* 5) 模拟双通道 VU 电平表框架 */
+.skeuo-vu-frame {
+  background: linear-gradient(180deg, #161b22 0%, #0c0f13 100%);
+  border: 1px solid rgba(0, 0, 0, 0.88);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.95),
+    inset 0 1px 1px #000000,
+    0 1px 0 rgba(255, 255, 255, 0.12);
+}
+html[data-theme="light"] .skeuo-vu-frame {
+  background: linear-gradient(180deg, #d8e0eb 0%, #e9eef5 100%);
+  border: 1px solid rgba(35, 48, 68, 0.25);
+  box-shadow:
+    inset 0 2px 4px rgba(35, 48, 68, 0.18),
+    0 1px 0 #ffffff;
+}
+
+/* 6) 模拟 VU 电平表刻度盘（暖黄背光古典表盘 / 银白高保真表盘） */
+.skeuo-vu-dial {
+  background: radial-gradient(ellipse at 50% 120%, #ffdf94 0%, #e8c474 45%, #bfa052 90%, #9e8238 100%);
+  box-shadow:
+    inset 0 0 12px rgba(245, 158, 11, 0.35),
+    inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  color: #261d0d;
+}
+html[data-theme="light"] .skeuo-vu-dial {
+  background: radial-gradient(ellipse at 50% 120%, #ffffff 0%, #edf2f9 55%, #d5dde9 100%);
+  box-shadow:
+    inset 0 0 8px rgba(35, 48, 68, 0.12),
+    inset 0 1px 2px rgba(35, 48, 68, 0.2);
+  color: #1e242d;
+}
+
+/* 7) 实体黑胶封套外壳（厚纸板质感与封套光泽） */
+.skeuo-jacket {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 40%, rgba(0, 0, 0, 0.25) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 20px 42px -10px rgba(0, 0, 0, 0.75),
+    0 6px 14px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+html[data-theme="light"] .skeuo-jacket {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.3) 40%, rgba(35, 48, 68, 0.08) 100%);
+  border: 1px solid rgba(35, 48, 68, 0.16);
+  box-shadow:
+    0 14px 30px -8px rgba(35, 48, 68, 0.25),
+    0 4px 10px rgba(35, 48, 68, 0.1),
+    inset 0 1px 0 #ffffff;
+}

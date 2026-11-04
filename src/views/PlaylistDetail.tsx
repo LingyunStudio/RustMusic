@@ -607,12 +607,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
                     key={r.entry.rowid}
                     {...(windowed || batchMode ? {} : rowProps(i))}
                     style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                    className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
-                      isSelected
-                        ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
-                        : active
-                          ? "bg-[var(--accent-weak)]"
-                          : "hover:bg-[var(--shade-hover)]"
+                    className={`${!windowed || i < 24 ? "anim-row" : ""} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[12px] cursor-default ${
+                      isSelected ? "checked" : active ? "active" : ""
                     } ${dead ? "opacity-45" : ""}`}
                     title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
                     onClick={() => {
@@ -791,7 +787,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                           className={
                             r.liked
                               ? "fill-[#e0533f] text-[#e0533f]"
-                              : "opacity-0 group-hover:opacity-100"
+                              : "text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors"
                           }
                         />
                       </button>
@@ -804,10 +800,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         }}
                         title="下一首播放"
                       >
-                        <Play
-                          size={14}
-                          className="opacity-0 group-hover:opacity-100"
-                        />
+                        <Play size={14} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
                       </button>
                       <button
                         className="btn-ghost w-8 h-8"
@@ -821,11 +814,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             e: r.entry,
                           });
                         }}
+                        title="更多选项"
                       >
-                        <MoreHorizontal
-                          size={16}
-                          className="opacity-0 group-hover:opacity-100"
-                        />
+                        <MoreHorizontal size={16} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
                       </button>
                     </div>
                   </div>

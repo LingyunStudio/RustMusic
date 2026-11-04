@@ -271,12 +271,8 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
-          checked
-            ? "bg-[var(--accent-weak)]"
-            : active
-              ? "bg-[var(--accent-weak)]"
-              : "hover:bg-[var(--shade-hover)]"
+        className={`${animCls} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[12px] cursor-default ${
+          checked ? "checked" : active ? "active" : ""
         }`}
         onClick={
           selection?.active
@@ -350,7 +346,7 @@ export default function TrackList({
             src={t.cover}
             seed={t.title}
             small
-            className="hover-lift w-11 h-11 rounded-xl shadow-[var(--cover-shadow-sm)] shrink-0"
+            className="hover-lift w-11 h-11 rounded-[9px] border border-[var(--sk-cover-border)] shadow-[var(--sk-cover-shadow)] shrink-0"
             iconSize={16}
           />
           <div className="min-w-0">
@@ -431,27 +427,38 @@ export default function TrackList({
         <div className="flex items-center justify-end gap-1 pr-1">
           <button
             className="btn-ghost w-8 h-8"
-            onClick={() => toggleLike(t.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleLike(t.id);
+            }}
             title={t.liked ? "取消喜欢" : "喜欢"}
           >
             <Heart
               size={15}
-              className={
-                t.liked
-                  ? "fill-[#e0533f] text-[#e0533f]"
-                  : "opacity-0 group-hover:opacity-100"
-              }
+              className={t.liked ? "fill-[#e0533f] text-[#e0533f]" : "text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors"}
             />
           </button>
           <button
             className="btn-ghost w-8 h-8"
             onClick={(e) => {
+              e.stopPropagation();
+              playNext({ kind: "track", id: t.id });
+            }}
+            title="下一首播放"
+          >
+            <Play size={14} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
+          </button>
+          <button
+            className="btn-ghost w-8 h-8"
+            onClick={(e) => {
+              e.stopPropagation();
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
               // 菜单右缘对齐按钮右缘、顶边贴按钮下方（190 宽，clamp 负责防出屏）
               setMenu({ x: r.right - 190, y: r.bottom + 4, track: t });
             }}
+            title="更多选项"
           >
-            <MoreHorizontal size={16} className="opacity-0 group-hover:opacity-100" />
+            <MoreHorizontal size={16} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
           </button>
         </div>
       </div>
@@ -482,8 +489,8 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
-          checked || active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+        className={`${animCls} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[12px] cursor-default ${
+          checked ? "checked" : active ? "active" : ""
         } ${dead ? "opacity-45" : ""}`}
         onClick={
           selection?.active
@@ -556,7 +563,7 @@ export default function TrackList({
             src={e.cover}
             seed={e.title}
             small
-            className="hover-lift w-11 h-11 rounded-xl shadow-[var(--cover-shadow-sm)] shrink-0"
+            className="hover-lift w-11 h-11 rounded-[9px] border border-[var(--sk-cover-border)] shadow-[var(--sk-cover-shadow)] shrink-0"
             iconSize={16}
           />
           <div className="min-w-0">
@@ -648,7 +655,8 @@ export default function TrackList({
         <div className="flex items-center justify-end gap-1 pr-1">
           <button
             className="btn-ghost w-8 h-8"
-            onClick={() =>
+            onClick={(ev) => {
+              ev.stopPropagation();
               toggleLikeOnline({
                 kind: e.kind,
                 id:
@@ -662,8 +670,8 @@ export default function TrackList({
                 durationMs: Math.round(e.duration * 1000),
                 mediaMid: e.mediaMid,
                 vip: e.vip,
-              })
-            }
+              });
+            }}
             title={savedOnline[`${e.kind}-${e.onlineId}`] ? "取消喜欢" : "喜欢"}
           >
             <Heart
@@ -671,19 +679,32 @@ export default function TrackList({
               className={
                 savedOnline[`${e.kind}-${e.onlineId}`]
                   ? "fill-[#e0533f] text-[#e0533f]"
-                  : "text-[var(--ink-3)] opacity-0 group-hover:opacity-100"
+                  : "text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors"
               }
             />
           </button>
           <button
             className="btn-ghost w-8 h-8"
             onClick={(ev) => {
+              ev.stopPropagation();
+              const item = entryToQueueItem(e);
+              if (item) playNext(item);
+            }}
+            title="下一首播放"
+          >
+            <Play size={14} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
+          </button>
+          <button
+            className="btn-ghost w-8 h-8"
+            onClick={(ev) => {
+              ev.stopPropagation();
               const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
               // 与本地行一致：菜单右缘对齐按钮、顶边贴按钮下方
               setOnlineMenu({ x: r.right - 190, y: r.bottom + 4, entry: e });
             }}
+            title="更多选项"
           >
-            <MoreHorizontal size={16} className="opacity-0 group-hover:opacity-100" />
+            <MoreHorizontal size={16} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
           </button>
         </div>
       </div>

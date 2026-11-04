@@ -258,7 +258,7 @@ export default function SettingsView() {
           <h2 className="text-[14.5px] font-semibold mb-4">通用</h2>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">关闭窗口时</span>
-            <div className="flex items-center gap-1.5">
+            <div className="skeuo-segmented">
               {(
                 [
                   { key: "tray", label: "最小化到托盘" },
@@ -268,14 +268,7 @@ export default function SettingsView() {
                 <button
                   key={o.key}
                   onClick={() => setCloseAction(o.key)}
-                  className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
-                    closeAction === o.key
-                      ? "text-[var(--accent-strong)] font-medium"
-                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
-                  }`}
-                  style={
-                    closeAction === o.key ? { background: "var(--accent-weak)" } : undefined
-                  }
+                  className={`skeuo-segmented-btn ${closeAction === o.key ? "active" : ""}`}
                 >
                   {o.label}
                 </button>
@@ -292,7 +285,7 @@ export default function SettingsView() {
           <h2 className="text-[14.5px] font-semibold mb-4">外观</h2>
           <div className="flex items-center gap-4 mb-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">界面模式</span>
-            <div className="flex items-center gap-1.5">
+            <div className="skeuo-segmented">
               {(
                 [
                   { key: "light", label: "浅色" },
@@ -302,16 +295,7 @@ export default function SettingsView() {
                 <button
                   key={t.key}
                   onClick={() => setTheme(t.key)}
-                  className={`px-4 py-1.5 rounded-full text-[12px] transition-colors ${
-                    theme === t.key
-                      ? "text-[var(--accent-strong)] font-medium"
-                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
-                  }`}
-                  style={
-                    theme === t.key
-                      ? { background: "var(--accent-weak)" }
-                      : undefined
-                  }
+                  className={`skeuo-segmented-btn ${theme === t.key ? "active" : ""}`}
                 >
                   {t.label}
                 </button>
@@ -326,11 +310,13 @@ export default function SettingsView() {
                   key={a.key}
                   onClick={() => setAccent(a.key)}
                   title={a.label}
-                  className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
-                    accent === a.key ? "ring-2 ring-offset-2" : ""
+                  className={`w-7 h-7 rounded-full transition-all hover:scale-110 active:scale-95 ${
+                    accent === a.key ? "ring-2 ring-offset-2 scale-105" : ""
                   }`}
                   style={{
                     background: `linear-gradient(135deg, ${a.base}, ${a.strong})`,
+                    border: "1px solid rgba(0, 0, 0, 0.35)",
+                    boxShadow: "0 2px 5px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -1px 2px rgba(0,0,0,0.35)",
                     ["--tw-ring-color" as string]: a.base,
                     ["--tw-ring-offset-color" as string]: "var(--bg)",
                   }}
@@ -636,17 +622,11 @@ export default function SettingsView() {
                 </button>
               ))}
               <button
-                className={`ml-2 relative w-10 h-[22px] rounded-full transition-colors ${
-                  eqEnabled ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
-                }`}
+                className={`ml-2 skeuo-switch ${eqEnabled ? "active" : ""}`}
                 onClick={() => setEq(eqGains, !eqEnabled)}
                 title={eqEnabled ? "关闭均衡器" : "启用均衡器"}
               >
-                <span
-                  className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
-                    eqEnabled ? "left-[21px]" : "left-[3px]"
-                  }`}
-                />
+                <span className="skeuo-switch-thumb" />
               </button>
             </div>
           </div>
@@ -757,17 +737,11 @@ export default function SettingsView() {
               <div className="flex items-center gap-4 mt-4">
                 <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">独占模式</span>
                 <button
-                  className={`relative w-10 h-[22px] rounded-full transition-colors ${
-                    wasapiExclusive ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
-                  }`}
+                  className={`skeuo-switch ${wasapiExclusive ? "active" : ""}`}
                   onClick={() => setWasapiExclusive(!wasapiExclusive)}
                   title={wasapiExclusive ? "关闭 WASAPI 独占模式" : "开启 WASAPI 独占模式"}
                 >
-                  <span
-                    className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
-                      wasapiExclusive ? "left-[21px]" : "left-[3px]"
-                    }`}
-                  />
+                  <span className="skeuo-switch-thumb" />
                 </button>
                 <span className="text-[11.5px] text-[var(--ink-3)]">
                   绕过系统混音器直连声卡（WASAPI Exclusive）
@@ -885,17 +859,11 @@ export default function SettingsView() {
           <div className="flex items-center gap-4 mt-3">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">自动检查</span>
             <button
-              className={`relative w-10 h-[22px] rounded-full transition-colors ${
-                autoUpdate ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
-              }`}
+              className={`skeuo-switch ${autoUpdate ? "active" : ""}`}
               onClick={() => setAutoUpdate(!autoUpdate)}
               title={autoUpdate ? "关闭自动检查更新" : "开启自动检查更新"}
             >
-              <span
-                className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
-                  autoUpdate ? "left-[21px]" : "left-[3px]"
-                }`}
-              />
+              <span className="skeuo-switch-thumb" />
             </button>
             <span className="text-[11.5px] text-[var(--ink-3)]">
               启动时自动检测 GitHub 上的新版本
@@ -915,7 +883,7 @@ export default function SettingsView() {
   );
 }
 
-/** 垂直滑块（均衡器用） */
+/** 垂直滑块（均衡器用：拟物调音台推子） */
 function VSlider({
   value,
   min,
@@ -932,8 +900,13 @@ function VSlider({
   const y = ((value - min) / (max - min)) * H;
   return (
     <div
-      className="relative w-7 rounded-full bg-[var(--shade)] cursor-pointer touch-none"
-      style={{ height: H }}
+      className="relative w-6 rounded-full cursor-pointer touch-none flex justify-center"
+      style={{
+        height: H,
+        background: "var(--sk-groove-bg)",
+        border: "1px solid var(--sk-groove-border)",
+        boxShadow: "var(--sk-groove-shadow)",
+      }}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         const rect = e.currentTarget.getBoundingClientRect();
@@ -947,8 +920,14 @@ function VSlider({
         onChange(Math.round(min + ratio * (max - min)));
       }}
     >
+      {/* 零点刻度参考线 */}
       <div
-        className="absolute left-0 right-0 rounded-full"
+        className="absolute w-4 h-px bg-white/20 pointer-events-none"
+        style={{ top: zero }}
+      />
+      {/* 增益/衰减发光柱 */}
+      <div
+        className="absolute w-2 rounded-full"
         style={{
           top: Math.min(zero, y),
           height: Math.max(2, Math.abs(zero - y)),
@@ -956,12 +935,21 @@ function VSlider({
             value >= 0
               ? "linear-gradient(180deg, var(--accent-strong), var(--accent))"
               : "linear-gradient(180deg, #d97706, #b45309)",
+          boxShadow: "0 0 6px var(--accent-soft)",
         }}
       />
+      {/* 拟物车削金属调音台推子钮 */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-2.5 rounded-full bg-white shadow"
-        style={{ top: y }}
-      />
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-3 rounded-[3px] flex items-center justify-center transition-transform"
+        style={{
+          top: y,
+          background: "var(--sk-knob-metal)",
+          border: "1px solid var(--sk-edge)",
+          boxShadow: "var(--sk-knob-shadow)",
+        }}
+      >
+        <span className="w-3.5 h-[1.5px] bg-red-600 shadow-[0_0_2px_red]" />
+      </div>
     </div>
   );
 }

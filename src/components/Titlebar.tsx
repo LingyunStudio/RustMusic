@@ -11,7 +11,6 @@ export default function Titlebar() {
     let un: (() => void) | undefined;
     const p = win.onResized(async () => setMaximized(await win.isMaximized()));
     p.then((u) => {
-      // 组件可能已在 promise resolve 前卸载（StrictMode 双挂载），避免泄漏监听器
       if (disposed) u();
       else un = u;
     });
@@ -23,33 +22,34 @@ export default function Titlebar() {
 
   return (
     <>
-      {/* 顶部拖拽热区：扩大到 36px 高，向下压在内容区顶部的留白（各视图 pt-7）上。
-          绝对定位不参与布局，因此内容组件位置完全不变；data-tauri-drag-region
-          使空白处可拖动窗口。 */}
+      {/* 顶部机架倒角与拖拽热区 */}
       <div
         data-tauri-drag-region
-        className="absolute top-0 left-0 right-0 h-9 z-[54] pointer-events-auto"
+        className="absolute top-0 left-0 right-0 h-9 z-[54] pointer-events-auto border-b border-[var(--sk-divider)] shadow-[inset_0_1px_0_var(--sk-divider-hi)]"
       />
 
-      {/* 窗口控制按钮（右上角悬浮，压在热区之上、内容区右上角留白处） */}
-      <div className="absolute top-0 right-0 flex items-center h-9 z-[56]">
+      {/* 拟物金属按键窗口控制区 */}
+      <div className="absolute top-1.5 right-3 flex items-center gap-1.5 h-7 z-[56]">
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn"
           onClick={() => win.minimize()}
+          title="最小化"
         >
-          <Minus size={14} />
+          <Minus size={12} />
         </button>
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn"
           onClick={() => win.toggleMaximize()}
+          title="最大化 / 还原"
         >
-          {maximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
+          {maximized ? <Copy size={11} className="-scale-x-100" /> : <Square size={10} />}
         </button>
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn close-btn"
           onClick={() => win.close()}
+          title="关闭"
         >
-          <X size={15} />
+          <X size={13} />
         </button>
       </div>
     </>
