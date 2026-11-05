@@ -271,12 +271,12 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-all duration-200 cursor-default ${
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-5 rounded-xl transition-all duration-200 cursor-default ${
           checked
-            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
+            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)]"
             : active
-              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
-              : "hover:bg-[var(--liquid-glass-bg-subtle)] hover:border-[var(--liquid-glass-border-specular)] hover:shadow-[var(--liquid-glass-shadow-sm)] border border-transparent"
+              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)]"
+              : "hover:bg-[var(--shade-hover)] border border-transparent"
         }`}
         onClick={
           selection?.active
@@ -482,12 +482,12 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-all duration-200 cursor-default ${
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-5 rounded-xl transition-all duration-200 cursor-default ${
           checked
-            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
+            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)]"
             : active
-              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
-              : "hover:bg-[var(--liquid-glass-bg-subtle)] hover:border-[var(--liquid-glass-border-specular)] hover:shadow-[var(--liquid-glass-shadow-sm)] border border-transparent"
+              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)]"
+              : "hover:bg-[var(--shade-hover)] border border-transparent"
         } ${dead ? "opacity-45" : ""}`}
         onClick={
           selection?.active
@@ -733,7 +733,7 @@ export default function TrackList({
         createPortal(
           <div
             ref={menuRef}
-            className="fixed z-[75] w-[190px] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu"
+            className="fixed z-[75] w-[190px] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu"
             style={{ left: menuX, top: menuY }}
             onMouseDown={(ev) => ev.stopPropagation()}
             onMouseLeave={() => setOnlineMenu(null)}
@@ -846,7 +846,7 @@ export default function TrackList({
         createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[75] w-[190px] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu"
+          className="fixed z-[75] w-[190px] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu"
           style={{ left: menuX, top: menuY }}
           onMouseDown={(ev) => ev.stopPropagation()}
           onMouseLeave={() => setMenu(null)}

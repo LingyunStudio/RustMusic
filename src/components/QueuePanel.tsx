@@ -177,7 +177,7 @@ export default function QueuePanel() {
     // 窗口级浮层（与音量弹出/右键菜单同语言：glass-strong + 圆角 + 浮起阴影）：
     // 悬挂在播放条上方右侧，不挤占内容区布局——侧栏挤位会把窄页面的
     // 标题/搜索框压到竖排换行；bottom 88px = 播放条占位 84px + 4px 空隙
-    <aside className="fixed bottom-[88px] right-6 z-[61] w-[340px] max-h-[min(64vh,520px)] flex flex-col liquid-card !rounded-3xl shadow-2xl anim-menu overflow-hidden">
+    <aside className="fixed bottom-[86px] right-2 z-[61] w-[340px] max-h-[min(64vh,520px)] flex flex-col liquid-card shadow-2xl anim-menu overflow-hidden">
       <div className="h-14 px-5 flex items-center justify-between shrink-0 border-b border-[var(--line)]">
         <span className="text-[13.5px] font-semibold flex items-center gap-2.5 text-[var(--ink)]">
           <ListMusic size={15} className="text-[var(--accent)]" />

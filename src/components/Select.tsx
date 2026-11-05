@@ -102,7 +102,7 @@ export function Select({
         createPortal(
           <div
             ref={popRef}
-            className="fixed z-[75] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu overflow-y-auto"
+            className="fixed z-[75] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu overflow-y-auto"
             style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: 260 }}
             onMouseDown={(e) => e.stopPropagation()}
           >

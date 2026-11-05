@@ -218,7 +218,7 @@ function VolumePopover({
     <>
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div className="absolute bottom-[52px] right-0 z-[61] w-12 rounded-2xl p-2.5 flex flex-col items-center gap-2 liquid-dock">
+      <div className="absolute bottom-[52px] right-0 z-[61] w-12 rounded-2xl p-2.5 flex flex-col items-center gap-2 glass-strong">
         {/* 静音切换：液态小胶囊 */}
         <button
           className="liquid-pill !py-0.5 !px-2 text-[10px] font-semibold text-[var(--ink)]"
@@ -230,7 +230,7 @@ function VolumePopover({
           {muted ? "有声" : "静音"}
         </button>
         <div
-          className="relative w-2 rounded-full bg-[var(--shade-strong)] border border-[rgba(255,255,255,0.14)] cursor-pointer touch-none shadow-inner"
+          className="relative w-2 rounded-full bg-[var(--shade-strong)] border border-[var(--line)] cursor-pointer touch-none shadow-inner"
           style={{ height: H }}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
@@ -295,7 +295,7 @@ function SleepPopover({
     <>
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div className="absolute bottom-[52px] right-0 z-[61] w-[172px] rounded-2xl p-2 flex flex-col liquid-dock">
+      <div className="absolute bottom-[52px] right-0 z-[61] w-[172px] rounded-2xl p-2 flex flex-col glass-strong">
         {remainMin != null && (
           <div className="px-2.5 py-1 text-[11px] text-[var(--accent-strong)] font-semibold">
             剩余约 {remainMin} 分钟
@@ -346,7 +346,7 @@ function SleepPopover({
             onChange={(e) => setCustom(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && applyCustom()}
             placeholder="自定义(分钟)"
-            className="w-full min-w-0 h-7 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-2 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+            className="liquid-input w-full min-w-0 h-7 rounded-lg px-2 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
           />
           <button
             className="btn-secondary !py-1 !px-2 text-[11px] shrink-0 disabled:opacity-50"
@@ -421,10 +421,12 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
   const [sleepOpen, setSleepOpen] = useState(false);
 
   return (
-    // 与右侧内容区（玻璃卡片）对齐：左偏移侧栏宽度、右边距与卡片外边距一致
+    // 与右侧内容区（玻璃卡片）对齐：侧栏右缘 = ml-3(12) + w(242) = 254，
+    // 容器再让出自身 px-6(24)，Dock 左边缘恰好落在列表面板左边缘（278）上；
+    // 右边距与卡片外边距一致（均为 24）
     <div
-      className={`anim-bar absolute bottom-0 right-0 z-50 px-6 pb-4 pt-1 ${
-        centered ? "left-0" : "left-[236px]"
+      className={`anim-bar absolute bottom-0 right-0 z-50 pl-3 pr-2 pb-2 pt-1 ${
+        centered ? "left-0" : "left-[250px]"
       }`}
     >
       {download && (
@@ -449,7 +451,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       )}
 
       <div
-        className={`h-[70px] rounded-[24px] flex items-center pl-5 pr-6 gap-5 transition-all duration-300 liquid-dock shadow-2xl relative z-10 ${
+        className={`h-[70px] rounded-2xl flex items-center pl-5 pr-5 gap-5 transition-all duration-300 liquid-dock relative z-10 ${
           nowPlayingOpen ? "opacity-90 hover:opacity-100" : ""
         }`}
       >
@@ -466,7 +468,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   src={current.cover}
                   seed={current.title}
                   small
-                  className="w-[46px] h-[46px] rounded-[13px] shadow-[var(--cover-shadow-sm)] transition-transform group-hover:scale-105"
+                  className="w-[46px] h-[46px] rounded-xl shadow-[var(--cover-shadow-sm)] transition-transform group-hover:scale-105"
                   iconSize={20}
                 />
                 <div className="absolute inset-0 rounded-[13px] bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -641,7 +643,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           ) : (
             <>
               <div
-                className="w-[44px] h-[44px] rounded-[10px] flex items-center justify-center"
+                className="w-[44px] h-[44px] rounded-xl flex items-center justify-center"
                 style={{
                   background: "rgba(243,233,216,0.05)",
                   border: "1px solid var(--line)",
@@ -676,12 +678,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               <Rewind size={16} className="fill-current" />
             </button>
             <button
-              className="w-[42px] h-[42px] rounded-full flex items-center justify-center text-[var(--accent-on)] hover:scale-108 active:scale-95 transition-all shadow-md"
-              style={{
-                background: "linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 55%, #bd5012 100%)",
-                boxShadow: "inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.65), 0 8px 24px -4px var(--accent-soft)",
-                border: "1px solid rgba(255, 255, 255, 0.4)",
-              }}
+              className="w-[42px] h-[42px] play-btn shrink-0"
               onClick={togglePlay}
               title="播放 / 暂停（空格）"
             >
@@ -756,6 +753,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           >
             {speed}x
           </button>
+
           {/* 音量：点击图标弹出音量条（弹窗内可静音，记住静音前的音量） */}
           <div className="relative flex items-center">
             <button

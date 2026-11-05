@@ -18,7 +18,7 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
       onMouseDown={onClose}
     >
       <div
-        className="liquid-card !rounded-3xl shadow-2xl anim-np overflow-hidden"
+        className="liquid-card shadow-2xl anim-np overflow-hidden"
         style={{ width }}
         onMouseDown={(e) => e.stopPropagation()}
       >

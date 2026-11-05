@@ -22,7 +22,7 @@ export function RowMenu({
   return (
     createPortal(
         <div
-          className="fixed z-[75] w-[200px] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu"
+          className="fixed z-[75] w-[200px] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu"
           style={(() => {
             const p = clampMenuPos(menu.x, menu.y, 200, 240);
             return { left: p.x, top: p.y };

@@ -396,8 +396,8 @@ export default function NavidromePanel() {
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center"
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "var(--shade)",
+              border: "1px solid var(--line)",
             }}
           >
             <Server size={26} className="text-[var(--ink-3)]" />

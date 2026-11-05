@@ -164,7 +164,10 @@ export default function ArtistAlbumView({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <header className="px-8 pt-7 pb-5">
+      {/* 玻璃面板（含头部）：右列卡片顶边与侧栏顶边齐平 */}
+      <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
+        <div className="liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
+          <header className="px-5 pt-4 pb-4 shrink-0">
         <div className="flex items-end justify-between gap-5">
           <div className="min-w-0 anim-rise">
             <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
@@ -203,10 +206,9 @@ export default function ArtistAlbumView({
             </div>
           )}
         </div>
-      </header>
+          </header>
 
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
-        <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* 曲目列表 */}
           {(localMatches.length > 0 || onlineEntries.length > 0) && (
             <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-11 px-5 border-b border-[var(--line)] bg-[var(--liquid-glass-bg-subtle)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em] font-medium">
               <span className="text-center">序号</span>

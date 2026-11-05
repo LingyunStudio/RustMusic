@@ -88,7 +88,7 @@ export default function Sidebar() {
   const mins = Math.floor((totalDuration % 3600) / 60);
 
   return (
-    <aside className="w-[242px] shrink-0 my-3 ml-3 mb-[86px] rounded-3xl glass flex flex-col px-3.5 pt-3 pb-3 relative z-20 shadow-lg">
+    <aside className="w-[242px] shrink-0 mt-2 ml-2 mb-2 rounded-2xl glass flex flex-col px-3.5 pt-3 pb-3 relative z-20">
       {/* 品牌区（与桌面图标同构的黑胶 logo） */}
       <div className="flex items-center gap-3.5 px-3 pt-2 pb-5">
         <div className="relative group">
@@ -116,28 +116,25 @@ export default function Sidebar() {
                 onClick={() => setView(key)}
                 className={`nav-item relative h-11 pl-4 pr-3 rounded-2xl flex items-center gap-3 text-[13.5px] transition-all duration-200 ${
                   active
-                    ? "text-[var(--ink)] font-semibold shadow-[var(--liquid-glass-shadow-sm)]"
+                    ? "text-[var(--ink)] font-semibold"
                     : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                 }`}
                 style={
                   active
-                    ? {
-                        background: "linear-gradient(135deg, var(--accent-weak) 0%, rgba(255, 255, 255, 0.08) 100%)",
-                        border: "1px solid var(--accent-soft)",
-                      }
-                    : { border: "1px solid transparent" }
+                    ? { background: "var(--accent-weak)" }
+                    : undefined
                 }
               >
                 {active && (
                   <span
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-4 rounded-full shadow-[0_0_8px_var(--accent)]"
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-4 rounded-full"
                     style={{ background: "var(--accent)" }}
                   />
                 )}
                 <Icon
                   size={17}
                   strokeWidth={2}
-                  className={active ? "text-[var(--accent)]" : "text-[var(--ink-3)]"}
+                  className={active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"}
                 />
                 <span className={active ? "text-[var(--ink)]" : ""}>{label}</span>
                 {key === "liked" && likedCount > 0 && (
@@ -254,10 +251,10 @@ export default function Sidebar() {
                   }}
                   className={`nav-item h-10 pl-3 pr-3 rounded-xl flex items-center gap-2.5 text-[13px] transition-all cursor-pointer ${
                     checked
-                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)]"
+                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
                       : active
-                        ? "bg-[var(--liquid-glass-bg-subtle)] text-[var(--ink)] border border-[var(--liquid-glass-border-specular)] shadow-sm font-medium"
-                        : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)] border border-transparent"
+                        ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                        : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
                   {batchMode ? (
@@ -287,7 +284,7 @@ export default function Sidebar() {
           {!playlists.length && (
             <button
               onClick={() => setPlModalOpen(true)}
-              className="mx-1 h-10 rounded-xl border border-dashed border-[rgba(255,255,255,0.18)] text-[12px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[var(--accent-soft)] transition-colors"
+              className="mx-1 h-10 rounded-xl border border-dashed border-[var(--line)] text-[12px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[var(--accent-soft)] transition-colors"
             >
               + 创建播放列表
             </button>
@@ -311,8 +308,8 @@ export default function Sidebar() {
             onClick={() => setView("settings")}
             className={`nav-item flex-1 min-w-0 h-10 px-3.5 rounded-xl flex items-center gap-3 text-[13px] transition-all ${
               view === "settings"
-                ? "bg-[var(--liquid-glass-bg-subtle)] text-[var(--ink)] border border-[var(--liquid-glass-border-specular)] font-medium shadow-sm"
-                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)] border border-transparent"
+                ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
             }`}
           >
             <Settings size={16} strokeWidth={2} />
@@ -323,8 +320,8 @@ export default function Sidebar() {
             title="皮肤"
             className={`nav-item h-10 px-3 rounded-xl flex items-center gap-2 text-[13px] shrink-0 transition-all ${
               skinOpen
-                ? "bg-[var(--liquid-glass-bg-subtle)] text-[var(--ink)] border border-[var(--liquid-glass-border-specular)] font-medium shadow-sm"
-                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)] border border-transparent"
+                ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
             }`}
           >
             <Palette size={16} strokeWidth={2} />

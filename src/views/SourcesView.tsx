@@ -71,8 +71,8 @@ function DownloadsPanel() {
     navidrome: "Navidrome",
   };
   return (
-    <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden anim-fade">
-      <div className="px-6 pt-5 pb-3 flex items-center justify-between shrink-0">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden anim-fade">
+      <div className="px-5 pt-4 pb-3 flex items-center justify-between shrink-0">
         <div>
           <div className="text-[15px] font-semibold">下载历史</div>
           <div className="text-[11.5px] text-[var(--ink-3)] mt-1">
@@ -83,7 +83,7 @@ function DownloadsPanel() {
           刷新
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4">
         {loading && (
           <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">加载中…</div>
         )}
@@ -680,13 +680,17 @@ export default function SourcesView() {
       : null;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pb-36">
+    <div className="flex-1 min-h-0 flex flex-col">
       <LocateCurrentPill
         show={pill.show}
         onClick={pill.locate}
         className="fixed bottom-[92px] left-1/2 -translate-x-1/2"
       />
-      <header className="pt-5 pb-3 px-5">
+      {/* 玻璃面板（含页签/搜索头部）：右侧内容与左侧侧栏同构，
+          顶边 y=24 与侧栏顶边齐平，底边抬到播放条上方 */}
+      <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
+        <div className="liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
+          <header className="px-5 pt-4 pb-3 shrink-0">
         {/* 音源页签 */}
         <div className="flex items-center gap-1.5">
           {TABS.map((t) => (
@@ -790,7 +794,7 @@ export default function SourcesView() {
                   if (e.key === "Enter" && canAdd) submitDirect();
                 }}
                 placeholder="https://example.com/song.mp3（添加后立即播放）"
-                className="w-full h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-3 text-[12.5px] focus:border-[var(--line)] transition-colors"
+                className="liquid-input w-full h-9 rounded-lg pl-8 pr-3 text-[12.5px]"
               />
             </div>
             <input
@@ -801,7 +805,7 @@ export default function SourcesView() {
                 if (e.key === "Enter" && canAdd) submitDirect();
               }}
               placeholder="名称（可选）"
-              className="w-[160px] h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[12.5px] focus:border-[var(--line)] transition-colors"
+              className="liquid-input w-[160px] h-9 rounded-lg px-3 text-[12.5px]"
             />
             <button
               className="btn-primary"
@@ -883,8 +887,8 @@ export default function SourcesView() {
             <div
               className="w-16 h-16 rounded-2xl flex items-center justify-center"
               style={{
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.06)",
+                background: "var(--shade)",
+                border: "1px solid var(--line)",
               }}
             >
               {tab === "other" ? (
@@ -901,7 +905,7 @@ export default function SourcesView() {
           <div className="flex flex-col gap-2">
             {space && (
               <>
-                <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+                <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[var(--shade)] border border-[var(--line)]">
                   <CoverImg
                     src={space.face}
                     seed={space.name}
@@ -1050,7 +1054,7 @@ export default function SourcesView() {
             {space &&
               (space.activeCollection ? space.activeCollection.hasMore : space.hasMore) && (
                 <button
-                  className="h-10 rounded-xl text-[12.5px] text-[var(--ink-2)] hover:bg-[var(--shade)] border border-white/[0.05] flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                  className="h-10 rounded-xl text-[12.5px] text-[var(--ink-2)] hover:bg-[var(--shade)] border border-[var(--line)] flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                   disabled={
                     space.activeCollection
                       ? space.activeCollection.loadingMore
@@ -1070,6 +1074,8 @@ export default function SourcesView() {
               )}
           </div>
             ))}
+          </div>
+        </div>
       </div>
 
       {/* 右键菜单（Portal 到 body：fixed 相对视口定位） */}

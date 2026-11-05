@@ -493,9 +493,13 @@ export default function LibraryView({ mode }: { mode: Mode }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* 头部（可换行：窗口窄时标题块与搜索/按钮组折成上下两行，
-          而不是各自内部挤成竖排） */}
-      <header className="px-8 pt-7 pb-5">
+      {/* 玻璃面板（含头部）：右列卡片顶边与侧栏顶边（y=24）齐平，
+          底边同为播放条上沿 —— 左右两列卡片顶/底边成网格对齐 */}
+      <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
+        <div className="liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* 头部（可换行：窗口窄时标题块与搜索/按钮组折成上下两行，
+              而不是各自内部挤成竖排） */}
+          <header className="px-5 pt-4 pb-4 shrink-0">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0 anim-rise">
             <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
@@ -606,11 +610,9 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             </span>
           )}
         </div>
-      </header>
+          </header>
 
-      {/* 曲目卡片（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
-        <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* 曲目列表（面板内部） */}
           {(sortedTracks.length > 0 || mergedRows.length > 0) && (
             <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-11 px-5 border-b border-[var(--line)] bg-[var(--liquid-glass-bg-subtle)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em] font-medium">
               <span className="text-center">序号</span>
@@ -779,7 +781,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             value={newPlName}
             onChange={(e) => setNewPlName(e.target.value)}
             placeholder="新播放列表名称"
-            className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[13px] focus:border-[var(--line)] outline-none"
+            className="liquid-input flex-1 h-9 rounded-lg px-3 text-[13px]"
           />
           <button
             className="btn-secondary"

@@ -69,7 +69,7 @@ export function BiliPlaylistPickerModal({
             value={newPlName}
             onChange={(e) => setNewPlName(e.target.value)}
             placeholder="新播放列表名称"
-            className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[13px] focus:border-[var(--line)] outline-none"
+            className="liquid-input flex-1 h-9 rounded-lg px-3 text-[13px]"
           />
           <button
             className="btn-secondary"

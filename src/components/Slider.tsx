@@ -85,14 +85,14 @@ export default function Slider({
       }}
     >
       <div
-        className="relative w-full rounded-full bg-[var(--shade-strong)] border border-[rgba(255,255,255,0.14)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] overflow-hidden transition-all"
+        className="relative w-full rounded-full bg-[var(--shade-strong)] border border-[var(--line)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] overflow-hidden transition-all"
         style={{ height: thick + (dragging ? 2 : 0) }}
       >
         <div
           className="absolute left-0 top-0 h-full rounded-full transition-[width] duration-75"
           style={{
             width: `${pct * 100}%`,
-            background: "linear-gradient(90deg, #d9531e 0%, var(--accent) 55%, var(--accent-strong) 100%)",
+            background: "linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%)",
             boxShadow: "0 0 8px var(--accent-soft)",
           }}
         />

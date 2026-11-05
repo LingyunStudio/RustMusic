@@ -374,126 +374,6 @@ export default function PlaylistDetail({ id }: { id: number }) {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      <header className="pt-5 pb-4 px-5 flex gap-5 items-end">
-        {pl.cover ? (
-          <CoverImg
-            src={pl.cover}
-            seed={pl.name}
-            className="w-[104px] h-[104px] rounded-2xl shadow-xl shrink-0"
-            iconSize={34}
-          />
-        ) : (
-          <div
-            className="w-[104px] h-[104px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--accent-soft), var(--shade-strong))",
-            }}
-          >
-            <ListMusic size={34} className="text-[var(--accent)]" />
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] text-[var(--ink-2)] tracking-wider mb-1">播放列表</div>
-          <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
-          {/* 改名后保留原始导入名，来源一目了然（重导入也按它兜底认出） */}
-          {pl.originName && pl.originName !== pl.name && (
-            <div className="text-[11.5px] text-[var(--ink-3)] mt-1 truncate">
-              导入名「{pl.originName}」
-              {pl.remoteKind && (
-                <span className="ml-1">
-                  · 来源{pl.remoteKind === "netease" ? "网易云" : "QQ 音乐"}
-                </span>
-              )}
-            </div>
-          )}
-          <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
-            {list.length} 首曲目
-            {list.length > 0 && !windowed && (
-              <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
-            <button className="btn-primary" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
-              <Play size={13} className="fill-current" />
-              播放全部
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={() =>
-                playEntries(
-                  list.map((r) => r.entry),
-                  Math.floor(Math.random() * Math.max(1, list.length))
-                )
-              }
-            >
-              <Shuffle size={13} />
-              随机
-            </button>
-            <button
-              className={`btn-secondary ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
-              onClick={() => {
-                setBatchMode((v) => !v);
-                setSel(new Set());
-              }}
-              disabled={list.length === 0}
-            >
-              <ListChecks size={13} />
-              {batchMode ? "退出批量" : "批量管理"}
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={() => setRenameOpen(true)}
-            >
-              <Pencil size={13} />
-              重命名
-            </button>
-            <button
-              className="btn-secondary !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)]"
-              onClick={() => setConfirmDel(true)}
-            >
-              <Trash2 size={13} />
-              删除列表
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={doExportM3u}
-              disabled={!pl?.entries.length}
-            >
-              <FileDown size={13} />
-              导出 M3U
-            </button>
-            <button className="btn-secondary" onClick={doImportM3u}>
-              <FileUp size={13} />
-              导入 M3U
-            </button>
-            {/* 本页搜索框：过滤逻辑此前就绪但没有入口（全局搜索框只在资料库页） */}
-            <div className="relative w-[220px] max-w-full">
-              <Search
-                size={13}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
-              />
-              <input
-                ref={plSearchRef}
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="在歌单内搜索…（Ctrl+F）"
-                className="w-full h-8 rounded-xl liquid-input pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
-              />
-              {search && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
-                  onClick={() => setSearch("")}
-                  title="清除筛选"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
 
       <ConfirmModal
         open={confirmDel}
@@ -532,7 +412,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
       />
 
       {/* 底边界抬到播放条上方，留 4px 空隙（播放条总占位 64+16+4=84px） */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
+      <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
         {batchMode && (
           <div className="mb-2 px-4 py-2 glass rounded-2xl flex items-center justify-between gap-3 text-[12.5px] anim-fade-in shrink-0">
             <div className="flex items-center gap-2.5">
@@ -575,7 +455,129 @@ export default function PlaylistDetail({ id }: { id: number }) {
             </div>
           </div>
         )}
-        <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
+          <header className="pt-4 pb-4 px-5 flex gap-5 items-end shrink-0">
+            {pl.cover ? (
+              <CoverImg
+                src={pl.cover}
+                seed={pl.name}
+                className="w-[104px] h-[104px] rounded-2xl shadow-xl shrink-0"
+                iconSize={34}
+              />
+            ) : (
+              <div
+                className="w-[104px] h-[104px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--accent-soft), var(--shade-strong))",
+                }}
+              >
+                <ListMusic size={34} className="text-[var(--accent)]" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-[var(--ink-2)] tracking-wider mb-1">播放列表</div>
+              <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
+              {/* 改名后保留原始导入名，来源一目了然（重导入也按它兜底认出） */}
+              {pl.originName && pl.originName !== pl.name && (
+                <div className="text-[11.5px] text-[var(--ink-3)] mt-1 truncate">
+                  导入名「{pl.originName}」
+                  {pl.remoteKind && (
+                    <span className="ml-1">
+                      · 来源{pl.remoteKind === "netease" ? "网易云" : "QQ 音乐"}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
+                {list.length} 首曲目
+                {list.length > 0 && !windowed && (
+                  <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <button className="btn-primary" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
+                  <Play size={13} className="fill-current" />
+                  播放全部
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() =>
+                    playEntries(
+                      list.map((r) => r.entry),
+                      Math.floor(Math.random() * Math.max(1, list.length))
+                    )
+                  }
+                >
+                  <Shuffle size={13} />
+                  随机
+                </button>
+                <button
+                  className={`btn-secondary ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
+                  onClick={() => {
+                    setBatchMode((v) => !v);
+                    setSel(new Set());
+                  }}
+                  disabled={list.length === 0}
+                >
+                  <ListChecks size={13} />
+                  {batchMode ? "退出批量" : "批量管理"}
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setRenameOpen(true)}
+                >
+                  <Pencil size={13} />
+                  重命名
+                </button>
+                <button
+                  className="btn-secondary !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)]"
+                  onClick={() => setConfirmDel(true)}
+                >
+                  <Trash2 size={13} />
+                  删除列表
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={doExportM3u}
+                  disabled={!pl?.entries.length}
+                >
+                  <FileDown size={13} />
+                  导出 M3U
+                </button>
+                <button className="btn-secondary" onClick={doImportM3u}>
+                  <FileUp size={13} />
+                  导入 M3U
+                </button>
+                {/* 本页搜索框：过滤逻辑此前就绪但没有入口（全局搜索框只在资料库页） */}
+                <div className="relative w-[220px] max-w-full">
+                  <Search
+                    size={13}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
+                  />
+                  <input
+                    ref={plSearchRef}
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="在歌单内搜索…（Ctrl+F）"
+                    className="w-full h-8 rounded-xl liquid-input pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+                  />
+                  {search && (
+                    <button
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
+                      onClick={() => setSearch("")}
+                      title="清除筛选"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* 曲目列表 */}
           {list.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
               {search
@@ -852,7 +854,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
       {menu &&
         createPortal(
         <div
-          className="fixed z-[75] w-[200px] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu"
+          className="fixed z-[75] w-[200px] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu"
           style={(() => {
             const p = clampMenuPos(menu.x, menu.y, 200, 240);
             return { left: p.x, top: p.y };

@@ -205,7 +205,7 @@ export default function SkinPicker({
       </div>
       {/* 自定义皮肤设置区 */}
       {skin === CUSTOM_SKIN && activeImg && (
-        <div className="mt-3 p-4 rounded-2xl liquid-card flex flex-col gap-3.5">
+        <div className="mt-3 p-4 rounded-2xl liquid-panel flex flex-col gap-3.5">
           <div className="flex items-center gap-3">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[64px] shrink-0">填充方式</span>
             <div className="flex gap-1">
