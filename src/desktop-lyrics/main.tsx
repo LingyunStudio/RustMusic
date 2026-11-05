@@ -11,7 +11,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { LyricLine } from "../types";
 import { estimateLyricWidth, lyricLineProgress } from "../utils";
+import { initTheme } from "../theme";
 import "../index.css";
+
+// 主题样式作用域在 html[data-ui]/[data-theme] 上（src/themes/*.css），
+// 副窗口需与主窗口一样初始化，否则拿不到任何主题变量
+initTheme();
 
 interface PushPayload {
   /** 歌词行；缺省 = 与上一帧相同（主窗口只在歌词变化时携带，

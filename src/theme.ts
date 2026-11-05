@@ -116,6 +116,33 @@ function hslToHex(h: number, s: number, l: number): string {
 const THEME_KEY = "rustmusic.theme";
 const ACCENT_KEY = "rustmusic.accent";
 
+// ---------- 界面风格（标准 / 拟物 / 液态玻璃） ----------
+// 与明暗主题（data-theme）正交：风格决定材质与布局语言，明暗决定配色。
+// html[data-ui] 由 CSS 侧作用域全部主题样式（见 src/themes/*.css）。
+
+export type UiTheme = "standard" | "skeuo" | "liquid";
+
+export const UI_THEMES: { key: UiTheme; label: string }[] = [
+  { key: "standard", label: "标准" },
+  { key: "skeuo", label: "拟物" },
+  { key: "liquid", label: "液态玻璃" },
+];
+
+const UI_KEY = "rustmusic.uiTheme";
+
+export function applyUiTheme(ui: UiTheme) {
+  document.documentElement.dataset.ui = ui;
+}
+
+export function loadUiTheme(): UiTheme {
+  const t = localStorage.getItem(UI_KEY);
+  return t === "skeuo" || t === "liquid" || t === "standard" ? t : "standard";
+}
+
+export function saveUiTheme(ui: UiTheme) {
+  localStorage.setItem(UI_KEY, ui);
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   return [
@@ -163,8 +190,9 @@ export function applyAccent(key: string) {
 
 export function loadTheme(): "dark" | "light" {
   const t = localStorage.getItem(THEME_KEY);
-  // 液态玻璃 UI 以浅色为默认主题
-  return t === "dark" ? "dark" : "light";
+  if (t === "dark" || t === "light") return t;
+  // 未显式选择过明暗时：液态玻璃以浅色为默认观感，其余风格以暗色为默认
+  return loadUiTheme() === "liquid" ? "light" : "dark";
 }
 
 export function loadAccent(): string {
@@ -179,8 +207,10 @@ export function saveAccent(key: string) {
   localStorage.setItem(ACCENT_KEY, key);
 }
 
-/** 初始化（应用启动时调用一次） */
+/** 初始化（应用启动时调用一次；桌面歌词等副窗口复用同一入口） */
 export function initTheme() {
+  // 先落界面风格：loadTheme 的默认明暗取决于风格
+  applyUiTheme(loadUiTheme());
   const theme = loadTheme();
   applyTheme(theme);
   applyAccent(loadAccent());

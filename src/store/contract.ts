@@ -151,6 +151,8 @@ export interface Store {
   playingSourceId: number | null;
   scrubbing: boolean;
   theme: "dark" | "light";
+  /** 界面风格（标准/拟物/液态玻璃），驱动 html[data-ui] 与主题样式作用域 */
+  uiTheme: import("../theme").UiTheme;
   accent: string;
   savedOnline: Record<string, boolean>;
   likedOnline: import("../types").PlaylistEntryMeta[];
@@ -373,6 +375,7 @@ export interface Store {
   setCacheLimit(bytes: number): void;
   refreshCacheBytes(): Promise<void>;
   setTheme(t: "dark" | "light"): void;
+  setUiTheme(t: import("../theme").UiTheme): void;
   setAccent(key: string): void;
   /** 当前皮肤 key（"default" = 内置氛围背景） */
   skin: string;

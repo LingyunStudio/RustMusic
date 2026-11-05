@@ -95,13 +95,7 @@ function DynamicBackdrop() {
           <div className="absolute inset-0" style={{ background: "var(--skin-scrim)" }} />
         </>
       ) : (
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 120% 100% at 50% -20%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%)",
-          }}
-        />
+        <div className="absolute inset-0 skeuo-chassis-bg" />
       )}
       {/* 封面主色流体光池（多色池缓慢漫游，为液态玻璃提供呼吸折射源）。
           v2：少而鲜艳 —— 光斑更聚焦、透明度更低，避免糊成灰雾；

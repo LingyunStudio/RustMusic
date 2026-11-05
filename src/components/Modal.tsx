@@ -18,10 +18,14 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
       onMouseDown={onClose}
     >
       <div
-        className="liquid-card shadow-2xl anim-np overflow-hidden"
-        style={{ width }}
+        className="liquid-card glass-strong rounded-2xl shadow-2xl anim-np overflow-hidden relative border border-[var(--sk-panel-edge)]"
+        style={{ width, boxShadow: "var(--cover-shadow-lg)" }}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        {/* 拟物四角沉头螺丝（仅拟物风格有样式，其余风格不可见） */}
+        <div className="skeuo-screw absolute top-3 left-3" />
+        <div className="skeuo-screw absolute top-3 right-12" />
+
         {title && (
           <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-[var(--line)]">
             <span className="font-bold text-[15px] text-[var(--ink)] tracking-wide">{title}</span>

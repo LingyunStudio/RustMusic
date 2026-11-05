@@ -68,47 +68,55 @@ export default function Slider({
         onChange?.(v);
         onCommit?.(v);
       }}
-      // 拖动中 Alt-Tab / 系统手势 / 触摸取消触发 pointercancel（不会来
-      // pointerup）：不复位的话 dragging 永久卡 true——之后鼠标不按键划过
-      // 也会持续 onChange，scrubbing 卡死导致进度条冻结。中断即放弃预览值，
-      // 回落到受控 value（不 commit 中途的拖动）
       onPointerCancel={() => {
         if (!dragging) return;
         setDragging(false);
         onCancel?.();
       }}
-      // 兜底：某些取消路径只发 lostpointercapture 不发 pointercancel
       onLostPointerCapture={() => {
         if (!dragging) return;
         setDragging(false);
         onCancel?.();
       }}
     >
+      {/* 凹槽滑轨：凹槽材质随界面风格（--sk-groove-* 由各风格 CSS 定义） */}
       <div
-        className="relative w-full rounded-full bg-[var(--shade-strong)] border border-[var(--line)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] overflow-hidden transition-all"
-        style={{ height: thick + (dragging ? 2 : 0) }}
+        className="relative w-full rounded-full overflow-hidden transition-all"
+        style={{
+          height: thick + (dragging ? 2 : 0),
+          background: "var(--sk-groove-bg)",
+          border: "1px solid var(--sk-groove-border)",
+          boxShadow: "var(--sk-groove-shadow)",
+        }}
       >
         <div
           className="absolute left-0 top-0 h-full rounded-full transition-[width] duration-75"
           style={{
             width: `${pct * 100}%`,
-            background: "linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%)",
-            boxShadow: "0 0 8px var(--accent-soft)",
+            background: "var(--sk-fill-bg)",
+            boxShadow: "var(--sk-fill-shadow)",
           }}
         />
       </div>
+
+      {/* 推子旋钮：金属旋钮（拟物）或白色圆珠，随界面风格 */}
       {showThumb !== "never" && (
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full border border-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.4),0_0_12px_var(--accent)] transition-all pointer-events-none group-hover:opacity-100"
+          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center rounded-full transition-all duration-100 ${
+            showThumb === "hover" ? "opacity-0 group-hover:opacity-100" : ""
+          } ${dragging ? "!opacity-100 scale-110" : ""}`}
           style={{
             left: `${pct * 100}%`,
-            width: dragging ? 15 : 12,
-            height: dragging ? 15 : 12,
-            background: "radial-gradient(circle at 35% 35%, #ffffff 0%, #f1f5f9 65%, #cbd5e1 100%)",
-            opacity: dragging ? 1 : showThumb === "always" ? 1 : 0,
-            transform: `translate(-50%, -50%) scale(${dragging ? 1.15 : 1})`,
+            width: 15,
+            height: 15,
+            background: "var(--sk-knob-metal)",
+            border: "1px solid var(--sk-edge)",
+            boxShadow: "var(--sk-knob-shadow)",
           }}
-        />
+        >
+          {/* 红色指示刻度线（拟物推子专属，其余风格隐藏） */}
+          <span className="slider-tick w-[1.5px] h-[7px] rounded-full bg-[#e84125] shadow-[0_0_2px_#e84125]" />
+        </div>
       )}
     </div>
   );

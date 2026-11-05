@@ -7,6 +7,10 @@ import {
   applyAccent,
   applyTheme,
   loadAccent,
+  loadUiTheme,
+  saveUiTheme,
+  applyUiTheme,
+  type UiTheme,
   loadTheme,
   saveAccent,
   saveTheme,
@@ -45,6 +49,7 @@ type Fields = Pick<
   | "download"
   | "toasts"
   | "theme"
+  | "uiTheme"
   | "accent"
   | "skin"
   | "fxAudio"
@@ -78,6 +83,7 @@ type Fields = Pick<
   | "toggleFullscreen"
   | "setQueueOpen"
   | "setTheme"
+  | "setUiTheme"
   | "setAccent"
   | "setSkin"
   | "openDesktopLyrics"
@@ -241,6 +247,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     return Number.isFinite(v) && v >= 0.85 && v <= 1.4 ? v : 1;
   })(),
   theme: "light",
+  uiTheme: "standard",
   accent: "amber",
   skin: "default",
   fxAudio: loadFxPref(),
@@ -496,6 +503,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       );
       set({
         theme: loadTheme(),
+        uiTheme: loadUiTheme(),
         accent: loadAccent(),
         skin: loadSkin(),
         volume: settings.volume,
@@ -726,6 +734,17 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     saveTheme(t);
     applyTheme(t);
     applyAccent(get().accent); // 强调色需按模式重算
+  },
+
+  setUiTheme(t: UiTheme) {
+    set({ uiTheme: t });
+    saveUiTheme(t);
+    applyUiTheme(t);
+    // 各风格的默认明暗不同（液态玻璃默认浅色）：未显式选过明暗时随之更新
+    const th = loadTheme();
+    set({ theme: th });
+    applyTheme(th);
+    applyAccent(get().accent);
   },
 
   setAccent(key) {
