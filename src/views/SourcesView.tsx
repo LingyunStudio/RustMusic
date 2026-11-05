@@ -680,7 +680,7 @@ export default function SourcesView() {
       : null;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col pb-[84px]">
+    <div className="flex-1 min-h-0 flex flex-col pb-36">
       <LocateCurrentPill
         show={pill.show}
         onClick={pill.locate}

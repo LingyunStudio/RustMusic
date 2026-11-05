@@ -246,13 +246,13 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-5 pb-[92px]">
-      <h1 className="text-[22px] font-bold flex items-center gap-2.5 mb-5">
-        <SettingsIcon size={20} className="text-[var(--accent)]" />
+    <div className="flex-1 min-h-0 overflow-y-auto px-8 pt-7 pb-40">
+      <h1 className="text-[24px] font-bold flex items-center gap-3 mb-6 text-[var(--ink)] tracking-tight">
+        <SettingsIcon size={22} className="text-[var(--accent)]" />
         设置
       </h1>
 
-      <div className="flex flex-col gap-4 max-w-[760px]">
+      <div className="flex flex-col gap-4 max-w-[820px]">
         {/* 通用 */}
         <section style={{ ["--row-idx" as string]: 0 }} className="anim-row liquid-card !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">通用</h2>

@@ -11,56 +11,62 @@
    --accent 系列由 JS 按用户选择的强调色写入。 */
 
 :root {
-  --bg: #0d0a12;
-  --ink: #f6f2ea;
-  --ink-2: #b8af9f;
-  --ink-3: #7f7568;
-  --line: rgba(255, 255, 255, 0.1);
-  /* ---------- 液态玻璃设计系统变量（暗色） ---------- */
-  --liquid-glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.03) 42%, rgba(20, 16, 28, 0.55) 100%);
-  --liquid-glass-bg-subtle: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.015) 50%, rgba(18, 14, 24, 0.4) 100%);
-  --liquid-glass-bg-strong: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(24, 19, 32, 0.82) 48%, rgba(14, 11, 20, 0.92) 100%);
-  --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.16);
-  --liquid-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.09);
+  --bg: #090b10;
+  --ink: #f8fafc;
+  --ink-2: #cbd5e1;
+  --ink-3: #94a3b8;
+  --line: rgba(255, 255, 255, 0.08);
+  /* ---------- 液态玻璃设计系统变量（暗色：黑曜水晶与深空极光） ---------- */
+  --liquid-glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 42%, rgba(15, 20, 32, 0.58) 100%);
+  --liquid-glass-bg-subtle: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 50%, rgba(12, 16, 26, 0.42) 100%);
+  --liquid-glass-bg-strong: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(20, 26, 42, 0.78) 48%, rgba(10, 14, 24, 0.90) 100%);
+  --liquid-glass-bg-dock: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(18, 24, 38, 0.82) 48%, rgba(10, 14, 25, 0.94) 100%);
+  --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.14);
+  --liquid-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.08);
   --liquid-glass-border-specular: rgba(255, 255, 255, 0.45);
   --liquid-glass-shadow:
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.3),
-    0 20px 48px -12px rgba(0, 0, 0, 0.58),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
+    0 24px 64px -14px rgba(0, 0, 0, 0.7),
+    0 8px 24px -4px rgba(0, 0, 0, 0.45),
+    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1.5px 1px 0 rgba(0, 0, 0, 0.5),
+    inset 1px 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset -1px 0 1px 0 rgba(255, 255, 255, 0.08);
   --liquid-glass-shadow-sm:
-    inset 0 1px 0.8px 0 rgba(255, 255, 255, 0.38),
-    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.2),
-    0 8px 24px -6px rgba(0, 0, 0, 0.42);
+    0 8px 24px -6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0.8px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.3);
   --liquid-glass-shadow-lg:
-    inset 0 2px 1.5px 0 rgba(255, 255, 255, 0.52),
-    inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.4),
-    0 32px 72px -16px rgba(0, 0, 0, 0.7),
-    0 0 0 1px rgba(255, 255, 255, 0.12);
+    0 32px 72px -16px rgba(0, 0, 0, 0.8),
+    0 12px 32px -4px rgba(0, 0, 0, 0.5),
+    inset 0 2px 1.5px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.6),
+    inset 1px 0 1px 0 rgba(255, 255, 255, 0.16);
   --glass-bg: var(--liquid-glass-bg);
   --glass-bg-strong: var(--liquid-glass-bg-strong);
-  --glass-line: rgba(255, 255, 255, 0.16);
+  --glass-line: rgba(255, 255, 255, 0.14);
   --shade: rgba(255, 255, 255, 0.06);
   --shade-strong: rgba(255, 255, 255, 0.1);
   --shade-hover: rgba(255, 255, 255, 0.08);
-  --vignette: rgba(6, 4, 8, 0.6);
-  --backdrop-1: #241628;
-  --backdrop-2: #120e18;
-  --ink-t: #f6f2ea;
-  --ink-2-t: #b8af9f;
-  --ink-3-t: #7f7568;
-  --lyric-dim: rgba(246, 242, 234, 0.65);
-  --bar-tint: rgba(18, 14, 24, 0.85);
-  --bar-glass: var(--liquid-glass-bg-strong);
-  --bar-line: rgba(255, 255, 255, 0.18);
+  --vignette: rgba(3, 4, 8, 0.72);
+  --backdrop-1: #111422;
+  --backdrop-2: #090b10;
+  --glow: #3b82f6;
+  --blob-warm: #ec4899;
+  --blob-cyan: #06b6d4;
+  --blob-amber: #f59e0b;
+  --ink-t: #f8fafc;
+  --ink-2-t: #cbd5e1;
+  --ink-3-t: #94a3b8;
+  --lyric-dim: rgba(248, 250, 252, 0.65);
+  --bar-tint: rgba(18, 24, 38, 0.88);
+  --bar-glass: var(--liquid-glass-bg-dock);
+  --bar-line: rgba(255, 255, 255, 0.16);
   --bar-shadow: var(--liquid-glass-shadow-lg);
-  --cover-shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.3);
-  --cover-shadow-lg: 0 36px 90px rgba(0, 0, 0, 0.72), inset 0 1.5px 1.5px rgba(255, 255, 255, 0.35);
-  --glow: #d66018;
-  --blob-warm: #943a22;
-  --noise-opacity: 0.22;
-  --play-btn-bg: #f6f2ea;
-  --play-btn-on: #241505;
+  --cover-shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.55), inset 0 1px 1px rgba(255, 255, 255, 0.35);
+  --cover-shadow-lg: 0 36px 90px rgba(0, 0, 0, 0.75), inset 0 1.5px 1.5px rgba(255, 255, 255, 0.4);
+  --noise-opacity: 0.18;
+  --play-btn-bg: #f8fafc;
+  --play-btn-on: #090b10;
   color-scheme: dark;
   --skin-scrim-dark: linear-gradient(
     180deg,
@@ -76,58 +82,64 @@
   --skin-scrim: var(--skin-scrim-dark);
 }
 
-/* ---------- 液态玻璃浅色主题 ---------- */
+/* ---------- 液态玻璃浅色主题（高透纯净水晶透镜与流体光泽） ---------- */
 html[data-theme="light"] {
-  --bg: #edf2f9;
-  --ink: #202b3d;
-  --ink-2: #52627a;
-  --ink-3: #8292ab;
-  --line: rgba(32, 43, 61, 0.1);
-  /* 液态玻璃设计系统变量（浅色：纯净水晶与水光透镜） */
-  --liquid-glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.38) 45%, rgba(236, 243, 253, 0.58) 100%);
-  --liquid-glass-bg-subtle: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.25) 50%, rgba(238, 244, 254, 0.42) 100%);
-  --liquid-glass-bg-strong: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(246, 249, 255, 0.8) 50%, rgba(236, 243, 253, 0.92) 100%);
-  --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.7);
-  --liquid-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.5);
+  --bg: #e5edf5;
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #64748b;
+  --line: rgba(15, 23, 42, 0.08);
+  /* 采用真正高透水体与晶体反射，底色透明度低以穿透背景流体色彩，避免乳白塑料感 */
+  --liquid-glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.14) 45%, rgba(255, 255, 255, 0.28) 100%);
+  --liquid-glass-bg-subtle: linear-gradient(135deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.20) 100%);
+  --liquid-glass-bg-strong: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.32) 50%, rgba(255, 255, 255, 0.50) 100%);
+  --liquid-glass-bg-dock: linear-gradient(135deg, rgba(255, 255, 255, 0.70) 0%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0.60) 100%);
+  --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.65);
+  --liquid-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.45);
   --liquid-glass-border-specular: rgba(255, 255, 255, 0.95);
   --liquid-glass-shadow:
+    0 20px 48px -10px rgba(15, 23, 42, 0.15),
+    0 8px 18px -4px rgba(15, 23, 42, 0.08),
     inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 2px 0 rgba(32, 48, 77, 0.08),
-    0 18px 42px -10px rgba(32, 52, 85, 0.16),
-    0 0 0 1px rgba(255, 255, 255, 0.65);
+    inset 0 -1.5px 1px 0 rgba(255, 255, 255, 0.35),
+    inset 1px 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset -1px 0 1px 0 rgba(255, 255, 255, 0.35);
   --liquid-glass-shadow-sm:
-    inset 0 1px 0.8px 0 rgba(255, 255, 255, 0.88),
-    inset 0 -1px 1px 0 rgba(32, 48, 77, 0.06),
-    0 8px 22px -6px rgba(32, 52, 85, 0.12);
+    0 8px 22px -6px rgba(15, 23, 42, 0.1),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px 0 rgba(15, 23, 42, 0.04);
   --liquid-glass-shadow-lg:
-    inset 0 2px 1.5px 0 rgba(255, 255, 255, 0.98),
-    inset 0 -1.5px 2px 0 rgba(32, 48, 77, 0.1),
-    0 26px 64px -14px rgba(32, 52, 85, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.8);
+    0 28px 64px -14px rgba(15, 23, 42, 0.22),
+    0 10px 24px -4px rgba(15, 23, 42, 0.12),
+    inset 0 2px 2px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1.5px 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 1px 0 1px 0 rgba(255, 255, 255, 0.7);
   --glass-bg: var(--liquid-glass-bg);
   --glass-bg-strong: var(--liquid-glass-bg-strong);
-  --glass-line: rgba(255, 255, 255, 0.7);
-  --shade: rgba(32, 43, 61, 0.05);
-  --shade-strong: rgba(32, 43, 61, 0.09);
-  --shade-hover: rgba(32, 43, 61, 0.07);
-  --vignette: rgba(145, 165, 195, 0.22);
-  --backdrop-1: #e4edf8;
-  --backdrop-2: #edf2f9;
-  --ink-t: #202b3d;
-  --ink-2-t: #52627a;
-  --ink-3-t: #8292ab;
-  --lyric-dim: rgba(26, 36, 52, 0.65);
-  --bar-tint: rgba(246, 249, 255, 0.92);
-  --bar-glass: var(--liquid-glass-bg-strong);
-  --bar-line: rgba(255, 255, 255, 0.8);
+  --glass-line: rgba(255, 255, 255, 0.65);
+  --shade: rgba(15, 23, 42, 0.04);
+  --shade-strong: rgba(15, 23, 42, 0.08);
+  --shade-hover: rgba(15, 23, 42, 0.06);
+  --vignette: rgba(100, 116, 139, 0.12);
+  --backdrop-1: #cbd5e1;
+  --backdrop-2: #e2e8f0;
+  --glow: #2563eb;
+  --blob-warm: #ec4899;
+  --blob-cyan: #06b6d4;
+  --blob-amber: #f59e0b;
+  --ink-t: #0f172a;
+  --ink-2-t: #334155;
+  --ink-3-t: #64748b;
+  --lyric-dim: rgba(15, 23, 42, 0.65);
+  --bar-tint: rgba(255, 255, 255, 0.85);
+  --bar-glass: var(--liquid-glass-bg-dock);
+  --bar-line: rgba(255, 255, 255, 0.75);
   --bar-shadow: var(--liquid-glass-shadow-lg);
-  --cover-shadow-sm: 0 6px 18px rgba(32, 52, 85, 0.18), inset 0 1px 1px rgba(255, 255, 255, 0.8);
-  --cover-shadow-lg: 0 36px 90px -18px rgba(32, 52, 85, 0.35), inset 0 1.5px 1.5px rgba(255, 255, 255, 0.9);
-  --glow: #8eb1e0;
-  --blob-warm: #bdd0ea;
-  --noise-opacity: 0.06;
+  --cover-shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.18), inset 0 1px 1px rgba(255, 255, 255, 0.85);
+  --cover-shadow-lg: 0 36px 90px -18px rgba(15, 23, 42, 0.35), inset 0 1.5px 1.5px rgba(255, 255, 255, 0.95);
+  --noise-opacity: 0.04;
   --play-btn-bg: #ffffff;
-  --play-btn-on: #202b3d;
+  --play-btn-on: #0f172a;
   color-scheme: light;
   --skin-scrim: var(--skin-scrim-light);
 }
@@ -218,8 +230,8 @@ body.dragging-rows * {
 .glass {
   position: relative;
   background: var(--liquid-glass-bg);
-  backdrop-filter: blur(28px) saturate(190%) contrast(102%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%) contrast(102%);
+  backdrop-filter: blur(28px) saturate(220%) brightness(1.06) contrast(104%);
+  -webkit-backdrop-filter: blur(28px) saturate(220%) brightness(1.06) contrast(104%);
   border: var(--liquid-glass-border);
   box-shadow: var(--liquid-glass-shadow);
   transition:
@@ -233,16 +245,22 @@ body.dragging-rows * {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  border-top: 1px solid var(--liquid-glass-border-specular);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.06) 35%,
+    transparent 65%
+  );
+  border-top: 1.2px solid var(--liquid-glass-border-specular);
   pointer-events: none;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .glass-strong {
   position: relative;
   background: var(--liquid-glass-bg-strong);
-  backdrop-filter: blur(36px) saturate(200%) contrast(104%);
-  -webkit-backdrop-filter: blur(36px) saturate(200%) contrast(104%);
+  backdrop-filter: blur(36px) saturate(220%) brightness(1.06) contrast(104%);
+  -webkit-backdrop-filter: blur(36px) saturate(220%) brightness(1.06) contrast(104%);
   border: var(--liquid-glass-border);
   box-shadow: var(--liquid-glass-shadow-lg);
   transition:
@@ -256,6 +274,12 @@ body.dragging-rows * {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.40) 0%,
+    rgba(255, 255, 255, 0.08) 35%,
+    transparent 65%
+  );
   border-top: 1.5px solid var(--liquid-glass-border-specular);
   pointer-events: none;
   opacity: 0.95;
@@ -265,8 +289,8 @@ body.dragging-rows * {
 .liquid-card {
   position: relative;
   background: var(--liquid-glass-bg);
-  backdrop-filter: blur(30px) saturate(195%) contrast(103%);
-  -webkit-backdrop-filter: blur(30px) saturate(195%) contrast(103%);
+  backdrop-filter: blur(32px) saturate(220%) brightness(1.06) contrast(104%);
+  -webkit-backdrop-filter: blur(32px) saturate(220%) brightness(106%) contrast(104%);
   border: var(--liquid-glass-border);
   box-shadow: var(--liquid-glass-shadow);
   border-radius: 28px;
@@ -279,16 +303,23 @@ body.dragging-rows * {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.32) 0%,
+    rgba(255, 255, 255, 0.04) 35%,
+    transparent 65%
+  );
   border-top: 1.2px solid var(--liquid-glass-border-specular);
   pointer-events: none;
+  z-index: 1;
 }
 
 /* 液态底栏浮岛 Dock */
 .liquid-dock {
   position: relative;
-  background: var(--liquid-glass-bg-strong);
-  backdrop-filter: blur(36px) saturate(210%) contrast(104%);
-  -webkit-backdrop-filter: blur(36px) saturate(210%) contrast(104%);
+  background: var(--liquid-glass-bg-dock, var(--liquid-glass-bg-strong));
+  backdrop-filter: blur(38px) saturate(220%) brightness(1.05) contrast(104%);
+  -webkit-backdrop-filter: blur(38px) saturate(220%) brightness(1.05) contrast(104%);
   border: var(--liquid-glass-border);
   box-shadow: var(--liquid-glass-shadow-lg);
   border-radius: 24px;
@@ -300,8 +331,15 @@ body.dragging-rows * {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0.06) 35%,
+    transparent 65%
+  );
   border-top: 1.5px solid var(--liquid-glass-border-specular);
   pointer-events: none;
+  z-index: 1;
 }
 
 /* 液态水滴按键 / 胶囊交互元素 */

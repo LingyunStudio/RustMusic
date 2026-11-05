@@ -105,39 +105,41 @@ function DynamicBackdrop() {
       )}
       {/* 封面主色流体光池（多色池缓慢漫游，为液态玻璃提供呼吸折射源） */}
       <div
-        className="anim-liquid-1 absolute -top-52 left-[10%] w-[840px] h-[660px] transition-colors duration-1000"
+        className="anim-liquid-1 absolute -top-52 left-[10%] w-[880px] h-[700px] transition-colors duration-1000"
         style={{
           background:
-            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 64%)",
-          opacity: skinUrl ? 0.12 : 0.28,
+            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 65%)",
+          opacity: skinUrl ? 0.18 : 0.65,
           filter: "blur(90px)",
         }}
       />
       <div
-        className="anim-liquid-2 absolute -bottom-64 -right-36 w-[800px] h-[640px] transition-colors duration-1000"
+        className="anim-liquid-2 absolute -bottom-64 -right-36 w-[840px] h-[680px] transition-colors duration-1000"
         style={{
           background:
             "radial-gradient(ellipse at center, var(--blob-warm) 0%, var(--accent-soft) 40%, transparent 70%)",
-          opacity: skinUrl ? 0.14 : 0.26,
+          opacity: skinUrl ? 0.18 : 0.55,
           filter: "blur(100px)",
         }}
       />
       {/* 辅助色散液态光斑：增添色阶折射感 */}
       <div
-        className="anim-liquid-3 absolute top-1/3 left-1/2 -translate-x-1/2 w-[620px] h-[520px] pointer-events-none"
+        className="anim-liquid-3 absolute top-1/4 left-1/3 -translate-x-1/2 w-[700px] h-[600px] pointer-events-none"
         style={{
           background:
-            "radial-gradient(circle at center, rgba(140, 100, 240, 0.18) 0%, rgba(60, 180, 230, 0.12) 45%, transparent 72%)",
+            "radial-gradient(circle at center, var(--blob-cyan) 0%, rgba(60, 180, 230, 0.28) 45%, transparent 72%)",
+          opacity: skinUrl ? 0.16 : 0.48,
           filter: "blur(85px)",
         }}
       />
       {/* 极简旋转流体波纹层 */}
       <div
-        className="anim-liquid-caustics absolute -inset-[20%] opacity-20 pointer-events-none"
+        className="anim-liquid-caustics absolute -inset-[20%] pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 60% 50% at 50% 50%, var(--accent-weak) 0%, transparent 80%)",
-          filter: "blur(70px)",
+            "radial-gradient(ellipse 60% 50% at 50% 50%, var(--blob-amber) 0%, transparent 75%)",
+          opacity: skinUrl ? 0.15 : 0.35,
+          filter: "blur(75px)",
         }}
       />
       {/* 暗角 + 噪点 */}

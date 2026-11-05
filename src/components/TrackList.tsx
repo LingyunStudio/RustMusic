@@ -273,10 +273,10 @@ export default function TrackList({
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-all duration-200 cursor-default ${
           checked
-            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-sm"
+            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
             : active
-              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-sm"
-              : "hover:bg-[var(--shade-hover)] border border-transparent"
+              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
+              : "hover:bg-[var(--liquid-glass-bg-subtle)] hover:border-[var(--liquid-glass-border-specular)] hover:shadow-[var(--liquid-glass-shadow-sm)] border border-transparent"
         }`}
         onClick={
           selection?.active
@@ -484,10 +484,10 @@ export default function TrackList({
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
         className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-2xl transition-all duration-200 cursor-default ${
           checked
-            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-sm"
+            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
             : active
-              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-sm"
-              : "hover:bg-[var(--shade-hover)] border border-transparent"
+              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-[var(--liquid-glass-shadow-sm)]"
+              : "hover:bg-[var(--liquid-glass-bg-subtle)] hover:border-[var(--liquid-glass-border-specular)] hover:shadow-[var(--liquid-glass-shadow-sm)] border border-transparent"
         } ${dead ? "opacity-45" : ""}`}
         onClick={
           selection?.active

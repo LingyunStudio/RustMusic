@@ -589,8 +589,8 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               onClick={() => onSort(s.key)}
               className={`chip ${
                 sortKey === s.key
-                  ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
-                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:bg-[var(--shade-hover)]"
+                  ? "!bg-[var(--accent-weak)] !text-[var(--accent-strong)] !border-[var(--accent-soft)] font-semibold shadow-[var(--liquid-glass-shadow-sm)]"
+                  : "text-[var(--ink-2)] hover:text-[var(--ink)]"
               }`}
             >
               {s.key === "manual" && <MoveVertical size={11} className="mr-0.5 -ml-0.5 inline" />}

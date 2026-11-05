@@ -449,8 +449,8 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       )}
 
       <div
-        className={`h-[68px] rounded-[24px] flex items-center pl-5 pr-6 gap-5 transition-all duration-300 liquid-dock ${
-          nowPlayingOpen ? "opacity-85 hover:opacity-100" : ""
+        className={`h-[70px] rounded-[24px] flex items-center pl-5 pr-6 gap-5 transition-all duration-300 liquid-dock shadow-2xl relative z-10 ${
+          nowPlayingOpen ? "opacity-90 hover:opacity-100" : ""
         }`}
       >
         {/* 曲目信息 */}

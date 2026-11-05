@@ -32,7 +32,7 @@ export default function Titlebar() {
       />
 
       {/* 窗口控制按钮（右上角悬浮液态玻璃胶囊） */}
-      <div className="absolute top-1.5 right-3 flex items-center gap-0.5 h-8 z-[56] px-1 py-0.5 rounded-full glass shadow-sm">
+      <div className="absolute top-2 right-3 flex items-center gap-0.5 h-8 z-[56] px-1.5 py-0.5 rounded-full liquid-dock shadow-md">
         <button
           className="titlebar-btn w-8 h-7 rounded-full flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] active:scale-90 transition-all"
           onClick={() => win.minimize()}
