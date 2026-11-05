@@ -103,23 +103,41 @@ function DynamicBackdrop() {
           }}
         />
       )}
-      {/* 封面主色微光（低饱和、低调；皮肤上保留，让壁纸跟着音乐呼吸） */}
+      {/* 封面主色流体光池（多色池缓慢漫游，为液态玻璃提供呼吸折射源） */}
       <div
-        className="absolute -top-64 left-[12%] w-[820px] h-[640px] transition-colors duration-1000"
+        className="anim-liquid-1 absolute -top-52 left-[10%] w-[840px] h-[660px] transition-colors duration-1000"
         style={{
           background:
-            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 60%)",
-          opacity: skinUrl ? 0.09 : 0.16,
+            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 64%)",
+          opacity: skinUrl ? 0.12 : 0.28,
           filter: "blur(90px)",
         }}
       />
       <div
-        className="absolute -bottom-72 -right-48 w-[760px] h-[600px]"
+        className="anim-liquid-2 absolute -bottom-64 -right-36 w-[800px] h-[640px] transition-colors duration-1000"
         style={{
           background:
-            "radial-gradient(ellipse at center, var(--blob-warm) 0%, transparent 62%)",
-          opacity: skinUrl ? 0.1 : 0.18,
+            "radial-gradient(ellipse at center, var(--blob-warm) 0%, var(--accent-soft) 40%, transparent 70%)",
+          opacity: skinUrl ? 0.14 : 0.26,
           filter: "blur(100px)",
+        }}
+      />
+      {/* 辅助色散液态光斑：增添色阶折射感 */}
+      <div
+        className="anim-liquid-3 absolute top-1/3 left-1/2 -translate-x-1/2 w-[620px] h-[520px] pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(circle at center, rgba(140, 100, 240, 0.18) 0%, rgba(60, 180, 230, 0.12) 45%, transparent 72%)",
+          filter: "blur(85px)",
+        }}
+      />
+      {/* 极简旋转流体波纹层 */}
+      <div
+        className="anim-liquid-caustics absolute -inset-[20%] opacity-20 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 50% at 50% 50%, var(--accent-weak) 0%, transparent 80%)",
+          filter: "blur(70px)",
         }}
       />
       {/* 暗角 + 噪点 */}

@@ -85,25 +85,28 @@ export default function Slider({
       }}
     >
       <div
-        className="relative w-full rounded-full bg-[var(--shade-strong)] overflow-hidden transition-all"
+        className="relative w-full rounded-full bg-[var(--shade-strong)] border border-[rgba(255,255,255,0.14)] shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] overflow-hidden transition-all"
         style={{ height: thick + (dragging ? 2 : 0) }}
       >
         <div
-          className="absolute left-0 top-0 h-full rounded-full"
+          className="absolute left-0 top-0 h-full rounded-full transition-[width] duration-75"
           style={{
             width: `${pct * 100}%`,
-            background: "linear-gradient(90deg, #e8823f, var(--accent-strong))",
+            background: "linear-gradient(90deg, #d9531e 0%, var(--accent) 55%, var(--accent-strong) 100%)",
+            boxShadow: "0 0 8px var(--accent-soft)",
           }}
         />
       </div>
       {showThumb !== "never" && (
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full bg-[var(--accent-strong)] shadow-[0_0_8px_rgba(0,0,0,0.5)] transition-all"
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full border border-white/90 shadow-[0_2px_8px_rgba(0,0,0,0.4),0_0_12px_var(--accent)] transition-all pointer-events-none group-hover:opacity-100"
           style={{
             left: `${pct * 100}%`,
-            width: dragging ? 13 : 11,
-            height: dragging ? 13 : 11,
+            width: dragging ? 15 : 12,
+            height: dragging ? 15 : 12,
+            background: "radial-gradient(circle at 35% 35%, #ffffff 0%, #f1f5f9 65%, #cbd5e1 100%)",
             opacity: dragging ? 1 : showThumb === "always" ? 1 : 0,
+            transform: `translate(-50%, -50%) scale(${dragging ? 1.15 : 1})`,
           }}
         />
       )}

@@ -539,7 +539,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="搜索歌曲、艺术家、专辑…（Ctrl+F）"
-                className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-8 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
+                className="w-full h-10 rounded-2xl liquid-input pl-9 pr-8 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--accent)] transition-all"
               />
               {search && (
                 <button
@@ -610,9 +610,9 @@ export default function LibraryView({ mode }: { mode: Mode }) {
 
       {/* 曲目卡片（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
-        <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {(sortedTracks.length > 0 || mergedRows.length > 0) && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
+            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-11 px-5 border-b border-[var(--line)] bg-[var(--liquid-glass-bg-subtle)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em] font-medium">
               <span className="text-center">序号</span>
               <span>歌曲</span>
               <span>专辑</span>

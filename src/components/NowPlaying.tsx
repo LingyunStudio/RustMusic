@@ -377,23 +377,23 @@ export default function NowPlaying() {
           <Music4 size={14} />
           正在播放
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full glass shadow-md">
           <button
-            className="btn-ghost w-10 h-10 !rounded-full"
+            className="btn-ghost w-9 h-9 !rounded-full"
             onClick={() => toggleFullscreen()}
             title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
           >
-            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
           <button
-            className="btn-ghost w-10 h-10 !rounded-full"
+            className="btn-ghost w-9 h-9 !rounded-full"
             onClick={() => {
               if (fullscreen) toggleFullscreen(false);
               setNowPlayingOpen(false);
             }}
             title="收起播放页"
           >
-            <ChevronDown size={20} />
+            <ChevronDown size={19} />
           </button>
         </div>
       </div>
@@ -637,7 +637,7 @@ export default function NowPlaying() {
         </div>
 
         {/* 右：歌词 */}
-        <div className="flex-1 min-w-0 relative">
+        <div className="flex-1 min-w-0 relative h-full rounded-3xl liquid-card p-4">
           {/* 柔边遮罩：对比不足时垫在歌词后面（颜色/浓度由配色策略给出），
               radial 软边缘不产生生硬矩形感 */}
           {scrim && (

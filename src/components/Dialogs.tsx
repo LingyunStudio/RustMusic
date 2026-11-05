@@ -43,7 +43,7 @@ export function InputModal({
         placeholder={placeholder}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        className="w-full h-10 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3.5 text-[13px] focus:border-[var(--line)] outline-none"
+        className="w-full h-10 rounded-xl liquid-input px-3.5 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none"
       />
       <div className="flex justify-end gap-2 mt-4">
         <button className="btn-secondary" onClick={onClose}>

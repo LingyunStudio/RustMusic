@@ -177,8 +177,8 @@ export default function QueuePanel() {
     // 窗口级浮层（与音量弹出/右键菜单同语言：glass-strong + 圆角 + 浮起阴影）：
     // 悬挂在播放条上方右侧，不挤占内容区布局——侧栏挤位会把窄页面的
     // 标题/搜索框压到竖排换行；bottom 88px = 播放条占位 84px + 4px 空隙
-    <aside className="fixed bottom-[88px] right-6 z-[61] w-[340px] max-h-[min(64vh,520px)] flex flex-col glass-strong rounded-2xl shadow-2xl anim-menu overflow-hidden">
-      <div className="h-14 px-5 flex items-center justify-between shrink-0">
+    <aside className="fixed bottom-[88px] right-6 z-[61] w-[340px] max-h-[min(64vh,520px)] flex flex-col liquid-card !rounded-3xl shadow-2xl anim-menu overflow-hidden">
+      <div className="h-14 px-5 flex items-center justify-between shrink-0 border-b border-[var(--line)]">
         <span className="text-[13.5px] font-semibold flex items-center gap-2.5 text-[var(--ink)]">
           <ListMusic size={15} className="text-[var(--accent)]" />
           播放队列
@@ -228,7 +228,7 @@ export default function QueuePanel() {
               key={keySeq[i]}
               style={{ ["--row-idx" as string]: Math.min(i, 12) }}
               className={`${i < 24 ? "anim-row" : ""} group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer transition-colors ${
-                active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+                active ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-sm" : "hover:bg-[var(--shade-hover)] border border-transparent"
               } ${dead ? "opacity-45" : ""}`}
               title={dead ? `无法播放：${unavailable[`${item.kind}:${item.id}`]}` : undefined}
               onClick={() => jumpTo(i)}

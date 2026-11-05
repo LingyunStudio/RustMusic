@@ -89,7 +89,7 @@ export function Select({
         disabled={disabled}
         title={selected?.label}
         onClick={toggle}
-        className={`h-9 rounded-lg bg-[var(--glass-bg-strong)] border border-[var(--line)] pl-2.5 pr-3 text-[12.5px] text-[var(--ink)] outline-none flex items-center justify-between gap-2 text-left transition-colors hover:border-[var(--ink-3)] disabled:opacity-60 ${className}`}
+        className={`h-9 rounded-xl liquid-input pl-3 pr-3 text-[12.5px] text-[var(--ink)] outline-none flex items-center justify-between gap-2 text-left transition-all hover:border-[var(--liquid-glass-border-specular)] disabled:opacity-60 cursor-pointer ${className}`}
       >
         <span className="truncate">{selected?.label ?? ""}</span>
         <ChevronDown
@@ -102,7 +102,7 @@ export function Select({
         createPortal(
           <div
             ref={popRef}
-            className="fixed z-[75] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu overflow-y-auto"
+            className="fixed z-[75] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu overflow-y-auto"
             style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: 260 }}
             onMouseDown={(e) => e.stopPropagation()}
           >

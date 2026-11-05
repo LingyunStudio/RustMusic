@@ -71,7 +71,7 @@ function DownloadsPanel() {
     navidrome: "Navidrome",
   };
   return (
-    <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden anim-fade">
+    <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden anim-fade">
       <div className="px-6 pt-5 pb-3 flex items-center justify-between shrink-0">
         <div>
           <div className="text-[15px] font-semibold">下载历史</div>
@@ -720,7 +720,7 @@ export default function SourcesView() {
                     if (e.key === "Enter" && bili.trim() && !biliBusy) submitBili();
                   }}
                   placeholder="B站视频链接 / BV号，或 UP 主空间链接 / UID"
-                  className="w-full h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-3 text-[12.5px] focus:border-[var(--line)] transition-colors"
+                  className="w-full h-9 rounded-xl liquid-input pl-8 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
                 />
               </div>
               <button

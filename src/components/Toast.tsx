@@ -11,7 +11,7 @@ export default function ToastContainer() {
         <div
           key={t.id}
           onClick={() => dismiss(t.id)}
-          className="glass-strong rounded-xl px-4 py-2.5 flex items-center gap-2.5 text-[13px] shadow-xl anim-toast cursor-pointer max-w-[380px]"
+          className="liquid-dock !rounded-2xl px-4 py-2.5 flex items-center gap-2.5 text-[13px] shadow-2xl anim-toast cursor-pointer max-w-[380px] hover:scale-102 transition-transform"
         >
           {t.type === "error" ? (
             <AlertCircle size={15} className="text-rose-400 shrink-0" />

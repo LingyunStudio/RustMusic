@@ -18,7 +18,7 @@ export default function LocateCurrentPill({
   if (!show) return null;
   return (
     <button
-      className={`z-10 flex items-center gap-1.5 h-8 px-3.5 rounded-full glass-strong shadow-lg text-[12px] font-medium text-[var(--accent-strong)] hover:text-[var(--accent)] anim-fade whitespace-nowrap ${className}`}
+      className={`z-10 flex items-center gap-1.5 h-8 px-4 rounded-full liquid-dock shadow-xl text-[12px] font-semibold text-[var(--accent-strong)] hover:text-[var(--accent)] hover:scale-105 active:scale-95 anim-fade whitespace-nowrap transition-all ${className}`}
       onClick={onClick}
     >
       <LocateFixed size={13} />

@@ -479,7 +479,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="在歌单内搜索…（Ctrl+F）"
-                className="w-full h-8 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+                className="w-full h-8 rounded-xl liquid-input pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
               />
               {search && (
                 <button
@@ -575,7 +575,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
             </div>
           </div>
         )}
-        <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="liquid-card !rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {list.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
               {search
@@ -607,12 +607,12 @@ export default function PlaylistDetail({ id }: { id: number }) {
                     key={r.entry.rowid}
                     {...(windowed || batchMode ? {} : rowProps(i))}
                     style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                    className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
+                    className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-2xl transition-all duration-200 cursor-default ${
                       isSelected
-                        ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
+                        ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-sm"
                         : active
-                          ? "bg-[var(--accent-weak)]"
-                          : "hover:bg-[var(--shade-hover)]"
+                          ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)] shadow-sm font-medium"
+                          : "hover:bg-[var(--shade-hover)] border border-transparent"
                     } ${dead ? "opacity-45" : ""}`}
                     title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
                     onClick={() => {
@@ -852,7 +852,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
       {menu &&
         createPortal(
         <div
-          className="fixed z-[75] w-[200px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
+          className="fixed z-[75] w-[200px] liquid-dock !rounded-2xl p-1.5 shadow-2xl anim-menu"
           style={(() => {
             const p = clampMenuPos(menu.x, menu.y, 200, 240);
             return { left: p.x, top: p.y };

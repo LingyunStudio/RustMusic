@@ -31,25 +31,28 @@ export default function Titlebar() {
         className="absolute top-0 left-0 right-0 h-9 z-[54] pointer-events-auto"
       />
 
-      {/* 窗口控制按钮（右上角悬浮，压在热区之上、内容区右上角留白处） */}
-      <div className="absolute top-0 right-0 flex items-center h-9 z-[56]">
+      {/* 窗口控制按钮（右上角悬浮液态玻璃胶囊） */}
+      <div className="absolute top-1.5 right-3 flex items-center gap-0.5 h-8 z-[56] px-1 py-0.5 rounded-full glass shadow-sm">
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-8 h-7 rounded-full flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] active:scale-90 transition-all"
           onClick={() => win.minimize()}
+          title="最小化"
         >
-          <Minus size={14} />
+          <Minus size={13} />
         </button>
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-8 h-7 rounded-full flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] active:scale-90 transition-all"
           onClick={() => win.toggleMaximize()}
+          title={maximized ? "向下还原" : "最大化"}
         >
-          {maximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
+          {maximized ? <Copy size={11} className="-scale-x-100" /> : <Square size={10} />}
         </button>
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-8 h-7 rounded-full flex items-center justify-center text-[var(--ink-2)] hover:bg-[#e04a3f]/80 hover:text-white active:scale-90 transition-all"
           onClick={() => win.close()}
+          title="关闭"
         >
-          <X size={15} />
+          <X size={14} />
         </button>
       </div>
     </>
