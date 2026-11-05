@@ -271,12 +271,12 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-5 rounded-xl transition-all duration-200 cursor-default ${
           checked
-            ? "bg-[var(--accent-weak)]"
+            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)]"
             : active
-              ? "bg-[var(--accent-weak)]"
-              : "hover:bg-[var(--shade-hover)]"
+              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)]"
+              : "hover:bg-[var(--shade-hover)] border border-transparent"
         }`}
         onClick={
           selection?.active
@@ -482,8 +482,12 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
-          checked || active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-5 rounded-xl transition-all duration-200 cursor-default ${
+          checked
+            ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)]"
+            : active
+              ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] border border-[var(--accent-soft)]"
+              : "hover:bg-[var(--shade-hover)] border border-transparent"
         } ${dead ? "opacity-45" : ""}`}
         onClick={
           selection?.active
@@ -729,7 +733,7 @@ export default function TrackList({
         createPortal(
           <div
             ref={menuRef}
-            className="fixed z-[75] w-[190px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
+            className="fixed z-[75] w-[190px] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu"
             style={{ left: menuX, top: menuY }}
             onMouseDown={(ev) => ev.stopPropagation()}
             onMouseLeave={() => setOnlineMenu(null)}
@@ -842,7 +846,7 @@ export default function TrackList({
         createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[75] w-[190px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
+          className="fixed z-[75] w-[190px] glass-strong !rounded-2xl p-1.5 shadow-2xl anim-menu"
           style={{ left: menuX, top: menuY }}
           onMouseDown={(ev) => ev.stopPropagation()}
           onMouseLeave={() => setMenu(null)}
@@ -993,7 +997,7 @@ export default function TrackList({
             value={newPlName}
             onChange={(e) => setNewPlName(e.target.value)}
             placeholder="新播放列表名称"
-            className="flex-1 h-9 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-3 text-[13px] focus:border-[var(--line)] outline-none"
+            className="flex-1 h-9 rounded-xl liquid-input px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none"
           />
           <button
             className="btn-secondary"

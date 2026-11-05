@@ -218,13 +218,10 @@ function VolumePopover({
     <>
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        className="absolute bottom-[48px] right-0 z-[61] w-11 rounded-2xl p-2 flex flex-col items-center gap-1.5 glass-strong"
-        style={{ boxShadow: "var(--bar-shadow)" }}
-      >
-        {/* 静音切换：记忆静音前的音量 */}
+      <div className="absolute bottom-[52px] right-0 z-[61] w-12 rounded-2xl p-2.5 flex flex-col items-center gap-2 glass-strong">
+        {/* 静音切换：液态小胶囊 */}
         <button
-          className="w-7 h-6 rounded-lg flex items-center justify-center text-[10px] font-semibold text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] transition-colors"
+          className="liquid-pill !py-0.5 !px-2 text-[10px] font-semibold text-[var(--ink)]"
           onClick={() => {
             onToggleMute();
           }}
@@ -233,7 +230,7 @@ function VolumePopover({
           {muted ? "有声" : "静音"}
         </button>
         <div
-          className="relative w-1.5 rounded-full bg-[var(--shade-strong)] cursor-pointer touch-none"
+          className="relative w-2 rounded-full bg-[var(--shade-strong)] border border-[var(--line)] cursor-pointer touch-none shadow-inner"
           style={{ height: H }}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
@@ -251,12 +248,13 @@ function VolumePopover({
           <div
             className="absolute left-0 right-0 bottom-0 rounded-full"
             style={{
-              height: Math.max(2, H - y),
+              height: Math.max(3, H - y),
               background: "linear-gradient(180deg, var(--accent-strong), var(--accent))",
+              boxShadow: "0 0 8px var(--accent-soft)",
             }}
           />
           <div
-            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow"
+            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.4),0_0_10px_var(--accent-soft)] border border-white/80"
             style={{ top: y }}
           />
         </div>
@@ -297,10 +295,7 @@ function SleepPopover({
     <>
       {/* 点击其他区域收起 */}
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
-      <div
-        className="absolute bottom-[48px] right-0 z-[61] w-[168px] rounded-2xl p-1.5 flex flex-col glass-strong"
-        style={{ boxShadow: "var(--bar-shadow)" }}
-      >
+      <div className="absolute bottom-[52px] right-0 z-[61] w-[172px] rounded-2xl p-2 flex flex-col glass-strong">
         {remainMin != null && (
           <div className="px-2.5 py-1 text-[11px] text-[var(--accent-strong)] font-semibold">
             剩余约 {remainMin} 分钟
@@ -309,7 +304,7 @@ function SleepPopover({
         {[15, 30, 45, 60, 90].map((m) => (
           <button
             key={m}
-            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left transition-colors"
             onClick={() => {
               onSet(m);
               onClose();
@@ -320,7 +315,7 @@ function SleepPopover({
         ))}
         <div className="my-1 h-px bg-[var(--line)]" />
         <button
-          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left ${
+          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left transition-colors ${
             stopAfterTrack ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
           }`}
           onClick={() => {
@@ -331,7 +326,7 @@ function SleepPopover({
           播完当前歌曲后停止
         </button>
         <button
-          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left ${
+          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left transition-colors ${
             stopAfterQueue ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
           }`}
           onClick={() => {
@@ -351,7 +346,7 @@ function SleepPopover({
             onChange={(e) => setCustom(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && applyCustom()}
             placeholder="自定义(分钟)"
-            className="w-full min-w-0 h-7 rounded-lg bg-[var(--shade)] border border-[var(--line)] px-2 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+            className="liquid-input w-full min-w-0 h-7 rounded-lg px-2 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
           />
           <button
             className="btn-secondary !py-1 !px-2 text-[11px] shrink-0 disabled:opacity-50"
@@ -364,7 +359,7 @@ function SleepPopover({
         </div>
         {(sleepAt != null || stopAfterTrack || stopAfterQueue) && (
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left transition-colors"
             onClick={() => {
               onSet(null);
               onMode(null);
@@ -426,10 +421,12 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
   const [sleepOpen, setSleepOpen] = useState(false);
 
   return (
-    // 与右侧内容区（玻璃卡片）对齐：左偏移侧栏宽度、右边距与卡片外边距一致
+    // 与右侧内容区（玻璃卡片）对齐：侧栏右缘 = ml-3(12) + w(242) = 254，
+    // 容器再让出自身 px-6(24)，Dock 左边缘恰好落在列表面板左边缘（278）上；
+    // 右边距与卡片外边距一致（均为 24）
     <div
-      className={`anim-bar absolute bottom-0 right-0 z-50 px-6 pb-4 pt-1 ${
-        centered ? "left-0" : "left-[236px]"
+      className={`anim-bar absolute bottom-0 right-0 z-50 pl-3 pr-2 pb-2 pt-1 ${
+        centered ? "left-0" : "left-[250px]"
       }`}
     >
       {download && (
@@ -454,13 +451,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       )}
 
       <div
-        className={`h-[64px] rounded-[18px] flex items-center pl-5 pr-6 gap-5 transition-opacity duration-300 ${
-          nowPlayingOpen ? "opacity-80 hover:opacity-100" : ""
+        className={`h-[70px] rounded-2xl flex items-center pl-5 pr-5 gap-5 transition-all duration-300 liquid-dock relative z-10 ${
+          nowPlayingOpen ? "opacity-90 hover:opacity-100" : ""
         }`}
-        style={{
-          background: "var(--bar-glass)",
-          boxShadow: "var(--bar-shadow)",
-        }}
       >
         {/* 曲目信息 */}
         <div className="flex items-center gap-4 w-[260px] min-w-[200px]">
@@ -475,10 +468,10 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   src={current.cover}
                   seed={current.title}
                   small
-                  className="w-[44px] h-[44px] rounded-[10px] shadow-[var(--cover-shadow-sm)]"
+                  className="w-[46px] h-[46px] rounded-xl shadow-[var(--cover-shadow-sm)] transition-transform group-hover:scale-105"
                   iconSize={20}
                 />
-                <div className="absolute inset-0 rounded-xl bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <div className="absolute inset-0 rounded-[13px] bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                   <ChevronUp
                     size={18}
                     className={`text-[var(--ink)] transition-transform ${nowPlayingOpen ? "rotate-180" : ""}`}
@@ -491,7 +484,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   <span className="truncate">{current.artist}</span>
                   {current.quality && (
                     <span
-                      className="shrink-0 text-[9.5px] font-semibold px-1.5 py-px rounded text-[var(--accent-strong)]"
+                      className="shrink-0 text-[9.5px] font-semibold px-2 py-0.5 rounded-full text-[var(--accent-strong)] border border-[var(--accent-soft)]"
                       style={{ background: "var(--accent-weak)" }}
                       title="当前播放音质"
                     >
@@ -650,7 +643,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           ) : (
             <>
               <div
-                className="w-[44px] h-[44px] rounded-[10px] flex items-center justify-center"
+                className="w-[44px] h-[44px] rounded-xl flex items-center justify-center"
                 style={{
                   background: "rgba(243,233,216,0.05)",
                   border: "1px solid var(--line)",
@@ -685,18 +678,14 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               <Rewind size={16} className="fill-current" />
             </button>
             <button
-              className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-[var(--accent-on)] hover:scale-105 active:scale-95 transition-transform"
-              style={{
-                background: "linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 60%, var(--accent) 120%)",
-                boxShadow: "0 6px 20px -4px var(--accent-soft)",
-              }}
+              className="w-[42px] h-[42px] play-btn shrink-0"
               onClick={togglePlay}
               title="播放 / 暂停（空格）"
             >
               {playing ? (
-                <Pause size={17} className="fill-current" />
+                <Pause size={18} className="fill-current" />
               ) : (
-                <Play size={17} className="fill-current ml-0.5" />
+                <Play size={18} className="fill-current ml-0.5" />
               )}
             </button>
             <button
@@ -764,6 +753,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           >
             {speed}x
           </button>
+
           {/* 音量：点击图标弹出音量条（弹窗内可静音，记住静音前的音量） */}
           <div className="relative flex items-center">
             <button

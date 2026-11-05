@@ -101,7 +101,11 @@ export default function SkinPicker({
         onClick={() => setSkin(key)}
         // pt-[56.25%] 撑出 16:9（aspect-ratio 在 WebKitGTK 的 button 上不可靠，
         // 高度会塌陷成 0 导致卡片内容相互叠压）；百分比 padding 全引擎行为一致
-        className="relative w-full pt-[56.25%] rounded-xl overflow-hidden text-left transition-all duration-200 hover:scale-[1.03] hover:shadow-lg"
+        className={`relative w-full pt-[56.25%] rounded-2xl overflow-hidden text-left transition-all duration-200 hover:scale-[1.03] ${
+          selected
+            ? "ring-2 ring-[var(--accent)] shadow-[0_0_16px_var(--accent-soft)]"
+            : "border border-white/15"
+        }`}
         style={bg}
         title={desc}
       >
@@ -201,7 +205,7 @@ export default function SkinPicker({
       </div>
       {/* 自定义皮肤设置区 */}
       {skin === CUSTOM_SKIN && activeImg && (
-        <div className="mt-3 p-4 rounded-xl bg-[var(--shade)] flex flex-col gap-3.5">
+        <div className="mt-3 p-4 rounded-2xl liquid-panel flex flex-col gap-3.5">
           <div className="flex items-center gap-3">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[64px] shrink-0">填充方式</span>
             <div className="flex gap-1">

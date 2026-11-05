@@ -396,8 +396,8 @@ export default function NavidromePanel() {
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center"
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "var(--shade)",
+              border: "1px solid var(--line)",
             }}
           >
             <Server size={26} className="text-[var(--ink-3)]" />
@@ -409,14 +409,14 @@ export default function NavidromePanel() {
               value={server}
               onChange={(e) => setServer(e.target.value)}
               placeholder="服务器地址（如 music.example.com 或 192.168.1.10:4533）"
-              className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
+              className="w-full h-10 rounded-xl liquid-input px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
             />
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="用户名"
-              className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
+              className="w-full h-10 rounded-xl liquid-input px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
             />
             <input
               type="password"
@@ -424,7 +424,7 @@ export default function NavidromePanel() {
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && connect()}
               placeholder="密码（保存在系统凭据管理器）"
-              className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
+              className="w-full h-10 rounded-xl liquid-input px-3.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
             />
             <button className="btn-primary h-10" onClick={connect} disabled={connecting}>
               {connecting ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
@@ -468,7 +468,7 @@ export default function NavidromePanel() {
                 onChange={(e) => setKw(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitSearch()}
                 placeholder="搜索服务器曲库…"
-                className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)]"
+                className="w-full h-10 rounded-xl liquid-input pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
               />
             </div>
             <button className="btn-primary h-10" onClick={submitSearch} disabled={loading}>

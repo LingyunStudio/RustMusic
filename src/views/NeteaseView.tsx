@@ -779,8 +779,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* 头部：标题 | 搜索 | 登录（同一行区域） */}
-      <header className="px-8 pt-7 pb-4">
+      {/* 玻璃面板（含头部）：右列卡片顶边与侧栏顶边齐平 */}
+      <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
+        <div className="relative liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* 头部：标题 | 搜索 | 登录（同一行区域） */}
+          <header className="px-5 pt-4 pb-4 shrink-0">
         <div className="flex items-end justify-between gap-5">
           <div className="min-w-0 anim-rise shrink-0">
             <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
@@ -823,7 +826,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       ? "搜索 QQ 音乐曲库…"
                       : "搜索酷狗曲库…"
                 }
-                className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
+                className="w-full h-10 rounded-2xl liquid-input pl-9 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--accent)] transition-all outline-none"
               />
             </div>
             <button
@@ -910,11 +913,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             )}
           </div>
         </div>
-      </header>
+          </header>
 
-      {/* 结果列表（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
-        <div className="relative glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* 结果列表 */}
           {/* 推荐横幅：随机歌单/榜单接管列表时的来源说明与操作 */}
           {rec && (
             <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--line)] shrink-0">
@@ -1041,7 +1042,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             </div>
           )}
           {rows.length > 0 && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
+            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-11 px-5 border-b border-[var(--line)] bg-[var(--liquid-glass-bg-subtle)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em] font-medium">
               <span className="text-center">序号</span>
               <span>歌曲</span>
               <span>专辑</span>

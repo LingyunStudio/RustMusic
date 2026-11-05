@@ -103,23 +103,45 @@ function DynamicBackdrop() {
           }}
         />
       )}
-      {/* 封面主色微光（低饱和、低调；皮肤上保留，让壁纸跟着音乐呼吸） */}
+      {/* 封面主色流体光池（多色池缓慢漫游，为液态玻璃提供呼吸折射源）。
+          v2：少而鲜艳 —— 光斑更聚焦、透明度更低，避免糊成灰雾；
+          清透玻璃靠这些色斑折射出层次 */}
       <div
-        className="absolute -top-64 left-[12%] w-[820px] h-[640px] transition-colors duration-1000"
+        className="anim-liquid-1 absolute -top-44 left-[6%] w-[760px] h-[600px] transition-colors duration-1000"
         style={{
           background:
-            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 60%)",
-          opacity: skinUrl ? 0.09 : 0.16,
-          filter: "blur(90px)",
+            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 62%)",
+          opacity: skinUrl ? 0.14 : "var(--blob-o1)",
+          filter: "blur(80px)",
         }}
       />
       <div
-        className="absolute -bottom-72 -right-48 w-[760px] h-[600px]"
+        className="anim-liquid-2 absolute -bottom-52 -right-28 w-[700px] h-[560px] transition-colors duration-1000"
         style={{
           background:
-            "radial-gradient(ellipse at center, var(--blob-warm) 0%, transparent 62%)",
-          opacity: skinUrl ? 0.1 : 0.18,
-          filter: "blur(100px)",
+            "radial-gradient(ellipse at center, var(--blob-warm) 0%, var(--accent-soft) 42%, transparent 70%)",
+          opacity: skinUrl ? 0.14 : "var(--blob-o2)",
+          filter: "blur(88px)",
+        }}
+      />
+      {/* 辅助色散液态光斑：增添色阶折射感 */}
+      <div
+        className="anim-liquid-3 absolute top-[22%] left-[38%] -translate-x-1/2 w-[560px] h-[480px] pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(circle at center, var(--blob-cyan) 0%, rgba(60, 180, 230, 0.25) 45%, transparent 70%)",
+          opacity: skinUrl ? 0.12 : "var(--blob-o3)",
+          filter: "blur(70px)",
+        }}
+      />
+      {/* 极简旋转流体波纹层 */}
+      <div
+        className="anim-liquid-caustics absolute -inset-[20%] pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 50% at 50% 50%, var(--blob-amber) 0%, transparent 75%)",
+          opacity: skinUrl ? 0.1 : "var(--blob-o4)",
+          filter: "blur(70px)",
         }}
       />
       {/* 暗角 + 噪点 */}
@@ -303,12 +325,7 @@ export default function App() {
         {/* 全屏播放时隐藏标题栏（窗口按钮随 setFullscreen 一并由系统隐藏）。
             占位 h-3：Titlebar 的拖拽热区已改为绝对覆盖层（不占布局），
             这里保留 12px 占位使内容区位置与原先完全一致 */}
-        {!fullscreen && (
-          <>
-            <Titlebar />
-            <div className="h-3 shrink-0" />
-          </>
-        )}
+        {!fullscreen && <Titlebar />}
 
         <div className="relative flex flex-1 min-h-0">
           <Sidebar />

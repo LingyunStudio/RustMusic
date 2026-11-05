@@ -377,7 +377,7 @@ function DesktopLyrics() {
         {!locked && (hover || DEBUG_HOVER) && (
           <div
             data-tauri-drag-region
-            className="mb-2 flex items-center gap-0.5 px-1.5 py-1 rounded-2xl pointer-events-auto z-10"
+            className="mb-2 flex items-center gap-0.5 px-2 py-1 rounded-2xl pointer-events-auto z-10 liquid-dock shadow-xl"
             style={{
               background: "rgba(20, 16, 12, 0.55)",
               border: "1px solid rgba(255,255,255,0.16)",
@@ -439,14 +439,16 @@ function DesktopLyrics() {
           </div>
         )}
         <div
-          className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-2xl pointer-events-none"
+          className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-2xl pointer-events-none transition-all duration-300"
           style={{
             background: TRANSPARENT
               ? hover
-                ? "rgba(14, 10, 6, 0.55)"
+                ? "var(--liquid-glass-bg-subtle, rgba(20, 16, 12, 0.45))"
                 : "transparent"
               : "transparent",
-            border: TRANSPARENT && hover ? "1px solid rgba(255,255,255,0.14)" : "1px solid transparent",
+            backdropFilter: TRANSPARENT && hover ? "blur(20px) saturate(180%)" : undefined,
+            border: TRANSPARENT && hover ? "1px solid var(--liquid-glass-border, rgba(255,255,255,0.14))" : "1px solid transparent",
+            boxShadow: TRANSPARENT && hover ? "var(--liquid-glass-shadow-sm, 0 8px 32px rgba(0,0,0,0.25))" : undefined,
           }}
         >
         {data.synced && active ? (

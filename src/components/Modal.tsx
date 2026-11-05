@@ -14,23 +14,23 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
   if (!open) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 anim-fade"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-md anim-fade"
       onMouseDown={onClose}
     >
       <div
-        className="glass-strong rounded-2xl shadow-2xl anim-np overflow-hidden"
+        className="liquid-card shadow-2xl anim-np overflow-hidden"
         style={{ width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {title && (
-          <div className="flex items-center justify-between px-5 pt-4 pb-3">
-            <span className="font-semibold text-[15px]">{title}</span>
-            <button className="btn-ghost w-7 h-7" onClick={onClose}>
+          <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-[var(--line)]">
+            <span className="font-bold text-[15px] text-[var(--ink)] tracking-wide">{title}</span>
+            <button className="btn-ghost w-8 h-8 rounded-full" onClick={onClose}>
               <X size={15} />
             </button>
           </div>
         )}
-        <div className="px-5 pb-5">{children}</div>
+        <div className="px-6 py-5">{children}</div>
       </div>
     </div>,
     document.body

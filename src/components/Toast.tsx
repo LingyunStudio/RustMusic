@@ -6,12 +6,12 @@ export default function ToastContainer() {
   const dismiss = useStore((s) => s.dismissToast);
   if (!toasts.length) return null;
   return (
-    <div className="fixed right-5 bottom-[112px] z-[90] flex flex-col gap-2 items-end">
+    <div className="fixed right-2 bottom-[104px] z-[90] flex flex-col gap-2 items-end">
       {toasts.map((t) => (
         <div
           key={t.id}
           onClick={() => dismiss(t.id)}
-          className="glass-strong rounded-xl px-4 py-2.5 flex items-center gap-2.5 text-[13px] shadow-xl anim-toast cursor-pointer max-w-[380px]"
+          className="liquid-dock !rounded-2xl px-4 py-2.5 flex items-center gap-2.5 text-[13px] shadow-2xl anim-toast cursor-pointer max-w-[380px] hover:scale-102 transition-transform"
         >
           {t.type === "error" ? (
             <AlertCircle size={15} className="text-rose-400 shrink-0" />

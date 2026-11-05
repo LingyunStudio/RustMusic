@@ -246,15 +246,15 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-5 pt-5 pb-[92px]">
-      <h1 className="text-[22px] font-bold flex items-center gap-2.5 mb-5">
-        <SettingsIcon size={20} className="text-[var(--accent)]" />
+    <div className="flex-1 min-h-0 overflow-y-auto pl-3 pr-2 pt-2 pb-40">
+      <h1 className="text-[24px] font-bold flex items-center gap-3 mb-6 text-[var(--ink)] tracking-tight">
+        <SettingsIcon size={22} className="text-[var(--accent)]" />
         设置
       </h1>
 
-      <div className="flex flex-col gap-4 max-w-[760px]">
+      <div className="flex flex-col gap-4 max-w-[820px]">
         {/* 通用 */}
-        <section style={{ ["--row-idx" as string]: 0 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 0 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">通用</h2>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">关闭窗口时</span>
@@ -288,7 +288,7 @@ export default function SettingsView() {
         </section>
 
         {/* 外观 */}
-        <section style={{ ["--row-idx" as string]: 1 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 1 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">外观</h2>
           <div className="flex items-center gap-4 mb-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">界面模式</span>
@@ -546,7 +546,7 @@ export default function SettingsView() {
         </section>
 
         {/* 音乐文件夹 */}
-        <section style={{ ["--row-idx" as string]: 2 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 2 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[14.5px] font-semibold">音乐文件夹</h2>
             <div className="flex items-center gap-2">
@@ -571,7 +571,7 @@ export default function SettingsView() {
               {folders.map((f) => (
                 <div
                   key={f.id}
-                  className="flex items-center gap-2.5 h-11 px-3 rounded-lg bg-white/[0.03] hover:bg-[var(--shade)] transition-colors"
+                  className="flex items-center gap-2.5 h-11 px-3 rounded-lg bg-[var(--shade)] hover:bg-[var(--shade-hover)] transition-colors"
                 >
                   <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
                   <span
@@ -611,7 +611,7 @@ export default function SettingsView() {
         </section>
 
         {/* 均衡器 */}
-        <section style={{ ["--row-idx" as string]: 3 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 3 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[14.5px] font-semibold">
               均衡器
@@ -670,7 +670,7 @@ export default function SettingsView() {
         </section>
 
         {/* 播放 */}
-        <section style={{ ["--row-idx" as string]: 4 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 4 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
           <div className="flex items-center gap-4 mb-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">在线音质</span>
@@ -716,7 +716,7 @@ export default function SettingsView() {
         </section>
 
         {/* 输出设备 */}
-        <section style={{ ["--row-idx" as string]: 5 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 5 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[14.5px] font-semibold">输出设备</h2>
             <button
@@ -783,7 +783,7 @@ export default function SettingsView() {
         </section>
 
         {/* 下载目录 */}
-        <section style={{ ["--row-idx" as string]: 6 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 6 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-3">下载保存目录</h2>
           <div className="flex items-center gap-3">
             <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
@@ -818,7 +818,7 @@ export default function SettingsView() {
         </section>
 
         {/* 缓存 */}
-        <section style={{ ["--row-idx" as string]: 7 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 7 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-2">缓存</h2>
           <div className="flex items-center gap-4 mb-3">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">当前占用</span>
@@ -862,7 +862,7 @@ export default function SettingsView() {
         </section>
 
         {/* 关于与更新 */}
-        <section style={{ ["--row-idx" as string]: 8 }} className="anim-row glass rounded-2xl p-5">
+        <section style={{ ["--row-idx" as string]: 8 }} className="anim-row liquid-panel !rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-3">关于与更新</h2>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">当前版本</span>

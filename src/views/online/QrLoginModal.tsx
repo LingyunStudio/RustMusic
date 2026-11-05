@@ -216,7 +216,7 @@ export function QrLoginModal({
     <Modal open={open} onClose={onClose} title={`扫码登录${sourceName}`} width={360}>
       <div className="flex flex-col items-center gap-4 py-2">
         {source === "qq" && (
-          <div className="flex gap-1 rounded-lg bg-[var(--shade)] p-1">
+          <div className="flex gap-1 rounded-xl liquid-input p-1">
             {(["qq", "wx"] as QqMode[]).map((m) => (
               <button
                 key={m}

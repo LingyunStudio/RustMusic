@@ -37,8 +37,8 @@ export function BiliSpaceCard({
       <div
         key={r.rid}
         data-now-playing={active ? "1" : undefined}
-        className={`group cursor-pointer rounded-xl p-1.5 transition-colors ${
-          checked ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade)]"
+        className={`group cursor-pointer rounded-2xl p-2 transition-all duration-200 ${
+          checked ? "bg-[var(--accent-weak)] border border-[var(--accent-soft)] shadow-sm" : "hover:bg-[var(--shade-hover)] border border-transparent"
         }`}
         onContextMenu={onContextMenu}
         onClick={onCardClick}

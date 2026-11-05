@@ -144,7 +144,17 @@ export function applyAccent(key: string) {
     : ACCENTS.find((a) => a.key === key) ?? ACCENTS[0];
   const root = document.documentElement.style;
   root.setProperty("--accent", acc.base);
-  root.setProperty("--accent-strong", acc.strong);
+  // strong 档按主题派生：暗色主题用亮档（浅色文字/渐变高光）；
+  // 浅色主题改用深档 —— 亮琥珀类颜色在浅色玻璃上对比度不足（发白），
+  // 深档保证激活态文字、进度条、歌词染色等在浅色场景下依旧清晰
+  const isLight = document.documentElement.dataset.theme === "light";
+  const [h, s, l] = hexToHsl(acc.base);
+  root.setProperty(
+    "--accent-strong",
+    isLight
+      ? hslToHex(h, Math.min(s * 1.04, 1), Math.max(l - 0.12, 0.3))
+      : acc.strong
+  );
   root.setProperty("--accent-soft", `rgba(${hexToRgb(acc.base).join(", ")}, 0.35)`);
   root.setProperty("--accent-weak", `rgba(${hexToRgb(acc.base).join(", ")}, 0.14)`);
   // 浅色模式按钮文字对比色

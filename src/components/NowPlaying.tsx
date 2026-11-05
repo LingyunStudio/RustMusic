@@ -377,23 +377,23 @@ export default function NowPlaying() {
           <Music4 size={14} />
           正在播放
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full liquid-dock shadow-lg">
           <button
-            className="btn-ghost w-10 h-10 !rounded-full"
+            className="btn-ghost w-9 h-9 !rounded-full"
             onClick={() => toggleFullscreen()}
             title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
           >
-            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
           <button
-            className="btn-ghost w-10 h-10 !rounded-full"
+            className="btn-ghost w-9 h-9 !rounded-full"
             onClick={() => {
               if (fullscreen) toggleFullscreen(false);
               setNowPlayingOpen(false);
             }}
             title="收起播放页"
           >
-            <ChevronDown size={20} />
+            <ChevronDown size={19} />
           </button>
         </div>
       </div>
@@ -402,9 +402,9 @@ export default function NowPlaying() {
       <div className="relative flex gap-14 px-14 pb-8 items-stretch h-[calc(100%-96px)]">
         {/* 左：封面 */}
         <div className="w-[40%] max-w-[440px] flex flex-col items-center justify-center gap-5">
-          <div className="relative">
+          <div className="relative group">
             <div
-              className="absolute -inset-10 rounded-[48px] opacity-40 blur-3xl transition-colors duration-1000"
+              className="absolute -inset-10 rounded-[48px] opacity-50 blur-3xl transition-all duration-1000"
               style={{
                 background: coverUrl
                   ? `url(${coverUrl}) center/cover`
@@ -414,7 +414,7 @@ export default function NowPlaying() {
             <CoverImg
               src={current.cover}
               seed={current.title}
-              className="w-[min(36vh,340px)] h-[min(36vh,340px)] rounded-[28px] shadow-[var(--cover-shadow-lg)] relative"
+              className="w-[min(38vh,360px)] h-[min(38vh,360px)] rounded-[32px] shadow-[var(--cover-shadow-lg)] relative ring-1 ring-white/30 transition-transform duration-500 group-hover:scale-[1.02]"
               iconSize={56}
             />
           </div>
@@ -636,8 +636,8 @@ export default function NowPlaying() {
           </div>
         </div>
 
-        {/* 右：歌词 */}
-        <div className="flex-1 min-w-0 relative">
+        {/* 右：歌词（极简通透流体悬浮，告别生硬矩形卡片） */}
+        <div className="flex-1 min-w-0 relative h-full flex flex-col justify-center px-4 overflow-hidden">
           {/* 柔边遮罩：对比不足时垫在歌词后面（颜色/浓度由配色策略给出），
               radial 软边缘不产生生硬矩形感 */}
           {scrim && (
