@@ -105,11 +105,19 @@ fn quality_audit_all_sources() {
         );
         for q in ["standard", "high", "lossless", "hires"] {
             match crate::qq::song_url(&s.id, &s.media_mid, &musicid, &musickey, q, s.vip) {
-                Ok((url, ext, label)) => println!(
-                    "  {q:<10} ✓ [{label}] ext={ext} url={}",
-                    &url[..url.len().min(55)]
-                ),
-                Err(e) => println!("  {q:<10} ✗ {e}"),
+                Ok((url, ext, label)) => {
+                    // 播放时失败排查：取链成功后按引擎同款（无 Referer）实测可下载性
+                    let dl = ureq::get(&url)
+                        .timeout(std::time::Duration::from_secs(10))
+                        .call();
+                    let dl_status = match &dl {
+                        Ok(r) => format!("HTTP {} ({} bytes)", r.status(), r.header("content-length").unwrap_or("?")),
+                        Err(ureq::Error::Status(code, _)) => format!("HTTP {code}"),
+                        Err(e) => format!("传输错误: {e}"),
+                    };
+                    println!("  {q:<10} 取链✓ [{label}] ext={ext} 下载: {dl_status}");
+                }
+                Err(e) => println!("  {q:<10} ✗ 取链失败: {e}"),
             }
         }
         println!("  ---");

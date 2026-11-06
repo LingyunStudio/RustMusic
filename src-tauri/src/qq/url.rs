@@ -115,12 +115,24 @@ pub fn song_url(
     let mut last_resp = String::new();
     // 所有尝试都返回 code==0（会话有效、接口无异常）但始终没有链接
     let mut all_ok_but_no_url = true;
+    // 每档可带多个文件名候选（对 RS01 尤其重要：Hi-Res 文件的 mediaMid
+    // 与 songmid 常不相同，搜索通道（soso）又不返回 file.mediaMid——
+    // 双拼文件名 M500/M800/F000 能被服务端模糊解析，RS01 的 CDN 则
+    // 严格 404（issue：选 Hi-Res 播放失败）。因此 media_mid 缺失时
+    // RS01 档同时尝试"单 mid"与"双拼"两种文件名）
+    let mut rungs: Vec<(String, &str, &'static str)> = Vec::new();
     for (prefix, ext, label) in ladder {
-        let file_base = if media_mid.is_empty() {
+        let base_double = if media_mid.is_empty() {
             format!("{songmid}{songmid}")
         } else {
             format!("{media_mid}{songmid}")
         };
+        if prefix == "RS01" && media_mid.is_empty() {
+            rungs.push((format!("{prefix}{songmid}"), ext, label));
+        }
+        rungs.push((format!("{prefix}{base_double}"), ext, label));
+    }
+    for (file_base, ext, label) in rungs {
         let payload = serde_json::json!({
             "comm": {"ct": 19, "cv": 1859},
             "req_1": {
@@ -128,7 +140,7 @@ pub fn song_url(
                 "method": "UrlGetVkey",
                 "param": {
                     "uin": musicid,
-                    "filename": [format!("{prefix}{file_base}.{ext}")],
+                    "filename": [format!("{file_base}.{ext}")],
                     "guid": guid(),
                     "songmid": [songmid],
                     "songtype": [0],
@@ -172,6 +184,24 @@ pub fn song_url(
                     .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
                 format!("{}{}", sip, purl)
             };
+            // RS01 档 purl 必须实测可下载才接受：Hi-Res 文件的 mediaMid 与
+            // songmid 常不相同，搜索通道又拿不到 file.mediaMid，请求文件名
+            // 只能猜测——服务端可能模糊匹配出一个不存在的文件（purl 非空
+            // 但下载 404），若照单全收，播放会失败而不是降档（issue：选
+            // Hi-Res 播放失败）。4xx 视为本档无文件，沿阶梯继续回落。
+            if label == "Hi-Res" {
+                let probe = ureq::get(&url)
+                    .timeout(std::time::Duration::from_secs(8))
+                    .call();
+                if let Err(ureq::Error::Status(code, _)) = &probe {
+                    if *code >= 400 {
+                        eprintln!("[qq] RS01 purl 探测 HTTP {code}，该曲无可用 Hi-Res 文件，降档");
+                        all_ok_but_no_url = false;
+                        last_resp = serde_json::to_string(&resp).unwrap_or_default();
+                        continue;
+                    }
+                }
+            }
             return Ok((url, ext.to_string(), label));
         }
         last_resp = serde_json::to_string(&resp).unwrap_or_default();
