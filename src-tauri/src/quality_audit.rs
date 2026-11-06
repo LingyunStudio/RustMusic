@@ -111,6 +111,11 @@ fn quality_audit_all_sources() {
             "样曲 {} - {} vip={} mid={} mediaMid={} song_id={}",
             s.name, s.singer, s.vip, s.id, s.media_mid, s.song_id
         );
+        // RS01 vkey 响应全量 dump（真实文件名 / sip 列表 / 逐 sip 下载）
+        if s.vip {
+            crate::qq::hires_dump(&s.id, &musicid, &musickey);
+        }
+
         // 匿名单曲详情：真实 media_mid + size_hires
         let detail_file = crate::qq::song_detail_file(&s.id, &qq_cookie).unwrap_or_default();
         let detail_mm = detail_file
@@ -165,7 +170,7 @@ fn quality_audit_all_sources() {
             }
         }
 
-        for q in ["standard", "high", "lossless", "hires"] {
+        {
             let payload = serde_json::json!({
                 "comm": {"ct": 19, "cv": 1859, "uin": musicid},
                 "req_1": {

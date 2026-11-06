@@ -90,7 +90,7 @@ pub fn song_url(
     // 自动沿阶梯回落。
     // 注意：臻品母带（RS02，.mflac2）与臻品全景声是 QMCv2 加密流，明文
     // 播放管线无法直接交付，未提供对应档位（需 ekey 解密管线后接入）。
-    let ladder: Vec<(&str, &str, &'static str)> = match quality {
+    let mut ladder: Vec<(&str, &str, &'static str)> = match quality {
         "master" | "atmos" => vec![
             // 历史设置值兼容：按 Hi-Res 取（母带/全景声需解密支持后再开档）
             ("RS01", "flac", "Hi-Res"),
@@ -115,70 +115,133 @@ pub fn song_url(
     let mut last_resp = String::new();
     // 所有尝试都返回 code==0（会话有效、接口无异常）但始终没有链接
     let mut all_ok_but_no_url = true;
-    // 每档可带多个文件名候选（对 RS01 尤其重要：Hi-Res 文件的 mediaMid
-    // 与 songmid 常不相同，搜索通道（soso）又不返回 file.mediaMid——
-    // 双拼文件名 M500/M800/F000 能被服务端模糊解析，RS01 的 CDN 则
-    // 严格 404（issue：选 Hi-Res 播放失败）。因此 media_mid 缺失时
-    // RS01 档同时尝试"单 mid"与"双拼"两种文件名）
-    // Hi-Res 档先查匿名单曲详情：拿到真实 media_mid（与 songmid 不同！）
-    // 并预判该曲有无 Hi-Res 文件（size_hires=0 直接跳过 RS01，省一次 404）
-    // detail_ok=true：详情拿到了（size_hires 如实）；detail_failed=true：详情请求失败（保留猜测候选+探测兜底）
-    let (hires_media_mid, detail_says_no_hires, _detail_failed) =
-        if ladder.iter().any(|(p, _, _)| *p == "RS01") {
-            match song_detail_file(songmid, &credential_cookie(musicid, musickey)) {
-                Ok(f) => {
-                    let size = f.get("size_hires").and_then(|v| v.as_u64()).unwrap_or(0);
-                    if size == 0 {
-                        (None, true, false)
-                    } else {
-                        let mm = f
-                            .get("media_mid")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        (Some(mm), false, false)
+
+    // ---------- Hi-Res（RS01）专用：一次 GetVkey 带全部文件名候选 ----------
+    // Hi-Res 文件的 media_mid 与 songmid 不同，且搜索/详情等元数据通道
+    // 都拿不到分档 mediaMid、sip 列表也可能为空——因此把候选文件名批量
+    // 发给 GetVkey（filename 本就是数组），逐个 midurlinfo 试，再用多
+    // CDN 基址探测下载（ws.stream 上没有 Hi-Res 文件，实测 404）。
+    let ladder_has_hires = ladder.iter().any(|(p, _, _)| *p == "RS01");
+    if ladder_has_hires {
+        let detail_mm = song_detail_file(songmid, &credential_cookie(musicid, musickey))
+            .ok()
+            .and_then(|f| {
+                f.get("media_mid")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.is_empty())
+            });
+        // 候选文件基（去重）：真实 media_mid 优先（双拼/单拼），再猜 songmid
+        let mut bases: Vec<String> = Vec::new();
+        if let Some(mm) = &detail_mm {
+            bases.push(format!("RS01{mm}{songmid}"));
+            if mm != songmid {
+                bases.push(format!("RS01{mm}"));
+            }
+        }
+        bases.push(format!("RS01{songmid}{songmid}"));
+        bases.push(format!("RS01{songmid}"));
+        bases.dedup();
+
+        let filenames: Vec<String> = bases.iter().map(|b| format!("{b}.flac")).collect();
+        let payload = serde_json::json!({
+            "comm": {"ct": 19, "cv": 1859},
+            "req_1": {
+                "module": "music.vkey.GetVkey",
+                "method": "UrlGetVkey",
+                "param": {
+                    "uin": musicid,
+                    "filename": filenames,
+                    "guid": guid(),
+                    "songmid": [songmid],
+                    "songtype": [0],
+                    "ctx": 0,
+                }
+            }
+        });
+        let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
+        if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) == Some(104009) {
+            return Err("QQ 音乐登录已过期，请重新登录".into());
+        }
+        let infos = resp
+            .pointer("/req_1/data/midurlinfo")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for mi in &infos {
+            let purl = mi.get("purl").and_then(|p| p.as_str()).unwrap_or("");
+            if purl.is_empty() {
+                continue;
+            }
+            let url = if purl.starts_with("http") {
+                purl.to_string()
+            } else {
+                let sip = resp
+                    .pointer("/req_1/data/sip")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| {
+                        let list: Vec<&str> =
+                            a.iter().filter_map(|v| v.as_str()).collect();
+                        list.iter()
+                            .copied()
+                            .find(|s| s.starts_with("https"))
+                            .or_else(|| list.iter().copied().find(|s| s.starts_with("http")))
+                            .map(|s| s.to_string())
+                    })
+                    .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
+                format!("{sip}{purl}")
+            };
+            // CDN 基址探测：Hi-Res 不在 ws.stream 上（实测 404），逐基址试
+            let mut candidates: Vec<String> = vec![url.clone()];
+            for base in [
+                "https://isure.stream.qqmusic.qq.com/",
+                "https://dl.stream.qqmusic.qq.com/",
+                "https://aqqmusic.tc.qq.com/amobile.music.tc.qq.com/",
+                "https://ws.stream.qqmusic.qq.com/",
+                "http://dl.stream.qqmusic.qq.com/",
+                "http://ws.stream.qqmusic.qq.com/",
+                "http://aqqmusic.tc.qq.com/amobile.music.tc.qq.com/",
+            ] {
+                let cand = format!("{base}{purl}");
+                if !candidates.contains(&cand) {
+                    candidates.push(cand);
+                }
+            }
+            let mut picked: Option<String> = None;
+            for cand in &candidates {
+                match ureq::get(cand).timeout(std::time::Duration::from_secs(8)).call() {
+                    Ok(_) => {
+                        // ureq 仅对 2xx 返回 Ok
+                        picked = Some(cand.clone());
+                        break;
+                    }
+                    // 4xx/5xx：该基址无此文件，试下一个基址
+                    Err(ureq::Error::Status(_, _)) => continue,
+                    // 传输错误无法验证：接受当前候选，交给播放端处理
+                    Err(_) => {
+                        picked = Some(cand.clone());
+                        break;
                     }
                 }
-                Err(_) => (None, false, true),
             }
-        } else {
-            (None, false, false)
-        };
+            if let Some(u) = picked {
+                return Ok((u, "flac".to_string(), "Hi-Res"));
+            }
+            eprintln!("[qq] RS01 候选在全部 CDN 基址上均 4xx，降档");
+        }
+        // Hi-Res 全部候选失败：移除 RS01 继续降档到无损及以下
+        all_ok_but_no_url = false;
+        ladder.retain(|(p, _, _)| *p != "RS01");
+    }
+
     let mut rungs: Vec<(String, &str, &'static str)> = Vec::new();
     for (prefix, ext, label) in ladder {
-        if prefix == "RS01" && detail_says_no_hires {
-            // 详情确认该曲没有 Hi-Res 文件：跳过 RS01，直接降档
-            continue;
-        }
-        let mut bases: Vec<String> = Vec::new();
-        if prefix == "RS01" {
-            if let Some(mm) = &hires_media_mid {
-                // 真实 media_mid：双拼与单 mid 都试
-                bases.push(format!("{prefix}{mm}{songmid}"));
-                bases.push(format!("{prefix}{mm}"));
-            } else {
-                // 详情失败（探测兜底）：猜测候选
-                let base_double = if media_mid.is_empty() {
-                    format!("{songmid}{songmid}")
-                } else {
-                    format!("{media_mid}{songmid}")
-                };
-                if media_mid.is_empty() {
-                    bases.push(format!("{prefix}{songmid}"));
-                }
-                bases.push(format!("{prefix}{base_double}"));
-            }
+        let base = if media_mid.is_empty() {
+            format!("{songmid}{songmid}")
         } else {
-            let base = if media_mid.is_empty() {
-                format!("{songmid}{songmid}")
-            } else {
-                format!("{media_mid}{songmid}")
-            };
-            bases.push(format!("{prefix}{base}"));
-        }
-        for b in bases {
-            rungs.push((b, ext, label));
-        }
+            format!("{media_mid}{songmid}")
+        };
+        rungs.push((format!("{prefix}{base}"), ext, label));
     }
     for (file_base, ext, label) in rungs {
         let payload = serde_json::json!({
@@ -197,8 +260,6 @@ pub fn song_url(
             }
         });
         let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
-        // 104009 = 会话无效（未登录 / musickey 已过期）。
-        // 换音质也无法挽回，立即中止并让前端引导重新登录。
         if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) == Some(104009) {
             return Err("QQ 音乐登录已过期，请重新登录".into());
         }
@@ -213,8 +274,6 @@ pub fn song_url(
             let url = if purl.starts_with("http") {
                 purl.to_string()
             } else {
-                // 优先 https 流媒体前缀（接口可能同时返回 http/https 两个前缀），
-                // 明文前缀仅作无 https 时的回落；基址回落同样走 https
                 let sip = resp
                     .pointer("/req_1/data/sip")
                     .and_then(|v| v.as_array())
@@ -224,32 +283,12 @@ pub fn song_url(
                         list.iter()
                             .copied()
                             .find(|s| s.starts_with("https"))
-                            .or_else(|| {
-                                list.iter().copied().find(|s| s.starts_with("http"))
-                            })
+                            .or_else(|| list.iter().copied().find(|s| s.starts_with("http")))
                             .map(|s| s.to_string())
                     })
                     .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
-                format!("{}{}", sip, purl)
+                format!("{sip}{purl}")
             };
-            // RS01 档 purl 必须实测可下载才接受：Hi-Res 文件的 mediaMid 与
-            // songmid 常不相同，搜索通道又拿不到 file.mediaMid，请求文件名
-            // 只能猜测——服务端可能模糊匹配出一个不存在的文件（purl 非空
-            // 但下载 404），若照单全收，播放会失败而不是降档（issue：选
-            // Hi-Res 播放失败）。4xx 视为本档无文件，沿阶梯继续回落。
-            if label == "Hi-Res" {
-                let probe = ureq::get(&url)
-                    .timeout(std::time::Duration::from_secs(8))
-                    .call();
-                if let Err(ureq::Error::Status(code, _)) = &probe {
-                    if *code >= 400 {
-                        eprintln!("[qq] RS01 purl 探测 HTTP {code}，该曲无可用 Hi-Res 文件，降档");
-                        all_ok_but_no_url = false;
-                        last_resp = serde_json::to_string(&resp).unwrap_or_default();
-                        continue;
-                    }
-                }
-            }
             return Ok((url, ext.to_string(), label));
         }
         last_resp = serde_json::to_string(&resp).unwrap_or_default();
@@ -294,6 +333,65 @@ pub fn song_detail_file(songmid: &str, cookie: &str) -> Result<serde_json::Value
         None => v.get("data").cloned().unwrap_or_default(),
     };
     Ok(data.get("file").cloned().unwrap_or_default())
+}
+
+/// 审计探针：dump Hi-Res vkey 响应的关键字段 + 逐个 sip 试下载
+pub fn hires_dump(songmid: &str, musicid: &str, musickey: &str) {
+    let payload = serde_json::json!({
+        "comm": {"ct": 19, "cv": 1859},
+        "req_1": {
+            "module": "music.vkey.GetVkey",
+            "method": "UrlGetVkey",
+            "param": {
+                "uin": musicid,
+                "filename": [format!("RS01{songmid}{songmid}.flac")],
+                "guid": guid(),
+                "songmid": [songmid],
+                "songtype": [0],
+                "ctx": 0,
+            }
+        }
+    });
+    let resp = match musicu_signed(&payload, Some(&credential_cookie(musicid, musickey))) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("  [dump] 签名请求失败: {e}");
+            return;
+        }
+    };
+
+    println!(
+        "  [dump] req_1.code={:?}",
+        resp.pointer("/req_1/code").cloned().unwrap_or_default()
+    );
+    let mi = resp.pointer("/req_1/data/midurlinfo/0").cloned().unwrap_or_default();
+    println!(
+        "  [dump] midurlinfo[0].filename={:?} purl={:?}",
+        mi.get("filename").and_then(|f| f.as_str()),
+        mi.get("purl").and_then(|p| p.as_str()).map(|s| &s[..s.len().min(70)])
+    );
+    let sips: Vec<String> = resp
+        .pointer("/req_1/data/sip")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    println!("  [dump] sip 列表: {sips:?}");
+    let purl = mi.get("purl").and_then(|p| p.as_str()).unwrap_or("");
+    if purl.is_empty() {
+        return;
+    }
+    for sip in &sips {
+        if sip.is_empty() {
+            continue;
+        }
+        let url = format!("{sip}{purl}");
+        let st = match ureq::get(&url).timeout(std::time::Duration::from_secs(8)).call() {
+            Ok(r) => format!("HTTP {} len={}", r.status(), r.header("content-length").unwrap_or("?")),
+            Err(ureq::Error::Status(c, _)) => format!("HTTP {c}"),
+            Err(e) => format!("传输: {e}"),
+        };
+        println!("  [dump] sip={sip} → {st}");
+    }
 }
 
 /// 审计探针：以任意文件名请求 GetVkey，返回拼好的 purl（不探测下载）
