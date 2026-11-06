@@ -90,6 +90,22 @@ fn song_url_v5(
             l.push(("128", hash, "标准"));
             l
         }
+        // 超品母带档（豪华VIP）：super 参数优先，回落 Hi-Res 及以下
+        "master" => {
+            let mut l = Vec::new();
+            if !super_hash.is_empty() {
+                l.push(("super", super_hash, "超品母带"));
+                l.push(("high", super_hash, "Hi-Res"));
+            }
+            if !sq_hash.is_empty() {
+                l.push(("flac", sq_hash, "无损"));
+            }
+            if !hq_hash.is_empty() {
+                l.push(("320", hq_hash, "HQ"));
+            }
+            l.push(("128", hash, "标准"));
+            l
+        }
         // 无损档：16bit FLAC 封顶，只向下回退
         "lossless" => {
             let mut l = Vec::new();

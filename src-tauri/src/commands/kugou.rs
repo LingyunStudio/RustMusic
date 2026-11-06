@@ -174,6 +174,8 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     )?;
     let fallback_reason = if token.is_empty() {
         "酷狗未登录，匿名通道仅提供标准音质".to_string()
+    } else if quality == "master" && quality_label != "超品母带" {
+        "账号权益未含超品母带或该曲无母带版本".to_string()
     } else if quality == "hires" && quality_label != "Hi-Res" {
         match crate::kugou::last_hires_error() {
             Some(e) => format!("Hi-Res 请求被服务端拒绝（{e}），已回退"),

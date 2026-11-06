@@ -362,7 +362,24 @@ pub fn song_url(
     // 仍逐级回退到 standard 兜底。hires 档（黑胶 SVIP Hi-Res）也纳入阶梯
     // 设置档位 = 上限：无损档不含 hires level（此前两档共用 hires 优先
     // 链，权益够时选“无损”也会下发 Hi-Res，档位失去意义）
+    // 官方 App 档位：标准128k / 较高192k / 极高320k / 无损 / Hi-Res /
+    // 超清母带（jymaster，黑胶SVIP）/ 沉浸环绕声（sky，黑胶SVIP）。
+    // 设置档位 = 上限，权益不足沿阶梯向下回落。
     let levels: Vec<(&str, i64)> = match quality {
+        "jymaster" => vec![
+            ("jymaster", 1999_000),
+            ("hires", 1999_000),
+            ("lossless", 999_000),
+            ("exhigh", 320_000),
+            ("standard", 128_000),
+        ],
+        "sky" => vec![
+            ("sky", 1999_000),
+            ("hires", 1999_000),
+            ("lossless", 999_000),
+            ("exhigh", 320_000),
+            ("standard", 128_000),
+        ],
         "hires" => vec![
             ("hires", 1999_000),
             ("lossless", 999_000),
@@ -372,10 +389,17 @@ pub fn song_url(
         "lossless" => vec![
             ("lossless", 999_000),
             ("exhigh", 320_000),
+            ("higher", 192_000),
             ("standard", 128_000),
         ],
+        "higher" => vec![("higher", 192_000), ("standard", 128_000)],
         "standard" => vec![("standard", 128_000)],
-        _ => vec![("exhigh", 320_000), ("standard", 128_000)],
+        // high = 极高 320k（旧键名保留兼容）
+        _ => vec![
+            ("exhigh", 320_000),
+            ("higher", 192_000),
+            ("standard", 128_000),
+        ],
     };
     // 匿名只请求 standard：更高档位没有权益必然降级，白耗一次往返
     let levels: Vec<(&str, i64)> = if music_u.is_none() {

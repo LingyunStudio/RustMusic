@@ -87,10 +87,14 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
             "账号权益未含无损或该曲无 flac",
         );
     }
-    // 请求 Hi-Res/甄品母带但实际交付更低档位：明确告知（阶梯已自动回落）
-    if (quality_setting == "hires" && quality_label != "Hi-Res" && quality_label != "甄品母带")
-        || (quality_setting == "master" && quality_label != "甄品母带")
-    {
+    // 请求 Hi-Res/臻品母带但实际交付更低档位：明确告知（阶梯已自动回落）
+    let delivered_ok = match quality_setting.as_str() {
+        "master" => quality_label == "臻品母带",
+        "atmos" => quality_label == "臻品全景声",
+        "hires" => quality_label == "Hi-Res" || quality_label == "臻品母带",
+        _ => true,
+    };
+    if !delivered_ok {
         notify_quality_fallback(
             app,
             "QQ 音乐",

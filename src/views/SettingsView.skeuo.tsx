@@ -682,7 +682,7 @@ export default function SettingsView() {
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "较高", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }
+                  { value: "standard", label: "标准", desc: "128k" }, { value: "higher", label: "较高", desc: "192k" }, { value: "high", label: "极高", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }, { value: "jymaster", label: "超清母带", desc: "黑胶SVIP" }, { value: "sky", label: "沉浸环绕声", desc: "黑胶SVIP" }
                 ] as const
               ).map((o) => (
                 <button
@@ -701,11 +701,11 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">QQ 音乐音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">QQ 音质</span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k MP3" }, { value: "high", label: "HQ", desc: "320k MP3" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }, { value: "master", label: "甄品母带", desc: "超级会员" }
+                  { value: "standard", label: "标准", desc: "128k MP3" }, { value: "high", label: "HQ 高品质", desc: "320k MP3" }, { value: "lossless", label: "SQ 无损品质", desc: "FLAC" }, { value: "hires", label: "Hi-Res 臻品音质", desc: "24bit" }, { value: "master", label: "臻品母带", desc: "超级会员" }, { value: "atmos", label: "臻品全景声", desc: "超级会员" }
                 ] as const
               ).map((o) => (
                 <button
@@ -728,7 +728,7 @@ export default function SettingsView() {
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "高品", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }
+                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "高品", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }, { value: "master", label: "超品母带", desc: "豪华VIP" }
                 ] as const
               ).map((o) => (
                 <button

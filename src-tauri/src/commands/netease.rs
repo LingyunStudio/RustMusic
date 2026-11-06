@@ -60,7 +60,11 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
     let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
         .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
     let quality_label = quality_tag(&ext, br);
-    if (quality == "lossless" || quality == "hires") && !ext.eq_ignore_ascii_case("flac") {
+    if matches!(
+        quality.as_str(),
+        "lossless" | "hires" | "jymaster" | "sky"
+    ) && !ext.eq_ignore_ascii_case("flac")
+    {
         notify_quality_fallback(
             app,
             "网易云",

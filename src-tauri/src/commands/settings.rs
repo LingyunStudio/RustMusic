@@ -15,24 +15,35 @@ pub async fn set_play_quality(
     quality: String,
 ) -> Result<(), String> {
     let key = match kind.as_str() {
-        "netease" | "kugou" => {
+
+        "qq" => {
+            // QQ 会员音质：Hi-Res 臻品音质 / 臻品母带（RS01）/ 臻品全景声（AI00）
             if !matches!(
                 quality.as_str(),
-                "standard" | "high" | "lossless" | "hires"
+                "standard" | "high" | "lossless" | "hires" | "master" | "atmos"
             ) {
                 return Err("无效的音质选项".into());
             }
-            format!("quality_{kind}")
+            "quality_qq".to_string()
         }
-        "qq" => {
-            // QQ 多一档"甄品母带"（超级会员权益，RS01 文件档）
+        "netease" => {
+            // 网易云完整档位（weapi level）：higher=较高192k，high=极高320k
+            if !matches!(
+                quality.as_str(),
+                "standard" | "higher" | "high" | "lossless" | "hires" | "jymaster" | "sky"
+            ) {
+                return Err("无效的音质选项".into());
+            }
+            "quality_netease".to_string()
+        }
+        "kugou" => {
             if !matches!(
                 quality.as_str(),
                 "standard" | "high" | "lossless" | "hires" | "master"
             ) {
                 return Err("无效的音质选项".into());
             }
-            "quality_qq".to_string()
+            "quality_kugou".to_string()
         }
         _ => return Err("无效的音源".into()),
     };

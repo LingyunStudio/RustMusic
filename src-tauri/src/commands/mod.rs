@@ -111,7 +111,7 @@ pub(crate) fn source_quality(conn: &rusqlite::Connection, kind: &str) -> String 
 }
 
 pub(crate) fn resolve_quality(_kind: &str, quality: &str) -> String {
-    // QQ 已接入 Hi-Res（F0000）与甄品母带（RS01）文件档，不再把 hires 归一为
+    // QQ 已接入 Hi-Res（F0000）与臻品母带（RS01）文件档，不再把 hires 归一为
     // lossless；各源对未知档位自带阶梯回落
     quality.to_string()
 }
