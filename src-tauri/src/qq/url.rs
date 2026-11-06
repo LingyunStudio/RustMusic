@@ -120,17 +120,65 @@ pub fn song_url(
     // 双拼文件名 M500/M800/F000 能被服务端模糊解析，RS01 的 CDN 则
     // 严格 404（issue：选 Hi-Res 播放失败）。因此 media_mid 缺失时
     // RS01 档同时尝试"单 mid"与"双拼"两种文件名）
+    // Hi-Res 档先查匿名单曲详情：拿到真实 media_mid（与 songmid 不同！）
+    // 并预判该曲有无 Hi-Res 文件（size_hires=0 直接跳过 RS01，省一次 404）
+    // detail_ok=true：详情拿到了（size_hires 如实）；detail_failed=true：详情请求失败（保留猜测候选+探测兜底）
+    let (hires_media_mid, detail_says_no_hires, _detail_failed) =
+        if ladder.iter().any(|(p, _, _)| *p == "RS01") {
+            match song_detail_file(songmid, &credential_cookie(musicid, musickey)) {
+                Ok(f) => {
+                    let size = f.get("size_hires").and_then(|v| v.as_u64()).unwrap_or(0);
+                    if size == 0 {
+                        (None, true, false)
+                    } else {
+                        let mm = f
+                            .get("media_mid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        (Some(mm), false, false)
+                    }
+                }
+                Err(_) => (None, false, true),
+            }
+        } else {
+            (None, false, false)
+        };
     let mut rungs: Vec<(String, &str, &'static str)> = Vec::new();
     for (prefix, ext, label) in ladder {
-        let base_double = if media_mid.is_empty() {
-            format!("{songmid}{songmid}")
-        } else {
-            format!("{media_mid}{songmid}")
-        };
-        if prefix == "RS01" && media_mid.is_empty() {
-            rungs.push((format!("{prefix}{songmid}"), ext, label));
+        if prefix == "RS01" && detail_says_no_hires {
+            // 详情确认该曲没有 Hi-Res 文件：跳过 RS01，直接降档
+            continue;
         }
-        rungs.push((format!("{prefix}{base_double}"), ext, label));
+        let mut bases: Vec<String> = Vec::new();
+        if prefix == "RS01" {
+            if let Some(mm) = &hires_media_mid {
+                // 真实 media_mid：双拼与单 mid 都试
+                bases.push(format!("{prefix}{mm}{songmid}"));
+                bases.push(format!("{prefix}{mm}"));
+            } else {
+                // 详情失败（探测兜底）：猜测候选
+                let base_double = if media_mid.is_empty() {
+                    format!("{songmid}{songmid}")
+                } else {
+                    format!("{media_mid}{songmid}")
+                };
+                if media_mid.is_empty() {
+                    bases.push(format!("{prefix}{songmid}"));
+                }
+                bases.push(format!("{prefix}{base_double}"));
+            }
+        } else {
+            let base = if media_mid.is_empty() {
+                format!("{songmid}{songmid}")
+            } else {
+                format!("{media_mid}{songmid}")
+            };
+            bases.push(format!("{prefix}{base}"));
+        }
+        for b in bases {
+            rungs.push((b, ext, label));
+        }
     }
     for (file_base, ext, label) in rungs {
         let payload = serde_json::json!({
@@ -249,6 +297,7 @@ pub fn song_detail_file(songmid: &str, cookie: &str) -> Result<serde_json::Value
 }
 
 /// 审计探针：以任意文件名请求 GetVkey，返回拼好的 purl（不探测下载）
+#[cfg(test)]
 pub fn hires_url_probe(filename: &str, musicid: &str, musickey: &str) -> Option<String> {
     let payload = serde_json::json!({
         "comm": {"ct": 19, "cv": 1859},
