@@ -85,8 +85,23 @@ pub fn song_url(
     quality: &str,
     vip: bool,
 ) -> Result<(String, String, &'static str), String> {
-    // 前缀：M500=128k M800=320k F000=flac；无 media_mid 时按官方规则用 songmid 拼接
+    // 前缀：M500=128k M800=320k F000=flac F0000=Hi-Res RS01=甄品母带（超级会员）；
+    // 无 media_mid 时按官方规则用 songmid 拼接。高档位被权益/曲目拒绝时
+    // 自动沿阶梯回落。
     let ladder: Vec<(&str, &str, &'static str)> = match quality {
+        "master" => vec![
+            ("RS01", "flac", "甄品母带"),
+            ("F0000", "flac", "Hi-Res"),
+            ("F000", "flac", "无损"),
+            ("M800", "mp3", "HQ"),
+            ("M500", "mp3", "标准"),
+        ],
+        "hires" => vec![
+            ("F0000", "flac", "Hi-Res"),
+            ("F000", "flac", "无损"),
+            ("M800", "mp3", "HQ"),
+            ("M500", "mp3", "标准"),
+        ],
         "lossless" => vec![
             ("F000", "flac", "无损"),
             ("M800", "mp3", "HQ"),

@@ -103,10 +103,16 @@ fn quality_tag(ext: &str, br_kbps: i64) -> String {
 /// - 酷狗：hires 原生支持（v5 阶梯 super 档 = Hi-Res FLAC）
 /// - QQ：尚未接入 RS02/RS03 Hi-Res 文件档，hires 映射到无损档——
 ///   阶梯匹配遇到未知档位会静默落到 high，反而比无损低
-pub(crate) fn resolve_quality(kind: &str, quality: &str) -> String {
-    if quality == "hires" && kind == "qq" {
-        return "lossless".to_string();
-    }
+/// 三源分别读取播放音质（quality_{kind}），未单独设置过回落旧单一设置
+pub(crate) fn source_quality(conn: &rusqlite::Connection, kind: &str) -> String {
+    db::get_setting(conn, &format!("quality_{kind}"))
+        .or_else(|| db::get_setting(conn, "quality"))
+        .unwrap_or_else(|| "high".to_string())
+}
+
+pub(crate) fn resolve_quality(_kind: &str, quality: &str) -> String {
+    // QQ 已接入 Hi-Res（F0000）与甄品母带（RS01）文件档，不再把 hires 归一为
+    // lossless；各源对未知档位自带阶梯回落
     quality.to_string()
 }
 

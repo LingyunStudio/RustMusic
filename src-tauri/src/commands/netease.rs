@@ -54,7 +54,7 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
     let music_u = netease_cookie(&state);
     let quality = {
         let conn = state.db.lock();
-        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+        super::source_quality(&conn, "netease")
     };
     let quality = super::resolve_quality("netease", &quality);
     let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?

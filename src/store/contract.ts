@@ -133,6 +133,8 @@ export interface Store {
   setSourcesTab(t: "bilibili" | "navidrome" | "other" | "downloads"): void;
 
   quality: string;
+  /** 三源分别的播放音质（standard/high/lossless/hires，qq 另有 master=甄品母带） */
+  qualities: { netease: string; qq: string; kugou: string };
   /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
   closeAction: "tray" | "exit";
   /** 启动时自动检查 GitHub 更新（默认开启） */
@@ -378,6 +380,7 @@ export interface Store {
   playQq(list: QqSong[], idx: number): void;
 
   setQuality(q: string): void;
+  setSourceQuality(kind: "netease" | "qq" | "kugou", q: string): void;
   setCloseAction(a: "tray" | "exit"): void;
   setAutoUpdate(enabled: boolean): void;
   setWasapiExclusive(enabled: boolean): void;

@@ -382,6 +382,9 @@ export interface SettingsPayload {
   eqGains: number[];
   eqEnabled: boolean;
   quality: string;
+  qualityNetease: string;
+  qualityQq: string;
+  qualityKugou: string;
   cacheLimit: number;
   /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
   closeAction: "tray" | "exit";

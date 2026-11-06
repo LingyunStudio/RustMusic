@@ -559,6 +559,11 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
         kugouLoggedIn: kugouStatus.loggedIn,
         kugouNickname: kugouStatus.nickname,
         quality: settings.quality,
+        qualities: {
+          netease: settings.qualityNetease,
+          qq: settings.qualityQq,
+          kugou: settings.qualityKugou,
+        },
         closeAction: settings.closeAction ?? "tray",
         autoUpdate: settings.autoUpdate ?? true,
         wasapiExclusive: settings.wasapiExclusive ?? false,

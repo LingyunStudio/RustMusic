@@ -119,7 +119,7 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     let state = app.state::<AppState>();
     let quality = {
         let conn = state.db.lock();
-        let q = db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string());
+        let q = super::source_quality(&conn, "kugou");
         super::resolve_quality("kugou", &q)
     };
     let (token, userid) = kg_prepare(&state);

@@ -67,7 +67,7 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
     // 传给取链阶梯的值（QQ 暂无 Hi-Res 文件档，hires → lossless 阶梯）
     let quality_setting = {
         let conn = state.db.lock();
-        db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string())
+        super::source_quality(&conn, "qq")
     };
     let quality = super::resolve_quality("qq", &quality_setting);
     let (url, ext, quality_label) = crate::qq::song_url(
@@ -87,14 +87,16 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
             "账号权益未含无损或该曲无 flac",
         );
     }
-    if quality_setting == "hires" {
-        // 选了 Hi-Res 但 QQ 未接入 Hi-Res 文件档：明确告知按无损取
+    // 请求 Hi-Res/甄品母带但实际交付更低档位：明确告知（阶梯已自动回落）
+    if (quality_setting == "hires" && quality_label != "Hi-Res" && quality_label != "甄品母带")
+        || (quality_setting == "master" && quality_label != "甄品母带")
+    {
         notify_quality_fallback(
             app,
             "QQ 音乐",
             &quality_setting,
             quality_label,
-            "QQ 音乐暂未接入 Hi-Res 档位，已按无损取链",
+            "账号权益未含该音质或该曲无对应版本",
         );
     }
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid

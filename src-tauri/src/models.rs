@@ -146,6 +146,10 @@ pub struct SettingsPayload {
     pub eq_enabled: bool,
     /// standard | high | lossless
     pub quality: String,
+    /// 三源分别的播放音质（缺省回落到 quality）
+    pub quality_netease: String,
+    pub quality_qq: String,
+    pub quality_kugou: String,
     /// 音源缓存上限（字节），0 = 不限制
     pub cache_limit: u64,
     /// 关闭主窗口行为：tray（默认，隐藏到托盘）| exit（退出应用）

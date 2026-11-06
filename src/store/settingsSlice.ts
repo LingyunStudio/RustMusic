@@ -6,6 +6,8 @@ import type { Store } from "./contract";
 type Fields = Pick<
   Store,
   | "quality"
+  | "qualities"
+  | "setSourceQuality"
   | "closeAction"
   | "autoUpdate"
   | "wasapiExclusive"
@@ -22,6 +24,7 @@ type Fields = Pick<
 
 export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, get) => ({
   quality: "high",
+  qualities: { netease: "high", qq: "high", kugou: "high" },
   closeAction: "tray",
   autoUpdate: true,
   wasapiExclusive: false,
@@ -62,8 +65,19 @@ export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, ge
   setQuality(q) {
     const prev = get().quality;
     set({ quality: q });
-    api.setPlayQuality(q).catch((e) => {
+    // 兼容旧入口：单一音质设置不再使用，转发为三源默认（netease 为准），
+    // 避免遗留调用方写脏 per-source 配置
+    api.setPlayQuality("netease", q).catch((e) => {
       set({ quality: prev });
+      get().toast(String(e), "error");
+    });
+  },
+
+  setSourceQuality(kind, q) {
+    const prev = get().qualities[kind];
+    set({ qualities: { ...get().qualities, [kind]: q } });
+    api.setPlayQuality(kind, q).catch((e) => {
+      set({ qualities: { ...get().qualities, [kind]: prev } });
       get().toast(String(e), "error");
     });
   },

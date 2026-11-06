@@ -395,7 +395,7 @@ export default function App() {
         {/* 播放条：播放页打开时居中（不再贴右侧内容区），全屏时隐藏由 hover 唤起 */}
         {/* 播放条 / 迷你模式浮窗：迷你模式下底部播放条由小浮窗替换 */}
         {!fullscreen &&
-          (miniPlayer ? <MiniPlayer /> : <PlayerBar centered={nowPlayingOpen} />)}
+          (miniPlayer ? <MiniPlayer centered={nowPlayingOpen} /> : <PlayerBar centered={nowPlayingOpen} />)}
       </div>
 
       {/* 播放队列：窗口级浮层（播放条上方右侧，z-[61] 盖在播放页 z-40 /

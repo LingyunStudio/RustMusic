@@ -78,6 +78,8 @@ export default function SettingsView() {
   const setSpeed = useStore((s) => s.setSpeed);
   const quality = useStore((s) => s.quality);
   const setQuality = useStore((s) => s.setQuality);
+  const qualities = useStore((s) => s.qualities);
+  const setSourceQuality = useStore((s) => s.setSourceQuality);
   const closeAction = useStore((s) => s.closeAction);
   const setCloseAction = useStore((s) => s.setCloseAction);
   const autoUpdate = useStore((s) => s.autoUpdate);
@@ -701,27 +703,77 @@ export default function SettingsView() {
         <section style={{ ["--row-idx" as string]: 4 }} className="anim-row glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">在线音质</span>
-            <div className="flex items-center gap-1.5">
-              {QUALITIES.map((q) => (
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">网易云音质</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "较高", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }
+                ] as const
+              ).map((o) => (
                 <button
-                  key={q.key}
-                  onClick={() => setQuality(q.key)}
+                  key={o.value}
+                  onClick={() => setSourceQuality("netease", o.value)}
                   className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
-                    quality === q.key
+                    qualities.netease === o.value
                       ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
                       : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
-                  {q.label}
-                  <span className="ml-1 text-[10px] opacity-70">{q.desc}</span>
+                  {o.label}
+                  <span className="ml-1 text-[10px] opacity-70">{o.desc}</span>
                 </button>
               ))}
             </div>
-            <span className="text-[11px] text-[var(--ink-3)]">
-              Hi-Res 需网易云黑胶 SVIP 权益（酷狗/QQ 自动按其最高无损档取）
-            </span>
           </div>
+          <div className="flex items-center gap-4 mb-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">QQ 音乐音质</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  { value: "standard", label: "标准", desc: "128k MP3" }, { value: "high", label: "HQ", desc: "320k MP3" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }, { value: "master", label: "甄品母带", desc: "超级会员" }
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => setSourceQuality("qq", o.value)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
+                    qualities.qq === o.value
+                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                >
+                  {o.label}
+                  <span className="ml-1 text-[10px] opacity-70">{o.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-4 mb-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">酷狗音质</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "高品", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => setSourceQuality("kugou", o.value)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] transition-colors ${
+                    qualities.kugou === o.value
+                      ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
+                      : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                  }`}
+                >
+                  {o.label}
+                  <span className="ml-1 text-[10px] opacity-70">{o.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <span className="text-[11px] text-[var(--ink-3)]">
+            各音源分别设置；Hi-Res/母带需对应平台会员权益，无权益时自动按低一档取链
+          </span>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放速度</span>
             <input
