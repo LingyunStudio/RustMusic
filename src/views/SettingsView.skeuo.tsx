@@ -705,7 +705,7 @@ export default function SettingsView() {
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k MP3" }, { value: "high", label: "HQ 高品质", desc: "320k MP3" }, { value: "lossless", label: "SQ 无损品质", desc: "FLAC" }, { value: "hires", label: "Hi-Res 臻品音质", desc: "24bit" }, { value: "master", label: "臻品母带", desc: "超级会员" }, { value: "atmos", label: "臻品全景声", desc: "超级会员" }
+                  { value: "standard", label: "标准", desc: "128k MP3" }, { value: "high", label: "HQ 高品质", desc: "320k MP3" }, { value: "lossless", label: "SQ 无损品质", desc: "FLAC" }, { value: "hires", label: "Hi-Res 臻品音质", desc: "RS01 · 24bit" }
                 ] as const
               ).map((o) => (
                 <button
@@ -728,7 +728,7 @@ export default function SettingsView() {
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "高品", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }, { value: "master", label: "超品母带", desc: "豪华VIP" }
+                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "高品", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }
                 ] as const
               ).map((o) => (
                 <button
@@ -747,7 +747,7 @@ export default function SettingsView() {
             </div>
           </div>
           <span className="text-[11px] text-[var(--ink-3)]">
-            各音源分别设置；Hi-Res/母带需对应平台会员权益，无权益时自动按低一档取链
+            各音源分别设置；档位需对应平台会员权益，无权益时自动按低一档取链。QQ 臻品母带/臻品全景声、酷狗超品母带为加密音频格式，播放支持后将开放
           </span>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放速度</span>

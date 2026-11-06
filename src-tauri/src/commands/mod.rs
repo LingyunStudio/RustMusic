@@ -105,9 +105,14 @@ fn quality_tag(ext: &str, br_kbps: i64) -> String {
 ///   阶梯匹配遇到未知档位会静默落到 high，反而比无损低
 /// 三源分别读取播放音质（quality_{kind}），未单独设置过回落旧单一设置
 pub(crate) fn source_quality(conn: &rusqlite::Connection, kind: &str) -> String {
-    db::get_setting(conn, &format!("quality_{kind}"))
+    let q = db::get_setting(conn, &format!("quality_{kind}"))
         .or_else(|| db::get_setting(conn, "quality"))
-        .unwrap_or_else(|| "high".to_string())
+        .unwrap_or_else(|| "high".to_string());
+    // 存量兼容：母带/全景声档需要加密流解密（尚未支持），读取时按最高可交付档回落
+    match (kind, q.as_str()) {
+        ("qq", "master") | ("qq", "atmos") | ("kugou", "master") => "hires".to_string(),
+        _ => q,
+    }
 }
 
 pub(crate) fn resolve_quality(_kind: &str, quality: &str) -> String {

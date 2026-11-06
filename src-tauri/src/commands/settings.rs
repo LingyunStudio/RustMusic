@@ -17,11 +17,9 @@ pub async fn set_play_quality(
     let key = match kind.as_str() {
 
         "qq" => {
-            // QQ 会员音质：Hi-Res 臻品音质 / 臻品母带（RS01）/ 臻品全景声（AI00）
-            if !matches!(
-                quality.as_str(),
-                "standard" | "high" | "lossless" | "hires" | "master" | "atmos"
-            ) {
+            // QQ 可交付档位：RS01(Hi-Res) 及以下。臻品母带（RS02）/臻品全景声
+            // 为 QMCv2 加密流（mflac2），需 ekey 解密管线，暂不开放档位
+            if !matches!(quality.as_str(), "standard" | "high" | "lossless" | "hires") {
                 return Err("无效的音质选项".into());
             }
             "quality_qq".to_string()
@@ -37,10 +35,7 @@ pub async fn set_play_quality(
             "quality_netease".to_string()
         }
         "kugou" => {
-            if !matches!(
-                quality.as_str(),
-                "standard" | "high" | "lossless" | "hires" | "master"
-            ) {
+            if !matches!(quality.as_str(), "standard" | "high" | "lossless" | "hires") {
                 return Err("无效的音质选项".into());
             }
             "quality_kugou".to_string()
