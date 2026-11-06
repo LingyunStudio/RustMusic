@@ -27,6 +27,11 @@ fn song_from_search_json(s: &serde_json::Value) -> Option<QqSong> {
         .unwrap_or_default();
     Some(QqSong {
         id: id.to_string(),
+        song_id: s
+            .get("songid")
+            .or_else(|| s.get("id"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
         name: s
             .get("name")
             .or_else(|| s.get("songname"))

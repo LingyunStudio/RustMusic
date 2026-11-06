@@ -221,3 +221,72 @@ pub fn song_url(
         )
     })
 }
+
+/// 单曲详情（匿名可用）：返回 file.media_mid 与 size_hires 等，
+/// 用于 Hi-Res 档的文件名解析与有无判断（soso 搜索通道不返回 file 对象）
+pub fn song_detail_file(songmid: &str, cookie: &str) -> Result<serde_json::Value, String> {
+    let url = format!(
+        "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?songmid={songmid}&format=json"
+    );
+    let resp = crate::net::with_retry(|| {
+        let mut r = ureq::get(&url)
+            .set("Referer", "https://y.qq.com/")
+            .set("User-Agent", crate::qq::UA)
+            .timeout(std::time::Duration::from_secs(8));
+        if !cookie.is_empty() {
+            r = r.set("Cookie", cookie);
+        }
+        r.call()
+    })?;
+    let text = resp.into_string().map_err(|e| format!("歌曲详情读取失败: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("歌曲详情解析失败: {e}"))?;
+    let data = match v.get("data").and_then(|d| d.as_array()) {
+        Some(a) => a.first().cloned().unwrap_or_default(),
+        None => v.get("data").cloned().unwrap_or_default(),
+    };
+    Ok(data.get("file").cloned().unwrap_or_default())
+}
+
+/// 审计探针：以任意文件名请求 GetVkey，返回拼好的 purl（不探测下载）
+pub fn hires_url_probe(filename: &str, musicid: &str, musickey: &str) -> Option<String> {
+    let payload = serde_json::json!({
+        "comm": {"ct": 19, "cv": 1859},
+        "req_1": {
+            "module": "music.vkey.GetVkey",
+            "method": "UrlGetVkey",
+            "param": {
+                "uin": musicid,
+                "filename": [format!("{filename}.flac")],
+                "guid": guid(),
+                "songtype": [0],
+                "ctx": 0,
+            }
+        }
+    });
+    let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey))).ok()?;
+    if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) != Some(0) {
+        return None;
+    }
+    let purl = resp
+        .pointer("/req_1/data/midurlinfo/0/purl")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if purl.is_empty() {
+        return None;
+    }
+    if purl.starts_with("http") {
+        return Some(purl.to_string());
+    }
+    let sip = resp
+        .pointer("/req_1/data/sip")
+        .and_then(|v| v.as_array())
+        .and_then(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .find(|s| s.starts_with("https"))
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
+    Some(format!("{sip}{purl}"))
+}

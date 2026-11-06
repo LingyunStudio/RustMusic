@@ -97,12 +97,95 @@ fn quality_audit_all_sources() {
         "登录态 musickey: {}",
         if musickey.is_empty() { "（未登录）" } else { "已登录" }
     );
-    let songs = crate::qq::search("晴天", 6, 1).expect("qq search failed");
+    // 正向样例：新歌有 Hi-Res 文件，验证真实 media_mid 的文件名格式
+    // 孤勇者：QQ 明确提供 Hi-Res 的代表性曲目（正向验证样例）
+    let songs = crate::qq::search("孤勇者", 6, 1).expect("qq search failed");
+    // 详情请求带登录 cookie（匿名端点隐藏 Hi-Res 元数据）
+    let qq_cookie = format!(
+        "uin={musicid}; qqmusic_uin={musicid}; qm_keyst={musickey}; qqmusic_key={musickey}"
+    );
+    println!("  [详情] cookie len={}", qq_cookie.len());
     for s in songs.iter().take(3) {
+        let songmid0 = s.id.clone();
         println!(
-            "样曲 {} - {} vip={} mid={} mediaMid={}",
-            s.name, s.singer, s.vip, s.id, s.media_mid
+            "样曲 {} - {} vip={} mid={} mediaMid={} song_id={}",
+            s.name, s.singer, s.vip, s.id, s.media_mid, s.song_id
         );
+        // 匿名单曲详情：真实 media_mid + size_hires
+        let detail_file = crate::qq::song_detail_file(&s.id, &qq_cookie).unwrap_or_default();
+        let detail_mm = detail_file
+            .get("media_mid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let size_hires = detail_file.get("size_hires").and_then(|v| v.as_u64()).unwrap_or(0);
+        println!("  [详情] media_mid={detail_mm} size_hires={size_hires}");
+        // GetPlayUrlInfo 扫描：现代网页播放器端点，扫 quality 参数找 Hi-Res
+        if !musickey.is_empty() {
+            for qn in [1u8, 2, 3, 4, 5, 6, 7, 8] {
+                let payload = serde_json::json!({
+                    "comm": {"ct": 19, "cv": 1908, "uin": musicid},
+                    "req_1": {
+                        "module": "music.musichallSong.PlayUrlInfo.GetPlayUrlInfo",
+                        "method": "GetPlayUrlInfo",
+                        "param": {"songmid": [s.id], "quality": qn, "guid": "", "uis": ""}
+                    }
+                });
+                if let Ok(v) = crate::qq::musicu_signed(&payload, Some(&qq_cookie)) {
+                    let mi = v.pointer("/req_1/data/midurlinfo/0");
+                    let fname = mi.and_then(|m| m.get("filename")).and_then(|f| f.as_str()).unwrap_or("");
+                    let purl = mi.and_then(|m| m.get("purl")).and_then(|p| p.as_str()).unwrap_or("");
+                    if !purl.is_empty() {
+                        println!("  [PlayUrlInfo q={qn}] filename={fname} purl=…{}", &purl[purl.len().min(40)..]);
+                    }
+                }
+            }
+        }
+
+        if size_hires > 0 {
+            // 用真实 media_mid 实测三种文件名格式的 RS01 vkey + 下载
+            for (tag, fname) in [
+                ("media+mid", format!("RS01{detail_mm}{songmid0}")),
+                ("media仅", format!("RS01{detail_mm}")),
+                ("mid仅", format!("RS01{songmid0}")),
+            ] {
+                let url = crate::qq::hires_url_probe(&fname, &musicid, &musickey);
+                match url {
+                    Some(u) => {
+                        let dl = ureq::get(&u).timeout(std::time::Duration::from_secs(8)).call();
+                        let st = match &dl {
+                            Ok(r) => format!("HTTP {}", r.status()),
+                            Err(ureq::Error::Status(c, _)) => format!("HTTP {c}"),
+                            Err(e) => format!("传输: {e}"),
+                        };
+                        println!("  [探针] {tag:<10} 下载: {st}");
+                    }
+                    None => println!("  [探针] {tag:<10} 无 purl"),
+                }
+            }
+        }
+
+        for q in ["standard", "high", "lossless", "hires"] {
+            let payload = serde_json::json!({
+                "comm": {"ct": 19, "cv": 1859, "uin": musicid},
+                "req_1": {
+                    "module": "music.musichallSong.SongInfoInter",
+                    "method": "GetSongInfo",
+                    "param": {"ids": [s.song_id], "info_is": 1}
+                }
+            });
+            let detail = crate::qq::musicu_signed(&payload, Some(&credential(&conn, "qq_musickey")));
+            match detail {
+                Ok(v) => {
+                    println!(
+                        "  [详情] 原始 = {}",
+                        serde_json::to_string(&v).unwrap_or_default().chars().take(500).collect::<String>()
+                    );
+                }
+                Err(e) => println!("  [详情] ✗ {e}"),
+            }
+        }
+
         for q in ["standard", "high", "lossless", "hires"] {
             match crate::qq::song_url(&s.id, &s.media_mid, &musicid, &musickey, q, s.vip) {
                 Ok((url, ext, label)) => {

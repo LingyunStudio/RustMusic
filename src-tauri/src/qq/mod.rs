@@ -172,7 +172,7 @@ fn zzc_sign(text: &str) -> Result<String, String> {
 }
 
 /// 签名版 musicu 请求（musics.fcg）
-fn musicu_signed(
+pub fn musicu_signed(
     payload: &serde_json::Value,
     cookie: Option<&str>,
 ) -> Result<serde_json::Value, String> {
@@ -233,6 +233,9 @@ fn plain_get(url: &str, referer: &str) -> Result<String, String> {
 pub struct QqSong {
     /// songmid（字符串 ID）
     pub id: String,
+    /// 数字歌曲 ID（歌曲详情接口 GetSongInfo 用；Hi-Res 文件名解析需要）
+    #[serde(default)]
+    pub song_id: u64,
     pub name: String,
     pub singer: String,
     pub album: String,

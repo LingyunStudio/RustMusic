@@ -115,6 +115,11 @@ pub(super) fn song_from_diss_json(t: &serde_json::Value) -> Option<QqSong> {
         .to_string();
     Some(QqSong {
         id: mid.to_string(),
+        song_id: t
+            .get("songid")
+            .or_else(|| t.get("id"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
         name: t
             .get("name")
             .or_else(|| t.get("songname"))
