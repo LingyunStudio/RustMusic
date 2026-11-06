@@ -355,7 +355,7 @@ pub fn song_url(
     id: i64,
     music_u: Option<&str>,
     quality: &str,
-) -> Result<Option<(String, i64, String)>, String> {
+) -> Result<Option<(String, i64, String, String)>, String> {
     let music_u = music_u.filter(|s| !s.is_empty());
     // v1 接口按 level 取流：无损权益真实下发 flac（旧接口的 br 阶梯拿不到
     // 无损档），权益不足时服务端降级并在响应 level 字段如实上报；
@@ -448,7 +448,13 @@ pub fn song_url(
                 .and_then(|b| b.as_i64())
                 .unwrap_or(default_br)
                 / 1000;
-            return Ok(Some((u, real_br, ext)));
+            // 服务端权益不足时降级并在 level 字段如实上报实际交付档位
+            let delivered_level = first
+                .get("level")
+                .and_then(|l| l.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Ok(Some((u, real_br, ext, delivered_level)));
         }
         last_hint = match item_code {
             404 => "该歌曲暂无版权音频（可能需要 VIP 或已下架）".into(),
@@ -1292,7 +1298,7 @@ fn test_song_url_lossless_audit() {
             |r| r.get(0),
         )
         .unwrap_or_default();
-    let (url, br, ext) = song_url(347230, Some(&music_u), "lossless")
+    let (url, br, ext, _level) = song_url(347230, Some(&music_u), "lossless")
         .expect("song_url failed")
         .expect("no url");
     println!(

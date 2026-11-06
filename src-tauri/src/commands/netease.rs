@@ -48,6 +48,34 @@ pub async fn netease_play(app: AppHandle, track: NeteasePlayReq) -> Result<(), S
     super::blocking(move || netease_play_task(&task_app, track)).await
 }
 
+/// 网易云 weapi level 档位序（越大越高）；未知档位返回 0（不参与降档比较）
+fn netease_level_rank(level: &str) -> i32 {
+    match level {
+        "jymaster" => 70, // 超清母带
+        "sky" => 60,      // 沉浸环绕声
+        "hires" => 50,
+        "lossless" => 40,
+        "exhigh" => 30,  // 极高 320k
+        "higher" => 20,  // 较高 192k
+        "standard" => 10,
+        _ => 0,
+    }
+}
+
+/// 服务端上报 level → 用户可读档位名（与官方 App 一致）
+fn netease_level_label(level: &str) -> Option<&'static str> {
+    match level {
+        "jymaster" => Some("超清母带"),
+        "sky" => Some("沉浸环绕声"),
+        "hires" => Some("Hi-Res"),
+        "lossless" => Some("无损"),
+        "exhigh" => Some("极高"),
+        "higher" => Some("较高"),
+        "standard" => Some("标准"),
+        _ => None,
+    }
+}
+
 /// 同步任务体：取链是阻塞网络调用（经 blocking 在专用线程池执行）
 fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -57,14 +85,21 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
         super::source_quality(&conn, "netease")
     };
     let quality = super::resolve_quality("netease", &quality);
-    let (url, br, ext) = crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
-        .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
-    let quality_label = quality_tag(&ext, br);
-    if matches!(
-        quality.as_str(),
-        "lossless" | "hires" | "jymaster" | "sky"
-    ) && !ext.eq_ignore_ascii_case("flac")
-    {
+    let (url, br, ext, delivered_level) =
+        crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
+            .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
+    // 标签优先用服务端上报的实际交付档位（权益不足会降级：选"超清母带"
+    // 可能实际交付无损 flac——此前只查扩展名，flac==flac 就漏报了）
+    let quality_label = netease_level_label(&delivered_level)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| quality_tag(&ext, br));
+    let requested_rank = netease_level_rank(&quality);
+    let delivered_rank = if delivered_level.is_empty() {
+        requested_rank // 老接口无 level 字段时按请求档对待，不做降档判断
+    } else {
+        netease_level_rank(&delivered_level)
+    };
+    if delivered_rank < requested_rank {
         notify_quality_fallback(
             app,
             "网易云",

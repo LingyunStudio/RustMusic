@@ -146,7 +146,7 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
                 .parse()
                 .map_err(|_| "网易云歌曲 ID 无效".to_string())?;
             let music_u = netease_cookie(&state);
-            let (u, br, ext) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
+            let (u, br, ext, _level) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
                 .ok_or("该歌曲暂无可播放链接")?;
             let label = super::quality_tag(&ext, br).to_string();
             (u, ext, Some(label))

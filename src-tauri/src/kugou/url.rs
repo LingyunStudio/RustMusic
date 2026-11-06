@@ -129,7 +129,7 @@ fn song_url_v5(
     };
     set_last_hires_error(None);
     let mid = mid_of();
-    let fetch = |q: &str, h: &str| -> Result<(String, String, &'static str), String> {
+    let fetch = |q: &str, h: &str, tier: &'static str| -> Result<(String, String, &'static str), String> {
         let extra = vec![
             ("album_id".into(), album_id.to_string()),
             ("area_code".into(), "1".into()),
@@ -186,15 +186,11 @@ fn song_url_v5(
                     .unwrap_or_default();
             }
         }
-        let label = match q {
-            "high" | "super" => "Hi-Res",
-            "flac" => "无损",
-            "320" => "HQ",
-            _ => "标准",
-        };
+        // 档位标签直接用阶梯元组（super/high 同参数也会因所在阶梯不同而
+        // 属于不同档位：Hi-Res 阶梯里是 Hi-Res，母带阶梯里是超品母带）
         if !url.is_empty() {
             let ext = url_ext(&url);
-            Ok((url, ext, label))
+            Ok((url, ext, tier))
         } else {
             let ec = v
                 .get("errcode")
@@ -217,7 +213,7 @@ fn song_url_v5(
         if h.is_empty() {
             continue;
         }
-        match fetch(q, h) {
+        match fetch(q, h, tier) {
             Ok(ok) => {
                 if *tier == "Hi-Res" {
                     set_last_hires_error(None);
@@ -234,7 +230,7 @@ fn song_url_v5(
                 // errcode 20028 = SSA 风控：重新注册设备后重试一次本档
                 if e.contains("no_url:20028") {
                     if let Some(_nd) = re_register() {
-                        if let Ok(ok) = fetch(q, h) {
+                        if let Ok(ok) = fetch(q, h, tier) {
                             return Ok(ok);
                         }
                     }
