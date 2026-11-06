@@ -415,13 +415,14 @@ pub fn song_url(
         .to_string();
         let resp = weapi_post("/weapi/song/enhance/player/url/v1", &payload, music_u)?;
         let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+        if code == 301 || code == 302 {
+            // cookie 失效：换音质也无法挽回，整链中止并让前端引导重新登录
+            return Err("网易云登录已过期，请重新登录".into());
+        }
         if code != 200 {
-            // 301/302 = cookie 失效：给出与“未登录”同类的文案，前端据此停止
-            // 自动跳下一首（否则整个队列会逐首失败、连跳刷屏）
-            return Err(match code {
-                301 | 302 => "网易云登录已过期，请重新登录".into(),
-                _ => format!("获取播放链接失败（code {code}）"),
-            });
+            // 其它非 200（如个别档位被权益/风控拒绝）：沿阶梯继续回落，
+            // 不能整链中止——否则选高档时表现为"直接无法获取"
+            continue;
         }
         let first = resp
             .pointer("/data/0")

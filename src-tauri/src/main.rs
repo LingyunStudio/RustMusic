@@ -17,6 +17,8 @@ mod net;
 mod netease;
 mod qq;
 mod qrc;
+#[cfg(test)]
+mod quality_audit;
 mod smtc;
 mod streaming;
 mod symdec;

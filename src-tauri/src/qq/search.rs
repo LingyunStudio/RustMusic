@@ -48,6 +48,7 @@ fn song_from_search_json(s: &serde_json::Value) -> Option<QqSong> {
             .to_string(),
         media_mid: s
             .get("media_mid")
+            .or_else(|| s.pointer("/file/mediaMid"))
             .or_else(|| s.pointer("/file/media_mid"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
