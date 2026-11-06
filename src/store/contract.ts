@@ -66,6 +66,8 @@ export interface Store {
   /** 播放页无边框全屏（隐藏系统任务栏；播放条隐藏、hover 唤起） */
   fullscreen: boolean;
   queueOpen: boolean;
+  /** 迷你模式：底部播放条替换为放大版左舱小浮窗（rustmusic.miniPlayer 持久化） */
+  miniPlayer: boolean;
   scan: ScanState;
   download: DownloadState | null;
   toasts: Toast[];
@@ -145,8 +147,14 @@ export interface Store {
   unavailable: Record<string, string>;
   /** 连续播放失败计数（成功开播清零；达队列长度停止自动跳过） */
   failStreak: number;
+  /** 播放中的音频下载失败（player://download-failed）计入连跳统计：
+   *  与取链失败共用熔断逻辑（连续 N 首停止自动跳歌），否则断网时会
+   *  无限"取链→下载失败→跳下一首"（issue#8-3） */
+  reportPlaybackFailure(msg: string): void;
   /** 当前失败提示的 toast id：连跳期间只更新这一条，不堆叠刷屏 */
   failToastId: number | null;
+  /** 歌手/专辑详情页的音源上下文（openDetailPage 写入；决定在线结果排序） */
+  detailSource: "netease" | "qq" | "kugou" | null;
   /** 当前播放的自定义在线音源 id（SourcesView 高亮用；path 是缓存文件名，无法从 URL 判断） */
   playingSourceId: number | null;
   scrubbing: boolean;
@@ -172,13 +180,14 @@ export interface Store {
   clearOnlineNav(source: OnlineSource): void;
   setLastKw(source: OnlineSource, kw: string): void;
   /** 打开歌手/专辑详情页（聚合本地曲目与在线搜索结果），自带返回栈 */
-  openDetailPage(kind: "artist" | "album", name: string): void;
+  openDetailPage(kind: "artist" | "album", name: string, source?: "netease" | "qq" | "kugou" | null): void;
   popDetailPage(): void;
   setSearch(s: string): void;
   setNowPlayingOpen(v: boolean): void;
   /** 切换无边框全屏（退出时同时收起播放页） */
   toggleFullscreen(v?: boolean): void;
   setQueueOpen(v: boolean): void;
+  setMiniPlayer(on: boolean): void;
 
   refreshTracks(): Promise<void>;
   refreshFolders(): Promise<void>;

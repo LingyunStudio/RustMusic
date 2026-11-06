@@ -1,14 +1,12 @@
-//! 底部播放条分发器：按界面风格渲染对应布局。
-//! 标准 / 液态玻璃共用 Classic 布局，拟物为「机架音响面板」专属布局。
+//! 按界面风格分发：standard = 合并前原版 / skeuo = 拟物分支原版 / liquid = 液态玻璃分支原版。
+import PlayerBarStandard from "./PlayerBar.standard";
+import PlayerBarSkeuo from "./PlayerBar.skeuo";
+import PlayerBarLiquid from "./PlayerBar.liquid";
 import { useStore } from "../store";
-import PlayerBarClassic from "./PlayerBarClassic";
-import PlayerBarSkeuo from "./PlayerBarSkeuo";
 
-export default function PlayerBar({ centered = false }: { centered?: boolean }) {
+export default function PlayerBar(props: Parameters<typeof PlayerBarStandard>[0]) {
   const uiTheme = useStore((s) => s.uiTheme);
-  return uiTheme === "skeuo" ? (
-    <PlayerBarSkeuo centered={centered} />
-  ) : (
-    <PlayerBarClassic centered={centered} />
-  );
+  if (uiTheme === "liquid") return <PlayerBarLiquid {...(props as any)} />;
+  if (uiTheme === "skeuo") return <PlayerBarSkeuo {...(props as any)} />;
+  return <PlayerBarStandard {...(props as any)} />;
 }

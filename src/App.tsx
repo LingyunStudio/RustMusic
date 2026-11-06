@@ -4,6 +4,7 @@ import { useStore } from "./store";
 import Titlebar from "./components/Titlebar";
 import Sidebar from "./components/Sidebar";
 import PlayerBar from "./components/PlayerBar";
+import MiniPlayer from "./components/MiniPlayer";
 import QueuePanel from "./components/QueuePanel";
 import NowPlaying from "./components/NowPlaying";
 import Logo from "./components/Logo";
@@ -23,6 +24,7 @@ import { initFx, setFxWanted } from "./fx";
 import AudioFxLayer from "./components/AudioFxLayer";
 
 function DynamicBackdrop() {
+  const uiTheme = useStore((s) => s.uiTheme);
   const cover = useStore((s) => s.current?.cover);
   const skin = useStore((s) => s.skin);
   const fxAudio = useStore((s) => s.fxAudio);
@@ -94,9 +96,22 @@ function DynamicBackdrop() {
           {/* 主题纱：暗色压暗 / 浅色洗成粉彩，保证前景文字可读 */}
           <div className="absolute inset-0" style={{ background: "var(--skin-scrim)" }} />
         </>
-      ) : (
+      ) : uiTheme === "skeuo" ? (
+        // 拟物：物理机箱拉丝底（skeuo-chassis-bg 由拟物主题 CSS 定义）
         <div className="absolute inset-0 skeuo-chassis-bg" />
+      ) : (
+        // 标准 / 液态玻璃：主题氛围渐变（两分支此层一致）
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 120% 100% at 50% -20%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%)",
+          }}
+        />
       )}
+{/* 光池：液态玻璃 = 四色动画光池；标准 / 拟物 = 双色静态微光（原版） */}
+{uiTheme === "liquid" ? (
+        <>
       {/* 封面主色流体光池（多色池缓慢漫游，为液态玻璃提供呼吸折射源）。
           v2：少而鲜艳 —— 光斑更聚焦、透明度更低，避免糊成灰雾；
           清透玻璃靠这些色斑折射出层次 */}
@@ -138,6 +153,31 @@ function DynamicBackdrop() {
           filter: "blur(70px)",
         }}
       />
+        </>
+      ) : (
+        <>
+      {/* 封面主色微光（低饱和、低调；皮肤上保留，让壁纸跟着音乐呼吸） */}
+      <div
+        className="absolute -top-64 left-[12%] w-[820px] h-[640px] transition-colors duration-1000"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, var(--glow) 0%, transparent 60%)",
+          opacity: skinUrl ? 0.09 : 0.16,
+          filter: "blur(90px)",
+        }}
+      />
+      <div
+        className="absolute -bottom-72 -right-48 w-[760px] h-[600px]"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, var(--blob-warm) 0%, transparent 62%)",
+          opacity: skinUrl ? 0.1 : 0.18,
+          filter: "blur(100px)",
+        }}
+      />
+        </>
+      )}
+
       {/* 暗角 + 噪点 */}
       <div
         className="absolute inset-0"
@@ -159,6 +199,8 @@ function DynamicBackdrop() {
 }
 
 export default function App() {
+  const uiTheme = useStore((s) => s.uiTheme);
+  const miniPlayer = useStore((s) => s.miniPlayer);
   const ready = useStore((s) => s.ready);
   const view = useStore((s) => s.view);
   const viewParam = useStore((s) => s.viewParam);
@@ -319,7 +361,12 @@ export default function App() {
         {/* 全屏播放时隐藏标题栏（窗口按钮随 setFullscreen 一并由系统隐藏）。
             占位 h-3：Titlebar 的拖拽热区已改为绝对覆盖层（不占布局），
             这里保留 12px 占位使内容区位置与原先完全一致 */}
-        {!fullscreen && <Titlebar />}
+        {!fullscreen && (
+          <>
+            <Titlebar />
+            {uiTheme !== "liquid" && <div className="h-3 shrink-0" />}
+          </>
+        )}
 
         <div className="relative flex flex-1 min-h-0">
           <Sidebar />
@@ -346,7 +393,9 @@ export default function App() {
         </div>
 
         {/* 播放条：播放页打开时居中（不再贴右侧内容区），全屏时隐藏由 hover 唤起 */}
-        {!fullscreen && <PlayerBar centered={nowPlayingOpen} />}
+        {/* 播放条 / 迷你模式浮窗：迷你模式下底部播放条由小浮窗替换 */}
+        {!fullscreen &&
+          (miniPlayer ? <MiniPlayer /> : <PlayerBar centered={nowPlayingOpen} />)}
       </div>
 
       {/* 播放队列：窗口级浮层（播放条上方右侧，z-[61] 盖在播放页 z-40 /

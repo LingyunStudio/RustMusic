@@ -190,9 +190,8 @@ export function applyAccent(key: string) {
 
 export function loadTheme(): "dark" | "light" {
   const t = localStorage.getItem(THEME_KEY);
-  if (t === "dark" || t === "light") return t;
-  // 未显式选择过明暗时：液态玻璃以浅色为默认观感，其余风格以暗色为默认
-  return loadUiTheme() === "liquid" ? "light" : "dark";
+  // 默认浅色：与合并前 main 及拟物 / 液态玻璃两分支的默认行为保持一致
+  return t === "dark" ? "dark" : "light";
 }
 
 export function loadAccent(): string {

@@ -189,6 +189,13 @@ impl Engine {
                         "download://progress",
                         serde_json::json!({ "url": url, "done": true, "error": e }),
                     );
+                    // 播放中的音频下载失败（读取端将按 EOF 自然结束并触发
+                    // player://ended）：单独通知前端计入"连跳熔断"统计，
+                    // 否则网络断开时会无限"取链→下载失败→跳下一首"（issue#8-3）
+                    let _ = app.emit(
+                        "player://download-failed",
+                        serde_json::json!({ "error": e }),
+                    );
                     // 用户仍在等这首时清除意图，便于下次点击重新发起下载
                     if engine.want_url.read().as_deref() == Some(url.as_str()) {
                         *engine.want_url.write() = None;
@@ -376,7 +383,11 @@ fn download_inner(
             .set("Referer", "https://www.bilibili.com/")
             .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
     }
-    let resp = req.call().map_err(|e| format!("下载音源失败: {e}"))?;
+    // 连接建立传输级重试（issue#8-2：网络/代理切换后死连接自愈）。
+    // 仅重试"拿到响应头之前"的失败——此刻尚未向流式读取端发布过字节，
+    // 重开连接从零下载是安全的；已经开始读取后的中断仍走原有 EOF 语义。
+    let resp = crate::net::with_retry(|| req.clone().call())
+        .map_err(|e| format!("下载音源失败: {e}"))?;
     let total: u64 = resp
         .header("content-length")
         .and_then(|v| v.parse().ok())

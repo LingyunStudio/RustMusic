@@ -889,147 +889,23 @@ html[data-ui="standard"] .release-notes > :first-child{ margin-top: 0; }
 html[data-ui="standard"] .release-notes > :last-child{ margin-bottom: 0; }
 html[data-ui="standard"] .release-notes .rn-empty{ color: var(--ink-3); margin: 0; }
 
-/* ========== 跨风格语义类适配（标准风格） ==========
-   合并后的组件树带有拟物/液态玻璃引入的语义类与 --sk-* 材质变量；
-   这里把它们映射为标准风格的等价观感（等值于重构前的 tailwind 内联样式）。 */
-
-html[data-ui="standard"] {
-  /* Slider 共享组件的凹槽/填充/旋钮材质 → 标准等价值 */
-  --sk-groove-bg: var(--shade-strong);
-  --sk-groove-border: var(--line);
-  --sk-groove-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  --sk-fill-bg: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%);
-  --sk-fill-shadow: 0 0 8px var(--accent-soft);
-  --sk-knob-metal: radial-gradient(circle at 35% 35%, #ffffff 0%, #f1f5f9 65%, #cbd5e1 100%);
-  --sk-edge: rgba(255, 255, 255, 0.9);
-  --sk-knob-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px var(--accent);
-  /* 弹层面板边缘（拟物机壳倒角）在标准风格下无边框 */
-  --sk-panel-edge: transparent;
-  /* 动态背景四色光池透明度（标准为静态低饱和光晕） */
-  --blob-o1: 0.16;
-  --blob-o2: 0.18;
-  --blob-o3: 0.07;
-  --blob-o4: 0.06;
-}
-
-html[data-ui="standard"][data-theme="light"] {
-  --sk-knob-metal: radial-gradient(circle at 35% 35%, #ffffff 0%, #f8fafc 60%, #d7dee7 100%);
-  --sk-knob-shadow: 0 1px 4px rgba(15, 23, 42, 0.25), 0 0 10px var(--accent-soft);
-  --sk-edge: rgba(255, 255, 255, 0.95);
-}
-
-/* 标题栏拖拽热区（高度随风格） */
-html[data-ui="standard"] .titlebar-drag { height: 24px; }
-
-/* ---- 液态玻璃语义类 → 标准面板等价观感 ---- */
-html[data-ui="standard"] .liquid-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border-radius: 16px;
-}
-html[data-ui="standard"] .liquid-card {
+/* ---------- 迷你模式浮窗（放大版播放条左舱） ---------- */
+html[data-ui="standard"] .mini-player {
   background: var(--glass-bg-strong);
   backdrop-filter: blur(32px) saturate(1.25);
   -webkit-backdrop-filter: blur(32px) saturate(1.25);
   border: 1px solid var(--glass-line);
-  border-radius: 16px;
-}
-/* 播放条 Dock / 播放页顶栏小胶囊 */
-html[data-ui="standard"] .liquid-dock {
-  background: var(--bar-glass);
-  border: 1px solid var(--bar-line);
   box-shadow: var(--bar-shadow);
-  border-radius: 16px;
 }
-html[data-ui="standard"] .liquid-pill {
-  background: var(--shade-strong);
-  border-radius: 999px;
-  color: var(--ink-2);
-}
-html[data-ui="standard"] .liquid-pill:hover { color: var(--ink); }
-/* 输入框（原 bg-[var(--shade)] + border-[var(--line)]） */
-html[data-ui="standard"] .liquid-input {
-  background: var(--shade);
-  border: 1px solid var(--line);
-}
-/* 主播放键（原内联强调色渐变圆钮） */
-html[data-ui="standard"] .play-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
+html[data-ui="standard"] .mini-play {
   color: var(--accent-on);
   background: linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 60%, var(--accent) 120%);
   box-shadow: 0 6px 20px -4px var(--accent-soft);
   transition: transform 0.15s ease;
 }
-html[data-ui="standard"] .play-btn:hover { transform: scale(1.05); }
-html[data-ui="standard"] .play-btn:active { transform: scale(0.95); }
-
-/* ---- 拟物语义类 → 标准等价观感 ---- */
-/* 动态背景「机箱底」→ 标准氛围渐变 */
-html[data-ui="standard"] .skeuo-chassis-bg {
-  background: radial-gradient(
-    ellipse 120% 100% at 50% -20%,
-    var(--backdrop-1) 0%,
-    var(--backdrop-2) 60%,
-    var(--bg) 100%
-  );
-}
-/* 列表行状态 */
-html[data-ui="standard"] .skeuo-row {
-  border: 1px solid transparent;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-html[data-ui="standard"] .skeuo-row:hover { background: var(--shade-hover); }
-html[data-ui="standard"] .skeuo-row.checked,
-html[data-ui="standard"] .skeuo-row.active {
+html[data-ui="standard"] .mini-play:hover { transform: scale(1.06); }
+html[data-ui="standard"] .mini-play:active { transform: scale(0.95); }
+html[data-ui="standard"] .mini-quality {
   background: var(--accent-weak);
-  border-color: var(--accent-soft);
+  border: 1px solid var(--accent-soft);
 }
-html[data-ui="standard"] .skeuo-row.active { color: var(--accent-strong); }
-/* 开关（原 toggle） */
-html[data-ui="standard"] .skeuo-switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 40px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--shade-strong);
-  transition: background-color 0.2s;
-}
-html[data-ui="standard"] .skeuo-switch.active { background: var(--accent); }
-html[data-ui="standard"] .skeuo-switch-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: left 0.2s;
-}
-html[data-ui="standard"] .skeuo-switch.active .skeuo-switch-thumb { left: 21px; }
-/* 分段选择（原胶囊按钮组） */
-html[data-ui="standard"] .skeuo-segmented { display: flex; align-items: center; gap: 6px; }
-html[data-ui="standard"] .skeuo-segmented-btn {
-  padding: 6px 16px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--ink-2);
-  transition: color 0.2s, background-color 0.2s;
-}
-html[data-ui="standard"] .skeuo-segmented-btn:hover {
-  color: var(--ink);
-  background: var(--shade-hover);
-}
-html[data-ui="standard"] .skeuo-segmented-btn.active {
-  color: var(--accent-strong);
-  font-weight: 500;
-  background: var(--accent-weak);
-}
-/* 拟物专属装饰件在标准风格下不可见 */
-html[data-ui="standard"] .skeuo-screw { display: none; }
-html[data-ui="standard"] .slider-tick { display: none; }

@@ -37,6 +37,7 @@ type Fields = Pick<
   | "view"
   | "viewParam"
   | "detailName"
+  | "detailSource"
   | "viewHistory"
   | "onlineRec"
   | "onlineNav"
@@ -45,6 +46,7 @@ type Fields = Pick<
   | "nowPlayingOpen"
   | "fullscreen"
   | "queueOpen"
+  | "miniPlayer"
   | "scan"
   | "download"
   | "toasts"
@@ -82,6 +84,7 @@ type Fields = Pick<
   | "setNowPlayingOpen"
   | "toggleFullscreen"
   | "setQueueOpen"
+  | "setMiniPlayer"
   | "setTheme"
   | "setUiTheme"
   | "setAccent"
@@ -102,6 +105,12 @@ let lastPosEventAt = 0;
 let initPromise: Promise<void> | null = null;
 /** pos 自愈拉快照的冷却时间戳（getPlayState 持续失败时避免逐帧 IPC 放大） */
 let lastSelfHealPullAt = 0;
+/** 播放中的音频下载失败（player://download-failed）：紧随其后的
+ *  player://ended 不再视为自然播完，而是计入连跳统计（issue#8-3） */
+let pendingDownloadFail: string | null = null;
+/** 音质回退提示去重：同一曲目+同一文案 20s 内只弹一次（issue#8-4） */
+let lastQualityToastKey = "";
+let lastQualityToastAt = 0;
 
 /** 应用后端播放状态：player://state 事件与挂起恢复后的主动拉取共用。
  *  posOverride：拉取快照自带进度时直接采用（事件路径由 isFreshStart 决定是否归零）。 */
@@ -213,6 +222,8 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   view: "library",
   viewParam: 0,
   detailName: "",
+  // 歌手/专辑详情页的音源上下文：从哪个音源的曲目点进来，就把该源结果排在最前
+  detailSource: null as "netease" | "qq" | "kugou" | null,
   viewHistory: [],
   onlineRec: { netease: null, qq: null, kugou: null },
   onlineNav: { netease: [], qq: [], kugou: [] },
@@ -221,6 +232,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   nowPlayingOpen: false,
   fullscreen: false,
   queueOpen: false,
+  miniPlayer: false,
   scan: { active: false, done: 0, total: 0 },
   download: null,
   toasts: [],
@@ -260,6 +272,8 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       if (initMenubarLyrics()) set({ menubarLyricsOn: true });
       // 任务栏歌词开关恢复（Windows，localStorage）
       if (initTaskbarLyrics()) set({ taskbarLyricsOn: true });
+      // 迷你模式开关恢复（localStorage）
+      if (localStorage.getItem("rustmusic.miniPlayer") === "1") set({ miniPlayer: true });
 
       // 引擎预载下一曲（仅本库曲目）：队列/模式/定时停止变化即重算并下发。
       // 自然播完由引擎直接续播（monitor 驱动），挂起期间也无缝连续；
@@ -344,7 +358,22 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
             return;
           }
         }
+        // 音频下载失败导致的"播完"：按播放失败处理（计入连跳与熔断），
+        // 避免断网时"取链→下载失败→跳下一首"无限循环刷屏（issue#8-3）
+        if (pendingDownloadFail) {
+          const msg = pendingDownloadFail;
+          pendingDownloadFail = null;
+          get().reportPlaybackFailure(msg);
+          return;
+        }
         get().next(true, true);
+      })
+    );
+
+    // 播放中的音频下载失败：标记待消费（ended 事件紧随其后）
+    unbinds.push(
+      await listenEvent<{ error: string }>("player://download-failed", (p) => {
+        pendingDownloadFail = p.error;
       })
     );
 
@@ -358,6 +387,13 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     // 在线音质回退提示：设置档位未被账号权益满足时明确告知（否则静默降级）
     unbinds.push(
       await listenEvent<{ message: string }>("player://quality-fallback", (p) => {
+        // 去重：同一曲目同一文案 20s 内只弹一次（连续切歌时避免刷屏，issue#8-4）
+        const cur = get().current;
+        const key = `${cur?.kind ?? ""}:${cur?.id ?? ""}:${p.message}`;
+        const now = Date.now();
+        if (key === lastQualityToastKey && now - lastQualityToastAt < 20_000) return;
+        lastQualityToastKey = key;
+        lastQualityToastAt = now;
         get().toast(p.message, "info");
       })
     );
@@ -595,13 +631,21 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     set((s) => ({ lastKw: { ...s.lastKw, [source]: kw } }));
   },
 
-  openDetailPage(kind, name) {
+  openDetailPage(kind, name, source) {
     const nameTrim = name.trim();
     if (!nameTrim || nameTrim === "未知艺术家" || nameTrim === "未知专辑") return;
     set((s) => ({
       view: kind,
       viewParam: 0,
       detailName: nameTrim,
+      // 音源上下文：显式传入（列表行/歌单行知道自身音源）优先；
+      // 否则取当前播放曲目的音源（播放页/当前行点击时即为其音源）
+      detailSource:
+        source ??
+        (() => {
+          const k = useStore.getState().current?.kind;
+          return k === "netease" || k === "qq" || k === "kugou" ? k : null;
+        })(),
       search: "",
       viewHistory: [
         ...s.viewHistory.slice(-9),
@@ -655,6 +699,13 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
         if (get().fullscreen === next) set({ fullscreen: prev });
         get().toast(`全屏切换失败：${e}`, "error");
       });
+  },
+
+  setMiniPlayer(on) {
+    set({ miniPlayer: on });
+    try {
+      localStorage.setItem("rustmusic.miniPlayer", on ? "1" : "0");
+    } catch {}
   },
 
   setQueueOpen(v) {

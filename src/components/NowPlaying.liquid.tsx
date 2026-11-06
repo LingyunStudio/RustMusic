@@ -6,7 +6,7 @@ import { api, coverSrc } from "../api";
 import { remoteCoverCache } from "../utils";
 import { extractPalette, lyricAdaptiveColors, lyricLineProgress } from "../utils";
 
-function NowPlayingClassic() {
+export default function NowPlaying() {
   const current = useStore((s) => s.current);
   const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
   const fullscreen = useStore((s) => s.fullscreen);
@@ -714,5 +714,3 @@ function NowPlayingClassic() {
     </div>
   );
 }
-
-export default NowPlayingClassic;

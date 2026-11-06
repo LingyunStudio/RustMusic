@@ -382,10 +382,11 @@ function DesktopLyrics() {
         {!locked && (hover || DEBUG_HOVER) && (
           <div
             data-tauri-drag-region
-            className="mb-2 flex items-center gap-0.5 px-2 py-1 rounded-2xl pointer-events-auto z-10 liquid-dock shadow-xl"
+            className="mb-2 flex items-center gap-0.5 px-2 py-1 rounded-2xl pointer-events-auto z-10 shadow-xl"
             style={{
-              background: "rgba(20, 16, 12, 0.55)",
-              border: "1px solid rgba(255,255,255,0.16)",
+              // 各界面风格自己的播放条材质（standard/skeuo/liquid 三套 CSS 均定义）
+              background: "var(--bar-glass)",
+              border: "1px solid var(--bar-line)",
             }}
           >
           <button

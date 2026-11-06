@@ -98,12 +98,14 @@ fn parse_json(text: &str, what: &str) -> Result<serde_json::Value, String> {
 
 /// GET 并返回响应体文本（非 2xx 时也读取响应体，便于错误分类）
 fn get_text(url: &str, referer: &str, ua: &str) -> Result<String, String> {
-    match ureq::get(url)
-        .set("User-Agent", ua)
-        .set("Referer", referer)
-        .timeout(TIMEOUT)
-        .call()
-    {
+    // 传输级错误自动重试一次（issue#8-2：网络/代理切换自愈）
+    match crate::net::with_retry_raw(|| {
+        ureq::get(url)
+            .set("User-Agent", ua)
+            .set("Referer", referer)
+            .timeout(TIMEOUT)
+            .call()
+    }) {
         Ok(resp) => read_body(resp),
         Err(ureq::Error::Status(_, resp)) => read_body(resp),
         Err(e) => Err(format!("请求酷狗接口失败: {e}")),
@@ -206,12 +208,16 @@ fn gateway_ex(
     for (k, v) in extra_headers {
         req = req.set(k, v);
     }
-    let resp = if let Some(b) = body {
-        req.set("Content-Type", "application/json")
-            .send_string(&serde_json::to_string(b).unwrap_or_default())
-    } else {
-        req.call()
-    };
+    // 传输级错误自动重试一次（issue#8-2）：req 每次克隆重建，不复用可疑连接
+    let resp = crate::net::with_retry_raw(|| {
+        if let Some(b) = body {
+            req.clone()
+                .set("Content-Type", "application/json")
+                .send_string(&serde_json::to_string(b).unwrap_or_default())
+        } else {
+            req.clone().call()
+        }
+    });
     let text = match resp {
         Ok(r) => read_body(r)?,
         Err(ureq::Error::Status(_, r)) => read_body(r)?,

@@ -204,6 +204,12 @@ fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) -> Resu
         if let Some(nick) = &r.nickname {
             db::set_setting(&conn, "qq_nickname", nick);
         }
+        // 微信链路续期凭证落库（当前版本暂不发起续期请求，先留存备用）
+        if let Some(rt) = &r.refresh_token {
+            if !rt.is_empty() {
+                db::set_setting(&conn, "qq_wx_refresh_token", rt);
+            }
+        }
     }
     Ok(())
 }

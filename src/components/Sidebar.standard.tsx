@@ -39,7 +39,7 @@ const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
   { key: "sources", label: "在线音源", icon: Radio },
 ];
 
-function SidebarClassic() {
+export default function Sidebar() {
   const view = useStore((s) => s.view);
   const viewParam = useStore((s) => s.viewParam);
   const setView = useStore((s) => s.setView);
@@ -88,25 +88,22 @@ function SidebarClassic() {
   const mins = Math.floor((totalDuration % 3600) / 60);
 
   return (
-    <aside className="w-[242px] shrink-0 mt-2 ml-2 mb-2 rounded-2xl glass flex flex-col px-3.5 pt-3 pb-3 relative z-20">
+    <aside className="w-[236px] shrink-0 flex flex-col px-4 pt-3 relative z-20">
       {/* 品牌区（与桌面图标同构的黑胶 logo） */}
-      <div className="flex items-center gap-3.5 px-3 pt-2 pb-5">
-        <div className="relative group">
-          <Logo size={42} />
-          <div className="absolute inset-0 rounded-full bg-[var(--accent)]/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-        </div>
+      <div className="flex items-center gap-3.5 px-3 pt-2 pb-6">
+        <Logo size={44} />
         <div className="min-w-0">
           <div className="text-[15px] font-bold tracking-wide leading-tight text-[var(--ink)]">
             RustMusic
           </div>
-          <div className="text-[10px] text-[var(--ink-3)] tracking-[0.22em] mt-0.5 font-medium">
-            LIQUID HI-FI
+          <div className="text-[10px] text-[var(--ink-3)] tracking-[0.22em] mt-0.5">
+            HI-FI PLAYER
           </div>
         </div>
       </div>
 
       {/* 导航 + 播放列表（可滚动区） */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-3 pr-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-3">
         <nav className="flex flex-col gap-1.5">
           {NAV.map(({ key, label, icon: Icon }) => {
             const active = view === key;
@@ -114,37 +111,36 @@ function SidebarClassic() {
               <button
                 key={key}
                 onClick={() => setView(key)}
-                className={`nav-item relative h-11 pl-4 pr-3 rounded-2xl flex items-center gap-3 text-[13.5px] transition-all duration-200 ${
+                className={`nav-item relative h-11 pl-4 pr-3 rounded-xl flex items-center gap-3.5 text-[13.5px] transition-all duration-200 ${
                   active
                     ? "text-[var(--ink)] font-semibold"
                     : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                 }`}
                 style={
                   active
-                    ? { background: "var(--accent-weak)" }
-                    : undefined
+                    ? {
+                        background: "var(--accent-weak)",
+                        // 与背景同色的半透明边框会在 1px 内叠加出更亮的描边，
+                        // 这里保持透明边框（占位对齐）只用背景表达选中
+                        border: "1px solid transparent",
+                      }
+                    : { border: "1px solid transparent" }
                 }
               >
                 {active && (
                   <span
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-4 rounded-full"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full"
                     style={{ background: "var(--accent)" }}
                   />
                 )}
                 <Icon
                   size={17}
-                  strokeWidth={2}
-                  className={active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"}
+                  strokeWidth={1.9}
+                  className={active ? "text-[var(--accent)]" : ""}
                 />
-                <span className={active ? "text-[var(--ink)]" : ""}>{label}</span>
+                {label}
                 {key === "liked" && likedCount > 0 && (
-                  <span
-                    className={`ml-auto text-[11px] px-2 py-0.5 rounded-full font-medium tabular-nums ${
-                      active
-                        ? "bg-[var(--accent)] text-[var(--accent-on)]"
-                        : "bg-[var(--shade-strong)] text-[var(--ink-3)]"
-                    }`}
-                  >
+                  <span className="ml-auto text-[11.5px] text-[var(--ink-3)] tabular-nums">
                     {likedCount}
                   </span>
                 )}
@@ -154,7 +150,7 @@ function SidebarClassic() {
         </nav>
 
         {/* 播放列表 */}
-        <div className="mt-6 mb-2 px-3 flex items-center justify-between">
+        <div className="mt-7 mb-2 px-3 flex items-center justify-between">
           <span className="text-[10.5px] font-semibold text-[var(--ink-3)] tracking-[0.18em]">
             {batchMode ? `已选 ${batchSel.size} 个` : "播放列表"}
           </span>
@@ -162,7 +158,7 @@ function SidebarClassic() {
             {batchMode ? (
               <>
                 <button
-                  className="btn-ghost text-[10.5px] px-1.5 h-6 rounded-lg"
+                  className="btn-ghost text-[10.5px] px-1.5 h-6 rounded"
                   onClick={() => {
                     if (batchSel.size === playlists.length) {
                       setBatchSel(new Set());
@@ -175,7 +171,7 @@ function SidebarClassic() {
                   {batchSel.size === playlists.length ? "取消" : "全选"}
                 </button>
                 <button
-                  className="btn-ghost w-6 h-6 rounded-lg text-[#e0533f] hover:bg-[#e0533f]/15 disabled:opacity-30"
+                  className="btn-ghost w-6 h-6 rounded text-[#e0533f] hover:bg-[#e0533f]/10 disabled:opacity-30"
                   title="删除所选歌单"
                   disabled={batchSel.size === 0}
                   onClick={() => setConfirmBatchDel(true)}
@@ -183,7 +179,7 @@ function SidebarClassic() {
                   <Trash2 size={13} />
                 </button>
                 <button
-                  className="btn-ghost w-6 h-6 rounded-lg text-[var(--ink-3)]"
+                  className="btn-ghost w-6 h-6 rounded text-[var(--ink-3)]"
                   title="退出批量模式"
                   onClick={() => {
                     setBatchMode(false);
@@ -196,7 +192,7 @@ function SidebarClassic() {
             ) : (
               <>
                 <button
-                  className="btn-ghost w-7 h-7 rounded-xl text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
+                  className="btn-ghost w-7 h-7 rounded-lg text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
                   title="批量删除歌单"
                   disabled={playlists.length === 0}
                   onClick={() => {
@@ -207,7 +203,7 @@ function SidebarClassic() {
                   <ListChecks size={14} />
                 </button>
                 <button
-                  className="btn-ghost w-7 h-7 rounded-xl text-[var(--ink-3)] hover:text-[var(--ink)]"
+                  className="btn-ghost w-7 h-7 rounded-lg"
                   title="新建播放列表"
                   onClick={() => setPlModalOpen(true)}
                 >
@@ -228,6 +224,8 @@ function SidebarClassic() {
                 : "长按可拖动排序";
             return (
               <div key={p.id} {...(batchMode ? {} : rowProps(i))}>
+                {/* 整行原是 button：会被 useDragList 的“行内控件不触发拖拽”
+                    保护拦掉，故行容器用 div，点击行为由内层承接 */}
                 <div
                   role="button"
                   tabIndex={-1}
@@ -253,7 +251,7 @@ function SidebarClassic() {
                     checked
                       ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
                       : active
-                        ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                        ? "bg-[var(--shade-strong)] text-[var(--ink)]"
                         : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
@@ -274,7 +272,7 @@ function SidebarClassic() {
                     />
                   )}
                   <span className="truncate">{p.name}</span>
-                  <span className="ml-auto text-[11px] text-[var(--ink-3)] tabular-nums">
+                  <span className="ml-auto text-[11.5px] text-[var(--ink-3)] tabular-nums">
                     {p.entries.length}
                   </span>
                 </div>
@@ -284,7 +282,7 @@ function SidebarClassic() {
           {!playlists.length && (
             <button
               onClick={() => setPlModalOpen(true)}
-              className="mx-1 h-10 rounded-xl border border-dashed border-[var(--line)] text-[12px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[var(--accent-soft)] transition-colors"
+              className="mx-1 h-10 rounded-xl border border-dashed border-[rgba(243,233,216,0.14)] text-[12px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[rgba(243,233,216,0.26)] transition-colors"
             >
               + 创建播放列表
             </button>
@@ -292,39 +290,40 @@ function SidebarClassic() {
         </div>
       </div>
 
-      {/* 底部固定区：设置 + 皮肤 */}
-      <div className="shrink-0 flex flex-col justify-end pt-2 gap-2 border-t border-[var(--line)]">
+      {/* 底部固定区：设置按钮中心与播放条垂直中心对齐（播放条中心距底 36px） */}
+      <div className="shrink-0 flex flex-col justify-end pb-[10px] gap-2">
         {scan.active && (
-          <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-[var(--accent-weak)] text-[12px] text-[var(--accent)]">
-            <Loader2 size={13} className="animate-spin shrink-0" />
+          <div className="flex items-center gap-2 px-4 text-[12px] text-[var(--accent)]">
+            <Loader2 size={13} className="animate-spin" />
             <span className="truncate">
               扫描中 {scan.total ? `${scan.done}/${scan.total}` : "…"}
             </span>
           </div>
         )}
 
+        {/* 设置 + 皮肤：同一行，皮肤在设置右侧 */}
         <div className="flex gap-2">
           <button
             onClick={() => setView("settings")}
-            className={`nav-item flex-1 min-w-0 h-10 px-3.5 rounded-xl flex items-center gap-3 text-[13px] transition-all ${
+            className={`nav-item flex-1 min-w-0 h-11 px-4 rounded-xl flex items-center gap-3.5 text-[13.5px] transition-all ${
               view === "settings"
-                ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                ? "bg-[var(--shade-strong)] text-[var(--ink)]"
                 : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
             }`}
           >
-            <Settings size={16} strokeWidth={2} />
+            <Settings size={17} strokeWidth={1.9} />
             设置
           </button>
           <button
             onClick={() => setSkinOpen(true)}
             title="皮肤"
-            className={`nav-item h-10 px-3 rounded-xl flex items-center gap-2 text-[13px] shrink-0 transition-all ${
+            className={`nav-item h-11 px-3.5 rounded-xl flex items-center gap-2 text-[13.5px] shrink-0 transition-all ${
               skinOpen
-                ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                ? "bg-[var(--shade-strong)] text-[var(--ink)]"
                 : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
             }`}
           >
-            <Palette size={16} strokeWidth={2} />
+            <Palette size={17} strokeWidth={1.9} />
             皮肤
           </button>
         </div>
@@ -437,5 +436,3 @@ function SidebarClassic() {
     </aside>
   );
 }
-
-export default SidebarClassic;

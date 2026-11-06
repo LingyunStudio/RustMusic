@@ -93,6 +93,9 @@ pub struct QqQrCheck {
     pub musicid: Option<String>,
     pub musickey: Option<String>,
     pub encrypt_uin: Option<String>,
+    /// 微信链路的续期凭证（wxrefresh_token）。此前直接丢弃——官方客户端
+    /// 靠它定期换新 qm_keyst，本地留存为后续续期能力打基础（issue#8-5）
+    pub refresh_token: Option<String>,
 }
 
 /// 轮询扫码状态；成功时完成 check_sig → OAuth → QQLogin 换取播放凭证
@@ -122,6 +125,7 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             musicid: None,
             musickey: None,
             encrypt_uin: None,
+            refresh_token: None,
         });
     }
 
@@ -235,12 +239,16 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             .as_ref()
             .and_then(|v| find_str_anywhere(v, "encryptUin"));
 
+        let refresh_token = login_resp
+            .as_ref()
+            .and_then(|v| find_str_anywhere(v, "wxrefresh_token"));
         Ok(QqQrCheck {
             status: "success".into(),
             nickname,
             musicid: Some(musicid),
             musickey: Some(musickey),
             encrypt_uin,
+            refresh_token,
         })
     }
 }
@@ -418,12 +426,15 @@ fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
         .iter()
         .find_map(|k| find_str_anywhere(&body, k));
     let encrypt_uin = find_str_anywhere(&body, "encryptUin");
+    let refresh_token = cookie_value(&cookies, "wxrefresh_token")
+        .or_else(|| find_str_anywhere(&body, "wxrefresh_token"));
     Ok(QqQrCheck {
         status: "success".into(),
         nickname,
         musicid: Some(musicid),
         musickey: Some(musickey),
         encrypt_uin,
+        refresh_token,
     })
 }
 
@@ -451,6 +462,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
             musicid: None,
             musickey: None,
             encrypt_uin: None,
+            refresh_token: None,
         }),
         404 => Ok(QqQrCheck {
             status: "scanned".into(),
@@ -458,6 +470,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
             musicid: None,
             musickey: None,
             encrypt_uin: None,
+            refresh_token: None,
         }),
         402 => Ok(QqQrCheck {
             status: "expired".into(),
@@ -465,6 +478,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
             musicid: None,
             musickey: None,
             encrypt_uin: None,
+            refresh_token: None,
         }),
         405 if !code.is_empty() => wx_exchange(&code),
         _ => {
@@ -477,6 +491,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
                     musicid: None,
                     musickey: None,
                     encrypt_uin: None,
+            refresh_token: None,
                 })
             }
         }

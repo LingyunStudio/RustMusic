@@ -45,6 +45,7 @@ type Fields = Pick<
   | "playEntries"
   | "playQueueIndex"
   | "setQueueExtender"
+  | "reportPlaybackFailure"
   | "entryToQueueItem"
   | "togglePlay"
   | "queueFinished"
@@ -427,6 +428,57 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   setQueueExtender(fn) {
     set({ queueExtender: fn });
   },
+
+  /** 播放中的音频下载失败（player://download-failed → ended）计入连跳统计。
+   *  与 playQueueIndex 内部的 fail() 同一套分类与熔断：登录过期只提示；
+   *  无版权/下架置灰；VIP 连续失败熔断；一般失败连跳达上限即停止。 */
+  reportPlaybackFailure(msg) {
+    const st = get();
+    const i = st.qIndex;
+    const item = st.queue[i];
+    if (!item) return;
+    const needRelogin = /登录已过期|请重新登录|未登录/.test(msg);
+    const permanent = !needRelogin && /无版权|下架|已失效|信息失效/.test(msg);
+    const vipRelated = !needRelogin && /VIP|会员|付费|权益/.test(msg);
+    const key = `${item.kind}:${item.id}`;
+    set((s) => ({
+      unavailable: permanent ? { ...s.unavailable, [key]: msg } : s.unavailable,
+      failStreak: s.failStreak + 1,
+    }));
+    const streak = get().failStreak;
+    const title = titleOfQueueItem(item, get());
+    const text = needRelogin
+      ? msg
+      : streak > 1
+        ? `已连续 ${streak} 首播放失败（最近：「${title}」${msg}）`
+        : `「${title}」播放失败：${msg}`;
+    const prev = get().failToastId;
+    if (prev != null) get().dismissToast(prev);
+    set({ failToastId: get().toast(text, "error") });
+    if (needRelogin) return;
+    if (vipRelated) {
+      vipFailStreak += 1;
+      if (vipFailStreak >= 3) {
+        api.stop().catch(() => {});
+        set({ playing: false, pos: 0 });
+        get().toast(
+          `已连续 ${vipFailStreak} 首 VIP/付费曲目无法播放——账号会员可能已过期，已停止自动跳歌`,
+          "error"
+        );
+        return;
+      }
+    }
+    if (streak < Math.min(get().queue.length, 8)) {
+      get().next(true, false, true);
+    } else {
+      api.stop().catch(() => {});
+      set({ playing: false, pos: 0 });
+      get().toast(
+        `已连续 ${streak} 首无法播放——已停止自动跳歌，请检查网络或登录状态后重试`,
+        "error"
+      );
+    }
+  },
   playQueueIndex(i) {
     const { queue } = get();
     const item = queue[i];
@@ -438,7 +490,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     // 后台加载并追加进队列——最后一首自然播完后无缝继续，代替人工点
     // "加载更多"。extender 由列表视图注册；返回 null（无更多/上下文失效）
     // 即注销。busy 防同一首上的重复触发并发拉页。
-    if (i === queue.length - 1 && !queueExtendBusy) {
+    if (i === queue.length - 1 && !queueExtendBusy && get().failStreak === 0) {
       const extender = get().queueExtender;
       if (extender) {
         queueExtendBusy = true;
@@ -516,10 +568,19 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
           return;
         }
       }
-      if (streak < queue.length) {
+      // 连跳上限：队列长度与 8 取小——自动续页会让队列越跳越长，
+      // 只按长度上限会表现为"无限跳下一首"（issue#8-3）
+      if (streak < Math.min(queue.length, 8)) {
         // 失败自动跳歌必须绕过单曲循环：repeat-one 下 next(true) 会重播
         // 刚失败的同一首，坏歌被反复重试直到 failStreak 追平队列长度
         get().next(true, false, true);
+      } else {
+        api.stop().catch(() => {});
+        set({ playing: false, pos: 0 });
+        get().toast(
+          `已连续 ${streak} 首无法播放——已停止自动跳歌，请检查网络或登录状态后重试`,
+          "error"
+        );
       }
     };
     // 开播成功则清零连跳计数（含 VIP 熔断计数），并自愈清除本曲历史置灰标记

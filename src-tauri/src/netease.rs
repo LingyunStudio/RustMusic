@@ -120,13 +120,16 @@ fn cookie_header(music_u: Option<&str>) -> String {
 }
 
 fn post_form(url: &str, body: &str, music_u: Option<&str>) -> Result<serde_json::Value, String> {
-    let resp = ureq::post(url)
-        .set("Content-Type", "application/x-www-form-urlencoded")
-        .set("User-Agent", UA)
-        .set("Cookie", &cookie_header(music_u))
-        .timeout(TIMEOUT)
-        .send_string(body)
-        .map_err(|e| format!("网易云接口请求失败: {e}"))?;
+    // 传输级错误（DNS/连接/TLS）自动重试一次（issue#8-2：网络/代理切换自愈）
+    let resp = crate::net::with_retry(|| {
+        ureq::post(url)
+            .set("Content-Type", "application/x-www-form-urlencoded")
+            .set("User-Agent", UA)
+            .set("Cookie", &cookie_header(music_u))
+            .timeout(TIMEOUT)
+            .send_string(body)
+    })
+    .map_err(|e| format!("网易云接口请求失败: {e}"))?;
     let status = resp.status();
     let text = resp
         .into_string()

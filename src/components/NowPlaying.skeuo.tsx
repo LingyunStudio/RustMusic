@@ -9,7 +9,7 @@ import { remoteCoverCache } from "../utils";
 import { extractPalette, lyricAdaptiveColors, lyricLineProgress } from "../utils";
 import { setFxWanted } from "../fx";
 
-function NowPlayingSkeuo() {
+export default function NowPlaying() {
   const current = useStore((s) => s.current);
   const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
   const fullscreen = useStore((s) => s.fullscreen);
@@ -707,5 +707,3 @@ function NowPlayingSkeuo() {
     </div>
   );
 }
-
-export default NowPlayingSkeuo;

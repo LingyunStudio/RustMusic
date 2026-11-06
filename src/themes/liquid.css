@@ -1270,91 +1270,27 @@ html[data-ui="liquid"] .release-notes > :first-child{ margin-top: 0; }
 html[data-ui="liquid"] .release-notes > :last-child{ margin-bottom: 0; }
 html[data-ui="liquid"] .release-notes .rn-empty{ color: var(--ink-3); margin: 0; }
 
-/* ========== 跨风格语义类适配（液态玻璃风格） ==========
-   把拟物引入的语义类映射为液态玻璃等价观感。 */
-
-html[data-ui="liquid"] {
-  /* Slider 共享组件的凹槽/填充/旋钮材质 → 液态玻璃等价值 */
-  --sk-groove-bg: var(--shade-strong);
-  --sk-groove-border: var(--line);
-  --sk-groove-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  --sk-fill-bg: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%);
-  --sk-fill-shadow: 0 0 8px var(--accent-soft);
-  --sk-knob-metal: radial-gradient(circle at 35% 35%, #ffffff 0%, #f1f5f9 65%, #cbd5e1 100%);
-  --sk-edge: rgba(255, 255, 255, 0.9);
-  --sk-knob-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px var(--accent);
-  --sk-panel-edge: transparent;
+/* ---------- 迷你模式浮窗：浮岛小卡片 ---------- */
+html[data-ui="liquid"] .mini-player {
+  background:
+    linear-gradient(180deg, var(--glass-glint) 0%, transparent 32%),
+    var(--glass-form),
+    var(--liquid-glass-bg-strong);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: var(--liquid-glass-border);
+  border-top-color: var(--liquid-glass-border-specular);
+  box-shadow: var(--liquid-glass-shadow-lg);
 }
-
-html[data-ui="liquid"][data-theme="light"] {
-  --sk-knob-metal: radial-gradient(circle at 35% 35%, #ffffff 0%, #f8fafc 60%, #d7dee7 100%);
-  --sk-knob-shadow: 0 1px 4px rgba(15, 23, 42, 0.25), 0 0 10px var(--accent-soft);
-  --sk-edge: rgba(255, 255, 255, 0.95);
+html[data-ui="liquid"] .mini-play {
+  background: var(--play-btn-bg);
+  color: var(--play-btn-on);
+  box-shadow: var(--liquid-glass-shadow-sm);
+  transition: transform 0.15s ease;
 }
-
-html[data-ui="liquid"] .titlebar-drag { height: 24px; }
-
-/* 拟物「机箱底」→ 液态氛围渐变 */
-html[data-ui="liquid"] .skeuo-chassis-bg {
-  background: radial-gradient(
-    ellipse 120% 100% at 50% -20%,
-    var(--backdrop-1) 0%,
-    var(--backdrop-2) 60%,
-    var(--bg) 100%
-  );
-}
-
-/* ---- 拟物语义类 → 液态玻璃等价观感 ---- */
-html[data-ui="liquid"] .skeuo-row {
-  border: 1px solid transparent;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-html[data-ui="liquid"] .skeuo-row:hover { background: var(--shade-hover); }
-html[data-ui="liquid"] .skeuo-row.checked,
-html[data-ui="liquid"] .skeuo-row.active {
+html[data-ui="liquid"] .mini-play:hover { transform: scale(1.06); }
+html[data-ui="liquid"] .mini-play:active { transform: scale(0.95); }
+html[data-ui="liquid"] .mini-quality {
   background: var(--accent-weak);
-  border-color: var(--accent-soft);
+  border: 1px solid var(--accent-soft);
 }
-html[data-ui="liquid"] .skeuo-row.active { color: var(--accent-strong); }
-html[data-ui="liquid"] .skeuo-switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 40px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--shade-strong);
-  transition: background-color 0.2s;
-}
-html[data-ui="liquid"] .skeuo-switch.active { background: var(--accent); }
-html[data-ui="liquid"] .skeuo-switch-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: left 0.2s;
-}
-html[data-ui="liquid"] .skeuo-switch.active .skeuo-switch-thumb { left: 21px; }
-html[data-ui="liquid"] .skeuo-segmented { display: flex; align-items: center; gap: 6px; }
-html[data-ui="liquid"] .skeuo-segmented-btn {
-  padding: 6px 16px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--ink-2);
-  transition: color 0.2s, background-color 0.2s;
-}
-html[data-ui="liquid"] .skeuo-segmented-btn:hover {
-  color: var(--ink);
-  background: var(--shade-hover);
-}
-html[data-ui="liquid"] .skeuo-segmented-btn.active {
-  color: var(--accent-strong);
-  font-weight: 500;
-  background: var(--accent-weak);
-}
-/* 拟物专属装饰件在液态玻璃风格下不可见 */
-html[data-ui="liquid"] .skeuo-screw { display: none; }
-html[data-ui="liquid"] .slider-tick { display: none; }

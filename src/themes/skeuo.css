@@ -1560,79 +1560,29 @@ html[data-ui="skeuo"][data-theme="light"] .skeuo-jacket {
     inset 0 1px 0 #ffffff;
 }
 
-/* ========== 跨风格语义类适配（拟物风格） ==========
-   把液态玻璃引入的语义类映射为拟物机架材质等价观感。 */
-
-html[data-ui="skeuo"] {
-  /* 动态背景光池：拟物为静态低调光晕（机箱底承担主要氛围） */
-  --blob-o1: 0.16;
-  --blob-o2: 0.18;
-  --blob-o3: 0.05;
-  --blob-o4: 0.04;
-  /* 滑轨填充（拟物：竖向渐变 + 顶部高光棱线） */
-  --sk-fill-bg: linear-gradient(180deg, var(--accent-strong) 0%, var(--accent) 100%);
-  --sk-fill-shadow: 0 0 8px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  /* 弹层面板边缘与滑块共用机壳倒角语言 */
-  --sk-panel-edge: var(--sk-edge);
+/* ---------- 迷你模式浮窗：放大版机架信息小舱 ---------- */
+html[data-ui="skeuo"] .mini-player {
+  background: var(--sk-window-bg);
+  border: 1px solid var(--sk-window-border);
+  box-shadow: var(--sk-window-shadow), 0 18px 44px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
-
-/* ---- 液态玻璃语义类 → 拟物面板等价观感 ---- */
-html[data-ui="skeuo"] .liquid-panel {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-line);
-  border-radius: 16px;
-  box-shadow:
-    0 8px 24px -4px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+html[data-ui="skeuo"] .mini-cover {
+  border: 1px solid var(--sk-cover-border);
+  box-shadow: var(--sk-cover-shadow);
 }
-html[data-ui="skeuo"] .liquid-card {
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--glass-line);
-  border-radius: 16px;
-  box-shadow:
-    0 16px 36px -6px rgba(0, 0, 0, 0.65),
-    0 4px 10px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+html[data-ui="skeuo"] .mini-play {
+  color: #fff;
+  background: conic-gradient(from 180deg at 50% 50%, #f59e0b 0%, #d97706 25%, #b45309 50%, #d97706 75%, #f59e0b 100%);
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 14px -2px rgba(245, 158, 11, 0.65), 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.7), inset 0 -2px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.1s ease, filter 0.1s ease;
 }
-html[data-ui="skeuo"] .liquid-dock {
-  background: var(--bar-glass);
-  border: 1px solid var(--bar-line);
-  box-shadow: var(--bar-shadow);
-  border-radius: 16px;
-}
-/* 输入框 / 小胶囊 → 机架凹槽材质 */
-html[data-ui="skeuo"] .liquid-input {
+html[data-ui="skeuo"] .mini-play:hover { filter: brightness(1.1); }
+html[data-ui="skeuo"] .mini-play:active { transform: translateY(1px); }
+html[data-ui="skeuo"] .mini-quality {
   background: var(--sk-groove-bg);
   border: 1px solid var(--sk-groove-border);
   box-shadow: var(--sk-groove-shadow);
-  border-radius: 12px;
-}
-html[data-ui="skeuo"] .liquid-pill {
-  background: var(--sk-groove-bg);
-  border: 1px solid var(--sk-groove-border);
-  box-shadow: var(--sk-groove-shadow);
-  border-radius: 999px;
-  color: var(--ink-2);
-  font-weight: 700;
-}
-/* 标题栏拖拽热区（拟物：机架倒角顶缘） */
-html[data-ui="skeuo"] .titlebar-drag {
-  height: 36px;
-  border-bottom: 1px solid var(--sk-divider);
-  box-shadow: inset 0 1px 0 var(--sk-divider-hi);
-}
-
-/* 强调色圆点：拟物立体按键质感（凹槽边 + 内高光） */
-html[data-ui="skeuo"] .accent-dot {
-  border: 1px solid rgba(0, 0, 0, 0.35);
-  box-shadow:
-    0 2px 5px rgba(0, 0, 0, 0.35),
-    inset 0 1px 1px rgba(255, 255, 255, 0.6),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.35);
 }

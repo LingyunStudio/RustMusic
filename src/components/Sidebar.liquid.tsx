@@ -39,7 +39,7 @@ const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
   { key: "sources", label: "在线音源", icon: Radio },
 ];
 
-function SidebarSkeuo() {
+export default function Sidebar() {
   const view = useStore((s) => s.view);
   const viewParam = useStore((s) => s.viewParam);
   const setView = useStore((s) => s.setView);
@@ -74,33 +74,39 @@ function SidebarSkeuo() {
     void reorderPlaylists(ids);
   });
 
-  // 计数 = 本地喜欢 + 在线喜欢（与“我喜欢”视图显示的内容一致）
+  // 计数 = 本地喜欢 + 在线喜欢（与“我喜欢”视图显示的内容一致）。
+  // useMemo：此前每次渲染都全库扫两遍，扫描期间每条进度更新都触发重算
   const likedCount = useMemo(
     () => tracks.filter((t) => t.liked).length + likedOnline.length,
     [tracks, likedOnline]
   );
+  const totalDuration = useMemo(
+    () => tracks.reduce((acc, t) => acc + t.duration, 0),
+    [tracks]
+  );
+  const hours = Math.floor(totalDuration / 3600);
+  const mins = Math.floor((totalDuration % 3600) / 60);
 
   return (
-    <aside className="w-[236px] shrink-0 flex flex-col px-3.5 pt-3 relative z-20 border-r border-[var(--sk-divider)] shadow-[inset_-1px_0_0_var(--sk-divider-hi)]">
-      {/* 拟物机架顶角螺丝 */}
-      <div className="skeuo-screw absolute top-3 left-3" />
-      <div className="skeuo-screw absolute top-3 right-3" />
-
-      {/* 拟物金属铭牌品牌区 */}
-      <div className="skeuo-nameplate mt-4 mb-4 px-3 py-2.5 rounded-xl flex items-center gap-3">
-        <Logo size={40} />
+    <aside className="w-[242px] shrink-0 mt-2 ml-2 mb-2 rounded-2xl glass flex flex-col px-3.5 pt-3 pb-3 relative z-20">
+      {/* 品牌区（与桌面图标同构的黑胶 logo） */}
+      <div className="flex items-center gap-3.5 px-3 pt-2 pb-5">
+        <div className="relative group">
+          <Logo size={42} />
+          <div className="absolute inset-0 rounded-full bg-[var(--accent)]/20 blur-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+        </div>
         <div className="min-w-0">
-          <div className="text-[14.5px] font-black tracking-wide leading-tight text-[var(--ink)] drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+          <div className="text-[15px] font-bold tracking-wide leading-tight text-[var(--ink)]">
             RustMusic
           </div>
-          <div className="text-[9.5px] font-bold text-[var(--accent-strong)] tracking-[0.24em] mt-0.5">
-            HI-FI PLAYER
+          <div className="text-[10px] text-[var(--ink-3)] tracking-[0.22em] mt-0.5 font-medium">
+            LIQUID HI-FI
           </div>
         </div>
       </div>
 
       {/* 导航 + 播放列表（可滚动区） */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-3 pr-0.5">
         <nav className="flex flex-col gap-1.5">
           {NAV.map(({ key, label, icon: Icon }) => {
             const active = view === key;
@@ -108,35 +114,37 @@ function SidebarSkeuo() {
               <button
                 key={key}
                 onClick={() => setView(key)}
-                className={`nav-item relative h-10 pl-3.5 pr-3 rounded-xl flex items-center gap-2.5 text-[13px] transition-all duration-150 ${
+                className={`nav-item relative h-11 pl-4 pr-3 rounded-2xl flex items-center gap-3 text-[13.5px] transition-all duration-200 ${
                   active
                     ? "text-[var(--ink)] font-semibold"
-                    : "text-[var(--ink-2)] hover:text-[var(--ink)]"
+                    : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                 }`}
                 style={
                   active
-                    ? {
-                        background: "var(--sk-pressed-bg)",
-                        border: "1px solid var(--sk-pressed-border)",
-                        boxShadow: "var(--sk-pressed-shadow)",
-                      }
-                    : { border: "1px solid transparent" }
+                    ? { background: "var(--accent-weak)" }
+                    : undefined
                 }
               >
-                {/* 拟物按键状态 LED 指示灯 */}
-                {active ? (
-                  <span className="skeuo-led-on" />
-                ) : (
-                  <span className="skeuo-led-off" />
+                {active && (
+                  <span
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-4 rounded-full"
+                    style={{ background: "var(--accent)" }}
+                  />
                 )}
                 <Icon
-                  size={16}
+                  size={17}
                   strokeWidth={2}
-                  className={active ? "text-[var(--accent-strong)]" : ""}
+                  className={active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"}
                 />
-                <span className="truncate">{label}</span>
+                <span className={active ? "text-[var(--ink)]" : ""}>{label}</span>
                 {key === "liked" && likedCount > 0 && (
-                  <span className="ml-auto text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] text-[var(--ink-2)] tabular-nums shadow-[var(--sk-groove-shadow)]">
+                  <span
+                    className={`ml-auto text-[11px] px-2 py-0.5 rounded-full font-medium tabular-nums ${
+                      active
+                        ? "bg-[var(--accent)] text-[var(--accent-on)]"
+                        : "bg-[var(--shade-strong)] text-[var(--ink-3)]"
+                    }`}
+                  >
                     {likedCount}
                   </span>
                 )}
@@ -146,15 +154,15 @@ function SidebarSkeuo() {
         </nav>
 
         {/* 播放列表 */}
-        <div className="mt-6 mb-2 px-2 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-[var(--ink-3)] tracking-[0.2em] uppercase">
+        <div className="mt-6 mb-2 px-3 flex items-center justify-between">
+          <span className="text-[10.5px] font-semibold text-[var(--ink-3)] tracking-[0.18em]">
             {batchMode ? `已选 ${batchSel.size} 个` : "播放列表"}
           </span>
           <div className="flex items-center gap-1">
             {batchMode ? (
               <>
                 <button
-                  className="btn-ghost text-[10.5px] px-1.5 h-6 rounded"
+                  className="btn-ghost text-[10.5px] px-1.5 h-6 rounded-lg"
                   onClick={() => {
                     if (batchSel.size === playlists.length) {
                       setBatchSel(new Set());
@@ -167,7 +175,7 @@ function SidebarSkeuo() {
                   {batchSel.size === playlists.length ? "取消" : "全选"}
                 </button>
                 <button
-                  className="btn-ghost w-6 h-6 rounded text-[#e0533f] hover:bg-[#e0533f]/10 disabled:opacity-30"
+                  className="btn-ghost w-6 h-6 rounded-lg text-[#e0533f] hover:bg-[#e0533f]/15 disabled:opacity-30"
                   title="删除所选歌单"
                   disabled={batchSel.size === 0}
                   onClick={() => setConfirmBatchDel(true)}
@@ -175,7 +183,7 @@ function SidebarSkeuo() {
                   <Trash2 size={13} />
                 </button>
                 <button
-                  className="btn-ghost w-6 h-6 rounded text-[var(--ink-3)]"
+                  className="btn-ghost w-6 h-6 rounded-lg text-[var(--ink-3)]"
                   title="退出批量模式"
                   onClick={() => {
                     setBatchMode(false);
@@ -188,7 +196,7 @@ function SidebarSkeuo() {
             ) : (
               <>
                 <button
-                  className="btn-ghost w-6 h-6 rounded-lg text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
+                  className="btn-ghost w-7 h-7 rounded-xl text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
                   title="批量删除歌单"
                   disabled={playlists.length === 0}
                   onClick={() => {
@@ -196,22 +204,21 @@ function SidebarSkeuo() {
                     setBatchSel(new Set());
                   }}
                 >
-                  <ListChecks size={13} />
+                  <ListChecks size={14} />
                 </button>
                 <button
-                  className="btn-ghost w-6 h-6 rounded-lg"
+                  className="btn-ghost w-7 h-7 rounded-xl text-[var(--ink-3)] hover:text-[var(--ink)]"
                   title="新建播放列表"
                   onClick={() => setPlModalOpen(true)}
                 >
-                  <Plus size={14} />
+                  <Plus size={15} />
                 </button>
               </>
             )}
           </div>
         </div>
 
-        {/* 拟物托盘式播放列表容器 */}
-        <div className="skeuo-well p-1.5 rounded-xl flex flex-col gap-1 min-h-[70px]">
+        <div className="flex flex-col gap-1">
           {playlists.map((p, i) => {
             const active = view === "playlist" && viewParam === p.id;
             const checked = batchMode && batchSel.has(p.id);
@@ -242,28 +249,28 @@ function SidebarSkeuo() {
                     ev.preventDefault();
                     setMenu({ x: ev.clientX, y: ev.clientY, id: p.id });
                   }}
-                  className={`nav-item h-9 pl-2.5 pr-2.5 rounded-lg flex items-center gap-2 text-[12.5px] transition-all cursor-pointer ${
+                  className={`nav-item h-10 pl-3 pr-3 rounded-xl flex items-center gap-2.5 text-[13px] transition-all cursor-pointer ${
                     checked
                       ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
                       : active
-                        ? "bg-black/40 text-[var(--ink)] shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)] border border-black/60"
-                        : "text-[var(--ink-2)] hover:text-[var(--ink)]"
+                        ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                        : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                   }`}
                 >
                   {batchMode ? (
                     <span
-                      className={`w-[15px] h-[15px] rounded border flex items-center justify-center shrink-0 transition-colors ${
+                      className={`w-[17px] h-[17px] rounded-[5px] border flex items-center justify-center shrink-0 transition-colors ${
                         checked
                           ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
-                          : "border-[var(--line)] bg-black/30"
+                          : "border-[var(--line)]"
                       }`}
                     >
-                      {checked && <Check size={11} strokeWidth={3} />}
+                      {checked && <Check size={12} strokeWidth={3} />}
                     </span>
                   ) : (
                     <ListMusic
-                      size={14}
-                      className={active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"}
+                      size={15}
+                      className={active ? "text-[var(--accent)]" : "text-[var(--ink-3)]"}
                     />
                   )}
                   <span className="truncate">{p.name}</span>
@@ -277,7 +284,7 @@ function SidebarSkeuo() {
           {!playlists.length && (
             <button
               onClick={() => setPlModalOpen(true)}
-              className="mx-1 h-9 rounded-lg border border-dashed border-white/10 text-[11.5px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-white/20 transition-colors flex items-center justify-center"
+              className="mx-1 h-10 rounded-xl border border-dashed border-[var(--line)] text-[12px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[var(--accent-soft)] transition-colors"
             >
               + 创建播放列表
             </button>
@@ -285,11 +292,11 @@ function SidebarSkeuo() {
         </div>
       </div>
 
-      {/* 底部固定区：拟物触感设置 & 皮肤按钮 */}
-      <div className="shrink-0 flex flex-col justify-end pb-[10px] gap-2 pt-2 border-t border-[var(--sk-divider)] shadow-[0_-1px_0_var(--sk-divider-hi)]">
+      {/* 底部固定区：设置 + 皮肤 */}
+      <div className="shrink-0 flex flex-col justify-end pt-2 gap-2 border-t border-[var(--line)]">
         {scan.active && (
-          <div className="flex items-center gap-2 px-3 text-[11.5px] text-[var(--accent)]">
-            <Loader2 size={12} className="animate-spin" />
+          <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-[var(--accent-weak)] text-[12px] text-[var(--accent)]">
+            <Loader2 size={13} className="animate-spin shrink-0" />
             <span className="truncate">
               扫描中 {scan.total ? `${scan.done}/${scan.total}` : "…"}
             </span>
@@ -299,10 +306,10 @@ function SidebarSkeuo() {
         <div className="flex gap-2">
           <button
             onClick={() => setView("settings")}
-            className={`btn-ghost flex-1 min-w-0 h-10 px-3 rounded-xl flex items-center justify-center gap-2.5 text-[13px] ${
+            className={`nav-item flex-1 min-w-0 h-10 px-3.5 rounded-xl flex items-center gap-3 text-[13px] transition-all ${
               view === "settings"
-                ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
-                : ""
+                ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
             }`}
           >
             <Settings size={16} strokeWidth={2} />
@@ -311,10 +318,10 @@ function SidebarSkeuo() {
           <button
             onClick={() => setSkinOpen(true)}
             title="皮肤"
-            className={`btn-ghost h-10 px-3 rounded-xl flex items-center justify-center gap-1.5 text-[13px] shrink-0 ${
+            className={`nav-item h-10 px-3 rounded-xl flex items-center gap-2 text-[13px] shrink-0 transition-all ${
               skinOpen
-                ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
-                : ""
+                ? "bg-[var(--shade-strong)] text-[var(--ink)] font-medium"
+                : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
             }`}
           >
             <Palette size={16} strokeWidth={2} />
@@ -322,10 +329,6 @@ function SidebarSkeuo() {
           </button>
         </div>
       </div>
-
-      {/* 拟物机架底角螺丝 */}
-      <div className="skeuo-screw absolute bottom-2 left-3" />
-      <div className="skeuo-screw absolute bottom-2 right-3" />
 
       <SkinPicker open={skinOpen} onClose={() => setSkinOpen(false)} />
 
@@ -349,6 +352,7 @@ function SidebarSkeuo() {
         }}
       />
 
+      {/* 播放列表右键菜单（Portal 到 body：fixed 才相对视口） */}
       {menu &&
         createPortal(
           <div
@@ -433,5 +437,3 @@ function SidebarSkeuo() {
     </aside>
   );
 }
-
-export default SidebarSkeuo;

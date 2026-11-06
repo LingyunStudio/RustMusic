@@ -1,10 +1,12 @@
-//! 侧栏分发器：按界面风格渲染对应布局。
-//! 标准 / 液态玻璃共用 Classic 布局（浮岛玻璃卡片），拟物为「机架面板」专属布局。
+//! 按界面风格分发：standard = 合并前原版 / skeuo = 拟物分支原版 / liquid = 液态玻璃分支原版。
+import SidebarStandard from "./Sidebar.standard";
+import SidebarSkeuo from "./Sidebar.skeuo";
+import SidebarLiquid from "./Sidebar.liquid";
 import { useStore } from "../store";
-import SidebarClassic from "./SidebarClassic";
-import SidebarSkeuo from "./SidebarSkeuo";
 
 export default function Sidebar() {
   const uiTheme = useStore((s) => s.uiTheme);
-  return uiTheme === "skeuo" ? <SidebarSkeuo /> : <SidebarClassic />;
+  if (uiTheme === "liquid") return <SidebarLiquid />;
+  if (uiTheme === "skeuo") return <SidebarSkeuo />;
+  return <SidebarStandard />;
 }

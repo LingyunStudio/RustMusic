@@ -13,6 +13,7 @@ mod lyrics;
 mod models;
 mod monitor;
 mod navidrome;
+mod net;
 mod netease;
 mod qq;
 mod qrc;
@@ -221,6 +222,10 @@ fn main() {
 
             // 存量明文凭据迁移：settings 表 → 系统凭据管理器（成功即清库内残留）
             credentials::migrate_legacy(&conn);
+
+            // QQ 设备指纹持久化（issue#8-5）：guid 每次重启随机会让服务端风控
+            // 视角下的会话环境频繁变化，加速 musickey 失效；改为首次生成后落库复用
+            qq::init_guid(&conn);
 
             // 读取用户设置
             let volume: f32 = db::get_setting(&conn, "volume")

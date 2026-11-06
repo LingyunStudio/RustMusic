@@ -15,12 +15,24 @@ fn b64_encode(data: &[u8]) -> String {
 
 pub const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const TIMEOUT: Duration = Duration::from_secs(12);
-/// 客户端 guid：每进程随机生成一次（10 位数字，与官方客户端格式一致），
-/// 避免所有安装共用固定值触发风控
+/// 客户端 guid：首次生成后写入 settings 表持久化（10 位数字，与官方客户端
+/// 格式一致）。此前每进程重启随机一次——服务端风控视角下会话设备频繁变化，
+/// 是 musickey 几天就失效的诱因之一（issue#8-5）；改为跨重启稳定复用。
 fn guid() -> &'static str {
     use std::sync::OnceLock;
     static GUID: OnceLock<String> = OnceLock::new();
-    GUID.get_or_init(|| {
+    GUID.get_or_init(|| GUID_STATIC.lock().unwrap().clone())
+}
+
+static GUID_STATIC: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// 应用启动时（db 就绪后）调用：读取持久化 guid，没有则生成并落库
+pub fn init_guid(conn: &rusqlite::Connection) {
+    let mut g = GUID_STATIC.lock().unwrap();
+    if !g.is_empty() {
+        return;
+    }
+    *g = crate::db::get_setting(conn, "qq_guid").unwrap_or_else(|| {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let mut s = String::with_capacity(10);
@@ -28,8 +40,10 @@ fn guid() -> &'static str {
         for _ in 0..9 {
             s.push(char::from(b'0' + rng.gen_range(0..10) as u8));
         }
-        s
-    })
+        let s2 = s;
+        crate::db::set_setting(conn, "qq_guid", &s2);
+        s2
+    });
 }
 
 /// 读取环境变量中的代理配置（与 ureq 内建逻辑一致）
@@ -51,27 +65,60 @@ pub fn system_proxy() -> Option<ureq::Proxy> {
     None
 }
 
-/// QQ 系接口统一走系统代理（ptlogin2 登录网关直连会被拒绝）
-pub fn http_agent() -> &'static ureq::Agent {
-    use std::sync::OnceLock;
-    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| match system_proxy() {
+/// QQ 系接口统一走系统代理（ptlogin2 登录网关直连会被拒绝）。
+/// agent 缓存可重建（issue#8-2）：网络/代理切换后连接池里的死连接不会
+/// 自愈，传输错误时 rebuild_agents() 清空缓存，下次请求按当前环境重建。
+pub fn http_agent() -> ureq::Agent {
+    if let Some(a) = HTTP_AGENT.read().unwrap().clone() {
+        return a;
+    }
+    let a = match system_proxy() {
         Some(p) => ureq::AgentBuilder::new().proxy(p).build(),
         None => ureq::AgentBuilder::new().build(),
-    })
+    };
+    *HTTP_AGENT.write().unwrap() = Some(a.clone());
+    a
 }
 
-/// 禁止重定向的 agent：check_sig / OAuth 的 p_skey、code 都在 302 响应上
-fn no_redirect_agent() -> &'static ureq::Agent {
-    use std::sync::OnceLock;
-    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| {
-        let mut b = ureq::AgentBuilder::new().redirects(0);
-        if let Some(p) = system_proxy() {
-            b = b.proxy(p);
+fn no_redirect_agent() -> ureq::Agent {
+    if let Some(a) = NO_REDIRECT_AGENT.read().unwrap().clone() {
+        return a;
+    }
+    let mut b = ureq::AgentBuilder::new().redirects(0);
+    if let Some(p) = system_proxy() {
+        b = b.proxy(p);
+    }
+    let a = b.build();
+    *NO_REDIRECT_AGENT.write().unwrap() = Some(a.clone());
+    a
+}
+
+static HTTP_AGENT: std::sync::RwLock<Option<ureq::Agent>> = std::sync::RwLock::new(None);
+static NO_REDIRECT_AGENT: std::sync::RwLock<Option<ureq::Agent>> = std::sync::RwLock::new(None);
+
+/// 网络级失败后重建连接池（调用方在传输错误重试前调用）
+fn rebuild_agents() {
+    *HTTP_AGENT.write().unwrap() = None;
+    *NO_REDIRECT_AGENT.write().unwrap() = None;
+}
+
+/// QQ 请求的传输级错误恢复：重建 agent → 等 600ms → 重试一次（issue#8-2）
+fn send_with_recover<T>(mut f: impl FnMut() -> Result<T, ureq::Error>) -> Result<T, String> {
+    match f() {
+        Ok(v) => Ok(v),
+        Err(e) if crate::net::is_transport_err(&e) => {
+            rebuild_agents();
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            f().map_err(|e2| {
+                if crate::net::is_transport_err(&e2) {
+                    crate::net::transport_text().to_string()
+                } else {
+                    e2.to_string()
+                }
+            })
         }
-        b.build()
-    })
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 // ---------- 通用 ----------
@@ -145,8 +192,7 @@ fn musicu_signed(
     if let Some(c) = cookie {
         req = req.set("Cookie", c);
     }
-    let resp = req
-        .send_string(&body)
+    let resp = send_with_recover(|| req.clone().send_string(&body))
         .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?;
     let text = resp
         .into_string()
@@ -167,15 +213,17 @@ fn chrono_now_ms() -> u128 {
 }
 
 fn plain_get(url: &str, referer: &str) -> Result<String, String> {
-    http_agent()
-        .get(url)
-        .set("Referer", referer)
-        .set("User-Agent", UA)
-        .timeout(TIMEOUT)
-        .call()
-        .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?
-        .into_string()
-        .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))
+    send_with_recover(|| {
+        http_agent()
+            .get(url)
+            .set("Referer", referer)
+            .set("User-Agent", UA)
+            .timeout(TIMEOUT)
+            .call()
+    })
+    .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?
+    .into_string()
+    .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))
 }
 
 // ---------- 数据模型 ----------
