@@ -359,6 +359,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // 需要网络，避免并发测试时撞 IP 频控
     fn test_search_and_lyric() {
         let songs = search("晴天", 1).unwrap();
         assert!(!songs.is_empty());
@@ -590,10 +591,12 @@ fn test_kugou_download_quality_audit() {
         rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .expect("打开应用数据库失败");
     let get = |k: &str| -> String {
-        conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
-            r.get::<_, String>(0)
+        crate::credentials::get(k).unwrap_or_else(|| {
+            conn.query_row("SELECT value FROM settings WHERE key = ?1", [k], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap_or_default()
         })
-        .unwrap_or_default()
     };
     let token = get("kg_token");
     let userid = get("kg_userid");

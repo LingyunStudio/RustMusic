@@ -286,23 +286,17 @@ html[data-ui="liquid"] ::selection {
 
 /* ---------- 滚动条 ---------- */
 
-html[data-ui="liquid"] ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+html[data-ui="liquid"],
+html[data-ui="liquid"] * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
-html[data-ui="liquid"] ::-webkit-scrollbar-track {
-  background: transparent;
-}
-html[data-ui="liquid"] ::-webkit-scrollbar-thumb {
-  background: var(--shade-strong);
-  border-radius: 5px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-html[data-ui="liquid"] ::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-3);
-  border: 3px solid transparent;
-  background-clip: padding-box;
+html[data-ui="liquid"] ::-webkit-scrollbar,
+html[data-ui="liquid"] *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 /* ---------- 玻璃面板体系 ---------- */

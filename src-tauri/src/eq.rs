@@ -104,8 +104,13 @@ fn design_band(i: usize, sr: f64, gain_db: f64) -> [f64; 5] {
 /// 与皮肤律动采样分接（FxShared，见 fx.rs）
 pub struct EqSource<S> {
     inner: S,
+    /// 底层解码器的真实声道数（5.1 全景声为 6，7.1 为 8）
+    in_channels: usize,
+    /// 对外输出的声道数（>2 的多声道环绕声在 EqSource 内按 ITU-R BS.775 下混为立体声 2 声道，
+    /// 避免 rodio 丢弃中置人声/环绕声道，同时保证立体声 DAC 独占模式正常握手）
     channels: usize,
     cur: usize,
+    pending_r: Option<f32>,
     sr: f64,
     shared: Arc<EqShared>,
     ver: u64,
@@ -131,12 +136,15 @@ impl<S: Source> EqSource<S> {
         pos_ms: Arc<AtomicU64>,
         base_ms: f64,
     ) -> Self {
-        let channels = (u16::from(inner.channels()) as usize).max(1);
+        let in_channels = (u16::from(inner.channels()) as usize).max(1);
+        let channels = if in_channels > 2 { 2 } else { in_channels };
         let sr = f64::from(u32::from(inner.sample_rate()));
         let mut s = Self {
             inner,
+            in_channels,
             channels,
             cur: 0,
+            pending_r: None,
             sr,
             shared,
             ver: u64::MAX,
@@ -180,7 +188,57 @@ impl<S: Source> Iterator for EqSource<S> {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        let x = self.inner.next()?;
+        let x = if self.in_channels <= 2 {
+            self.inner.next()?
+        } else if let Some(r) = self.pending_r.take() {
+            r
+        } else {
+            // 多声道环绕声（如 QQ 臻品全景声 5.1 / 酷狗蝰蛇全景声 5.1）：
+            // 按 ITU-R BS.775 矩阵把一帧多声道下混为 L/R，完整保留中置人声(FC)、低音(LFE)与环绕(SL/SR)
+            let mut raw = [0.0f32; 16];
+            let n = self.in_channels.min(16);
+            for i in 0..self.in_channels {
+                let s = self.inner.next()?;
+                if i < n {
+                    raw[i] = s;
+                }
+            }
+            let (l, r) = match self.in_channels {
+                6 => {
+                    // 5.1 FLAC 声道序：FL, FR, FC, LFE, BL/SL, BR/SR
+                    let inv_sqrt2 = std::f32::consts::FRAC_1_SQRT_2;
+                    let c = inv_sqrt2 * raw[2] + 0.5 * raw[3];
+                    (
+                        (raw[0] + c + inv_sqrt2 * raw[4]) * 0.58578644,
+                        (raw[1] + c + inv_sqrt2 * raw[5]) * 0.58578644,
+                    )
+                }
+                8 => {
+                    // 7.1 声道序：FL, FR, FC, LFE, BL, BR, SL, SR
+                    let inv_sqrt2 = std::f32::consts::FRAC_1_SQRT_2;
+                    let c = inv_sqrt2 * raw[2] + 0.5 * raw[3];
+                    (
+                        (raw[0] + c + 0.5 * (raw[4] + raw[6])) * 0.55,
+                        (raw[1] + c + 0.5 * (raw[5] + raw[7])) * 0.55,
+                    )
+                }
+                _ => {
+                    let mut l_sum = 0.0f32;
+                    let mut r_sum = 0.0f32;
+                    for i in 0..n {
+                        if i % 2 == 0 {
+                            l_sum += raw[i];
+                        } else {
+                            r_sum += raw[i];
+                        }
+                    }
+                    let scale = 2.0 / (n as f32);
+                    (l_sum * scale, r_sum * scale)
+                }
+            };
+            self.pending_r = Some(r);
+            l
+        };
         let out = if self.shared.enabled.load(Ordering::Relaxed) {
             self.refresh();
             let mut s = x as f64;
@@ -212,7 +270,11 @@ impl<S: Source> Iterator for EqSource<S> {
 
 impl<S: Source> Source for EqSource<S> {
     fn current_span_len(&self) -> Option<usize> {
-        self.inner.current_span_len()
+        if self.in_channels != self.channels {
+            None
+        } else {
+            self.inner.current_span_len()
+        }
     }
 
     fn channels(&self) -> rodio::ChannelCount {
@@ -232,6 +294,9 @@ impl<S: Source> Source for EqSource<S> {
         self.inner.try_seek(pos)?;
         self.base_ms = pos.as_secs_f64() * 1000.0;
         self.frames = 0;
+        self.cur = 0;
+        self.pending_r = None;
+        self.frame_sum = 0.0;
         for ch in &mut self.states {
             for b in ch {
                 b.reset();

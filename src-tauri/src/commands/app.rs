@@ -6,6 +6,70 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::db;
 use crate::AppState;
 use std::io::Read;
+/// 进入迷你小窗模式：记录原窗口尺寸位置，窗口缩为紧凑小窗
+#[tauri::command]
+pub async fn enter_mini_mode(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        let is_max = w.is_maximized().unwrap_or(false);
+        if is_max {
+            let _ = w.unmaximize();
+        }
+        if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
+            let st = app.state::<AppState>();
+            let conn = st.db.lock();
+            let geom = format!(
+                "{},{},{},{},{}",
+                pos.x,
+                pos.y,
+                size.width,
+                size.height,
+                if is_max { 1 } else { 0 }
+            );
+            let _ = db::set_setting(&conn, "main_prev_geom", &geom);
+        }
+        let _ = w.set_min_size(Some(tauri::LogicalSize::new(300.0, 70.0)));
+        let _ = w.set_size(tauri::LogicalSize::new(360.0, 118.0));
+        let _ = w.set_always_on_top(true);
+    }
+    Ok(())
+}
+
+/// 退出迷你小窗模式：还原为主窗口并恢复原尺寸位置
+#[tauri::command]
+pub async fn exit_mini_mode(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_always_on_top(false);
+
+        let saved = {
+            let st = app.state::<AppState>();
+            let conn = st.db.lock();
+            db::get_setting(&conn, "main_prev_geom")
+        };
+        let mut restored = false;
+        if let Some(s) = saved {
+            let p: Vec<f64> = s.split(',').filter_map(|v| v.parse().ok()).collect();
+            if p.len() == 5 {
+                let (x, y, width, height, is_max) = (p[0], p[1], p[2], p[3], p[4] > 0.5);
+                if width >= 600.0 && height >= 400.0 {
+                    let _ = w.set_size(tauri::PhysicalSize::new(width as u32, height as u32));
+                    let _ = w.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
+                    let _ = w.set_min_size(Some(tauri::LogicalSize::new(1000.0, 660.0)));
+                    if is_max {
+                        let _ = w.maximize();
+                    }
+                    restored = true;
+                }
+            }
+        }
+        if !restored {
+            let _ = w.set_size(tauri::LogicalSize::new(1280.0, 880.0));
+            let _ = w.center();
+            let _ = w.set_min_size(Some(tauri::LogicalSize::new(1000.0, 660.0)));
+        }
+    }
+    Ok(())
+}
+
 /// 运行时放行 asset 协议路径：自定义皮肤图片可能在用户目录任意位置
 #[tauri::command]
 pub async fn asset_scope_allow(app: AppHandle, path: String) -> Result<(), String> {

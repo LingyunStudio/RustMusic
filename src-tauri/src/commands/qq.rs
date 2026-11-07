@@ -63,14 +63,12 @@ pub async fn qq_play(app: AppHandle, track: QqPlayReq) -> Result<(), String> {
 fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
     let state = app.state::<AppState>();
     let (musicid, musickey) = qq_credential(&state)?;
-    // quality_setting = 用户选择的原始档位（回退提示用）；quality = 归一后
-    // 传给取链阶梯的值（QQ 暂无 Hi-Res 文件档，hires → lossless 阶梯）
     let quality_setting = {
         let conn = state.db.lock();
         super::source_quality(&conn, "qq")
     };
     let quality = super::resolve_quality("qq", &quality_setting);
-    let (url, ext, quality_label) = crate::qq::song_url(
+    let (url, _ext, quality_label) = crate::qq::song_url(
         &track.songmid,
         &track.media_mid,
         &musicid,
@@ -78,31 +76,13 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
         &quality,
         track.vip,
     )?;
-    if quality == "lossless" && !ext.eq_ignore_ascii_case("flac") {
-        notify_quality_fallback(
-            app,
-            "QQ 音乐",
-            &quality,
-            quality_label,
-            "账号权益未含无损或该曲无 flac",
-        );
-    }
-    // 请求 Hi-Res/臻品母带但实际交付更低档位：明确告知（阶梯已自动回落）
-    let delivered_ok = match quality_setting.as_str() {
-        "master" => quality_label == "臻品母带",
-        "atmos" => quality_label == "臻品全景声",
-        "hires" => quality_label == "Hi-Res" || quality_label == "臻品母带",
-        _ => true,
-    };
-    if !delivered_ok {
-        notify_quality_fallback(
-            app,
-            "QQ 音乐",
-            &quality_setting,
-            quality_label,
-            "账号权益未含该音质或该曲无对应版本",
-        );
-    }
+    notify_quality_fallback(
+        app,
+        "QQ 音乐",
+        &quality_setting,
+        quality_label,
+        "账号权益未含该音质或该曲无对应音源版本",
+    );
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
     let cover = {
         let conn = state.db.lock();

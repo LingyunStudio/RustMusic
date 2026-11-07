@@ -22,10 +22,10 @@ export default function Titlebar() {
 
   return (
     <>
-      {/* 顶部机架倒角与拖拽热区 */}
+      {/* 顶部拖拽热区 */}
       <div
         data-tauri-drag-region
-        className="absolute top-0 left-0 right-0 h-9 z-[54] pointer-events-auto border-b border-[var(--sk-divider)] shadow-[inset_0_1px_0_var(--sk-divider-hi)]"
+        className="absolute top-0 left-0 right-0 h-9 z-[54] pointer-events-auto"
       />
 
       {/* 拟物金属按键窗口控制区 */}

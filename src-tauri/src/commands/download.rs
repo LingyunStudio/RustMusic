@@ -119,8 +119,8 @@ fn downloading_set() -> &'static std::sync::Mutex<std::collections::HashSet<std:
         std::sync::OnceLock::new();
     S.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
 }
-/// 单文件下载上限：防异常响应把磁盘写爆
-const MAX_DOWNLOAD: u64 = 128 * 1024 * 1024;
+/// 单文件下载上限：防异常响应把磁盘写爆（24bit/192kHz 臻品母带单曲可达 180~250MB，放宽至 512MB）
+const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 
 /// 同步任务体：取链 + 分块下载 + 封面拉取 + 标签写入全是阻塞 IO，
 /// 整体放专用线程池执行（大文件可能持续数分钟，绝不能占用异步 worker）
@@ -131,14 +131,14 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
         return Err("歌曲标题为空".into());
     }
 
-    // 1) 按当前音质取播放链接
+    // 1) 按当前音源设置的音质取播放/下载链接（此前误读全局旧 key "quality"，忽略了分平台音质设置）
     let quality = {
         let conn = state.db.lock();
-        let q = db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string());
+        let q = super::source_quality(&conn, &req.kind);
         super::resolve_quality(&req.kind, &q)
     };
     // 第三个元素 = 实际拿到的音质档位（下载完成提示展示，
-    // 用户能直接看到“选了 Hi-Res 实际下到哪一档”）
+    // 用户能直接看到“选了臻品母带/Hi-Res 实际下到哪一档”）
     let (url, ext, q_label) = match req.kind.as_str() {
         "netease" => {
             let id: i64 = req
@@ -146,9 +146,12 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
                 .parse()
                 .map_err(|_| "网易云歌曲 ID 无效".to_string())?;
             let music_u = netease_cookie(&state);
-            let (u, br, ext, _level) = crate::netease::song_url(id, music_u.as_deref(), &quality)?
-                .ok_or("该歌曲暂无可播放链接")?;
-            let label = super::quality_tag(&ext, br).to_string();
+            let (u, br, ext, delivered_level) =
+                crate::netease::song_url(id, music_u.as_deref(), &quality)?
+                    .ok_or("该歌曲暂无可播放链接")?;
+            let label = super::netease::netease_level_label(&delivered_level)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| super::quality_tag(&ext, br));
             (u, ext, Some(label))
         }
         "qq" => {
@@ -329,7 +332,7 @@ fn download_to_dest(
         return Err(format!("下载不完整（{received}/{total} 字节），已放弃"));
     }
     if received == MAX_DOWNLOAD && (total == 0 || total > received) {
-        return Err("文件超过 128MB 下载上限，已放弃".into());
+        return Err("文件超过 512MB 下载上限，已放弃".into());
     }
     std::fs::rename(&part, dest).map_err(|e| format!("保存文件失败: {e}"))?;
     let _ = app.emit(

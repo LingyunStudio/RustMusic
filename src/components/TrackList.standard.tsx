@@ -275,7 +275,7 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
           checked
             ? "bg-[var(--accent-weak)]"
             : active
@@ -486,7 +486,7 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
           checked || active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
         } ${dead ? "opacity-45" : ""}`}
         onClick={

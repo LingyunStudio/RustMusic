@@ -428,6 +428,8 @@ fn main() {
             commands::set_close_action,
             commands::extract_cover_palette,
             commands::fetch_cover,
+            commands::enter_mini_mode,
+            commands::exit_mini_mode,
             commands::desktop_lyrics_set_always_top,
             commands::dlyrics_menubar_line,
             commands::menubar_extension_install,

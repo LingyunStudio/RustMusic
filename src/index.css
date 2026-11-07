@@ -19,3 +19,24 @@
 @import "./themes/standard.css";
 @import "./themes/skeuo.css";
 @import "./themes/liquid.css";
+
+/* ---------- 全局无滚动条规范 ----------
+   删除所有主题、所有位置的滚动条轨道与滑块，保留滚轮/触控板/拖拽滚动能力 */
+*,
+*::before,
+*::after {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+*::-webkit-scrollbar,
+::-webkit-scrollbar,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}

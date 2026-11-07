@@ -82,15 +82,11 @@ export default function Sidebar() {
 
   return (
     <aside className="w-[236px] shrink-0 flex flex-col px-3.5 pt-3 relative z-20 border-r border-[var(--sk-divider)] shadow-[inset_-1px_0_0_var(--sk-divider-hi)]">
-      {/* 拟物机架顶角螺丝 */}
-      <div className="skeuo-screw absolute top-3 left-3" />
-      <div className="skeuo-screw absolute top-3 right-3" />
-
       {/* 拟物金属铭牌品牌区 */}
-      <div className="skeuo-nameplate mt-4 mb-4 px-3 py-2.5 rounded-xl flex items-center gap-3">
-        <Logo size={40} />
+      <div className="skeuo-nameplate mt-2 mb-4 px-3.5 py-2.5 rounded-xl flex items-center gap-3">
+        <Logo size={38} />
         <div className="min-w-0">
-          <div className="text-[14.5px] font-black tracking-wide leading-tight text-[var(--ink)] drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+          <div className="text-[14.5px] font-black tracking-wide leading-tight text-[var(--ink)]">
             RustMusic
           </div>
           <div className="text-[9.5px] font-bold text-[var(--accent-strong)] tracking-[0.24em] mt-0.5">
@@ -123,12 +119,6 @@ export default function Sidebar() {
                     : { border: "1px solid transparent" }
                 }
               >
-                {/* 拟物按键状态 LED 指示灯 */}
-                {active ? (
-                  <span className="skeuo-led-on" />
-                ) : (
-                  <span className="skeuo-led-off" />
-                )}
                 <Icon
                   size={16}
                   strokeWidth={2}
@@ -246,16 +236,25 @@ export default function Sidebar() {
                     checked
                       ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
                       : active
-                        ? "bg-black/40 text-[var(--ink)] shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)] border border-black/60"
+                        ? "text-[var(--ink)] font-semibold"
                         : "text-[var(--ink-2)] hover:text-[var(--ink)]"
                   }`}
+                  style={
+                    !checked && active
+                      ? {
+                          background: "var(--sk-pressed-bg)",
+                          border: "1px solid var(--sk-pressed-border)",
+                          boxShadow: "var(--sk-pressed-shadow)",
+                        }
+                      : { border: "1px solid transparent" }
+                  }
                 >
                   {batchMode ? (
                     <span
                       className={`w-[15px] h-[15px] rounded border flex items-center justify-center shrink-0 transition-colors ${
                         checked
                           ? "bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-on)]"
-                          : "border-[var(--line)] bg-black/30"
+                          : "border-[var(--sk-groove-border)] bg-[var(--sk-groove-bg)]"
                       }`}
                     >
                       {checked && <Check size={11} strokeWidth={3} />}
@@ -277,7 +276,7 @@ export default function Sidebar() {
           {!playlists.length && (
             <button
               onClick={() => setPlModalOpen(true)}
-              className="mx-1 h-9 rounded-lg border border-dashed border-white/10 text-[11.5px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-white/20 transition-colors flex items-center justify-center"
+              className="mx-1 h-9 rounded-lg border border-dashed border-[var(--sk-divider)] text-[11.5px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[var(--accent)] transition-colors flex items-center justify-center"
             >
               + 创建播放列表
             </button>
@@ -300,10 +299,17 @@ export default function Sidebar() {
           <button
             onClick={() => setView("settings")}
             className={`btn-ghost flex-1 min-w-0 h-10 px-3 rounded-xl flex items-center justify-center gap-2.5 text-[13px] ${
-              view === "settings"
-                ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
-                : ""
+              view === "settings" ? "!text-[var(--accent-strong)] font-semibold" : ""
             }`}
+            style={
+              view === "settings"
+                ? {
+                    background: "var(--sk-pressed-bg)",
+                    borderColor: "var(--sk-pressed-border)",
+                    boxShadow: "var(--sk-pressed-shadow)",
+                  }
+                : undefined
+            }
           >
             <Settings size={16} strokeWidth={2} />
             设置
@@ -312,20 +318,23 @@ export default function Sidebar() {
             onClick={() => setSkinOpen(true)}
             title="皮肤"
             className={`btn-ghost h-10 px-3 rounded-xl flex items-center justify-center gap-1.5 text-[13px] shrink-0 ${
-              skinOpen
-                ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
-                : ""
+              skinOpen ? "!text-[var(--accent-strong)] font-semibold" : ""
             }`}
+            style={
+              skinOpen
+                ? {
+                    background: "var(--sk-pressed-bg)",
+                    borderColor: "var(--sk-pressed-border)",
+                    boxShadow: "var(--sk-pressed-shadow)",
+                  }
+                : undefined
+            }
           >
             <Palette size={16} strokeWidth={2} />
             皮肤
           </button>
         </div>
       </div>
-
-      {/* 拟物机架底角螺丝 */}
-      <div className="skeuo-screw absolute bottom-2 left-3" />
-      <div className="skeuo-screw absolute bottom-2 right-3" />
 
       <SkinPicker open={skinOpen} onClose={() => setSkinOpen(false)} />
 

@@ -703,11 +703,18 @@ export default function SettingsView() {
         <section style={{ ["--row-idx" as string]: 4 }} className="anim-row glass rounded-2xl p-5">
           <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">网易云音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px] shrink-0">网易云音质</span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" }, { value: "higher", label: "较高", desc: "192k" }, { value: "high", label: "极高", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }, { value: "jymaster", label: "超清母带", desc: "黑胶SVIP" }, { value: "sky", label: "沉浸环绕声", desc: "黑胶SVIP" }
+                  { value: "standard", label: "标准", desc: "128k" },
+                  { value: "higher", label: "较高", desc: "192k" },
+                  { value: "high", label: "极高", desc: "320k · VIP" },
+                  { value: "lossless", label: "无损", desc: "FLAC · VIP" },
+                  { value: "hires", label: "Hi-Res", desc: "24bit · VIP" },
+                  { value: "jyeffect", label: "高清环绕声", desc: "VIP" },
+                  { value: "sky", label: "沉浸环绕声", desc: "SVIP" },
+                  { value: "jymaster", label: "超清母带", desc: "SVIP" },
                 ] as const
               ).map((o) => (
                 <button
@@ -726,11 +733,17 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">QQ 音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px] shrink-0">QQ 音质</span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k MP3" }, { value: "high", label: "HQ 高品质", desc: "320k MP3" }, { value: "lossless", label: "SQ 无损品质", desc: "FLAC" }, { value: "hires", label: "Hi-Res 臻品音质", desc: "RS01 · 24bit" }
+                  { value: "standard", label: "标准", desc: "128k" },
+                  { value: "high", label: "HQ 高品质", desc: "320k · VIP" },
+                  { value: "lossless", label: "SQ 无损", desc: "FLAC · VIP" },
+                  { value: "hires", label: "Hi-Res", desc: "24bit · VIP" },
+                  { value: "atmos_2", label: "臻品音质 2.0", desc: "SVIP" },
+                  { value: "atmos", label: "臻品全景声", desc: "SVIP" },
+                  { value: "master", label: "臻品母带", desc: "192kHz · SVIP" },
                 ] as const
               ).map((o) => (
                 <button
@@ -749,11 +762,17 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">酷狗音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px] shrink-0">酷狗音质</span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" }, { value: "high", label: "高品", desc: "320k" }, { value: "lossless", label: "无损", desc: "FLAC" }, { value: "hires", label: "Hi-Res", desc: "24bit" }
+                  { value: "standard", label: "标准", desc: "128k" },
+                  { value: "high", label: "HQ 高品", desc: "320k · VIP" },
+                  { value: "lossless", label: "SQ 无损", desc: "FLAC · VIP" },
+                  { value: "hires", label: "Hi-Res", desc: "24bit · VIP" },
+                  { value: "viper_clear", label: "蝰蛇超清", desc: "SVIP" },
+                  { value: "viper_atmos", label: "蝰蛇全景声", desc: "SVIP" },
+                  { value: "viper_tape", label: "蝰蛇母带", desc: "SVIP" },
                 ] as const
               ).map((o) => (
                 <button
@@ -771,8 +790,8 @@ export default function SettingsView() {
               ))}
             </div>
           </div>
-          <span className="text-[11px] text-[var(--ink-3)]">
-            各音源分别设置；档位需对应平台会员权益，无权益时自动按低一档取链。QQ 臻品母带/臻品全景声、酷狗超品母带为加密音频格式，播放支持后将开放
+          <span className="text-[11px] text-[var(--ink-3)] block mb-3">
+            各音源独立设置（播放、缓存与下载同步生效）。标有 VIP / SVIP 的音质需账号具备对应会员权益；当曲目无该档音源或账号权益不足时，将沿音质阶梯自动向下一档无损/高品回退。
           </span>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放速度</span>

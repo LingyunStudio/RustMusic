@@ -53,14 +53,14 @@ export function TrackRowItem({
                 <div
                   key={`${t.kind}-${t.id}`}
                   style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                  className={`${i < 24 ? "anim-row" : ""} group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
+                  className={`${i < 24 ? "anim-row" : ""} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[12px] cursor-default ${
                     batchMode
                       ? checked
-                        ? "bg-[var(--accent-weak)]"
-                        : "hover:bg-[var(--shade-hover)]"
+                        ? "checked"
+                        : ""
                       : active
-                        ? "bg-[var(--accent-weak)]"
-                        : "hover:bg-[var(--shade-hover)]"
+                        ? "active"
+                        : ""
                   }`}
                   onClick={batchMode ? (ev) => { ev.stopPropagation(); onToggleSel(); } : undefined}
                   onDoubleClick={() => !batchMode && onPlay()}

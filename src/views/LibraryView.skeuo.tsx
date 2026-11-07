@@ -493,131 +493,133 @@ export default function LibraryView({ mode }: { mode: Mode }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* 头部（可换行：窗口窄时标题块与搜索/按钮组折成上下两行，
-          而不是各自内部挤成竖排） */}
-      <header className="px-8 pt-7 pb-5">
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      {/* 头部：标题区 + 整合式操作与排序工具栏 */}
+      <header className="px-8 pt-6 pb-4 shrink-0">
+        <div className="flex items-center justify-between gap-4">
           <div className="min-w-0 anim-rise">
-            <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
-              <Icon size={13} />
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ink-3)] tracking-widest uppercase mb-1">
+              <Icon size={12} className="text-[var(--accent)]" />
               {sub}
               {mode === "library" && scan.active && (
-                <span className="text-[var(--accent)] tracking-normal flex items-center gap-1.5">
+                <span className="text-[var(--accent)] tracking-normal flex items-center gap-1.5 ml-1">
                   · <LoaderSpin /> 扫描中 {scan.total ? `${scan.done}/${scan.total}` : ""}
                 </span>
               )}
             </div>
-            <h1 className="text-[30px] font-extrabold leading-none tracking-tight text-[var(--ink)]">
-              {title}
-            </h1>
-            <div className="flex items-center gap-3 mt-3 text-[12.5px] text-[var(--ink-2)]">
-              <span className="tabular-nums">{totalCount} 首</span>
-              {totalSecs > 0 && (
-                <>
-                  <span className="w-1 h-1 rounded-full bg-[var(--ink-3)]" />
-                  <span className="tabular-nums">{totalDesc}</span>
-                </>
-              )}
+            <div className="flex items-baseline gap-3">
+              <h1 className="text-[28px] font-extrabold leading-none tracking-tight text-[var(--ink)]">
+                {title}
+              </h1>
+              <div className="flex items-center gap-2 text-[12px] text-[var(--ink-2)]">
+                <span className="tabular-nums">{totalCount} 首</span>
+                {totalSecs > 0 && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-[var(--ink-3)]" />
+                    <span className="tabular-nums">{totalDesc}</span>
+                  </>
+                )}
+              </div>
             </div>
             {mode === "library" && !folders.length && !scan.active && (
-              <p className="text-[12.5px] text-[var(--ink-3)] mt-3">
+              <p className="text-[12px] text-[var(--ink-3)] mt-2">
                 添加音乐文件夹，或直接把文件 / 文件夹拖进窗口
               </p>
             )}
           </div>
+        </div>
 
-          <div className="flex items-center gap-3 shrink-0 anim-rise max-w-full">
-            {/* 搜索框（与网易云/QQ 页风格一致）；极窄时允许收缩 */}
-            <div className="relative w-[420px] max-w-full shrink">
-              <Search
-                size={14}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
-              />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索歌曲、艺术家、专辑…（Ctrl+F）"
-                className="w-full h-10 rounded-xl bg-[var(--shade)] border border-[var(--line)] pl-9 pr-8 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[rgba(240,162,74,0.45)] transition-colors"
-              />
-              {search && (
-                <button
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
-                  onClick={() => setSearch("")}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            {(sortedTracks.length > 0 || mergedEntries.length > 0) && (
-              <>
-                <button
-                  className={`btn-secondary ${batchMode ? "!text-[var(--accent)]" : ""}`}
-                  disabled={manualActive}
-                  title={manualActive ? "手动排序模式下不可多选" : "批量选择：加入播放列表 / 队列 / 下载"}
-                  onClick={() => {
-                    setBatchMode(!batchMode);
-                    setSel(new Set());
-                  }}
-                >
-                  <ListChecks size={14} />
-                  批量选择
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() => playAll(true)}
-                >
-                  <Shuffle size={14} />
-                  随机播放
-                </button>
-                <button className="btn-primary" onClick={() => playAll(false)}>
-                  <Play size={14} className="fill-current" />
-                  播放全部
-                </button>
-              </>
+        {/* 统一控制栏：播放全部、随机、批量管理在最前，排序居中，搜索框自适应靠右 */}
+        <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+          {(sortedTracks.length > 0 || mergedEntries.length > 0) && (
+            <>
+              <button className="btn-primary" onClick={() => playAll(false)}>
+                <Play size={13} className="fill-current" />
+                播放全部
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => playAll(true)}
+              >
+                <Shuffle size={13} />
+                随机
+              </button>
+              <button
+                className={`btn-secondary ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
+                disabled={manualActive}
+                title={manualActive ? "手动排序模式下不可多选" : "批量选择：加入播放列表 / 队列 / 下载"}
+                onClick={() => {
+                  setBatchMode(!batchMode);
+                  setSel(new Set());
+                }}
+              >
+                <ListChecks size={13} />
+                {batchMode ? "退出批量" : "批量管理"}
+              </button>
+
+              <div className="w-px h-4 bg-[var(--line)] mx-1" />
+            </>
+          )}
+
+          {/* 排序标签 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-[var(--ink-3)] mr-0.5">排序</span>
+            {SORTS.filter((s) => s.key !== "manual" || mode !== "recent").map((s) => (
+              <button
+                key={s.key}
+                onClick={() => onSort(s.key)}
+                className={`chip ${sortKey === s.key ? "active" : ""}`}
+              >
+                {s.key === "manual" && <MoveVertical size={11} className="mr-0.5 -ml-0.5 inline" />}
+                {s.label}
+                {sortKey === s.key && s.key !== "manual" && (
+                  <span className="ml-0.5">{dir === 1 ? "↑" : "↓"}</span>
+                )}
+              </button>
+            ))}
+            {manualActive && (
+              <span className="text-[10.5px] text-[var(--ink-3)] ml-1">
+                长按可拖动调序
+              </span>
+            )}
+          </div>
+
+          {/* 右侧搜索框：紧凑 220px 靠右对齐 */}
+          <div className="relative ml-auto w-[220px] max-w-full">
+            <Search
+              size={13}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
+            />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索歌曲、专辑… (Ctrl+F)"
+              className="w-full h-8 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
+            />
+            {search && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
+                onClick={() => setSearch("")}
+                title="清除搜索"
+              >
+                <X size={12} />
+              </button>
             )}
           </div>
         </div>
-
-        {/* 排序 */}
-        <div className="flex items-center gap-2 mt-5">
-          <span className="text-[11.5px] text-[var(--ink-3)] mr-1">排序</span>
-          {SORTS.filter((s) => s.key !== "manual" || mode !== "recent").map((s) => (
-            <button
-              key={s.key}
-              onClick={() => onSort(s.key)}
-              className={`chip ${
-                sortKey === s.key
-                  ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
-                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:bg-[var(--shade-hover)]"
-              }`}
-            >
-              {s.key === "manual" && <MoveVertical size={11} className="mr-0.5 -ml-0.5 inline" />}
-              {s.label}
-              {sortKey === s.key && s.key !== "manual" && (
-                <span className="ml-0.5">{dir === 1 ? "↑" : "↓"}</span>
-              )}
-            </button>
-          ))}
-          {manualActive && (
-            <span className="text-[11px] text-[var(--ink-3)] ml-1">
-              长按歌曲可拖动调序
-            </span>
-          )}
-        </div>
       </header>
 
-      {/* 曲目卡片（底边界抬到播放条上方，留 4px 空隙：播放条总占位 64+16+4=84px） */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
+      {/* 曲目卡片（底边界抬到播放条上方，留空隙） */}
+      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[96px]">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {(sortedTracks.length > 0 || mergedRows.length > 0) && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]">
-              <span className="text-center">序号</span>
-              <span>歌曲</span>
+            <div className="grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
+              <span className="text-center">#</span>
+              <span className="pl-1">歌曲</span>
               <span>专辑</span>
               <span className="text-right">时长</span>
-              <span className="text-right">操作</span>
+              <span className="text-right pr-2">操作</span>
             </div>
           )}
           {/* 批量操作栏：多选模式下显示 */}

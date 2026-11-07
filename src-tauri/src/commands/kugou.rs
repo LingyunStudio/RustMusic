@@ -174,15 +174,16 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     )?;
     let fallback_reason = if token.is_empty() {
         "酷狗未登录，匿名通道仅提供标准音质".to_string()
-    } else if quality == "master" && quality_label != "超品母带" {
-        "账号权益未含超品母带或该曲无母带版本".to_string()
-    } else if quality == "hires" && quality_label != "Hi-Res" {
+    } else if matches!(
+        quality.as_str(),
+        "viper_tape" | "master" | "viper_atmos" | "viper_clear" | "hires"
+    ) {
         match crate::kugou::last_hires_error() {
-            Some(e) => format!("Hi-Res 请求被服务端拒绝（{e}），已回退"),
-            None => "未取得该曲的 Hi-Res 文件标识（super hash），无法请求 Hi-Res".to_string(),
+            Some(e) => format!("高阶音质请求被服务端拒绝（{e}），已自动回退"),
+            None => "该曲暂无对应高阶母带/全景声文件或需酷狗超级 VIP 权益".to_string(),
         }
     } else {
-        "账号权益或接口风控限制了更高音质".to_string()
+        "账号权益或曲目音源限制了更高音质".to_string()
     };
     notify_quality_fallback(app, "酷狗", &quality, &quality_label, &fallback_reason);
     // 封面：数据库存的完整 URL 优先（收藏/最近播放已入库），缺失用搜索带的

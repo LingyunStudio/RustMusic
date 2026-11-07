@@ -834,7 +834,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           <button
             className={`btn-ghost relative w-9 h-9 ${miniPlayer ? "!text-[var(--accent)]" : ""}`}
             onClick={() => setMiniPlayer(!miniPlayer)}
-            title="迷你模式"
+            title="极简小窗模式"
           >
             <PictureInPicture2 size={16} />
           </button>

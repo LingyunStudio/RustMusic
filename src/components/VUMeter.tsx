@@ -192,7 +192,7 @@ export default function VUMeter({ playing }: VUMeterProps) {
         </div>
 
         {/* 双声道微型 LED 柱 */}
-        <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/10">
+        <div className="skeuo-well flex items-center gap-1 px-2 py-1 rounded">
           <div className="flex gap-0.5">
             {Array.from({ length: 8 }).map((_, i) => (
               <div

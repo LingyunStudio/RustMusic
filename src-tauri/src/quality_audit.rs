@@ -25,16 +25,6 @@ fn credential(conn: &rusqlite::Connection, key: &str) -> String {
     crate::credentials::get(key).unwrap_or_else(|| setting(conn, key))
 }
 
-/// 在线播放记录里最近一首指定源的曲目（rid / mediaMid / vip / 标题）
-fn last_online(conn: &rusqlite::Connection, kind: &str) -> Option<(String, String, i64, String)> {
-    conn.query_row(
-        "SELECT rid, COALESCE(media_mid,''), COALESCE(vip,0), title FROM online_tracks WHERE kind=?1 ORDER BY last_played DESC LIMIT 1",
-        [kind],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    )
-    .ok()
-}
-
 #[test]
 #[ignore = "真实网络审计：cargo test quality_audit -- --ignored --nocapture"]
 fn quality_audit_all_sources() {
@@ -66,25 +56,33 @@ fn quality_audit_all_sources() {
         }
     };
     for nid in nids {
-    println!("样曲 nid={nid}");
-    for q in [
-        "standard",
-        "higher",
-        "high",
-        "lossless",
-        "hires",
-        "jymaster",
-        "sky",
-    ] {
-        match crate::netease::song_url(nid, Some(music_u.as_str()).filter(|s| !s.is_empty()), q) {
-            Ok(Some((url, br, ext, level))) => println!(
-                "  {q:<10} ✓ br={br} ext={ext} level={level:?} url={}",
-                &url[..url.len().min(55)]
-            ),
-            Ok(None) => println!("  {q:<10} ✗ 无链接"),
-            Err(e) => println!("  {q:<10} ✗ {e}"),
+        println!("样曲 nid={nid}");
+        for q in [
+            "standard",
+            "higher",
+            "high",
+            "lossless",
+            "hires",
+            "jyeffect",
+            "sky",
+            "jymaster",
+        ] {
+            match crate::netease::song_url(
+                nid,
+                Some(music_u.as_str()).filter(|s| !s.is_empty()),
+                q,
+            ) {
+                Ok(Some((url, br, ext, level))) => {
+                    let dec = verify_stream_decode(&url);
+                    println!(
+                        "  {q:<10} ✓ br={br:<6} ext={ext:<5} level={level:<10} {dec} url={}...",
+                        &url[..url.len().min(50)]
+                    );
+                }
+                Ok(None) => println!("  {q:<10} ✗ 无链接"),
+                Err(e) => println!("  {q:<10} ✗ {e}"),
+            }
         }
-    }
     }
 
     // ---------- QQ ----------
@@ -97,113 +95,19 @@ fn quality_audit_all_sources() {
         "登录态 musickey: {}",
         if musickey.is_empty() { "（未登录）" } else { "已登录" }
     );
-    // 正向样例：新歌有 Hi-Res 文件，验证真实 media_mid 的文件名格式
-    // 孤勇者：QQ 明确提供 Hi-Res 的代表性曲目（正向验证样例）
-    let songs = crate::qq::search("孤勇者", 6, 1).expect("qq search failed");
-    // 详情请求带登录 cookie（匿名端点隐藏 Hi-Res 元数据）
-    let qq_cookie = format!(
-        "uin={musicid}; qqmusic_uin={musicid}; qm_keyst={musickey}; qqmusic_key={musickey}"
-    );
-    println!("  [详情] cookie len={}", qq_cookie.len());
-    for s in songs.iter().take(3) {
-        let songmid0 = s.id.clone();
+    let songs = crate::qq::search("周杰伦 晴天", 3, 1).expect("qq search failed");
+    for s in songs.iter().take(2) {
         println!(
             "样曲 {} - {} vip={} mid={} mediaMid={} song_id={}",
             s.name, s.singer, s.vip, s.id, s.media_mid, s.song_id
         );
-        // RS01 vkey 响应全量 dump（真实文件名 / sip 列表 / 逐 sip 下载）
-        if s.vip {
-            crate::qq::hires_dump(&s.id, &musicid, &musickey);
-        }
-
-        // 匿名单曲详情：真实 media_mid + size_hires
-        let detail_file = crate::qq::song_detail_file(&s.id, &qq_cookie).unwrap_or_default();
-        let detail_mm = detail_file
-            .get("media_mid")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let size_hires = detail_file.get("size_hires").and_then(|v| v.as_u64()).unwrap_or(0);
-        println!("  [详情] media_mid={detail_mm} size_hires={size_hires}");
-        // GetPlayUrlInfo 扫描：现代网页播放器端点，扫 quality 参数找 Hi-Res
-        if !musickey.is_empty() {
-            for qn in [1u8, 2, 3, 4, 5, 6, 7, 8] {
-                let payload = serde_json::json!({
-                    "comm": {"ct": 19, "cv": 1908, "uin": musicid},
-                    "req_1": {
-                        "module": "music.musichallSong.PlayUrlInfo.GetPlayUrlInfo",
-                        "method": "GetPlayUrlInfo",
-                        "param": {"songmid": [s.id], "quality": qn, "guid": "", "uis": ""}
-                    }
-                });
-                if let Ok(v) = crate::qq::musicu_signed(&payload, Some(&qq_cookie)) {
-                    let mi = v.pointer("/req_1/data/midurlinfo/0");
-                    let fname = mi.and_then(|m| m.get("filename")).and_then(|f| f.as_str()).unwrap_or("");
-                    let purl = mi.and_then(|m| m.get("purl")).and_then(|p| p.as_str()).unwrap_or("");
-                    if !purl.is_empty() {
-                        println!("  [PlayUrlInfo q={qn}] filename={fname} purl=…{}", &purl[purl.len().min(40)..]);
-                    }
-                }
-            }
-        }
-
-        if size_hires > 0 {
-            // 用真实 media_mid 实测三种文件名格式的 RS01 vkey + 下载
-            for (tag, fname) in [
-                ("media+mid", format!("RS01{detail_mm}{songmid0}")),
-                ("media仅", format!("RS01{detail_mm}")),
-                ("mid仅", format!("RS01{songmid0}")),
-            ] {
-                let url = crate::qq::hires_url_probe(&fname, &musicid, &musickey);
-                match url {
-                    Some(u) => {
-                        let dl = ureq::get(&u).timeout(std::time::Duration::from_secs(8)).call();
-                        let st = match &dl {
-                            Ok(r) => format!("HTTP {}", r.status()),
-                            Err(ureq::Error::Status(c, _)) => format!("HTTP {c}"),
-                            Err(e) => format!("传输: {e}"),
-                        };
-                        println!("  [探针] {tag:<10} 下载: {st}");
-                    }
-                    None => println!("  [探针] {tag:<10} 无 purl"),
-                }
-            }
-        }
-
-        {
-            let payload = serde_json::json!({
-                "comm": {"ct": 19, "cv": 1859, "uin": musicid},
-                "req_1": {
-                    "module": "music.musichallSong.SongInfoInter",
-                    "method": "GetSongInfo",
-                    "param": {"ids": [s.song_id], "info_is": 1}
-                }
-            });
-            let detail = crate::qq::musicu_signed(&payload, Some(&credential(&conn, "qq_musickey")));
-            match detail {
-                Ok(v) => {
-                    println!(
-                        "  [详情] 原始 = {}",
-                        serde_json::to_string(&v).unwrap_or_default().chars().take(500).collect::<String>()
-                    );
-                }
-                Err(e) => println!("  [详情] ✗ {e}"),
-            }
-        }
-
-        for q in ["standard", "high", "lossless", "hires"] {
+        for q in [
+            "standard", "high", "lossless", "hires", "atmos_2", "atmos", "master",
+        ] {
             match crate::qq::song_url(&s.id, &s.media_mid, &musicid, &musickey, q, s.vip) {
                 Ok((url, ext, label)) => {
-                    // 播放时失败排查：取链成功后按引擎同款（无 Referer）实测可下载性
-                    let dl = ureq::get(&url)
-                        .timeout(std::time::Duration::from_secs(10))
-                        .call();
-                    let dl_status = match &dl {
-                        Ok(r) => format!("HTTP {} ({} bytes)", r.status(), r.header("content-length").unwrap_or("?")),
-                        Err(ureq::Error::Status(code, _)) => format!("HTTP {code}"),
-                        Err(e) => format!("传输错误: {e}"),
-                    };
-                    println!("  {q:<10} 取链✓ [{label}] ext={ext} 下载: {dl_status}");
+                    let dec = verify_stream_decode(&url);
+                    println!("  {q:<10} 取链✓ [{label:<10}] ext={ext:<5} {dec}");
                 }
                 Err(e) => println!("  {q:<10} ✗ 取链失败: {e}"),
             }
@@ -215,11 +119,17 @@ fn quality_audit_all_sources() {
     println!("\n===== 酷狗 =====");
     let token = credential(&conn, "kg_token");
     let userid = setting(&conn, "kg_userid");
+    let mid = setting(&conn, "kg_mid");
+    let dfid = setting(&conn, "kg_dfid");
+    crate::kugou::set_account(&token, &userid);
+    if !mid.is_empty() && !dfid.is_empty() {
+        crate::kugou::set_device(&mid, &dfid);
+    }
     println!(
         "登录态 token: {}",
         if token.is_empty() { "（未登录）" } else { "已登录" }
     );
-    let songs = crate::kugou::search("晴天", 1).expect("kugou search failed");
+    let songs = crate::kugou::search("晴天 周杰伦", 1).expect("kugou search failed");
     for s in songs.iter().take(2) {
         println!(
             "样曲 {} - {} vip={} hash={}",
@@ -233,7 +143,15 @@ fn quality_audit_all_sources() {
             s.album_audio_id,
             s.album_id
         );
-        for q in ["standard", "high", "lossless", "hires"] {
+        for q in [
+            "standard",
+            "high",
+            "lossless",
+            "hires",
+            "viper_clear",
+            "viper_atmos",
+            "viper_tape",
+        ] {
             match crate::kugou::song_url(
                 &s.id,
                 s.album_audio_id,
@@ -246,13 +164,55 @@ fn quality_audit_all_sources() {
                 &userid,
                 q,
             ) {
-                Ok((url, ext, label)) => println!(
-                    "  {q:<10} ✓ [{label}] ext={ext} url={}",
-                    &url[..url.len().min(55)]
-                ),
-                Err(e) => println!("  {q:<10} ✗ {e}"),
+                Ok((url, ext, label)) => {
+                    let dec = verify_stream_decode(&url);
+                    println!(
+                        "  {q:<12} ✓ [{label:<10}] ext={ext:<5} {dec} url={}...",
+                        &url[..url.len().min(48)]
+                    );
+                }
+                Err(e) => println!("  {q:<12} ✗ {e}"),
             }
         }
         println!("  ---");
+    }
+}
+
+/// 拉取流前 256KB 验证 HTTP 2xx + rodio 解码 + EqSource 多声道混音输出
+fn verify_stream_decode(url: &str) -> String {
+    use rodio::Source;
+    use std::io::Read;
+    let resp = ureq::get(url)
+        .set("Range", "bytes=0-262143")
+        .timeout(std::time::Duration::from_secs(10))
+        .call();
+    match resp {
+        Ok(r) => {
+            let status = r.status();
+            let cr = r
+                .header("content-range")
+                .or_else(|| r.header("content-length"))
+                .unwrap_or("?")
+                .to_string();
+            let mut bytes = Vec::new();
+            let _ = r.into_reader().take(262144).read_to_end(&mut bytes);
+            match rodio::Decoder::new(std::io::Cursor::new(bytes)) {
+                Ok(dec) => {
+                    let raw_sr = dec.sample_rate();
+                    let raw_ch = dec.channels();
+                    let eq = std::sync::Arc::new(crate::eq::EqShared::new([0.0; 10], false));
+                    let pos_ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+                    let mut eq_src = crate::eq::EqSource::new(dec, eq, pos_ms);
+                    let out_ch = eq_src.channels();
+                    let samples_ok = eq_src.by_ref().take(512).count();
+                    format!(
+                        "HTTP {status} ({cr}) decode✓ raw={raw_sr}Hz/{raw_ch}ch -> out={out_ch}ch ({samples_ok} samples)"
+                    )
+                }
+                Err(e) => format!("HTTP {status} ({cr}) decode✗ {e}"),
+            }
+        }
+        Err(ureq::Error::Status(c, _)) => format!("HTTP {c}"),
+        Err(e) => format!("传输错误: {e}"),
     }
 }

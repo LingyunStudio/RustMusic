@@ -227,8 +227,8 @@ export default function QueuePanel() {
             <div
               key={keySeq[i]}
               style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-              className={`${i < 24 ? "anim-row" : ""} group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer transition-colors ${
-                active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
+              className={`${i < 24 ? "anim-row" : ""} skeuo-row group flex items-center gap-3 h-12 px-2.5 rounded-xl cursor-pointer ${
+                active ? "active" : ""
               } ${dead ? "opacity-45" : ""}`}
               title={dead ? `无法播放：${unavailable[`${item.kind}:${item.id}`]}` : undefined}
               onClick={() => jumpTo(i)}

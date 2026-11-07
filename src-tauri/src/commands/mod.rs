@@ -97,31 +97,51 @@ fn quality_tag(ext: &str, br_kbps: i64) -> String {
     }
 }
 
-/// 按音源归一音质档位（只影响“传给取链阶梯”的值，回退提示一律用
-/// 用户选择的原始档位）：
-/// - 网易云：hires 原生支持（v1 接口 hires level）
-/// - 酷狗：hires 原生支持（v5 阶梯 super 档 = Hi-Res FLAC）
-/// - QQ：尚未接入 RS02/RS03 Hi-Res 文件档，hires 映射到无损档——
-///   阶梯匹配遇到未知档位会静默落到 high，反而比无损低
 /// 三源分别读取播放音质（quality_{kind}），未单独设置过回落旧单一设置
 pub(crate) fn source_quality(conn: &rusqlite::Connection, kind: &str) -> String {
     let q = db::get_setting(conn, &format!("quality_{kind}"))
         .or_else(|| db::get_setting(conn, "quality"))
         .unwrap_or_else(|| "high".to_string());
-    // 存量兼容：母带/全景声档需要加密流解密（尚未支持），读取时按最高可交付档回落
     match (kind, q.as_str()) {
-        ("qq", "master") | ("qq", "atmos") | ("kugou", "master") => "hires".to_string(),
+        // 存量兼容：旧版酷狗 master 归一为官方 App 命名的 viper_tape（蝰蛇母带）
+        ("kugou", "master") => "viper_tape".to_string(),
         _ => q,
     }
 }
 
 pub(crate) fn resolve_quality(_kind: &str, quality: &str) -> String {
-    // QQ 已接入 Hi-Res（F0000）与臻品母带（RS01）文件档，不再把 hires 归一为
-    // lossless；各源对未知档位自带阶梯回落
     quality.to_string()
 }
 
-/// 音质回退提示：设置的档位未被账号权益满足、实际下发更低档时告知用户
+fn quality_key_rank(quality: &str) -> i32 {
+    match quality {
+        "jymaster" | "master" | "viper_tape" => 80,
+        "sky" | "atmos" | "viper_atmos" => 75,
+        "jyeffect" | "atmos_2" | "viper_clear" => 70,
+        "hires" => 50,
+        "lossless" => 40,
+        "high" | "exhigh" => 30,
+        "higher" => 20,
+        "standard" => 10,
+        _ => 0,
+    }
+}
+
+fn quality_label_rank(label: &str) -> i32 {
+    match label {
+        "超清母带" | "臻品母带" | "蝰蛇母带" | "超品母带" => 80,
+        "沉浸环绕声" | "臻品全景声" | "蝰蛇全景声" => 75,
+        "高清环绕声" | "臻品音质 2.0" | "臻品音质2.0" | "蝰蛇超清" => 70,
+        "Hi-Res" => 50,
+        "无损" => 40,
+        "HQ" | "极高" => 30,
+        "较高" => 20,
+        "标准" => 10,
+        _ => 0,
+    }
+}
+
+/// 音质回退提示：设置的档位未被账号权益或曲目音源满足、实际下发更低档时告知用户
 /// （静默降级曾让"无损"设置实际播放 128k 而用户无从得知）
 fn notify_quality_fallback(
     app: &AppHandle,
@@ -130,20 +150,9 @@ fn notify_quality_fallback(
     actual_label: &str,
     reason: &str,
 ) {
-    if quality == "standard" {
-        return;
-    }
-    let wanted = match quality {
-        "hires" => "Hi-Res",
-        "lossless" => "无损",
-        "high" => "HQ",
-        _ => return,
-    };
-    if actual_label == wanted {
-        return;
-    }
-    // 实际档位比请求的更高不算回退：lossless 阶梯在酷狗可能下发 Hi-Res
-    if (quality == "lossless" || quality == "hires") && actual_label == "Hi-Res" {
+    let wanted_rank = quality_key_rank(quality);
+    let actual_rank = quality_label_rank(actual_label);
+    if wanted_rank <= 10 || actual_rank == 0 || actual_rank >= wanted_rank {
         return;
     }
     let _ = app.emit(

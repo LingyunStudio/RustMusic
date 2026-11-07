@@ -273,7 +273,9 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       // 任务栏歌词开关恢复（Windows，localStorage）
       if (initTaskbarLyrics()) set({ taskbarLyricsOn: true });
       // 迷你模式开关恢复（localStorage）
-      if (localStorage.getItem("rustmusic.miniPlayer") === "1") set({ miniPlayer: true });
+      if (localStorage.getItem("rustmusic.miniPlayer") === "1") {
+        get().setMiniPlayer(true);
+      }
 
       // 引擎预载下一曲（仅本库曲目）：队列/模式/定时停止变化即重算并下发。
       // 自然播完由引擎直接续播（monitor 驱动），挂起期间也无缝连续；
@@ -707,10 +709,96 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   },
 
   setMiniPlayer(on) {
-    set({ miniPlayer: on });
+    const prev = get().miniPlayer;
+    if (prev === on) return;
+    set({
+      miniPlayer: on,
+      ...(on ? { nowPlayingOpen: false, queueOpen: false } : {}),
+    });
     try {
       localStorage.setItem("rustmusic.miniPlayer", on ? "1" : "0");
     } catch {}
+
+    // 优先调用 Rust 原生后端命令（直接操作底层窗口，无权限或事件拦截问题）
+    const backendAction = on ? api.enterMiniMode() : api.exitMiniMode();
+    backendAction.catch(() => {});
+
+    // 前端同时调用 window API 进行双重保障
+    import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        const { LogicalSize, PhysicalSize, PhysicalPosition } = await import("@tauri-apps/api/dpi");
+        const win = getCurrentWindow();
+
+        if (on) {
+          try {
+            const isMax = await win.isMaximized().catch(() => false);
+            if (isMax) {
+              await win.unmaximize().catch(() => {});
+            }
+            const size = await win.outerSize().catch(() => null);
+            const pos = await win.outerPosition().catch(() => null);
+            if (size && pos) {
+              sessionStorage.setItem(
+                "rustmusic.prevWindowState",
+                JSON.stringify({
+                  width: size.width,
+                  height: size.height,
+                  x: pos.x,
+                  y: pos.y,
+                  isMax,
+                })
+              );
+            }
+          } catch (e) {
+            console.warn("保存原窗口尺寸位置失败:", e);
+          }
+
+          try {
+            // 先放宽最小尺寸，允许窗口缩小至小悬浮窗尺寸（360x118，含歌词栏）
+            await win.setMinSize(new LogicalSize(300, 70)).catch(() => {});
+            await win.setSize(new LogicalSize(360, 118)).catch(() => {});
+            await win.setAlwaysOnTop(true).catch(() => {});
+          } catch (e) {
+            console.error("切换至迷你小窗失败:", e);
+          }
+        } else {
+          try {
+            await win.setAlwaysOnTop(false).catch(() => {});
+
+            let restored = false;
+            const savedRaw = sessionStorage.getItem("rustmusic.prevWindowState");
+            if (savedRaw) {
+              try {
+                const s = JSON.parse(savedRaw);
+                if (s && typeof s.width === "number" && typeof s.height === "number") {
+                  if (s.width >= 600 && s.height >= 400) {
+                    // 必须先扩大窗口尺寸，再设置最小尺寸，否则 Windows 会拒绝扩大！
+                    await win.setSize(new PhysicalSize(s.width, s.height)).catch(() => {});
+                    if (typeof s.x === "number" && typeof s.y === "number") {
+                      await win.setPosition(new PhysicalPosition(s.x, s.y)).catch(() => {});
+                    }
+                    await win.setMinSize(new LogicalSize(1000, 660)).catch(() => {});
+                    if (s.isMax) {
+                      await win.maximize().catch(() => {});
+                    }
+                    restored = true;
+                  }
+                }
+              } catch {}
+            }
+            if (!restored) {
+              await win.setSize(new LogicalSize(1280, 880)).catch(() => {});
+              await win.center().catch(() => {});
+              await win.setMinSize(new LogicalSize(1000, 660)).catch(() => {});
+            }
+          } catch (e) {
+            console.error("从迷你模式还原主窗口失败:", e);
+          }
+        }
+      })
+      .catch((e) => {
+        console.error("导入 Tauri window 模块失败:", e);
+      });
   },
 
   setQueueOpen(v) {

@@ -39,9 +39,8 @@ pub(super) fn url_ext(url: &str) -> String {
         .to_lowercase()
 }
 
-/// 最近一次 Hi-Res 取链失败的服务端原因（如 "no_url:20031"）；成功取到
-/// Hi-Res 或未尝试时为 None。回退提示据此区分“没拿到 Hi-Res 文件标识”
-/// 与“服务端拒绝了 Hi-Res 请求”
+/// 最近一次高阶音质取链失败的服务端原因（如 "no_url:20031"）；成功取到
+/// 或未尝试时为 None。回退提示据此区分“没拿到文件标识”与“服务端拒绝了请求”
 static HIRES_ERR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 fn set_last_hires_error(v: Option<String>) {
@@ -50,6 +49,172 @@ fn set_last_hires_error(v: Option<String>) {
 
 pub fn last_hires_error() -> Option<String> {
     HIRES_ERR.lock().unwrap().clone()
+}
+
+/// 权益接口（/v2/get_res_privilege/lite）relate_goods 解析出的各档位文件 hash
+#[derive(Clone, Debug, Default)]
+pub(super) struct PrivilegeHashes {
+    pub hq_320: String,
+    pub sq_flac: String,
+    pub high: String,
+    pub viper_clear: String,
+    pub viper_atmos: String,
+    pub viper_tape: String,
+}
+
+impl PrivilegeHashes {
+    fn has_advanced(&self) -> bool {
+        !self.high.is_empty()
+            || !self.viper_clear.is_empty()
+            || !self.viper_atmos.is_empty()
+            || !self.viper_tape.is_empty()
+    }
+}
+
+/// 查询 /v2/get_res_privilege/lite 获取曲目关联的全档位文件 hash（含 SVIP 蝰蛇母带 / 全景声 / 超清与 Hi-Res），带进程内 TTL 缓存
+pub(super) fn privilege_hashes(
+    hash: &str,
+    album_id: u64,
+    album_audio_id: u64,
+) -> PrivilegeHashes {
+    if hash.is_empty() {
+        return PrivilegeHashes::default();
+    }
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<
+            std::collections::HashMap<String, (std::time::Instant, PrivilegeHashes)>,
+        >,
+    > = std::sync::OnceLock::new();
+    const TTL_FULL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+    const TTL_PARTIAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+    const CAP: usize = 256;
+
+    let key = hash.to_lowercase();
+    let slot = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Ok(guard) = slot.lock() {
+        if let Some((at, hit)) = guard.get(&key) {
+            let ttl = if hit.has_advanced() {
+                TTL_FULL
+            } else {
+                TTL_PARTIAL
+            };
+            if at.elapsed() < ttl {
+                return hit.clone();
+            }
+        }
+    }
+
+    let fetched = fetch_privilege_hashes_uncached(hash, album_id, album_audio_id);
+    if let Ok(mut guard) = slot.lock() {
+        while guard.len() >= CAP {
+            if let Some(oldest) = guard
+                .iter()
+                .min_by_key(|(_, (at, _))| *at)
+                .map(|(k, _)| k.clone())
+            {
+                guard.remove(&oldest);
+            } else {
+                break;
+            }
+        }
+        guard.insert(key, (std::time::Instant::now(), fetched.clone()));
+    }
+    fetched
+}
+
+fn fetch_privilege_hashes_uncached(
+    hash: &str,
+    album_id: u64,
+    album_audio_id: u64,
+) -> PrivilegeHashes {
+    let body = serde_json::json!({
+        "appid": APPID.parse::<i64>().unwrap_or(1005),
+        "area_code": 1,
+        "behavior": "play",
+        "clientver": CLIENTVER.parse::<i64>().unwrap_or(20489),
+        "need_hash_offset": 1,
+        "relate": 1,
+        "support_verify": 1,
+        "resource": [{
+            "type": "audio",
+            "page_id": 0,
+            "hash": hash.to_uppercase(),
+            "album_id": album_id,
+            "album_audio_id": album_audio_id,
+        }],
+        "qualities": [
+            "128",
+            "320",
+            "flac",
+            "high",
+            "viper_atmos",
+            "viper_tape",
+            "viper_clear",
+            "super"
+        ],
+    });
+    let Ok(v) = gateway(
+        "/v2/get_res_privilege/lite",
+        "media.store.kugou.com",
+        &[],
+        Some(&body),
+    ) else {
+        return PrivilegeHashes::default();
+    };
+
+    let mut out = PrivilegeHashes::default();
+    let mut raw_tape_hash = String::new();
+    let mut raw_tape_br: u64 = 0;
+
+    if let Some(goods) = v.pointer("/data/0/relate_goods").and_then(|g| g.as_array()) {
+        for g in goods {
+            let q = g
+                .get("quality")
+                .or_else(|| g.get("level"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let h = g
+                .get("hash")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+            if h.is_empty() {
+                continue;
+            }
+            let br = g
+                .pointer("/info/bitrate")
+                .or_else(|| g.get("bitRate"))
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0);
+            match q {
+                "320" if out.hq_320.is_empty() => out.hq_320 = h,
+                "flac" if out.sq_flac.is_empty() => out.sq_flac = h,
+                "high" if out.high.is_empty() => out.high = h,
+                "super" if out.high.is_empty() => out.high = h,
+                "viper_clear" if out.viper_clear.is_empty() => out.viper_clear = h,
+                "viper_atmos" if out.viper_atmos.is_empty() => out.viper_atmos = h,
+                "viper_tape" if raw_tape_hash.is_empty() => {
+                    raw_tape_hash = h;
+                    raw_tape_br = br;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // 部分曲目（如周杰伦《晴天》）relate_goods 中的 viper_tape 条目直接复用了 320k MP3 的 hash（br=320），
+    // 而真正的 96kHz/24bit 母带级无损流放在 viper_clear（3611kbps）。剔除伪造的 320k viper_tape，
+    // 让阶梯自然落到真正的 96kHz/24bit 蝰蛇超清或 Hi-Res。
+    if !raw_tape_hash.is_empty()
+        && !raw_tape_hash.eq_ignore_ascii_case(hash)
+        && !raw_tape_hash.eq_ignore_ascii_case(&out.hq_320)
+        && (raw_tape_br == 0 || raw_tape_br > 400)
+    {
+        out.viper_tape = raw_tape_hash;
+    }
+
+    out
 }
 
 /// 登录态按音质取直链：tracker /v5/url，从所选音质逐级回退到 128。
@@ -65,63 +230,136 @@ fn song_url_v5(
     super_hash: &str,
     quality: &str,
 ) -> Result<(String, String, &'static str), String> {
-    // 音质阶梯：越靠前越优先。hash 必须用对应档位文件的 hash（搜索/榜单
-    // 返回的 320/sq/super hash），key 也按该 hash 计算，否则触发风控/无链接
-    // 设置档位 = 上限：选无损就绝不向上够 Hi-Res。此前无损档与 Hi-Res 档
-    // 共用同一条 super 优先链——hash 补齐修好后，选“无损”也会先命中
-    // Hi-Res，两档失去区别（切音质永远显示 Hi-Res 的根因）
-    let ladder: Vec<(&str, &str, &str)> = match quality {
+    // 若请求高阶音质（SVIP 蝰蛇系列 / Hi-Res）或基础档位 hash 缺失，通过权益接口补齐各档真实 hash
+    let need_priv = matches!(
+        quality,
+        "viper_tape" | "master" | "viper_atmos" | "viper_clear" | "hires"
+    ) || (quality == "lossless" && sq_hash.is_empty())
+        || (quality == "high" && hq_hash.is_empty());
+
+    let priv_h = if need_priv {
+        privilege_hashes(hash, album_id, album_audio_id)
+    } else {
+        PrivilegeHashes::default()
+    };
+
+    let hq = if !hq_hash.is_empty() {
+        hq_hash
+    } else {
+        priv_h.hq_320.as_str()
+    };
+    let sq = if !sq_hash.is_empty() {
+        sq_hash
+    } else {
+        priv_h.sq_flac.as_str()
+    };
+    let hi = if !priv_h.high.is_empty() {
+        priv_h.high.as_str()
+    } else {
+        super_hash
+    };
+    let vc = priv_h.viper_clear.as_str();
+    let va = priv_h.viper_atmos.as_str();
+    let vt = priv_h.viper_tape.as_str();
+
+    // 音质阶梯：越靠前越优先。设置档位 = 上限：选无损就绝不向上够 Hi-Res 或 SVIP 档位
+    let ladder: Vec<(&str, &str, &'static str)> = match quality {
         "standard" => vec![("128", hash, "标准")],
-        // Hi-Res 档专属 super 优先链。v5/url 的 Hi-Res 档位参数是 "high"
-        // （酷狗客户端与主流开源实现的既定约定：flac24bit → quality=high
-        // + superFileHash）；"super" 是权益接口的标识，作为兜底再试一次
+        // 蝰蛇母带（SVIP）：优先尝试独立母带档 viper_tape，若该曲母带级 96kHz/24bit 流承载于 viper_clear 则紧随其后
+        "viper_tape" | "master" => {
+            let mut l = Vec::new();
+            if !vt.is_empty() {
+                l.push(("viper_tape", vt, "蝰蛇母带"));
+            }
+            if !vc.is_empty() {
+                l.push(("viper_clear", vc, "蝰蛇超清"));
+            }
+            if !hi.is_empty() {
+                l.push(("high", hi, "Hi-Res"));
+                l.push(("super", hi, "Hi-Res"));
+            }
+            if !sq.is_empty() {
+                l.push(("flac", sq, "无损"));
+            }
+            if !hq.is_empty() {
+                l.push(("320", hq, "HQ"));
+            }
+            l.push(("128", hash, "标准"));
+            l
+        }
+        // 蝰蛇全景声（SVIP）：多声道空间音频 FLAC，回落蝰蛇超清 / Hi-Res / 无损
+        "viper_atmos" => {
+            let mut l = Vec::new();
+            if !va.is_empty() {
+                l.push(("viper_atmos", va, "蝰蛇全景声"));
+            }
+            if !vc.is_empty() {
+                l.push(("viper_clear", vc, "蝰蛇超清"));
+            }
+            if !hi.is_empty() {
+                l.push(("high", hi, "Hi-Res"));
+                l.push(("super", hi, "Hi-Res"));
+            }
+            if !sq.is_empty() {
+                l.push(("flac", sq, "无损"));
+            }
+            if !hq.is_empty() {
+                l.push(("320", hq, "HQ"));
+            }
+            l.push(("128", hash, "标准"));
+            l
+        }
+        // 蝰蛇超清（SVIP）：96kHz/24bit 超清无损 FLAC，回落 Hi-Res / 无损
+        "viper_clear" => {
+            let mut l = Vec::new();
+            if !vc.is_empty() {
+                l.push(("viper_clear", vc, "蝰蛇超清"));
+            }
+            if !hi.is_empty() {
+                l.push(("high", hi, "Hi-Res"));
+                l.push(("super", hi, "Hi-Res"));
+            }
+            if !sq.is_empty() {
+                l.push(("flac", sq, "无损"));
+            }
+            if !hq.is_empty() {
+                l.push(("320", hq, "HQ"));
+            }
+            l.push(("128", hash, "标准"));
+            l
+        }
+        // Hi-Res 档（VIP/SVIP）：v5/url 的 24bit FLAC 参数为 quality=high + high_hash
         "hires" => {
             let mut l = Vec::new();
-            if !super_hash.is_empty() {
-                l.push(("high", super_hash, "Hi-Res"));
-                l.push(("super", super_hash, "Hi-Res"));
+            if !hi.is_empty() {
+                l.push(("high", hi, "Hi-Res"));
+                l.push(("super", hi, "Hi-Res"));
             }
-            if !sq_hash.is_empty() {
-                l.push(("flac", sq_hash, "无损"));
+            if !sq.is_empty() {
+                l.push(("flac", sq, "无损"));
             }
-            if !hq_hash.is_empty() {
-                l.push(("320", hq_hash, "HQ"));
-            }
-            l.push(("128", hash, "标准"));
-            l
-        }
-        // 超品母带档（豪华VIP）：super 参数优先，回落 Hi-Res 及以下
-        "master" => {
-            let mut l = Vec::new();
-            if !super_hash.is_empty() {
-                l.push(("super", super_hash, "超品母带"));
-                l.push(("high", super_hash, "Hi-Res"));
-            }
-            if !sq_hash.is_empty() {
-                l.push(("flac", sq_hash, "无损"));
-            }
-            if !hq_hash.is_empty() {
-                l.push(("320", hq_hash, "HQ"));
+            if !hq.is_empty() {
+                l.push(("320", hq, "HQ"));
             }
             l.push(("128", hash, "标准"));
             l
         }
-        // 无损档：16bit FLAC 封顶，只向下回退
+        // 无损档（VIP）：16bit FLAC 封顶，只向下回退
         "lossless" => {
             let mut l = Vec::new();
-            if !sq_hash.is_empty() {
-                l.push(("flac", sq_hash, "无损"));
+            if !sq.is_empty() {
+                l.push(("flac", sq, "无损"));
             }
-            if !hq_hash.is_empty() {
-                l.push(("320", hq_hash, "HQ"));
+            if !hq.is_empty() {
+                l.push(("320", hq, "HQ"));
             }
             l.push(("128", hash, "标准"));
             l
         }
         _ => {
             let mut l = Vec::new();
-            if !hq_hash.is_empty() {
-                l.push(("320", hq_hash, "HQ"));
+            if !hq.is_empty() {
+                l.push(("320", hq, "HQ"));
             }
             l.push(("128", hash, "标准"));
             l
@@ -186,8 +424,7 @@ fn song_url_v5(
                     .unwrap_or_default();
             }
         }
-        // 档位标签直接用阶梯元组（super/high 同参数也会因所在阶梯不同而
-        // 属于不同档位：Hi-Res 阶梯里是 Hi-Res，母带阶梯里是超品母带）
+        // 档位标签直接用阶梯元组
         if !url.is_empty() {
             let ext = url_ext(&url);
             Ok((url, ext, tier))
@@ -215,16 +452,16 @@ fn song_url_v5(
         }
         match fetch(q, h, tier) {
             Ok(ok) => {
-                if *tier == "Hi-Res" {
+                if matches!(*tier, "Hi-Res" | "蝰蛇超清" | "蝰蛇全景声" | "蝰蛇母带") {
                     set_last_hires_error(None);
                 }
                 return Ok(ok);
             }
             Err(e) => {
-                // Hi-Res 档被拒：记下服务端错误码（回退提示用），沿阶梯继续回落
-                if *tier == "Hi-Res" {
+                // 高阶档被拒：记下服务端错误码（回退提示用），沿阶梯继续回落
+                if matches!(*tier, "Hi-Res" | "蝰蛇超清" | "蝰蛇全景声" | "蝰蛇母带") {
                     let brief = e.split(" resp=").next().unwrap_or(&e).to_string();
-                    eprintln!("[kugou] Hi-Res 取链失败（quality={q}）：{brief}");
+                    eprintln!("[kugou] {tier} 取链失败（quality={q}）：{brief}");
                     set_last_hires_error(Some(brief));
                 }
                 // errcode 20028 = SSA 风控：重新注册设备后重试一次本档
@@ -281,6 +518,20 @@ pub fn song_url(
     match song_url_free(hash, vip) {
         Ok((url, ext)) => Ok((url, ext, "标准".into())),
         Err(e) => {
+            // 匿名通道 playInfo 失败时（如频繁请求被限流 1002 或下架），尝试官方 v5/url 匿名通道兜底
+            if let Ok((url, ext, label)) = song_url_v5(
+                "",
+                "0",
+                album_audio_id,
+                album_id,
+                hash,
+                hq_hash,
+                sq_hash,
+                super_hash,
+                "standard",
+            ) {
+                return Ok((url, ext, label.to_string()));
+            }
             // 双通道都失败：把登录通道的失败原因一并透出——用户才能区分
             // “没会员”与“登录态失效”（匿名通道的错误分不出二者）
             if !v5_err.is_empty() && vip {

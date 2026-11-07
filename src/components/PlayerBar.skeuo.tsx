@@ -473,7 +473,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       )}
 
       <div
-        className={`h-[68px] rounded-[18px] flex items-center pl-4 pr-5 gap-4 transition-opacity duration-300 ${
+        className={`h-[74px] rounded-[18px] flex items-center pl-4 pr-5 gap-4 transition-opacity duration-300 ${
           nowPlayingOpen ? "opacity-80 hover:opacity-100" : ""
         }`}
         style={{
@@ -482,9 +482,6 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           boxShadow: "var(--bar-shadow)",
         }}
       >
-        {/* 左侧机架面板螺栓 */}
-        <div className="skeuo-screw hidden lg:block -mr-1" />
-
         {/* 拟物荧光/液晶屏幕舱（曲目信息） */}
         <div className="skeuo-display rounded-[12px] p-1.5 pr-3 flex items-center gap-3 w-[270px] min-w-[200px]">
           {current ? (
@@ -702,23 +699,13 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               <Rewind size={15} className="fill-current" />
             </button>
 
-            {/* 拟物车削金属主播放/暂停旋钮 */}
+            {/* 拟物车削主播放/暂停旋钮 */}
             <div
               className="p-1 rounded-full border border-[var(--sk-groove-border)] shadow-[var(--sk-groove-shadow)]"
               style={{ background: "var(--sk-groove-bg)" }}
             >
               <button
-                className="w-[40px] h-[40px] rounded-full flex items-center justify-center transition-all active:translate-y-[1px]"
-                style={{
-                  background: playing
-                    ? "conic-gradient(from 180deg at 50% 50%, #f59e0b 0%, #d97706 25%, #b45309 50%, #d97706 75%, #f59e0b 100%)"
-                    : "conic-gradient(from 180deg at 50% 50%, #ffffff 0%, #cbd2da 25%, #88909b 50%, #cbd2da 75%, #ffffff 100%)",
-                  color: playing ? "#ffffff" : "#1e242d",
-                  border: "1px solid rgba(0,0,0,0.55)",
-                  boxShadow: playing
-                    ? "0 4px 14px -2px rgba(245,158,11,0.65), 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.7), inset 0 -2px 3px rgba(0,0,0,0.4)"
-                    : "0 4px 10px rgba(0,0,0,0.6), 0 1px 2px rgba(0,0,0,0.4), inset 0 1px 1px #ffffff, inset 0 -2px 3px rgba(0,0,0,0.4)",
-                }}
+                className={`skeuo-play-btn ${playing ? "playing" : ""}`}
                 onClick={togglePlay}
                 title="播放 / 暂停（空格）"
               >
@@ -871,7 +858,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           <button
             className={`btn-ghost relative w-[34px] h-[34px] ${miniPlayer ? "!text-[var(--accent)]" : ""}`}
             onClick={() => setMiniPlayer(!miniPlayer)}
-            title="迷你模式"
+            title="极简小窗模式"
           >
             <PictureInPicture2 size={15} />
           </button>
@@ -891,9 +878,6 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
             )}
           </button>
         </div>
-
-        {/* 右侧机架面板螺栓 */}
-        <div className="skeuo-screw hidden lg:block -ml-1" />
       </div>
     </div>
   );

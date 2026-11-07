@@ -77,6 +77,51 @@ pub(super) fn find_credential(v: &serde_json::Value) -> Option<(String, String)>
 /// 用于失败分类——VIP 曲目拿不到链接一律按"权益不足"报错（登录/VIP 状态
 /// 变化后可恢复），绝不误报无版权；非 VIP 曲目在会话有效仍拿不到链接时
 /// 才判为无版权/下架。
+/// 缓存 GetCdnDispatch 返回的可用 CDN 节点列表
+static CDN_SIPS: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+fn fallback_cdn_sip(musicid: &str, musickey: &str) -> String {
+    if let Some(s) = CDN_SIPS.read().unwrap().first().cloned() {
+        return s;
+    }
+    let payload = serde_json::json!({
+        "comm": {"ct": "11", "cv": "13020508", "v": "13020508", "tmeAppID": "qqmusic", "uin": musicid},
+        "req_1": {
+            "module": "music.audioCdnDispatch.cdnDispatch",
+            "method": "GetCdnDispatch",
+            "param": {"guid": guid(), "uid": musicid, "use_new_domain": 1, "use_ipv6": 0}
+        }
+    });
+    let cookie = credential_cookie(musicid, musickey);
+    if let Ok(v) = musicu_signed(&payload, Some(&cookie)) {
+        if let Some(arr) = v.pointer("/req_1/data/sip").and_then(|a| a.as_array()) {
+            let mut list: Vec<String> = arr
+                .iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .filter(|s| !s.is_empty())
+                .collect();
+            // 优先 https 节点
+            list.sort_by_key(|s| if s.starts_with("https") { 0 } else { 1 });
+            if !list.is_empty() {
+                let first = list[0].clone();
+                *CDN_SIPS.write().unwrap() = list;
+                return first;
+            }
+        }
+    }
+    "https://ws.stream.qqmusic.qq.com/".to_string()
+}
+
+/// 按音质请求播放直链，从所选音质逐级回退；返回 (url, ext, 档位标签)
+///
+/// 官方 App 音质档位（从高到低）：
+/// - `master`：臻品母带（AI00，24Bit/192kHz FLAC，SVIP 专享）
+/// - `atmos`：臻品全景声（Q001，5.1 空间音频 FLAC，SVIP 专享）
+/// - `atmos_2`：臻品音质 2.0（Q000，24Bit 银河音效 FLAC，SVIP 专享）
+/// - `hires`：Hi-Res 无损（RS01 / 24Bit 高解析度 FLAC，VIP/SVIP）
+/// - `lossless`：SQ 无损品质（F000，16Bit/44.1kHz FLAC，VIP/SVIP）
+/// - `high`：HQ 高品质（M800，320kbps MP3，VIP/SVIP）
+/// - `standard`：标准品质（M500，128kbps MP3，免费）
 pub fn song_url(
     songmid: &str,
     media_mid: &str,
@@ -85,90 +130,178 @@ pub fn song_url(
     quality: &str,
     vip: bool,
 ) -> Result<(String, String, &'static str), String> {
-    // 前缀（社区逆向共识）：M500=128k M800=320k F000=SQ无损 RS01=Hi-Res。
-    // 无 media_mid 时按官方规则用 songmid 拼接。高档位被权益/曲目拒绝时
-    // 自动沿阶梯回落。
-    // 注意：臻品母带（RS02，.mflac2）与臻品全景声是 QMCv2 加密流，明文
-    // 播放管线无法直接交付，未提供对应档位（需 ekey 解密管线后接入）。
-    let mut ladder: Vec<(&str, &str, &'static str)> = match quality {
-        "master" | "atmos" => vec![
-            // 历史设置值兼容：按 Hi-Res 取（母带/全景声需解密支持后再开档）
-            ("RS01", "flac", "Hi-Res"),
-            ("F000", "flac", "无损"),
-            ("M800", "mp3", "HQ"),
-            ("M500", "mp3", "标准"),
+    let cookie = credential_cookie(musicid, musickey);
+
+    // 1. 通过 UniformRuleCtrl.CgiGetTrackInfo 获取曲目真实 file 元数据与各档位文件大小。
+    //    注意：QQ 的 UrlGetVkey 只负责按账号权限签发 vkey，不会检查 CDN 上是否存在该音质文件！
+    //    若不先核对 file.size_* / file.size_new[i] 是否 > 0，直接对不存在的档位签发 purl 会导致
+    //    播放/下载时遭遇 CDN HTTP 404（此前 RS01 在无独立 Hi-Res 文件的曲目上必 404 的根因）。
+    let track_payload = serde_json::json!({
+        "comm": {
+            "ct": "11",
+            "cv": "13020508",
+            "v": "13020508",
+            "tmeAppID": "qqmusic",
+            "uin": musicid,
+        },
+        "req_1": {
+            "module": "music.trackInfo.UniformRuleCtrl",
+            "method": "CgiGetTrackInfo",
+            "param": {"types": [1], "ids": [0], "mids": [songmid]}
+        }
+    });
+    let track_info = musicu_signed(&track_payload, Some(&cookie))
+        .ok()
+        .and_then(|v| v.pointer("/req_1/data/tracks/0").cloned());
+    let file_obj = track_info
+        .as_ref()
+        .and_then(|t| t.get("file"))
+        .cloned()
+        .unwrap_or_default();
+    let interval_secs = track_info
+        .as_ref()
+        .and_then(|t| t.get("interval"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let detail_mm = file_obj
+        .get("media_mid")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(media_mid);
+    let base = if detail_mm.is_empty() {
+        format!("{songmid}{songmid}")
+    } else {
+        format!("{detail_mm}{songmid}")
+    };
+
+    let size_128 = file_obj.get("size_128mp3").and_then(|v| v.as_u64()).unwrap_or(0);
+    let size_320 = file_obj.get("size_320mp3").and_then(|v| v.as_u64()).unwrap_or(0);
+    let size_flac = file_obj.get("size_flac").and_then(|v| v.as_u64()).unwrap_or(0);
+    let size_hires = file_obj.get("size_hires").and_then(|v| v.as_u64()).unwrap_or(0);
+    let size_new: Vec<u64> = file_obj
+        .get("size_new")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().map(|x| x.as_u64().unwrap_or(0)).collect())
+        .unwrap_or_default();
+    let size_master = size_new.first().copied().unwrap_or(0);   // size_new[0]: 臻品母带 AI00
+    let size_atmos2 = size_new.get(1).copied().unwrap_or(0);    // size_new[1]: 臻品音质 2.0 Q000
+    let size_atmos51 = size_new.get(2).copied().unwrap_or(0);   // size_new[2]: 臻品全景声 5.1 Q001
+    let has_file_meta = size_128 > 0 || size_320 > 0 || size_flac > 0 || size_master > 0;
+
+    // 部分新曲/周杰伦等曲目不单独拆分 RS01，而是直接把 24Bit/48kHz Hi-Res FLAC 放在 F000
+    // （如《晴天》size_flac=55.4MB，码率 1645kbps，size_hires=0）。当用户选 Hi-Res 及以上且
+    // F000 本身已是 >1250kbps 的 24Bit 高解析度母本时，F000 标签记为 "Hi-Res"。
+    let f000_is_hires = size_hires == 0
+        && size_flac > 35_000_000
+        && (interval_secs == 0 || (size_flac * 8) / interval_secs > 1_250_000);
+    let flac_label_for_high_tier: &'static str = if f000_is_hires { "Hi-Res" } else { "无损" };
+
+    // (前缀, 扩展名, 档位标签, 该档位已知文件大小)
+    let raw_ladder: Vec<(&str, &str, &'static str, u64)> = match quality {
+        "master" => vec![
+            ("AI00", "flac", "臻品母带", size_master),
+            ("Q000", "flac", "臻品音质2.0", size_atmos2),
+            ("RS01", "flac", "Hi-Res", size_hires),
+            ("F000", "flac", flac_label_for_high_tier, size_flac),
+            ("M800", "mp3", "HQ", size_320),
+            ("M500", "mp3", "标准", size_128),
+        ],
+        "atmos" => vec![
+            ("Q001", "flac", "臻品全景声", size_atmos51),
+            ("Q000", "flac", "臻品音质2.0", size_atmos2),
+            ("RS01", "flac", "Hi-Res", size_hires),
+            ("F000", "flac", flac_label_for_high_tier, size_flac),
+            ("M800", "mp3", "HQ", size_320),
+            ("M500", "mp3", "标准", size_128),
+        ],
+        "atmos_2" => vec![
+            ("Q000", "flac", "臻品音质2.0", size_atmos2),
+            ("RS01", "flac", "Hi-Res", size_hires),
+            ("F000", "flac", flac_label_for_high_tier, size_flac),
+            ("M800", "mp3", "HQ", size_320),
+            ("M500", "mp3", "标准", size_128),
         ],
         "hires" => vec![
-            ("RS01", "flac", "Hi-Res"),
-            ("F000", "flac", "无损"),
-            ("M800", "mp3", "HQ"),
-            ("M500", "mp3", "标准"),
+            ("RS01", "flac", "Hi-Res", size_hires),
+            ("F000", "flac", flac_label_for_high_tier, size_flac),
+            ("M800", "mp3", "HQ", size_320),
+            ("M500", "mp3", "标准", size_128),
         ],
         "lossless" => vec![
-            ("F000", "flac", "无损"),
-            ("M800", "mp3", "HQ"),
-            ("M500", "mp3", "标准"),
+            ("F000", "flac", "无损", size_flac),
+            ("M800", "mp3", "HQ", size_320),
+            ("M500", "mp3", "标准", size_128),
         ],
-        "standard" => vec![("M500", "mp3", "标准")],
-        _ => vec![("M800", "mp3", "HQ"), ("M500", "mp3", "标准")],
+        "standard" => vec![("M500", "mp3", "标准", size_128)],
+        _ => vec![
+            ("M800", "mp3", "HQ", size_320),
+            ("M500", "mp3", "标准", size_128),
+        ],
     };
-    let mut last_resp = String::new();
-    // 所有尝试都返回 code==0（会话有效、接口无异常）但始终没有链接
-    let mut all_ok_but_no_url = true;
 
-    // ---------- Hi-Res（RS01）专用：一次 GetVkey 带全部文件名候选 ----------
-    // Hi-Res 文件的 media_mid 与 songmid 不同，且搜索/详情等元数据通道
-    // 都拿不到分档 mediaMid、sip 列表也可能为空——因此把候选文件名批量
-    // 发给 GetVkey（filename 本就是数组），逐个 midurlinfo 试，再用多
-    // CDN 基址探测下载（ws.stream 上没有 Hi-Res 文件，实测 404）。
-    let ladder_has_hires = ladder.iter().any(|(p, _, _)| *p == "RS01");
-    if ladder_has_hires {
-        let detail_mm = song_detail_file(songmid, &credential_cookie(musicid, musickey))
-            .ok()
-            .and_then(|f| {
-                f.get("media_mid")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .filter(|s| !s.is_empty())
-            });
-        // 候选文件基（去重）：真实 media_mid 优先（双拼/单拼），再猜 songmid
-        let mut bases: Vec<String> = Vec::new();
-        if let Some(mm) = &detail_mm {
-            bases.push(format!("RS01{mm}{songmid}"));
-            if mm != songmid {
-                bases.push(format!("RS01{mm}"));
+    // 过滤掉明确不存在（size == 0）的高阶档位，避免 UrlGetVkey 签出 404 空链；
+    // M500 始终保留兜底以防部分老歌元数据不全
+    let mut rungs: Vec<(String, &'static str, &'static str)> = Vec::new();
+    for (prefix, ext, label, sz) in raw_ladder {
+        if has_file_meta && sz == 0 && prefix != "M500" {
+            continue;
+        }
+        rungs.push((format!("{prefix}{base}.{ext}"), ext, label));
+        if prefix == "RS01" && !detail_mm.is_empty() && detail_mm != songmid {
+            rungs.push((format!("RS01{detail_mm}.{ext}"), ext, label));
+        }
+    }
+    if rungs.is_empty() {
+        rungs.push((format!("M500{base}.mp3"), "mp3", "标准"));
+    }
+
+    // 2. 一次批量 UrlGetVkey 请求全部候选档位（comm 携带 authst/qqmusic_key 以启用 SVIP 鉴权）
+    let filenames: Vec<String> = rungs.iter().map(|(f, _, _)| f.clone()).collect();
+    let songmids: Vec<&str> = rungs.iter().map(|_| songmid).collect();
+    let songtypes: Vec<i32> = rungs.iter().map(|_| 0).collect();
+    let payload = serde_json::json!({
+        "comm": {
+            "ct": 19,
+            "cv": 1859,
+            "uin": musicid,
+            "authst": musickey,
+            "qqmusic_key": musickey,
+        },
+        "req_1": {
+            "module": "music.vkey.GetVkey",
+            "method": "UrlGetVkey",
+            "param": {
+                "uin": musicid,
+                "filename": filenames,
+                "guid": guid(),
+                "songmid": songmids,
+                "songtype": songtypes,
+                "ctx": 0,
             }
         }
-        bases.push(format!("RS01{songmid}{songmid}"));
-        bases.push(format!("RS01{songmid}"));
-        bases.dedup();
+    });
+    let resp = musicu_signed(&payload, Some(&cookie))?;
+    let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64());
+    if code == Some(104009) {
+        return Err("QQ 音乐登录已过期，请重新登录".into());
+    }
+    let all_ok_but_no_url = code == Some(0);
+    let sip = resp
+        .pointer("/req_1/data/sip")
+        .and_then(|v| v.as_array())
+        .and_then(|a| {
+            let list: Vec<&str> = a.iter().filter_map(|v| v.as_str()).filter(|s| !s.is_empty()).collect();
+            list.iter()
+                .copied()
+                .find(|s| s.starts_with("https"))
+                .or_else(|| list.first().copied())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| fallback_cdn_sip(musicid, musickey));
 
-        let filenames: Vec<String> = bases.iter().map(|b| format!("{b}.flac")).collect();
-        let payload = serde_json::json!({
-            "comm": {"ct": 19, "cv": 1859},
-            "req_1": {
-                "module": "music.vkey.GetVkey",
-                "method": "UrlGetVkey",
-                "param": {
-                    "uin": musicid,
-                    "filename": filenames,
-                    "guid": guid(),
-                    "songmid": [songmid],
-                    "songtype": [0],
-                    "ctx": 0,
-                }
-            }
-        });
-        let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
-        if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) == Some(104009) {
-            return Err("QQ 音乐登录已过期，请重新登录".into());
-        }
-        let infos = resp
-            .pointer("/req_1/data/midurlinfo")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        for mi in &infos {
+    if let Some(infos) = resp.pointer("/req_1/data/midurlinfo").and_then(|v| v.as_array()) {
+        for ((_, ext, label), mi) in rungs.iter().zip(infos.iter()) {
             let purl = mi.get("purl").and_then(|p| p.as_str()).unwrap_or("");
             if purl.is_empty() {
                 continue;
@@ -176,125 +309,25 @@ pub fn song_url(
             let url = if purl.starts_with("http") {
                 purl.to_string()
             } else {
-                let sip = resp
-                    .pointer("/req_1/data/sip")
-                    .and_then(|v| v.as_array())
-                    .and_then(|a| {
-                        let list: Vec<&str> =
-                            a.iter().filter_map(|v| v.as_str()).collect();
-                        list.iter()
-                            .copied()
-                            .find(|s| s.starts_with("https"))
-                            .or_else(|| list.iter().copied().find(|s| s.starts_with("http")))
-                            .map(|s| s.to_string())
-                    })
-                    .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
                 format!("{sip}{purl}")
             };
-            // CDN 基址探测：Hi-Res 不在 ws.stream 上（实测 404），逐基址试
-            let mut candidates: Vec<String> = vec![url.clone()];
-            for base in [
-                "https://isure.stream.qqmusic.qq.com/",
-                "https://dl.stream.qqmusic.qq.com/",
-                "https://aqqmusic.tc.qq.com/amobile.music.tc.qq.com/",
-                "https://ws.stream.qqmusic.qq.com/",
-                "http://dl.stream.qqmusic.qq.com/",
-                "http://ws.stream.qqmusic.qq.com/",
-                "http://aqqmusic.tc.qq.com/amobile.music.tc.qq.com/",
-            ] {
-                let cand = format!("{base}{purl}");
-                if !candidates.contains(&cand) {
-                    candidates.push(cand);
-                }
-            }
-            let mut picked: Option<String> = None;
-            for cand in &candidates {
-                match ureq::get(cand).timeout(std::time::Duration::from_secs(8)).call() {
-                    Ok(_) => {
-                        // ureq 仅对 2xx 返回 Ok
-                        picked = Some(cand.clone());
-                        break;
-                    }
-                    // 4xx/5xx：该基址无此文件，试下一个基址
-                    Err(ureq::Error::Status(_, _)) => continue,
-                    // 传输错误无法验证：接受当前候选，交给播放端处理
-                    Err(_) => {
-                        picked = Some(cand.clone());
-                        break;
+            // 若 CgiGetTrackInfo 未返回文件大小元数据，对高阶档位做一次轻量 Range 探活防 404
+            if !has_file_meta && *ext == "flac" {
+                if let Err(ureq::Error::Status(status, _)) = ureq::get(&url)
+                    .set("Range", "bytes=0-15")
+                    .timeout(std::time::Duration::from_secs(5))
+                    .call()
+                {
+                    if status >= 400 {
+                        continue;
                     }
                 }
             }
-            if let Some(u) = picked {
-                return Ok((u, "flac".to_string(), "Hi-Res"));
-            }
-            eprintln!("[qq] RS01 候选在全部 CDN 基址上均 4xx，降档");
+            return Ok((url, (*ext).to_string(), label));
         }
-        // Hi-Res 全部候选失败：移除 RS01 继续降档到无损及以下
-        all_ok_but_no_url = false;
-        ladder.retain(|(p, _, _)| *p != "RS01");
     }
 
-    let mut rungs: Vec<(String, &str, &'static str)> = Vec::new();
-    for (prefix, ext, label) in ladder {
-        let base = if media_mid.is_empty() {
-            format!("{songmid}{songmid}")
-        } else {
-            format!("{media_mid}{songmid}")
-        };
-        rungs.push((format!("{prefix}{base}"), ext, label));
-    }
-    for (file_base, ext, label) in rungs {
-        let payload = serde_json::json!({
-            "comm": {"ct": 19, "cv": 1859},
-            "req_1": {
-                "module": "music.vkey.GetVkey",
-                "method": "UrlGetVkey",
-                "param": {
-                    "uin": musicid,
-                    "filename": [format!("{file_base}.{ext}")],
-                    "guid": guid(),
-                    "songmid": [songmid],
-                    "songtype": [0],
-                    "ctx": 0,
-                }
-            }
-        });
-        let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
-        if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) == Some(104009) {
-            return Err("QQ 音乐登录已过期，请重新登录".into());
-        }
-        if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) != Some(0) {
-            all_ok_but_no_url = false;
-        }
-        let purl = resp
-            .pointer("/req_1/data/midurlinfo/0/purl")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if !purl.is_empty() {
-            let url = if purl.starts_with("http") {
-                purl.to_string()
-            } else {
-                let sip = resp
-                    .pointer("/req_1/data/sip")
-                    .and_then(|v| v.as_array())
-                    .and_then(|a| {
-                        let list: Vec<&str> =
-                            a.iter().filter_map(|v| v.as_str()).collect();
-                        list.iter()
-                            .copied()
-                            .find(|s| s.starts_with("https"))
-                            .or_else(|| list.iter().copied().find(|s| s.starts_with("http")))
-                            .map(|s| s.to_string())
-                    })
-                    .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
-                format!("{sip}{purl}")
-            };
-            return Ok((url, ext.to_string(), label));
-        }
-        last_resp = serde_json::to_string(&resp).unwrap_or_default();
-    }
-    // 会话有效仍拿不到链接：按 VIP 标志分类——VIP 曲目是权益不足（可随
-    // 登录/会员状态恢复），非 VIP 曲目才是真无版权/下架（永久）。
+    let last_resp = serde_json::to_string(&resp).unwrap_or_default();
     Err(if all_ok_but_no_url {
         if vip {
             "该曲目需要 QQ 音乐 VIP 权益（请确认已登录且会员状态有效）".into()
@@ -307,133 +340,4 @@ pub fn song_url(
             last_resp.chars().take(120).collect::<String>()
         )
     })
-}
-
-/// 单曲详情（匿名可用）：返回 file.media_mid 与 size_hires 等，
-/// 用于 Hi-Res 档的文件名解析与有无判断（soso 搜索通道不返回 file 对象）
-pub fn song_detail_file(songmid: &str, cookie: &str) -> Result<serde_json::Value, String> {
-    let url = format!(
-        "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg?songmid={songmid}&format=json"
-    );
-    let resp = crate::net::with_retry(|| {
-        let mut r = ureq::get(&url)
-            .set("Referer", "https://y.qq.com/")
-            .set("User-Agent", crate::qq::UA)
-            .timeout(std::time::Duration::from_secs(8));
-        if !cookie.is_empty() {
-            r = r.set("Cookie", cookie);
-        }
-        r.call()
-    })?;
-    let text = resp.into_string().map_err(|e| format!("歌曲详情读取失败: {e}"))?;
-    let v: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("歌曲详情解析失败: {e}"))?;
-    let data = match v.get("data").and_then(|d| d.as_array()) {
-        Some(a) => a.first().cloned().unwrap_or_default(),
-        None => v.get("data").cloned().unwrap_or_default(),
-    };
-    Ok(data.get("file").cloned().unwrap_or_default())
-}
-
-/// 审计探针：dump Hi-Res vkey 响应的关键字段 + 逐个 sip 试下载
-pub fn hires_dump(songmid: &str, musicid: &str, musickey: &str) {
-    let payload = serde_json::json!({
-        "comm": {"ct": 19, "cv": 1859},
-        "req_1": {
-            "module": "music.vkey.GetVkey",
-            "method": "UrlGetVkey",
-            "param": {
-                "uin": musicid,
-                "filename": [format!("RS01{songmid}{songmid}.flac")],
-                "guid": guid(),
-                "songmid": [songmid],
-                "songtype": [0],
-                "ctx": 0,
-            }
-        }
-    });
-    let resp = match musicu_signed(&payload, Some(&credential_cookie(musicid, musickey))) {
-        Ok(v) => v,
-        Err(e) => {
-            println!("  [dump] 签名请求失败: {e}");
-            return;
-        }
-    };
-
-    println!(
-        "  [dump] req_1.code={:?}",
-        resp.pointer("/req_1/code").cloned().unwrap_or_default()
-    );
-    let mi = resp.pointer("/req_1/data/midurlinfo/0").cloned().unwrap_or_default();
-    println!(
-        "  [dump] midurlinfo[0].filename={:?} purl={:?}",
-        mi.get("filename").and_then(|f| f.as_str()),
-        mi.get("purl").and_then(|p| p.as_str()).map(|s| &s[..s.len().min(70)])
-    );
-    let sips: Vec<String> = resp
-        .pointer("/req_1/data/sip")
-        .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
-    println!("  [dump] sip 列表: {sips:?}");
-    let purl = mi.get("purl").and_then(|p| p.as_str()).unwrap_or("");
-    if purl.is_empty() {
-        return;
-    }
-    for sip in &sips {
-        if sip.is_empty() {
-            continue;
-        }
-        let url = format!("{sip}{purl}");
-        let st = match ureq::get(&url).timeout(std::time::Duration::from_secs(8)).call() {
-            Ok(r) => format!("HTTP {} len={}", r.status(), r.header("content-length").unwrap_or("?")),
-            Err(ureq::Error::Status(c, _)) => format!("HTTP {c}"),
-            Err(e) => format!("传输: {e}"),
-        };
-        println!("  [dump] sip={sip} → {st}");
-    }
-}
-
-/// 审计探针：以任意文件名请求 GetVkey，返回拼好的 purl（不探测下载）
-#[cfg(test)]
-pub fn hires_url_probe(filename: &str, musicid: &str, musickey: &str) -> Option<String> {
-    let payload = serde_json::json!({
-        "comm": {"ct": 19, "cv": 1859},
-        "req_1": {
-            "module": "music.vkey.GetVkey",
-            "method": "UrlGetVkey",
-            "param": {
-                "uin": musicid,
-                "filename": [format!("{filename}.flac")],
-                "guid": guid(),
-                "songtype": [0],
-                "ctx": 0,
-            }
-        }
-    });
-    let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey))).ok()?;
-    if resp.pointer("/req_1/code").and_then(|c| c.as_i64()) != Some(0) {
-        return None;
-    }
-    let purl = resp
-        .pointer("/req_1/data/midurlinfo/0/purl")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if purl.is_empty() {
-        return None;
-    }
-    if purl.starts_with("http") {
-        return Some(purl.to_string());
-    }
-    let sip = resp
-        .pointer("/req_1/data/sip")
-        .and_then(|v| v.as_array())
-        .and_then(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str())
-                .find(|s| s.starts_with("https"))
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "https://ws.stream.qqmusic.qq.com/".to_string());
-    Some(format!("{sip}{purl}"))
 }

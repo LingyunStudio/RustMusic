@@ -51,25 +51,27 @@ pub async fn netease_play(app: AppHandle, track: NeteasePlayReq) -> Result<(), S
 /// 网易云 weapi level 档位序（越大越高）；未知档位返回 0（不参与降档比较）
 fn netease_level_rank(level: &str) -> i32 {
     match level {
-        "jymaster" => 70, // 超清母带
-        "sky" => 60,      // 沉浸环绕声
+        "jymaster" => 80, // 超清母带 (SVIP)
+        "sky" => 70,      // 沉浸环绕声 (SVIP)
+        "jyeffect" => 60, // 高清环绕声 (VIP/SVIP)
         "hires" => 50,
         "lossless" => 40,
-        "exhigh" => 30,  // 极高 320k
-        "higher" => 20,  // 较高 192k
+        "exhigh" | "high" => 30, // 极高 320k
+        "higher" => 20,          // 较高 192k
         "standard" => 10,
         _ => 0,
     }
 }
 
 /// 服务端上报 level → 用户可读档位名（与官方 App 一致）
-fn netease_level_label(level: &str) -> Option<&'static str> {
+pub(super) fn netease_level_label(level: &str) -> Option<&'static str> {
     match level {
         "jymaster" => Some("超清母带"),
         "sky" => Some("沉浸环绕声"),
+        "jyeffect" => Some("高清环绕声"),
         "hires" => Some("Hi-Res"),
         "lossless" => Some("无损"),
-        "exhigh" => Some("极高"),
+        "exhigh" | "high" => Some("极高"),
         "higher" => Some("较高"),
         "standard" => Some("标准"),
         _ => None,

@@ -17,25 +17,51 @@ pub async fn set_play_quality(
     let key = match kind.as_str() {
 
         "qq" => {
-            // QQ 可交付档位：RS01(Hi-Res) 及以下。臻品母带（RS02）/臻品全景声
-            // 为 QMCv2 加密流（mflac2），需 ekey 解密管线，暂不开放档位
-            if !matches!(quality.as_str(), "standard" | "high" | "lossless" | "hires") {
+            // QQ 音乐官方 App 完整档位：
+            // standard(128k) / high(HQ 320k) / lossless(SQ 无损) / hires(Hi-Res 24bit)
+            // atmos_2(臻品音质 2.0 SVIP) / atmos(臻品全景声 SVIP) / master(臻品母带 24bit/192kHz SVIP)
+            if !matches!(
+                quality.as_str(),
+                "standard" | "high" | "lossless" | "hires" | "atmos_2" | "atmos" | "master"
+            ) {
                 return Err("无效的音质选项".into());
             }
             "quality_qq".to_string()
         }
         "netease" => {
-            // 网易云完整档位（weapi level）：higher=较高192k，high=极高320k
+            // 网易云官方 App 完整档位（weapi level）：
+            // standard(128k) / higher(192k) / high(极高 320k) / lossless(无损) / hires(Hi-Res)
+            // jyeffect(高清环绕声 VIP) / sky(沉浸环绕声 SVIP) / jymaster(超清母带 SVIP)
             if !matches!(
                 quality.as_str(),
-                "standard" | "higher" | "high" | "lossless" | "hires" | "jymaster" | "sky"
+                "standard"
+                    | "higher"
+                    | "high"
+                    | "lossless"
+                    | "hires"
+                    | "jyeffect"
+                    | "sky"
+                    | "jymaster"
             ) {
                 return Err("无效的音质选项".into());
             }
             "quality_netease".to_string()
         }
         "kugou" => {
-            if !matches!(quality.as_str(), "standard" | "high" | "lossless" | "hires") {
+            // 酷狗音乐官方 App 完整档位：
+            // standard(128k) / high(HQ 320k) / lossless(SQ 无损) / hires(Hi-Res)
+            // viper_clear(蝰蛇超清 SVIP) / viper_atmos(蝰蛇全景声 SVIP) / viper_tape(蝰蛇母带 SVIP)
+            if !matches!(
+                quality.as_str(),
+                "standard"
+                    | "high"
+                    | "lossless"
+                    | "hires"
+                    | "viper_clear"
+                    | "viper_atmos"
+                    | "viper_tape"
+                    | "master"
+            ) {
                 return Err("无效的音质选项".into());
             }
             "quality_kugou".to_string()
@@ -75,12 +101,9 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
     let quality = db::get_setting(&conn, "quality").unwrap_or_else(|| "high".to_string());
     // 三源分别的音质（issue 跟进：各源权益/档位不同，分开设置）；
     // 未单独设置过时回落到旧的单一 quality，老用户设置无缝迁移
-    let quality_of = |kind: &str| {
-        db::get_setting(&conn, &format!("quality_{kind}")).unwrap_or_else(|| quality.clone())
-    };
-    let quality_netease = quality_of("netease");
-    let quality_qq = quality_of("qq");
-    let quality_kugou = quality_of("kugou");
+    let quality_netease = super::source_quality(&conn, "netease");
+    let quality_qq = super::source_quality(&conn, "qq");
+    let quality_kugou = super::source_quality(&conn, "kugou");
     let cache_limit: u64 = db::get_setting(&conn, "cache_limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2 * 1024 * 1024 * 1024);

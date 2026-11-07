@@ -66,7 +66,7 @@ export interface Store {
   /** 播放页无边框全屏（隐藏系统任务栏；播放条隐藏、hover 唤起） */
   fullscreen: boolean;
   queueOpen: boolean;
-  /** 迷你模式：底部播放条替换为放大版左舱小浮窗（rustmusic.miniPlayer 持久化） */
+  /** 迷你独立小窗模式：主窗口收缩为桌面独立迷你悬浮窗（~360x92，带置顶、拖拽与完整播控，rustmusic.miniPlayer 持久化） */
   miniPlayer: boolean;
   scan: ScanState;
   download: DownloadState | null;

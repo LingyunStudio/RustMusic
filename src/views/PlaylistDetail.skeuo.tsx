@@ -117,6 +117,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const current = useStore((s) => s.current);
   const savedOnline = useStore((s) => s.savedOnline);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [confirmBatchRemove, setConfirmBatchRemove] = useState(false);
@@ -374,28 +375,31 @@ export default function PlaylistDetail({ id }: { id: number }) {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      <header className="pt-5 pb-4 px-5 flex gap-5 items-end">
+      <header className="pt-5 pb-4 px-5 flex gap-5 items-center">
         {pl.cover ? (
           <CoverImg
             src={pl.cover}
             seed={pl.name}
-            className="w-[104px] h-[104px] rounded-2xl shadow-xl shrink-0"
-            iconSize={34}
+            className="w-[116px] h-[116px] rounded-2xl shadow-xl shrink-0"
+            iconSize={36}
           />
         ) : (
           <div
-            className="w-[104px] h-[104px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
+            className="w-[116px] h-[116px] rounded-2xl shadow-xl flex items-center justify-center shrink-0"
             style={{
               background:
                 "linear-gradient(135deg, var(--accent-soft), var(--shade-strong))",
             }}
           >
-            <ListMusic size={34} className="text-[var(--accent)]" />
+            <ListMusic size={36} className="text-[var(--accent)]" />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] text-[var(--ink-2)] tracking-wider mb-1">播放列表</div>
-          <h1 className="text-[24px] font-bold truncate">{pl.name}</h1>
+          <div className="text-[11px] font-semibold text-[var(--ink-2)] tracking-wider mb-1 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+            播放列表
+          </div>
+          <h1 className="text-[24px] font-bold truncate leading-tight text-[var(--ink)]">{pl.name}</h1>
           {/* 改名后保留原始导入名，来源一目了然（重导入也按它兜底认出） */}
           {pl.originName && pl.originName !== pl.name && (
             <div className="text-[11.5px] text-[var(--ink-3)] mt-1 truncate">
@@ -407,13 +411,13 @@ export default function PlaylistDetail({ id }: { id: number }) {
               )}
             </div>
           )}
-          <div className="text-[12.5px] text-[var(--ink-2)] mt-1.5">
+          <div className="text-[12.5px] text-[var(--ink-2)] mt-1">
             {list.length} 首曲目
             {list.length > 0 && !windowed && (
               <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <div className="flex items-center gap-2 mt-3">
             <button className="btn-primary" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
               <Play size={13} className="fill-current" />
               播放全部
@@ -441,34 +445,74 @@ export default function PlaylistDetail({ id }: { id: number }) {
               <ListChecks size={13} />
               {batchMode ? "退出批量" : "批量管理"}
             </button>
-            <button
-              className="btn-secondary"
-              onClick={() => setRenameOpen(true)}
-            >
-              <Pencil size={13} />
-              重命名
-            </button>
-            <button
-              className="btn-secondary !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)]"
-              onClick={() => setConfirmDel(true)}
-            >
-              <Trash2 size={13} />
-              删除列表
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={doExportM3u}
-              disabled={!pl?.entries.length}
-            >
-              <FileDown size={13} />
-              导出 M3U
-            </button>
-            <button className="btn-secondary" onClick={doImportM3u}>
-              <FileUp size={13} />
-              导入 M3U
-            </button>
-            {/* 本页搜索框：过滤逻辑此前就绪但没有入口（全局搜索框只在资料库页） */}
-            <div className="relative w-[220px] max-w-full">
+
+            {/* 更多管理操作下拉（重命名、导出/导入 M3U、删除） */}
+            <div className="relative">
+              <button
+                className={`btn-secondary !w-8 !h-8 !p-0 flex items-center justify-center ${
+                  moreOpen ? "!text-[var(--accent)] !border-[var(--accent)]" : ""
+                }`}
+                onClick={() => setMoreOpen((v) => !v)}
+                title="更多歌单操作"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+              {moreOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setMoreOpen(false)}
+                  />
+                  <div className="absolute left-0 top-full mt-1.5 z-50 w-[150px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu border border-[var(--line)]">
+                    <button
+                      className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setRenameOpen(true);
+                      }}
+                    >
+                      <Pencil size={13} />
+                      重命名
+                    </button>
+                    <button
+                      className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left disabled:opacity-40"
+                      disabled={!pl?.entries.length}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        doExportM3u();
+                      }}
+                    >
+                      <FileDown size={13} />
+                      导出 M3U
+                    </button>
+                    <button
+                      className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        doImportM3u();
+                      }}
+                    >
+                      <FileUp size={13} />
+                      导入 M3U
+                    </button>
+                    <div className="my-1 border-t border-[var(--line)]" />
+                    <button
+                      className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)] text-left"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setConfirmDel(true);
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      删除歌单
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 本页搜索框：靠右对齐，与左侧主操作保持同一行 */}
+            <div className="relative ml-auto w-[220px] max-w-full">
               <Search
                 size={13}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
@@ -478,7 +522,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="在歌单内搜索…（Ctrl+F）"
+                placeholder="在歌单内搜索… (Ctrl+F)"
                 className="w-full h-8 rounded-lg bg-[var(--shade)] border border-[var(--line)] pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
               />
               {search && (
@@ -531,8 +575,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
         onConfirm={(name) => void renamePlaylist(pl.id, name)}
       />
 
-      {/* 底边界抬到播放条上方，留 4px 空隙（播放条总占位 64+16+4=84px） */}
-      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[86px]">
+      {/* 底边界抬到播放条上方，留空隙（播放条总占位 74+16+4=94px） */}
+      <div className="flex-1 min-h-0 flex flex-col px-6 pb-[96px]">
         {batchMode && (
           <div className="mb-2 px-4 py-2 glass rounded-2xl flex items-center justify-between gap-3 text-[12.5px] anim-fade-in shrink-0">
             <div className="flex items-center gap-2.5">
@@ -583,33 +627,42 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 : "列表里还没有歌曲（可在在线曲库右键添加）"}
             </div>
           ) : (
-            <div
-              ref={win.containerRef}
-              onScroll={win.onScroll}
-              className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2.5 pb-[62px]"
-            >
-              {/* 虚拟窗口占位（data-drag-skip：不参与长按拖拽的行枚举） */}
+            <>
+              {/* 表头：清晰区分序号、歌曲、专辑、时长与操作，彻底消除单曲名与专辑名相同造成的重复错觉 */}
+              <div className="grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
+                <span className="text-center">#</span>
+                <span className="pl-1">歌曲</span>
+                <span>专辑</span>
+                <span className="text-right">时长</span>
+                <span className="text-right pr-2">操作</span>
+              </div>
               <div
-                style={{ height: (windowed ? win.start : 0) * ROW_H }}
-                aria-hidden
-                data-drag-skip
-              />
-              {(windowed ? list.slice(win.start, win.end) : list).map((r, k) => {
-                const i = windowed ? win.start + k : k;
-                const active = isCurrentRow(r);
-                const isSelected = batchMode && sel.has(r.entry.rowid);
-                // 播放失败（无版权/下架等）：整行置灰 + 无版权标记
-                const dead =
-                  r.kind !== "track" &&
-                  unavailable[`${r.kind}:${r.id}`] != null;
-                return (
-                  <div
-                    key={r.entry.rowid}
-                    {...(windowed || batchMode ? {} : rowProps(i))}
-                    style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                    className={`${!windowed || i < 24 ? "anim-row" : ""} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(140px,300px)_92px_136px] items-center gap-4 h-[60px] px-4 rounded-[12px] cursor-default ${
-                      isSelected ? "checked" : active ? "active" : ""
-                    } ${dead ? "opacity-45" : ""}`}
+                ref={win.containerRef}
+                onScroll={win.onScroll}
+                className="flex-1 min-h-0 overflow-y-auto px-2 pt-1.5 pb-4"
+              >
+                {/* 虚拟窗口占位（data-drag-skip：不参与长按拖拽的行枚举） */}
+                <div
+                  style={{ height: (windowed ? win.start : 0) * ROW_H }}
+                  aria-hidden
+                  data-drag-skip
+                />
+                {(windowed ? list.slice(win.start, win.end) : list).map((r, k) => {
+                  const i = windowed ? win.start + k : k;
+                  const active = isCurrentRow(r);
+                  const isSelected = batchMode && sel.has(r.entry.rowid);
+                  // 播放失败（无版权/下架等）：整行置灰 + 无版权标记
+                  const dead =
+                    r.kind !== "track" &&
+                    unavailable[`${r.kind}:${r.id}`] != null;
+                  return (
+                    <div
+                      key={r.entry.rowid}
+                      {...(windowed || batchMode ? {} : rowProps(i))}
+                      style={{ ["--row-idx" as string]: Math.min(i, 12) }}
+                      className={`${!windowed || i < 24 ? "anim-row" : ""} skeuo-row group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[60px] px-4 rounded-[12px] cursor-default ${
+                        isSelected ? "checked" : active ? "active" : ""
+                      } ${dead ? "opacity-45" : ""}`}
                     title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
                     onClick={() => {
                       if (batchMode) toggleSel(r.entry.rowid);
@@ -830,6 +883,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 data-drag-skip
               />
             </div>
+            </>
           )}
         </div>
         <LocateCurrentPill

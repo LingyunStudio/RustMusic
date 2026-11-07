@@ -362,28 +362,54 @@ pub fn song_url(
     // 仍逐级回退到 standard 兜底。hires 档（黑胶 SVIP Hi-Res）也纳入阶梯
     // 设置档位 = 上限：无损档不含 hires level（此前两档共用 hires 优先
     // 链，权益够时选“无损”也会下发 Hi-Res，档位失去意义）
-    // 官方 App 档位：标准128k / 较高192k / 极高320k / 无损 / Hi-Res /
-    // 超清母带（jymaster，黑胶SVIP）/ 沉浸环绕声（sky，黑胶SVIP）。
-    // 设置档位 = 上限，权益不足沿阶梯向下回落。
+    // 官方 App 档位：标准128k / 较高192k / 极高320k(exhigh) / 无损(lossless) /
+    // Hi-Res(hires) / 高清环绕声(jyeffect，黑胶VIP/SVIP) /
+    // 沉浸环绕声(sky，黑胶SVIP) / 超清母带(jymaster，黑胶SVIP)。
+    // 设置档位 = 上限，权益不足或歌曲无对应音源时沿阶梯向下回落。
+    fn level_rank(l: &str) -> i32 {
+        match l {
+            "jymaster" => 80,
+            "sky" => 70,
+            "jyeffect" => 60,
+            "hires" => 50,
+            "lossless" => 40,
+            "exhigh" | "high" => 30,
+            "higher" => 20,
+            "standard" => 10,
+            _ => 0,
+        }
+    }
     let levels: Vec<(&str, i64)> = match quality {
         "jymaster" => vec![
             ("jymaster", 1999_000),
             ("hires", 1999_000),
             ("lossless", 999_000),
             ("exhigh", 320_000),
+            ("higher", 192_000),
             ("standard", 128_000),
         ],
         "sky" => vec![
             ("sky", 1999_000),
+            ("jyeffect", 1999_000),
             ("hires", 1999_000),
             ("lossless", 999_000),
             ("exhigh", 320_000),
+            ("higher", 192_000),
+            ("standard", 128_000),
+        ],
+        "jyeffect" => vec![
+            ("jyeffect", 1999_000),
+            ("hires", 1999_000),
+            ("lossless", 999_000),
+            ("exhigh", 320_000),
+            ("higher", 192_000),
             ("standard", 128_000),
         ],
         "hires" => vec![
             ("hires", 1999_000),
             ("lossless", 999_000),
             ("exhigh", 320_000),
+            ("higher", 192_000),
             ("standard", 128_000),
         ],
         "lossless" => vec![
@@ -394,7 +420,7 @@ pub fn song_url(
         ],
         "higher" => vec![("higher", 192_000), ("standard", 128_000)],
         "standard" => vec![("standard", 128_000)],
-        // high = 极高 320k（旧键名保留兼容）
+        // high / exhigh = 极高 320k
         _ => vec![
             ("exhigh", 320_000),
             ("higher", 192_000),
@@ -408,7 +434,14 @@ pub fn song_url(
         levels
     };
     let mut last_hint = String::from("该歌曲没有可播放的音频");
-    for (level, default_br) in levels {
+    let mut best_fallback: Option<(String, i64, String, String)> = None;
+    for (idx, &(level, default_br)) in levels.iter().enumerate() {
+        // 如果之前服务端自动降级已经拿到了比当前候选档位更高或相等的流，直接返回
+        if let Some(ref best) = best_fallback {
+            if level_rank(&best.3) >= level_rank(level) {
+                return Ok(best_fallback);
+            }
+        }
         let payload = serde_json::json!({
             "ids": format!("[{id}]"), "level": level, "encodeType": "flac", "csrf_token": ""
         })
@@ -449,13 +482,35 @@ pub fn song_url(
                 .and_then(|b| b.as_i64())
                 .unwrap_or(default_br)
                 / 1000;
-            // 服务端权益不足时降级并在 level 字段如实上报实际交付档位
+            // 服务端权益不足或无对应音效时降级并在 level 字段如实上报实际交付档位
             let delivered_level = first
                 .get("level")
                 .and_then(|l| l.as_str())
                 .unwrap_or("")
                 .to_string();
-            return Ok(Some((u, real_br, ext, delivered_level)));
+            let candidate = (u, real_br, ext, delivered_level.clone());
+            // 命中目标档位，或老接口无 level 字段：直接返回
+            if delivered_level.is_empty() || delivered_level == level {
+                return Ok(Some(candidate));
+            }
+            // 实测坑点：请求 jyeffect（高清环绕声）但曲目无环绕声时，网易云服务端会
+            // 直接跳级降到 exhigh(320k MP3)，跳过该曲目本身具备的 hires/lossless FLAC！
+            // 因此保存当前最优选，若后续阶梯中存在高于 delivered_level 的档位（如 hires），
+            // 继续尝试一次以拿回无损/Hi-Res。
+            let cand_rank = level_rank(&delivered_level);
+            if best_fallback
+                .as_ref()
+                .map_or(true, |b| cand_rank > level_rank(&b.3))
+            {
+                best_fallback = Some(candidate);
+            }
+            let has_better_next = levels[idx + 1..]
+                .iter()
+                .any(|(nl, _)| level_rank(nl) > cand_rank);
+            if !has_better_next {
+                return Ok(best_fallback);
+            }
+            continue;
         }
         last_hint = match item_code {
             404 => "该歌曲暂无版权音频（可能需要 VIP 或已下架）".into(),
@@ -463,6 +518,9 @@ pub fn song_url(
             600 => "该歌曲需要 VIP 权益".into(),
             _ => last_hint,
         };
+    }
+    if best_fallback.is_some() {
+        return Ok(best_fallback);
     }
     Err(last_hint)
 }

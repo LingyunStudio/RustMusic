@@ -114,8 +114,8 @@ export default function Slider({
             boxShadow: "var(--sk-knob-shadow)",
           }}
         >
-          {/* 红色指示刻度线 */}
-          <span className="w-[1.5px] h-[7px] rounded-full bg-[#e84125] shadow-[0_0_2px_#e84125]" />
+          {/* 同心微点凹槽指示 */}
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_3px_var(--accent)]" />
         </div>
       )}
     </div>

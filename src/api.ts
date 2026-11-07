@@ -373,6 +373,8 @@ export const api = {
     ),
   desktopLyricsOpen: () => invoke<void>("desktop_lyrics_open"),
   desktopLyricsClose: () => invoke<void>("desktop_lyrics_close"),
+  enterMiniMode: () => invoke<void>("enter_mini_mode"),
+  exitMiniMode: () => invoke<void>("exit_mini_mode"),
   /** 菜单栏歌词（Linux）：当前行写入运行时文件，GNOME 扩展轮询显示。
    *  color 为空 = 顶栏主题默认色 */
   dlyricsMenubarLine: (line: string, color: string) =>

@@ -275,7 +275,7 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[12px] cursor-default ${
+        className={`${animCls} skeuo-row group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[64px] px-4 rounded-[12px] cursor-default ${
           checked ? "checked" : active ? "active" : ""
         }`}
         onClick={
@@ -493,7 +493,7 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} skeuo-row group grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-[64px] px-4 rounded-[12px] cursor-default ${
+        className={`${animCls} skeuo-row group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[64px] px-4 rounded-[12px] cursor-default ${
           checked ? "checked" : active ? "active" : ""
         } ${dead ? "opacity-45" : ""}`}
         onClick={

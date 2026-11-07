@@ -157,23 +157,17 @@ html[data-ui="standard"] ::selection {
 
 /* ---------- 滚动条 ---------- */
 
-html[data-ui="standard"] ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+html[data-ui="standard"],
+html[data-ui="standard"] * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
-html[data-ui="standard"] ::-webkit-scrollbar-track {
-  background: transparent;
-}
-html[data-ui="standard"] ::-webkit-scrollbar-thumb {
-  background: var(--shade-strong);
-  border-radius: 5px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-html[data-ui="standard"] ::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-3);
-  border: 3px solid transparent;
-  background-clip: padding-box;
+html[data-ui="standard"] ::-webkit-scrollbar,
+html[data-ui="standard"] *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 /* ---------- 面板 ---------- */
