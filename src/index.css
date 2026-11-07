@@ -40,3 +40,33 @@
   background: transparent !important;
   -webkit-appearance: none !important;
 }
+
+/* ---------- 全局跑马灯动效 ---------- */
+@keyframes global-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-wrap {
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 6%, black 94%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, black 6%, black 94%, transparent 100%);
+}
+
+.marquee-inner {
+  display: inline-flex !important;
+  align-items: center;
+  white-space: nowrap !important;
+  animation: global-marquee var(--dur, 12s) linear infinite !important;
+  will-change: transform;
+}
+
+.marquee-inner:hover {
+  animation-play-state: paused !important;
+}
+

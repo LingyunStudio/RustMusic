@@ -58,25 +58,6 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
   const lyricText = activeLyric?.text?.trim();
   const lyricTrans = lyricsShowTrans && activeLyric?.trans?.trim();
 
-  // 歌词超长跑马灯
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [overflow, setOverflow] = useState(false);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el || !lyricText) {
-      setOverflow(false);
-      return;
-    }
-    const check = () => {
-      if (wrapRef.current) {
-        setOverflow(wrapRef.current.scrollWidth > wrapRef.current.clientWidth + 2);
-      }
-    };
-    const id = requestAnimationFrame(check);
-    return () => cancelAnimationFrame(id);
-  }, [lyricText, lyricTrans]);
-
   const displayText = lyricText
     ? lyricTrans
       ? `${lyricText}  (${lyricTrans})`
@@ -85,6 +66,32 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
     ? "♪ 纯音乐 / 暂无滚动歌词"
     : "双击此处或右上角还原主窗口";
 
+  // 歌词超长跑马灯：利用独立不可见标尺精确测量文字真实宽度
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [overflow, setOverflow] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      const container = containerRef.current;
+      const measure = measureRef.current;
+      if (!container || !measure || !displayText) {
+        setOverflow(false);
+        return;
+      }
+      // 真实文本宽度超过容器可视宽度时激活跑马灯
+      setOverflow(measure.offsetWidth > container.clientWidth + 2);
+    };
+
+    check();
+    const id = requestAnimationFrame(check);
+    window.addEventListener("resize", check);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("resize", check);
+    };
+  }, [displayText]);
+
   return (
     <div
       onDoubleClick={onRestore}
@@ -92,20 +99,33 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
       className="mx-2.5 mb-1.5 px-2.5 h-[25px] rounded-md bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center gap-1.5 overflow-hidden pointer-events-auto cursor-pointer"
     >
       <Music2 size={11} className="text-[var(--accent)] shrink-0 opacity-80" />
+      {/* 离屏标尺：与实际文字拥有完全一致的字号字体，用于准确计算文本在当前样式下的真实物理宽度 */}
+      <span
+        ref={measureRef}
+        aria-hidden="true"
+        className="fixed -left-[9999px] -top-[9999px] text-[11px] font-medium whitespace-nowrap pointer-events-none opacity-0 select-none"
+      >
+        {displayText}
+      </span>
       <div
-        ref={wrapRef}
-        className="flex-1 min-w-0 overflow-hidden text-[11px] font-medium text-[var(--accent-strong)] select-text"
+        ref={containerRef}
+        className={`flex-1 min-w-0 overflow-hidden text-[11px] font-medium text-[var(--accent-strong)] select-text ${
+          overflow ? "marquee-wrap" : ""
+        }`}
         title={displayText}
       >
         {overflow ? (
           <span
-            className="marquee-inner inline-block whitespace-nowrap"
-            style={{ ["--dur" as string]: `${Math.max(8, displayText.length * 0.45)}s` }}
+            key={displayText}
+            className="marquee-inner inline-flex items-center whitespace-nowrap"
+            style={{
+              ["--dur" as string]: `${Math.max(6, displayText.length * 0.38)}s`,
+            }}
           >
-            {displayText}
-            <span className="inline-block w-10" />
-            {displayText}
-            <span className="inline-block w-10" />
+            <span>{displayText}</span>
+            <span className="inline-block w-12 shrink-0" />
+            <span>{displayText}</span>
+            <span className="inline-block w-12 shrink-0" />
           </span>
         ) : (
           <span className="truncate block leading-tight">{displayText}</span>
