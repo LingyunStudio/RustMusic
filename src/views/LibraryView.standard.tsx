@@ -528,23 +528,23 @@ export default function LibraryView({ mode }: { mode: Mode }) {
           </div>
         </div>
 
-        {/* 统一控制栏：播放全部、随机、批量管理在最前，排序居中，搜索框自适应靠右 */}
-        <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+        {/* 统一控制栏：播放全部、随机、批量管理在最前，排序居中，搜索框靠右并保同一行 */}
+        <div className="flex items-center gap-2 mt-3.5 w-full flex-nowrap min-w-0">
           {(sortedTracks.length > 0 || mergedEntries.length > 0) && (
             <>
-              <button className="btn-primary" onClick={() => playAll(false)}>
+              <button className="btn-primary shrink-0 !px-3 !py-1.5 !text-[12px]" onClick={() => playAll(false)}>
                 <Play size={13} className="fill-current" />
                 播放全部
               </button>
               <button
-                className="btn-secondary"
+                className="btn-secondary shrink-0 !px-2.5 !py-1.5 !text-[12px]"
                 onClick={() => playAll(true)}
               >
                 <Shuffle size={13} />
                 随机
               </button>
               <button
-                className={`btn-secondary ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
+                className={`btn-secondary shrink-0 !px-2.5 !py-1.5 !text-[12px] ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
                 disabled={manualActive}
                 title={manualActive ? "手动排序模式下不可多选" : "批量选择：加入播放列表 / 队列 / 下载"}
                 onClick={() => {
@@ -556,18 +556,18 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 {batchMode ? "退出批量" : "批量管理"}
               </button>
 
-              <div className="w-px h-4 bg-[var(--line)] mx-1" />
+              <div className="w-px h-4 bg-[var(--line)] mx-0.5 shrink-0" />
             </>
           )}
 
           {/* 排序标签 */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[11px] text-[var(--ink-3)] mr-0.5">排序</span>
+          <div className="flex items-center gap-1 shrink-0 flex-nowrap">
+            <span className="text-[11px] text-[var(--ink-3)] mr-0.5 shrink-0">排序</span>
             {SORTS.filter((s) => s.key !== "manual" || mode !== "recent").map((s) => (
               <button
                 key={s.key}
                 onClick={() => onSort(s.key)}
-                className={`chip ${
+                className={`chip shrink-0 !px-2.5 !py-1 !text-[11.5px] ${
                   sortKey === s.key
                     ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-medium"
                     : "text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:bg-[var(--shade-hover)]"
@@ -581,14 +581,14 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               </button>
             ))}
             {manualActive && (
-              <span className="text-[10.5px] text-[var(--ink-3)] ml-1">
-                长按可拖动调序
+              <span className="text-[10px] text-[var(--ink-3)] ml-0.5 shrink-0">
+                可拖动调序
               </span>
             )}
           </div>
 
-          {/* 右侧搜索框：紧凑 220px 靠右对齐 */}
-          <div className="relative ml-auto w-[220px] max-w-full">
+          {/* 右侧搜索框：自适应宽度且与前排按钮保持同一行 */}
+          <div className="relative ml-auto min-w-[140px] max-w-[210px] flex-1 shrink">
             <Search
               size={13}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
@@ -618,7 +618,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       <div className="flex-1 min-h-0 flex flex-col px-6 pb-[96px]">
         <div className="glass rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
           {(sortedTracks.length > 0 || mergedRows.length > 0) && (
-            <div className="grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
+            <div className="grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
               <span className="text-center">#</span>
               <span className="pl-1">歌曲</span>
               <span>专辑</span>

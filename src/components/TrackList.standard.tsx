@@ -275,7 +275,7 @@ export default function TrackList({
         key={`local-${t.id}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        className={`${animCls} group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
           checked
             ? "bg-[var(--accent-weak)]"
             : active
@@ -422,11 +422,11 @@ export default function TrackList({
         </button>
 
         {/* 格式 / 时长（与表头同列，右对齐） */}
-        <div className="flex items-center justify-end gap-3">
-          <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider">
+        <div className="flex items-center justify-end gap-2.5 min-w-0">
+          <span className="text-[10px] px-1.5 py-[2px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider whitespace-nowrap shrink-0">
             {t.format || "AUDIO"}
           </span>
-          <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right">
+          <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right shrink-0">
             {fmtTime(t.duration * 1000)}
           </span>
         </div>
@@ -486,7 +486,7 @@ export default function TrackList({
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
         title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
-        className={`${animCls} group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
+        className={`${animCls} group grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-[64px] px-4 rounded-[13px] transition-colors duration-150 cursor-default ${
           checked || active ? "bg-[var(--accent-weak)]" : "hover:bg-[var(--shade-hover)]"
         } ${dead ? "opacity-45" : ""}`}
         onClick={
@@ -641,11 +641,11 @@ export default function TrackList({
         >
           {e.album || "未知专辑"}
         </button>
-        <div className="flex items-center justify-end gap-3">
-          <span className="text-[10.5px] px-2 py-[3px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider">
+        <div className="flex items-center justify-end gap-2.5 min-w-0">
+          <span className="text-[10px] px-1.5 py-[2px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider whitespace-nowrap shrink-0">
             在线
           </span>
-          <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right">
+          <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right shrink-0">
             {fmtTime(e.duration * 1000)}
           </span>
         </div>

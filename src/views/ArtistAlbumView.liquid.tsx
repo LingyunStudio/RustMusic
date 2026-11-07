@@ -226,7 +226,7 @@ export default function ArtistAlbumView({
 
           {/* 曲目列表 */}
           {(localMatches.length > 0 || onlineEntries.length > 0) && (
-            <div className="grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-11 px-5 border-b border-[var(--line)] bg-[var(--liquid-glass-bg-subtle)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em] font-medium">
+            <div className="grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-11 px-5 border-b border-[var(--line)] bg-[var(--liquid-glass-bg-subtle)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em] font-medium">
               <span className="text-center">序号</span>
               <span>歌曲</span>
               <span>专辑</span>

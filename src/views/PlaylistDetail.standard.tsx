@@ -629,7 +629,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           ) : (
             <>
               {/* 表头：清晰区分序号、歌曲、专辑、时长与操作 */}
-              <div className="grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
+              <div className="grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
                 <span className="text-center">#</span>
                 <span className="pl-1">歌曲</span>
                 <span>专辑</span>
@@ -660,7 +660,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                       key={r.entry.rowid}
                       {...(windowed || batchMode ? {} : rowProps(i))}
                       style={{ ["--row-idx" as string]: Math.min(i, 12) }}
-                      className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[52px_minmax(220px,3fr)_minmax(140px,2fr)_80px_120px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
+                      className={`${!windowed || i < 24 ? "anim-row" : ""} group grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-[60px] px-4 rounded-[13px] transition-colors cursor-default ${
                         isSelected
                           ? "bg-[var(--accent-weak)] text-[var(--accent-strong)]"
                           : active
