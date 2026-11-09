@@ -126,8 +126,8 @@ pub(super) fn privilege_hashes(
 
 fn fetch_privilege_hashes_uncached(
     hash: &str,
-    album_id: u64,
-    album_audio_id: u64,
+    _album_id: u64,
+    _album_audio_id: u64,
 ) -> PrivilegeHashes {
     let body = serde_json::json!({
         "appid": APPID.parse::<i64>().unwrap_or(1005),
@@ -141,8 +141,8 @@ fn fetch_privilege_hashes_uncached(
             "type": "audio",
             "page_id": 0,
             "hash": hash.to_uppercase(),
-            "album_id": album_id,
-            "album_audio_id": album_audio_id,
+            "album_id": 0,
+            "album_audio_id": 0,
         }],
         "qualities": [
             "128",

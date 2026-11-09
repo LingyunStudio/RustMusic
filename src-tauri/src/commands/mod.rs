@@ -152,6 +152,10 @@ fn notify_quality_fallback(
 ) {
     let wanted_rank = quality_key_rank(quality);
     let actual_rank = quality_label_rank(actual_label);
+    // 酷狗高阶母带：酷狗 24bit/96kHz 真正母带级音频流由"蝰蛇超清"承载，用户选"蝰蛇母带"播放"蝰蛇超清"属正常同级匹配，非降级
+    if quality == "viper_tape" && actual_label == "蝰蛇超清" {
+        return;
+    }
     if wanted_rank <= 10 || actual_rank == 0 || actual_rank >= wanted_rank {
         return;
     }

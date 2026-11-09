@@ -180,7 +180,7 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
     ) {
         match crate::kugou::last_hires_error() {
             Some(e) => format!("高阶音质请求被服务端拒绝（{e}），已自动回退"),
-            None => "该曲暂无对应高阶母带/全景声文件或需酷狗超级 VIP 权益".to_string(),
+            None => "该曲无对应全景声/母带版本，已为你播放最佳可用音质".to_string(),
         }
     } else {
         "账号权益或曲目音源限制了更高音质".to_string()
