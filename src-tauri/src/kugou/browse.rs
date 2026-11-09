@@ -369,10 +369,10 @@ fn enrich_vip(songs: &mut [KgSong]) {
         for s in songs.iter_mut() {
             if let Some((vip, album_id, album_audio_id)) = map.get(&s.id.to_lowercase()) {
                 s.vip = *vip;
-                if s.album_id == 0 {
+                if *album_id > 0 {
                     s.album_id = *album_id;
                 }
-                if s.album_audio_id == 0 {
+                if *album_audio_id > 0 {
                     s.album_audio_id = *album_audio_id;
                 }
             }
@@ -412,6 +412,53 @@ fn song_from_playlist(t: &serde_json::Value) -> Option<KgSong> {
     } else {
         name
     };
+    let mut hq_hash = String::new();
+    let mut sq_hash = String::new();
+    let mut super_hash = String::new();
+    if let Some(goods) = t.get("relate_goods").and_then(|g| g.as_array()) {
+        for g in goods {
+            let q = g
+                .get("quality")
+                .or_else(|| g.get("level"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let h = g
+                .get("hash")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+            if h.is_empty() {
+                continue;
+            }
+            match q {
+                "320" if hq_hash.is_empty() => hq_hash = h,
+                "flac" if sq_hash.is_empty() => sq_hash = h,
+                "high" | "super" if super_hash.is_empty() => super_hash = h,
+                _ => {}
+            }
+        }
+    }
+    // 酷狗歌单返回的 audio_id 为内部资产 ID，非取链所需的 album_audio_id；
+    // 真实的 album_audio_id 存放在 mixsongid 或 add_mixsongid（若均缺失则置 0，由 enrich_vip 权益接口回填）
+    let album_audio_id = t
+        .get("mixsongid")
+        .or_else(|| t.get("add_mixsongid"))
+        .or_else(|| t.get("album_audio_id"))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+        })
+        .unwrap_or(0);
+    let album_id = t
+        .get("album_id")
+        .or_else(|| t.pointer("/albuminfo/id"))
+        .or_else(|| t.pointer("/albuminfo/album_id"))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+        })
+        .unwrap_or(0);
     Some(KgSong {
         id: hash.to_string(),
         name,
@@ -431,11 +478,11 @@ fn song_from_playlist(t: &serde_json::Value) -> Option<KgSong> {
         // 歌单通道的 privilege 对全部歌曲恒为 10，无法判定 VIP，置 false
         //（播放失败时错误信息已按权益明确分类）
         vip: false,
-        album_audio_id: t.get("audio_id").and_then(|v| v.as_u64()).unwrap_or(0),
-        album_id: t.get("album_id").and_then(|v| v.as_u64()).unwrap_or(0),
-        hq_hash: String::new(),
-        sq_hash: String::new(),
-        super_hash: String::new(),
+        album_audio_id,
+        album_id,
+        hq_hash,
+        sq_hash,
+        super_hash,
     })
 }
 

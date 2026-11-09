@@ -60,6 +60,8 @@ pub(super) struct PrivilegeHashes {
     pub viper_clear: String,
     pub viper_atmos: String,
     pub viper_tape: String,
+    pub album_audio_id: u64,
+    pub album_id: u64,
 }
 
 impl PrivilegeHashes {
@@ -163,6 +165,17 @@ fn fetch_privilege_hashes_uncached(
     };
 
     let mut out = PrivilegeHashes::default();
+    if let Some(first) = v.pointer("/data/0") {
+        out.album_audio_id = first
+            .get("album_audio_id")
+            .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(0);
+        out.album_id = first
+            .get("recommend_album_id")
+            .or_else(|| first.get("album_id"))
+            .and_then(|x| x.as_u64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(0);
+    }
     let mut raw_tape_hash = String::new();
     let mut raw_tape_br: u64 = 0;
 
@@ -230,17 +243,29 @@ fn song_url_v5(
     super_hash: &str,
     quality: &str,
 ) -> Result<(String, String, &'static str), String> {
-    // 若请求高阶音质（SVIP 蝰蛇系列 / Hi-Res）或基础档位 hash 缺失，通过权益接口补齐各档真实 hash
+    // 若请求高阶音质（SVIP 蝰蛇系列 / Hi-Res）或基础档位 hash 缺失或 album_audio_id 为 0，通过权益接口补齐各档真实 hash 与 ID
     let need_priv = matches!(
         quality,
         "viper_tape" | "master" | "viper_atmos" | "viper_clear" | "hires"
     ) || (quality == "lossless" && sq_hash.is_empty())
-        || (quality == "high" && hq_hash.is_empty());
+        || (quality == "high" && hq_hash.is_empty())
+        || album_audio_id == 0;
 
     let priv_h = if need_priv {
         privilege_hashes(hash, album_id, album_audio_id)
     } else {
         PrivilegeHashes::default()
+    };
+
+    let target_album_audio_id = if priv_h.album_audio_id > 0 {
+        priv_h.album_audio_id
+    } else {
+        album_audio_id
+    };
+    let target_album_id = if priv_h.album_id > 0 {
+        priv_h.album_id
+    } else {
+        album_id
     };
 
     let hq = if !hq_hash.is_empty() {
@@ -367,16 +392,16 @@ fn song_url_v5(
     };
     set_last_hires_error(None);
     let mid = mid_of();
-    let fetch = |q: &str, h: &str, tier: &'static str| -> Result<(String, String, &'static str), String> {
+    let fetch_with_ids = |q: &str, h: &str, tier: &'static str, aid: u64, albid: u64| -> Result<(String, String, &'static str), String> {
         let extra = vec![
-            ("album_id".into(), album_id.to_string()),
+            ("album_id".into(), albid.to_string()),
             ("area_code".into(), "1".into()),
             ("hash".into(), h.to_string()),
             ("ssa_flag".into(), "is_fromtrack".into()),
             ("version".into(), "11430".into()),
             ("page_id".into(), "151369488".into()),
             ("quality".into(), q.to_string()),
-            ("album_audio_id".into(), album_audio_id.to_string()),
+            ("album_audio_id".into(), aid.to_string()),
             ("behavior".into(), "play".into()),
             ("pid".into(), "2".into()),
             ("cmd".into(), "26".into()),
@@ -426,6 +451,17 @@ fn song_url_v5(
         }
         // 档位标签直接用阶梯元组
         if !url.is_empty() {
+            // 校验返回的歌曲 hash 是否与请求一致：
+            // 若服务端因错误的 album_audio_id 返回了非目标歌曲的直链（如变成了纯音乐/翻唱），
+            // 报错并由调用方清除 album_audio_id 重试
+            let ret_h = v
+                .get("hash")
+                .or_else(|| v.get("std_hash"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            if !ret_h.is_empty() && !ret_h.eq_ignore_ascii_case(h) {
+                return Err(format!("mismatched_hash:{ret_h}"));
+            }
             let ext = url_ext(&url);
             Ok((url, ext, tier))
         } else {
@@ -443,6 +479,16 @@ fn song_url_v5(
                     .collect::<String>()
             ))
         }
+    };
+    let fetch = |q: &str, h: &str, tier: &'static str| -> Result<(String, String, &'static str), String> {
+        let res = fetch_with_ids(q, h, tier, target_album_audio_id, target_album_id);
+        if let Err(e) = &res {
+            if e.starts_with("mismatched_hash:") && target_album_audio_id > 0 {
+                eprintln!("[kugou] /v5/url 返回 hash 不匹配（{e}），清除 album_audio_id 重新取链");
+                return fetch_with_ids(q, h, tier, 0, 0);
+            }
+        }
+        res
     };
 
     let mut last_err = String::from("无可用链接");
