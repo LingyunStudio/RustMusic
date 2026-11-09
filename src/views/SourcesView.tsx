@@ -65,6 +65,7 @@ function DownloadsPanel() {
   useEffect(refresh, []);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
+  const isSkeuo = uiTheme === "skeuo";
   const kindLabel: Record<string, string> = {
     netease: "网易云",
     qq: "QQ音乐",
@@ -150,6 +151,7 @@ export default function SourcesView() {
   const setTab = useStore((s) => s.setSourcesTab);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
+  const isSkeuo = uiTheme === "skeuo";
   const biliFollows = useStore((s) => s.biliFollows);
   const biliToggleFollow = useStore((s) => s.biliToggleFollow);
   const biliReorderFollows = useStore((s) => s.biliReorderFollows);
@@ -1100,7 +1102,7 @@ export default function SourcesView() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex flex-col pb-[84px]">
+        <div className={`flex-1 min-h-0 flex flex-col ${isSkeuo ? "pb-[96px]" : "pb-[84px]"}`}>
           {pageContent}
         </div>
       )}

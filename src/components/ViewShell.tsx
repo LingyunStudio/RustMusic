@@ -24,11 +24,14 @@ export default function ViewShell({
   children,
   headerClass = "px-8 pt-7 pb-4 shrink-0",
   liquidHeaderClass = "px-5 pt-4 pb-4 shrink-0",
-  bottomPadding = "pb-[86px]",
+  bottomPadding,
   contentCardClass = "glass rounded-3xl",
   cardHeader,
   extra,
 }: ViewShellProps) {
+  const isSkeuo = uiTheme === "skeuo";
+  const resolvedBottomPadding = bottomPadding ?? (isSkeuo ? "pb-[96px]" : "pb-[86px]");
+
   if (uiTheme === "liquid") {
     return (
       <div className="flex-1 min-h-0 flex flex-col">
@@ -48,7 +51,7 @@ export default function ViewShell({
     <div className="flex-1 min-h-0 flex flex-col">
       {extra}
       <header className={headerClass}>{header}</header>
-      <div className={`flex-1 min-h-0 flex flex-col px-6 ${bottomPadding}`}>
+      <div className={`flex-1 min-h-0 flex flex-col px-6 ${resolvedBottomPadding}`}>
         {cardHeader}
         <div
           className={`relative ${contentCardClass} flex-1 min-h-0 flex flex-col overflow-hidden`}

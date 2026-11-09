@@ -40,6 +40,7 @@ import {
 export default function OnlineLibraryView({ source }: { source: Source }) {
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
+  const isSkeuo = uiTheme === "skeuo";
   const qqPage = useStore((s) => s.qqPage);
   const kugouPage = useStore((s) => s.kugouPage);
   const neteaseResults = useStore((s) => s.neteaseResults);
@@ -923,6 +924,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         header={headerContent}
         headerClass="px-8 pt-7 pb-4"
         liquidHeaderClass="px-5 pt-4 pb-4 shrink-0"
+        bottomPadding={isSkeuo ? "pb-[96px]" : "pb-[86px]"}
       >
           {/* 推荐横幅：随机歌单/榜单接管列表时的来源说明与操作 */}
           {rec && (

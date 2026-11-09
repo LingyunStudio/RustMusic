@@ -29,6 +29,7 @@ export default function ArtistAlbumView({
   const deleteTrack = useStore((s) => s.deleteTrack);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
+  const isSkeuo = uiTheme === "skeuo";
 
   const [onlineLoading, setOnlineLoading] = useState(true);
   const [onlineEntries, setOnlineEntries] = useState<PlaylistEntryMeta[]>([]);
@@ -233,6 +234,7 @@ export default function ArtistAlbumView({
         header={headerContent}
         headerClass="px-8 pt-7 pb-5"
         liquidHeaderClass="px-5 pt-4 pb-4 shrink-0"
+        bottomPadding={isSkeuo ? "pb-[96px]" : "pb-[86px]"}
       >
         {(localMatches.length > 0 || onlineEntries.length > 0) && (
           <div className={tableHeaderClass}>

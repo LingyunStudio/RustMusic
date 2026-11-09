@@ -632,7 +632,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
         header={headerContent}
         headerClass="px-8 pt-6 pb-4 shrink-0"
         liquidHeaderClass="px-5 pt-4 pb-4 shrink-0"
-        bottomPadding="pb-[96px]"
+        bottomPadding={isSkeuo ? "pb-[96px]" : "pb-[86px]"}
       >
         {(sortedTracks.length > 0 || mergedRows.length > 0) && (
           <div
