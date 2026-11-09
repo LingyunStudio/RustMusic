@@ -270,10 +270,15 @@ impl<S: Source> Iterator for EqSource<S> {
 
 impl<S: Source> Source for EqSource<S> {
     fn current_span_len(&self) -> Option<usize> {
+        let ch = self.channels.max(1);
+        let fallback = 512 * ch;
         if self.in_channels != self.channels {
-            None
+            Some(fallback)
         } else {
-            self.inner.current_span_len()
+            self.inner
+                .current_span_len()
+                .filter(|&len| len > 0 && len % ch == 0)
+                .or(Some(fallback))
         }
     }
 
@@ -304,5 +309,86 @@ impl<S: Source> Source for EqSource<S> {
         }
         self.pos_ms.store(self.base_ms as u64, Ordering::Relaxed);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rodio::buffer::SamplesBuffer;
+    use rodio::mixer;
+    use rodio::Player;
+    use rodio::{ChannelCount, SampleRate};
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
+    use std::thread;
+
+    #[test]
+    fn test_eq_source_atmos_to_hires_resampling() {
+        let (mixer, mut mixer_rx) = mixer::mixer(
+            ChannelCount::new(2).unwrap(),
+            SampleRate::new(48000).unwrap(),
+        );
+        let player = Arc::new(Player::connect_new(&mixer));
+
+        let running = Arc::new(AtomicBool::new(true));
+        let count_96 = Arc::new(AtomicUsize::new(0));
+
+        let running_clone = running.clone();
+        let count_clone = count_96.clone();
+        let audio_thread = thread::spawn(move || {
+            while running_clone.load(Ordering::Relaxed) {
+                if let Some(s) = mixer_rx.next() {
+                    if s > 0.15 {
+                        count_clone.fetch_add(1, Ordering::Relaxed);
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
+
+        // 1. Play 6-channel 44.1kHz track (Viper Atmos downmixed)
+        let ch6 = ChannelCount::new(6).unwrap();
+        let sr44 = SampleRate::new(44100).unwrap();
+        let data6 = vec![0.01f32; 6 * 2000];
+        let src6 = SamplesBuffer::new(ch6, sr44, data6);
+        let shared = Arc::new(EqShared::new([0.0; 10], false));
+        let pos = Arc::new(AtomicU64::new(0));
+        let eq6 = EqSource::new(src6, shared.clone(), pos.clone());
+
+        player.append(eq6);
+        player.play();
+
+        thread::sleep(Duration::from_millis(50));
+
+        // 2. Now user switches to 2-channel 96kHz (Viper Clear / Master)
+        player.clear();
+
+        let ch2 = ChannelCount::new(2).unwrap();
+        let sr96 = SampleRate::new(96000).unwrap();
+        // 96000 Hz: 96000 frames = 1 second = 192000 samples
+        let data2 = vec![0.2f32; 2 * 96000];
+        let src2 = SamplesBuffer::new(ch2, sr96, data2);
+        let eq2 = EqSource::new(src2, shared.clone(), pos.clone());
+
+        player.append(eq2);
+        player.play();
+
+        // Wait until src2 finishes
+        while !player.empty() {
+            thread::sleep(Duration::from_millis(10));
+        }
+        thread::sleep(Duration::from_millis(50));
+        running.store(false, Ordering::Relaxed);
+        let _ = audio_thread.join();
+
+        let count = count_96.load(Ordering::Relaxed);
+        println!("Output samples count from 96kHz source: {}", count);
+        // At 48kHz output, 1s of audio is exactly 48000 * 2 = 96000 samples!
+        // Allow tiny tolerance for filter delay (+- 500 samples)
+        assert!(
+            (count as i64 - 96000).abs() < 500,
+            "Expected ~96000 samples, but got {count}! Resampler was STUCK in 44.1kHz!",
+        );
     }
 }

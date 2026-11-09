@@ -266,12 +266,17 @@ impl Engine {
             diag_dur.map(|d| d.as_millis() as u64).unwrap_or(0)
         };
         self.dur_ms.store(dur_ms, Ordering::Relaxed);
-        // 换曲瞬间 sink 短暂为空，置位避免 monitor 采样到 empty 误判"播完"
+        // 换曲瞬间重新连接 Player 到 mixer，彻底隔离不同曲目/音质（如全景声 44.1k/48k 下混切到超清/母带 96k/192k）
+        // 的采样率与声道上下文，避免 rodio 重采样器锁死在旧采样率；
+        // switching 置位避免 monitor 采样到 empty 误判"播完"
         self.switching.store(true, Ordering::Relaxed);
-        let sink = self.sink.read();
-        sink.clear();
-        sink.append(wrapped);
-        drop(sink);
+        let new_sink = Player::connect_new(self.out.read().mixer());
+        new_sink.append(wrapped);
+        {
+            let mut sink = self.sink.write();
+            sink.stop();
+            *sink = new_sink;
+        }
         self.switching.store(false, Ordering::Relaxed);
         sink_play_common(
             &self.sink,
