@@ -1,12 +1,30 @@
-//! 按界面风格分发：standard = 合并前原版 / skeuo = 拟物分支原版 / liquid = 液态玻璃分支原版。
-import LocateCurrentPillStandard from "./LocateCurrentPill.standard";
-import LocateCurrentPillSkeuo from "./LocateCurrentPill.skeuo";
-import LocateCurrentPillLiquid from "./LocateCurrentPill.liquid";
+import { LocateFixed } from "lucide-react";
 import { useStore } from "../store";
 
-export default function LocateCurrentPill(props: Parameters<typeof LocateCurrentPillStandard>[0]) {
+export default function LocateCurrentPill({
+  show,
+  onClick,
+  className = "",
+}: {
+  show: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
   const uiTheme = useStore((s) => s.uiTheme);
-  if (uiTheme === "liquid") return <LocateCurrentPillLiquid {...(props as any)} />;
-  if (uiTheme === "skeuo") return <LocateCurrentPillSkeuo {...(props as any)} />;
-  return <LocateCurrentPillStandard {...(props as any)} />;
+  const isLiquid = uiTheme === "liquid";
+
+  if (!show) return null;
+  return (
+    <button
+      className={`z-10 flex items-center gap-1.5 h-8 glass-strong text-[12px] anim-fade whitespace-nowrap ${
+        isLiquid
+          ? "px-4 rounded-full font-semibold text-[var(--accent-strong)] hover:text-[var(--accent)] hover:scale-105 active:scale-95 transition-all"
+          : "px-3.5 rounded-full shadow-lg font-medium text-[var(--accent-strong)] hover:text-[var(--accent)]"
+      } ${className}`}
+      onClick={onClick}
+    >
+      <LocateFixed size={13} />
+      定位到正在播放
+    </button>
+  );
 }
