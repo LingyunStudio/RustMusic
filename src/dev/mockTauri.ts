@@ -138,7 +138,7 @@ export function installMockTauri() {
         case "check_update":
           return null;
         case "get_app_info":
-          return { version: "0.7.1", dataDir: "C:/dev-preview", platform: "windows" };
+          return { version: "0.7.2", dataDir: "C:/dev-preview", platform: "windows" };
         case "list_output_devices":
           return { devices: [{ name: "Speakers (Mock)", isDefault: true }], current: "Speakers (Mock)", preference: null };
         case "taskbar_lyrics_list_displays":
