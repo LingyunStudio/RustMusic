@@ -653,7 +653,7 @@ mod tests {
         std::env::remove_var("RUSTMUSIC_UPDATE_REPO");
     }
 
-    /// AppImage 附件挑选：跳过非 AppImage，优先命中当前架构（amd64/x86_64 别名互认）
+    /// AppImage 附件挑选：跳过非 AppImage，优先命中当前架构（amd64/x86_64、arm64/aarch64 别名互认）
     #[test]
     #[cfg(target_os = "linux")]
     fn appimage_pick_prefers_current_arch() {
@@ -666,9 +666,14 @@ mod tests {
             json!({"name": "RustMusic_0.1.2_amd64.deb", "size": 3,
                    "browser_download_url": "https://example.com/amd64.deb"}),
         ];
+        // 期望值随构建架构变化：arm64 runner 上应命中 arm64 附件
+        let (want_name, want_size) = match std::env::consts::ARCH {
+            "aarch64" => ("arm64.AppImage", 1),
+            _ => ("amd64.AppImage", 2),
+        };
         let (name, url, size, _) = pick_appimage_asset(&assets).expect("应选中 AppImage");
-        assert!(name.ends_with(".AppImage"));
-        assert_eq!(size, 2);
+        assert!(name.ends_with(want_name), "选中了 {name}，期望 {want_name}");
+        assert_eq!(size, want_size);
         assert!(url.ends_with(".AppImage"));
 
         // 当前架构的附件缺席时回退到任意 AppImage
