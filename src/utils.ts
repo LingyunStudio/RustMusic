@@ -202,7 +202,7 @@ export function matchSearch(t: TrackMeta, q: string): boolean {
   );
 }
 
-/** 单个字符的"演唱权重"：CJK/全角字符占更多视觉宽度，权重高于拉丁字母 */
+/** 单个字符的"演唱权重"：CJK/全角字符占更多视觉宽度，窄字母/标点权重较低 */
 function charWeight(c: string): number {
   const code = c.codePointAt(0) ?? 0;
   if (code >= 0x1100 && (code <= 0x115f || code === 0x3000)) return 2; // CJK 标点/全角空格
@@ -210,7 +210,10 @@ function charWeight(c: string): number {
   if (code >= 0xac00 && code <= 0xd7a3) return 2; // 谚文音节
   if (code >= 0xf900 && code <= 0xfaff) return 2; // CJK 兼容
   if (code >= 0xff00 && code <= 0xff60) return 2; // 全角形式
-  if (c === " ") return 0.4; // 空格快
+  if (c === " ") return 0.45; // 空格快
+  if ("',.;:!|()[]{}`\"~".includes(c)) return 0.45; // 窄标点
+  if ("ilIjft1r".includes(c)) return 0.65; // 窄拉丁字符
+  if ("WMmw@#%&".includes(c)) return 1.35; // 宽拉丁字符
   return 1;
 }
 
@@ -238,18 +241,26 @@ export function lyricLineProgress(
   if (end <= start) return 0;
   const pos = Math.min(end, Math.max(start, posIn));
 
-  const words = line.words?.filter((w) => w.text.length > 0);
+  const rawWords = line.words;
+  const words = rawWords?.filter((w) => w.text.length > 0);
   if (words && words.length) {
+    // 增强 LRC 若未带尾闭合标签，后端会给末字填 +600ms 占位（yrc/QRC/KRC 转换均带空尾闭合标签）
+    const hasExplicitTailEnd = rawWords![rawWords!.length - 1].text.length === 0;
     // 逐字时间戳路径：每个字在其 [start,end] 内线性点亮，
     // 染色边界精确贴合实际演唱节奏（句内快慢不均）
     let sungWeight = 0;
     let totalWeight = 0;
-    for (const w of words) {
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
       const weight = [...w.text].reduce((s, c) => s + charWeight(c), 0);
       totalWeight += weight;
-      if (pos >= w.endMs) sungWeight += weight;
+      const wEnd =
+        !hasExplicitTailEnd && i === words.length - 1 && w.endMs === w.startMs + 600
+          ? Math.max(w.endMs, Math.min(end, w.startMs + 1500))
+          : w.endMs;
+      if (pos >= wEnd) sungWeight += weight;
       else if (pos > w.startMs)
-        sungWeight += weight * ((pos - w.startMs) / (w.endMs - w.startMs || 1));
+        sungWeight += weight * ((pos - w.startMs) / (wEnd - w.startMs || 1));
     }
     if (totalWeight <= 0) return 0;
     return Math.min(1, sungWeight / totalWeight);
@@ -272,6 +283,97 @@ export function lyricLineProgress(
     cursor = wEnd;
   }
   return Math.min(1, sungWeight / total);
+}
+
+/**
+ * 更新当前歌词行的逐字染色进度（0~1）：
+ * - 单行歌词：沿用 CSS `clip-path: inset(0 calc(100% - var(--fill, 0%)) 0 0)`（零测量开销）。
+ * - 折行歌词（2 行及以上）：用 Range.getClientRects() 生成百分比 polygon 按视觉行
+ *   依次扫色，避免多行同时从左到右扫满（百分比坐标对 CSS zoom 与 transform: scale() 均免疫）。
+ */
+export function applyLyricFill(el: HTMLElement, fill: number): void {
+  const clamped = Math.max(0, Math.min(1, fill));
+  el.style.setProperty("--fill", `${(clamped * 100).toFixed(2)}%`);
+  const ov = el.querySelector<HTMLElement>(".lyric-fill-ov > span");
+  if (!ov) return;
+  const textNode = ov.firstChild;
+  if (!textNode || ov.clientWidth <= 0 || ov.clientHeight <= 0) {
+    ov.style.clipPath = "";
+    return;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(textNode);
+  const rawRects = range.getClientRects();
+  if (rawRects.length <= 1) {
+    ov.style.clipPath = "";
+    return;
+  }
+  const ovRect = ov.getBoundingClientRect();
+  if (ovRect.width <= 0 || ovRect.height <= 0) {
+    ov.style.clipPath = "";
+    return;
+  }
+  const rows: { left: number; right: number; top: number; bottom: number }[] = [];
+  for (let i = 0; i < rawRects.length; i++) {
+    const r = rawRects[i];
+    if (r.width <= 0 && r.height <= 0) continue;
+    const prev = rows[rows.length - 1];
+    if (prev && Math.abs(r.top - prev.top) < Math.max(4, prev.bottom - prev.top) * 0.5) {
+      prev.left = Math.min(prev.left, r.left);
+      prev.right = Math.max(prev.right, r.right);
+      prev.top = Math.min(prev.top, r.top);
+      prev.bottom = Math.max(prev.bottom, r.bottom);
+    } else {
+      rows.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+    }
+  }
+  if (rows.length <= 1) {
+    ov.style.clipPath = "";
+    return;
+  }
+  if (clamped <= 0) {
+    ov.style.clipPath = "polygon(0% 0%, 0% 0%, 0% 0%)";
+    return;
+  }
+  if (clamped >= 1) {
+    ov.style.clipPath = "none";
+    return;
+  }
+  const widths = rows.map((r) => Math.max(0, r.right - r.left));
+  const totalW = widths.reduce((a, b) => a + b, 0);
+  if (totalW <= 0) {
+    ov.style.clipPath = "";
+    return;
+  }
+  let target = clamped * totalW;
+  let m = rows.length - 1;
+  let rowFillPx = widths[m];
+  for (let i = 0; i < rows.length; i++) {
+    if (target <= widths[i] || i === rows.length - 1) {
+      m = i;
+      rowFillPx = Math.min(widths[i], Math.max(0, target));
+      break;
+    }
+    target -= widths[i];
+  }
+  const pctX = (x: number) =>
+    `${Math.max(0, Math.min(100, ((x - ovRect.left) / ovRect.width) * 100)).toFixed(2)}%`;
+  const pctY = (y: number) =>
+    `${Math.max(0, Math.min(100, ((y - ovRect.top) / ovRect.height) * 100)).toFixed(2)}%`;
+  const xCur = pctX(rows[m].left + rowFillPx);
+  const yTop = m === 0 ? "0%" : pctY((rows[m - 1].bottom + rows[m].top) / 2);
+  const yBot = m === rows.length - 1 ? "100%" : pctY((rows[m].bottom + rows[m + 1].top) / 2);
+  if (m === 0) {
+    ov.style.clipPath = `polygon(0% 0%, ${xCur} 0%, ${xCur} ${yBot}, 0% ${yBot})`;
+  } else {
+    ov.style.clipPath = `polygon(0% 0%, 100% 0%, 100% ${yTop}, ${xCur} ${yTop}, ${xCur} ${yBot}, 0% ${yBot})`;
+  }
+}
+
+export function clearLyricFill(el: HTMLElement): void {
+  el.style.removeProperty("--fill");
+  const ov = el.querySelector<HTMLElement>(".lyric-fill-ov > span");
+  if (ov) ov.style.clipPath = "";
 }
 
 // ---------- 播放页歌词自适应配色 ----------

@@ -15,18 +15,21 @@ let lastText: string | null = null; // null = 尚未写过（下次必写）
 let heartbeat: ReturnType<typeof setInterval> | null = null;
 
 /** 顶栏文本：同步歌词=当前行（行间/前奏为空）；未同步=♪ 标题；无曲目=空 */
-export function lineText(s: Pick<Store, "lyrics" | "pos" | "current">): string {
+export function lineText(
+  s: Pick<Store, "lyrics" | "pos" | "current"> & { lyricOffsetMs?: number }
+): string {
   const cur = s.current;
   if (!cur) return "";
   const lines = s.lyrics?.lines ?? [];
   if (s.lyrics?.synced && lines.length > 0) {
+    const pos = Math.max(0, s.pos + (s.lyricOffsetMs ?? 0));
     // 当前行二分（行数据有序），前奏/间奏返回空（顶栏隐藏）
     let idx = -1;
     let lo = 0;
     let hi = lines.length - 1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if ((lines[mid].timeMs ?? 0) <= s.pos) {
+      if ((lines[mid].timeMs ?? 0) <= pos) {
         idx = mid;
         lo = mid + 1;
       } else {
@@ -41,7 +44,9 @@ export function lineText(s: Pick<Store, "lyrics" | "pos" | "current">): string {
 }
 
 /** 状态帧同步：文本变化才落盘（250ms 一帧，仅行切换时产生 IPC） */
-export function syncMenubarLyrics(s: Pick<Store, "lyrics" | "pos" | "current">) {
+export function syncMenubarLyrics(
+  s: Pick<Store, "lyrics" | "pos" | "current"> & { lyricOffsetMs?: number }
+) {
   if (!enabled) return;
   const text = lineText(s);
   if (text === lastText) return;

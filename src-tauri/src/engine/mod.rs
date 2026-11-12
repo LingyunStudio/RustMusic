@@ -91,6 +91,8 @@ pub struct Engine {
     app: AppHandle,
     pub eq: Arc<EqShared>,
     pub pos_ms: Arc<AtomicU64>,
+    /// 估算的输出链路缓冲延迟（ms）；由 output / wasapi_out 在构建或切换输出流时更新
+    pub(super) output_latency_ms: Arc<AtomicU64>,
     pub dur_ms: Arc<AtomicU64>,
     pub user_paused: Arc<AtomicBool>,
     pub stopped: Arc<AtomicBool>,
@@ -136,6 +138,7 @@ impl Engine {
         smtc: Sender<SmtcMsg>,
     ) -> Result<Self, String> {
         let (handle, sink) = Self::build_output(None)?;
+        let latency_ms = Self::shared_output_latency_ms(handle);
         // 皮肤律动：分接器常驻，分析线程在开关打开前空转（每 tick 一次原子读）
         let fx_shared = Arc::new(FxShared::new());
         fx::spawn(app.clone(), fx_shared.clone());
@@ -163,6 +166,7 @@ impl Engine {
             app,
             eq,
             pos_ms: Arc::new(AtomicU64::new(0)),
+            output_latency_ms: Arc::new(AtomicU64::new(latency_ms)),
             dur_ms: Arc::new(AtomicU64::new(0)),
             user_paused: Arc::new(AtomicBool::new(false)),
             stopped: Arc::new(AtomicBool::new(true)),
@@ -521,6 +525,17 @@ impl Engine {
 
     // ---------- 状态查询 ----------
 
+    /// 扣除输出缓冲延迟后的实际听感播放位置（ms）。
+    /// `pos_ms` 在 EqSource（缓冲上游）统计，会领先实际声卡出声约一个缓冲+混音周期；
+    /// 用于前端进度/歌词同步与 SMTC 展示（seek/设备重建仍以流位置 `pos_ms` 为准）。
+    pub fn played_pos_ms(&self) -> u64 {
+        subtract_output_latency(
+            self.pos_ms.load(Ordering::Relaxed),
+            self.output_latency_ms.load(Ordering::Relaxed),
+            self.speed(),
+        )
+    }
+
     pub fn is_active(&self) -> bool {
         self.excl_active() || !self.sink.read().empty()
     }
@@ -549,7 +564,7 @@ impl Engine {
             let _ = self.app.emit(
                 "player://pos",
                 serde_json::json!({
-                    "pos": self.pos_ms.load(Ordering::Relaxed),
+                    "pos": self.played_pos_ms(),
                     "dur": self.dur_ms.load(Ordering::Relaxed),
                 }),
             );
@@ -566,7 +581,7 @@ impl Engine {
                 playing,
                 seq: self.play_seq.load(Ordering::Relaxed),
             },
-            pos: self.pos_ms.load(Ordering::Relaxed),
+            pos: self.played_pos_ms(),
         })
     }
 
@@ -576,7 +591,7 @@ impl Engine {
         let _ = self.smtc.send(SmtcMsg::Update {
             info,
             playing,
-            pos_ms: self.pos_ms.load(Ordering::Relaxed),
+            pos_ms: self.played_pos_ms(),
         });
     }
 
@@ -588,7 +603,7 @@ impl Engine {
         let playing = self.now_playing();
         let _ = self.smtc.send(SmtcMsg::Position {
             playing,
-            pos_ms: self.pos_ms.load(Ordering::Relaxed),
+            pos_ms: self.played_pos_ms(),
         });
     }
 }
@@ -638,4 +653,23 @@ fn open_playable_source(path: &str, skip_ms: u64) -> Result<Box<dyn rodio::Sourc
     Ok(Box::new(
         decoder.skip_duration(Duration::from_millis(skip_ms)),
     ))
+}
+
+fn subtract_output_latency(pos_ms: u64, latency_ms: u64, speed: f32) -> u64 {
+    let lead = (latency_ms as f64 * f64::from(speed.max(0.5))).round() as u64;
+    pos_ms.saturating_sub(lead)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn played_pos_subtracts_scaled_latency() {
+        assert_eq!(subtract_output_latency(0, 65, 1.0), 0);
+        assert_eq!(subtract_output_latency(40, 65, 1.0), 0);
+        assert_eq!(subtract_output_latency(1000, 65, 1.0), 935);
+        assert_eq!(subtract_output_latency(1000, 65, 2.0), 870);
+        assert_eq!(subtract_output_latency(1000, 65, 0.5), 967);
+    }
 }

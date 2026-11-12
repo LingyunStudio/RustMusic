@@ -82,16 +82,18 @@ pub(crate) fn monitor(app: AppHandle) {
             .read()
             .as_ref()
             .map(|t| format!("♪ {}", t.title.trim()));
-        crate::taskbar_lyric::auto_tick(eng.pos_ms.load(Ordering::Relaxed), fallback);
+        let played_pos = eng.played_pos_ms();
+        crate::taskbar_lyric::auto_tick(played_pos, fallback);
 
         diag += 1;
         if cfg!(debug_assertions) && diag % 40 == 0 {
             eprintln!(
-                "[monitor] active={} paused={} stopped={} pos={} dur={}",
+                "[monitor] active={} paused={} stopped={} pos={} played={} dur={}",
                 active,
                 paused,
                 eng.stopped.load(Ordering::Relaxed),
                 eng.pos_ms.load(Ordering::Relaxed),
+                played_pos,
                 eng.dur_ms.load(Ordering::Relaxed),
             );
         }
@@ -100,7 +102,7 @@ pub(crate) fn monitor(app: AppHandle) {
             if last_pos_emit.elapsed() >= std::time::Duration::from_millis(250) {
                 last_pos_emit = std::time::Instant::now();
                 let payload = serde_json::json!({
-                    "pos": eng.pos_ms.load(Ordering::Relaxed),
+                    "pos": eng.played_pos_ms(),
                     "dur": eng.dur_ms.load(Ordering::Relaxed),
                 });
                 // WebView 挂起时进度帧可丢（恢复后由 resync 补发），不值得唤醒

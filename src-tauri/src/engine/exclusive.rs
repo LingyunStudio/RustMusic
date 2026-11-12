@@ -37,6 +37,7 @@ impl Engine {
                 src_rate: wrapped.sample_rate().get(),
                 volume_bits: self.volume.clone(),
                 speed_bits: self.speed.clone(),
+                output_latency_ms: self.output_latency_ms.clone(),
             };
             let (ctl, rx) = wasapi_out::spawn_exclusive_session(wrapped, params)?;
             // 会话一创建就注册控制句柄：协商期间超时/切歌/关开关也能终止它，

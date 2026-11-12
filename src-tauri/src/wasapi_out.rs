@@ -9,7 +9,7 @@
 //! 对齐（与 rodio 共享模式的 Speed 节点同级别质量）。
 
 use rodio::Source;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 
 use wasapi::{
@@ -67,6 +67,7 @@ pub struct ExclusiveParams {
     pub src_rate: u32,
     pub volume_bits: Arc<AtomicU32>,
     pub speed_bits: Arc<AtomicU32>,
+    pub output_latency_ms: Arc<AtomicU64>,
 }
 
 /// 启动独占播放会话。返回控制句柄与初始化结果接收端：
@@ -500,7 +501,9 @@ where
             .get_bufferframecount()
             .map_err(|e| wasapi_err("独占模式获取缓冲大小失败", e.as_ref()))?
             as usize;
-        eprintln!("[wasapi] 独占缓冲 = {buffer_frames} 帧/周期");
+        let excl_ms = ((buffer_frames as u64) * 1000) / u64::from(dev_rate).max(1);
+        params.output_latency_ms.store(excl_ms, Ordering::Relaxed);
+        eprintln!("[wasapi] 独占缓冲 = {buffer_frames} 帧/周期（约 {excl_ms}ms）");
         loop {
             if stop.load(Ordering::Relaxed) {
                 break;
@@ -595,6 +598,7 @@ mod tests {
                 src_rate: rate,
                 volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
                 speed_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+                output_latency_ms: Arc::new(AtomicU64::new(0)),
             },
         )?;
         match rx.recv_timeout(std::time::Duration::from_secs(5)) {

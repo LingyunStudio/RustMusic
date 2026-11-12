@@ -18,7 +18,14 @@ let lastPushedLines: unknown = undefined; // undefined = 尚未推过（下次�
 export async function pushDesktopLyrics(
   s: Pick<
     Store,
-    "lyrics" | "pos" | "dur" | "playing" | "current" | "desktopLyricsOn" | "speed"
+    | "lyrics"
+    | "pos"
+    | "dur"
+    | "playing"
+    | "current"
+    | "desktopLyricsOn"
+    | "speed"
+    | "lyricOffsetMs"
   > & { dlyricsColors?: DesktopLyricsColors }
 ) {
   syncMenubarLyrics(s);
@@ -38,6 +45,7 @@ export async function pushDesktopLyrics(
         dur: s.dur,
         playing: s.playing,
         speed: s.speed ?? 1,
+        lyricOffsetMs: s.lyricOffsetMs ?? 0,
         title: s.current?.title ?? "",
         artist: s.current?.artist ?? "",
         colors: s.dlyricsColors ?? loadDesktopLyricsColors(),

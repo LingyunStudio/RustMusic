@@ -28,6 +28,8 @@ interface PushPayload {
   playing: boolean;
   /** 播放速度（外推用；缺省 = 1） */
   speed?: number;
+  /** 歌词时间偏移（ms；负值延后，正值提前） */
+  lyricOffsetMs?: number;
   title: string;
   artist: string;
   /** 三色（缺省时用内置默认）：sung=已唱 unsung=未唱 next=下一句 */
@@ -248,6 +250,7 @@ function DesktopLyrics() {
   const rawPos =
     data.pos + (data.playing ? (performance.now() - posAtRef.current) * speed : 0);
   const posNow = data.dur > 0 ? Math.min(rawPos, data.dur) : rawPos;
+  const lyricPos = Math.max(0, posNow + (data.lyricOffsetMs ?? 0));
 
   // 有时间轴的行（与播放栏一致按时间排序：个别歌词源乱序，不排会跳行）。
   // memo 化：lines 引用在两次推送之间稳定，避免 20fps 渲染每帧重建数组
@@ -261,7 +264,7 @@ function DesktopLyrics() {
   let activeIdx = -1;
   if (data.synced && syncedLines.length) {
     for (let i = 0; i < syncedLines.length; i++) {
-      if (syncedLines[i].timeMs! <= posNow) activeIdx = i;
+      if (syncedLines[i].timeMs! <= lyricPos) activeIdx = i;
       else break;
     }
   }
@@ -275,7 +278,7 @@ function DesktopLyrics() {
   const fillRatio = active
     ? lyricLineProgress(
         active,
-        posNow,
+        lyricPos,
         next ? next.timeMs! : Math.max(active.timeMs! + 8000, data.dur)
       )
     : 0;

@@ -15,16 +15,21 @@ let color = ""; // 空 = 默认色（Rust 侧随任务栏深浅取黑/白）
 let display = "all"; // "all" = 全部显示器；其它 = 显示器设备名
 let lastText: string | null = null; // null = 尚未写过（下次必写）
 let lastLyrics: unknown = null; // 歌词对象身份（变化时整包推行）
+let lastOffset = 0;
 
 /** 状态帧同步：歌词对象变化时整包推行（Rust monitor 按位置自动推进，
  *  挂起期间前端停摆也能继续更新）；当前行仅在开启/换词瞬间即时推一次 */
-export function syncTaskbarLyrics(s: Pick<Store, "lyrics" | "pos" | "current">) {
+export function syncTaskbarLyrics(
+  s: Pick<Store, "lyrics" | "pos" | "current"> & { lyricOffsetMs?: number }
+) {
   if (!enabled) return;
-  if (s.lyrics !== lastLyrics) {
+  const offset = s.lyricOffsetMs ?? 0;
+  if (s.lyrics !== lastLyrics || offset !== lastOffset) {
     lastLyrics = s.lyrics;
+    lastOffset = offset;
     const lines = s.lyrics?.synced
       ? (s.lyrics.lines ?? []).map((l) => ({
-          timeMs: l.timeMs ?? 0,
+          timeMs: Math.max(0, (l.timeMs ?? 0) - offset),
           text: l.text.trim(),
         }))
       : [];

@@ -281,6 +281,9 @@ export interface Store {
   /** 歌词页：字号缩放（0.85~1.4，持久化） */
   lyricsFontScale: number;
   setLyricsFontScale(v: number): void;
+  /** 歌词时间偏移（ms，-1000~1000，持久化；负值延后歌词、正值提前歌词） */
+  lyricOffsetMs: number;
+  setLyricOffsetMs(ms: number): void;
 
   createPlaylist(name: string): Promise<number>;
   deletePlaylist(id: number): Promise<void>;

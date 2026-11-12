@@ -131,6 +131,22 @@ impl Engine {
         Ok((leaked, sink))
     }
 
+    /// 估算共享模式输出链路的总缓冲延迟（ms）：
+    /// rodio/cpal 输出环缓冲（44.1/48kHz 下固定约 43~46ms）+ 系统混音器/驱动流水线开销。
+    pub(super) fn shared_output_latency_ms(handle: &MixerDeviceSink) -> u64 {
+        let cfg = handle.config();
+        let rate = u64::from(cfg.sample_rate().get()).max(1);
+        let buf_ms = match cfg.buffer_size() {
+            rodio::cpal::BufferSize::Fixed(frames) => (u64::from(*frames) * 1000) / rate,
+            rodio::cpal::BufferSize::Default => 50,
+        };
+        #[cfg(windows)]
+        let engine_overhead_ms = 20;
+        #[cfg(not(windows))]
+        let engine_overhead_ms = 15;
+        buf_ms + engine_overhead_ms
+    }
+
     /// 重建共享模式输出流与 Sink（独占会话跑过之后共享流已失效时调用）
     pub(super) fn rebuild_shared_output(&self) {
         match Self::build_output(self.device_pref.read().as_deref()) {
@@ -139,6 +155,8 @@ impl Engine {
                 old.stop();
                 *old = sink;
                 *self.out.write() = handle;
+                self.output_latency_ms
+                    .store(Self::shared_output_latency_ms(handle), Ordering::Relaxed);
                 eprintln!("[engine] 共享输出流已重建");
             }
             Err(e) => eprintln!("[engine] 重建共享输出流失败: {e}"),
@@ -197,6 +215,8 @@ impl Engine {
                 *old_sink = sink;
                 *self.out.write() = handle;
             }
+            self.output_latency_ms
+                .store(Self::shared_output_latency_ms(handle), Ordering::Relaxed);
             self.set_device_preference(name);
 
             if let Some(info) = info {

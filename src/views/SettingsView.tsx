@@ -91,6 +91,8 @@ export default function SettingsView() {
   const unlockDesktopLyrics = useStore((s) => s.unlockDesktopLyrics);
   const dlyricsColors = useStore((s) => s.dlyricsColors);
   const setDlyricsColors = useStore((s) => s.setDlyricsColors);
+  const lyricOffsetMs = useStore((s) => s.lyricOffsetMs);
+  const setLyricOffsetMs = useStore((s) => s.setLyricOffsetMs);
   const menubarLyricsOn = useStore((s) => s.menubarLyricsOn);
   const setMenubarLyrics = useStore((s) => s.setMenubarLyrics);
   const taskbarLyricsOn = useStore((s) => s.taskbarLyricsOn);
@@ -455,6 +457,45 @@ export default function SettingsView() {
             已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。
             播放页歌词颜色由封面自动适配（取封面主色保证对比可读），不在此设置。
           </p>
+
+          {/* 歌词时间偏移微调（蓝牙延迟等场景可手动延后/提前） */}
+          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
+            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">歌词偏移</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                className="btn-secondary !py-1 !px-2.5 !text-[11.5px]"
+                onClick={() => setLyricOffsetMs(lyricOffsetMs - 50)}
+                title="延后 50ms（歌词偏快时点此）"
+              >
+                -50ms
+              </button>
+              <span className="text-[12px] text-[var(--ink)] tabular-nums min-w-[78px] text-center">
+                {lyricOffsetMs === 0
+                  ? "0 ms"
+                  : lyricOffsetMs < 0
+                    ? `延后 ${-lyricOffsetMs}ms`
+                    : `提前 ${lyricOffsetMs}ms`}
+              </span>
+              <button
+                className="btn-secondary !py-1 !px-2.5 !text-[11.5px]"
+                onClick={() => setLyricOffsetMs(lyricOffsetMs + 50)}
+                title="提前 50ms（歌词偏慢时点此）"
+              >
+                +50ms
+              </button>
+              {lyricOffsetMs !== 0 && (
+                <button
+                  className="btn-secondary !py-1 !px-2.5 !text-[11px] ml-1"
+                  onClick={() => setLyricOffsetMs(0)}
+                >
+                  归零
+                </button>
+              )}
+            </div>
+            <span className="text-[11.5px] text-[var(--ink-3)]">
+              已自动补偿声卡缓冲；使用蓝牙耳机等高延迟设备时可继续调负延后
+            </span>
+          </div>
 
           {/* 菜单栏歌词（Linux/GNOME 顶栏） */}
           {platform === "linux" && (

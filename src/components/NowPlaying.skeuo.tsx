@@ -5,8 +5,14 @@ import CoverImg from "./CoverImg";
 import VUMeter from "./VUMeter";
 import Tonearm from "./Tonearm";
 import { api, coverSrc } from "../api";
-import { remoteCoverCache } from "../utils";
-import { extractPalette, lyricAdaptiveColors, lyricLineProgress } from "../utils";
+import {
+  applyLyricFill,
+  clearLyricFill,
+  extractPalette,
+  lyricAdaptiveColors,
+  lyricLineProgress,
+  remoteCoverCache,
+} from "../utils";
 import { setFxWanted } from "../fx";
 
 export default function NowPlaying() {
@@ -106,17 +112,19 @@ export default function NowPlaying() {
     if (!syncedLines.length) return;
     const tick = () => {
       const a = anchorRef.current;
-      const dur = useStore.getState().dur;
-      const speed = useStore.getState().speed;
+      const st = useStore.getState();
+      const dur = st.dur;
+      const speed = st.speed;
       const raw = a.pos + (performance.now() - a.at) * speed;
       const posNow = dur > 0 ? Math.min(raw, dur) : raw;
+      const lyricPos = Math.max(0, posNow + (st.lyricOffsetMs ?? 0));
 
       let activeIdx = -1;
       let lo = 0;
       let hi = syncedLines.length - 1;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
-        if ((syncedLines[mid].timeMs ?? 0) <= posNow) {
+        if ((syncedLines[mid].timeMs ?? 0) <= lyricPos) {
           activeIdx = mid;
           lo = mid + 1;
         } else {
@@ -135,7 +143,7 @@ export default function NowPlaying() {
           prevEl.style.opacity = "";
           prevEl.style.filter = "";
           prevEl.style.transform = "";
-          prevEl.style.removeProperty("--fill");
+          clearLyricFill(prevEl);
         }
         const el = lineRefs.current[activeIdx];
         if (el) {
@@ -174,8 +182,8 @@ export default function NowPlaying() {
           activeIdx + 1 < syncedLines.length
             ? (syncedLines[activeIdx + 1].timeMs ?? start + 5000)
             : start + 5000;
-        const fill = lyricLineProgress(line, posNow, end);
-        el.style.setProperty("--fill", `${(fill * 100).toFixed(2)}%`);
+        const fill = lyricLineProgress(line, lyricPos, end);
+        applyLyricFill(el, fill);
       }
     };
     renderFrameRef.current = tick;
@@ -201,7 +209,7 @@ export default function NowPlaying() {
       r.style.opacity = "";
       r.style.filter = "";
       r.style.transform = "";
-      r.style.removeProperty("--fill");
+      clearLyricFill(r);
     }
   }, [syncedLines]);
 

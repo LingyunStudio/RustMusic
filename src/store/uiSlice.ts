@@ -69,6 +69,8 @@ type Fields = Pick<
   | "setLyricsShowTrans"
   | "lyricsFontScale"
   | "setLyricsFontScale"
+  | "lyricOffsetMs"
+  | "setLyricOffsetMs"
   | "init"
   | "toast"
   | "dismissToast"
@@ -257,6 +259,14 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
   lyricsFontScale: (() => {
     const v = Number(localStorage.getItem("rustmusic.lyricsFontScale"));
     return Number.isFinite(v) && v >= 0.85 && v <= 1.4 ? v : 1;
+  })(),
+  lyricOffsetMs: (() => {
+    try {
+      const v = Number(localStorage.getItem("rustmusic.lyricOffsetMs"));
+      return Number.isFinite(v) ? Math.max(-1000, Math.min(1000, Math.round(v))) : 0;
+    } catch {
+      return 0;
+    }
   })(),
   theme: "light",
   uiTheme: "standard",
@@ -871,6 +881,15 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     try {
       localStorage.setItem("rustmusic.lyricsFontScale", String(scale));
     } catch {}
+  },
+
+  setLyricOffsetMs(ms) {
+    const clamped = Math.max(-1000, Math.min(1000, Math.round(ms)));
+    set({ lyricOffsetMs: clamped });
+    try {
+      localStorage.setItem("rustmusic.lyricOffsetMs", String(clamped));
+    } catch {}
+    pushDesktopLyrics(get());
   },
 
   setTheme(t) {

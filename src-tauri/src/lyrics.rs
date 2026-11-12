@@ -208,7 +208,8 @@ fn yrc_line_to_enhanced(line: &str) -> Option<String> {
             .find('(')
             .map(|p| start + p)
             .unwrap_or(words_raw.len());
-        let text = words_raw[start..end].trim();
+        // 仅去换行符，保留英文等逐词之间的空格（全角/英文单词间隔不可剥除）
+        let text = words_raw[start..end].trim_matches(['\r', '\n']);
         if !text.is_empty() {
             let cs = fmt_lrc_time(ws);
             let ce = fmt_lrc_time(ws + wd);
@@ -422,5 +423,13 @@ mod tests {
     #[test]
     fn krc_all_metadata_returns_none() {
         assert!(krc_to_enhanced_lrc("[ti:歌]\n[ar:人]\n[offset:0]\n").is_none());
+    }
+
+    #[test]
+    fn yrc_preserves_word_spaces() {
+        let yrc = "[1000,900](1000,200,0)I (1200,300,0)love (1500,400,0)you";
+        let out = yrc_to_enhanced_lrc(yrc).expect("yrc parsed");
+        let p = parse(&out);
+        assert_eq!(p.lines[0].text, "I love you");
     }
 }

@@ -6,7 +6,7 @@
 //! 正常情况下 Linux 前端不暴露独占开关、恢复设置时也强制关闭（main.rs），
 //! 本桩只是兜底（例如数据库从 Windows 机器迁移过来带着旧设置）。
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 
 use rodio::Source;
@@ -35,6 +35,7 @@ pub struct ExclusiveParams {
     pub src_rate: u32,
     pub volume_bits: Arc<AtomicU32>,
     pub speed_bits: Arc<AtomicU32>,
+    pub output_latency_ms: Arc<AtomicU64>,
 }
 
 /// 启动独占播放会话（桩：非 Windows 平台一律失败，由引擎回退共享模式）
