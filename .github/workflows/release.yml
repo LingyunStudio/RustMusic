@@ -20,8 +20,24 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       notes_file: ${{ steps.notes.outputs.file }}
+      exists: ${{ steps.guard.outputs.exists }}
     steps:
       - uses: actions/checkout@v4
+
+      # 手动重跑已发布的 tag 时不要回退成草稿：已有正式 Release 就整条流水线跳过
+      - id: guard
+        name: 检查 Release 是否已正式发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          published=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq '.isDraft' 2>/dev/null || echo "missing")
+          if [ "$published" = "false" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "该 tag 已有正式 Release，跳过本次构建"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - id: notes
         name: 查找该版本的发布说明
@@ -40,21 +56,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release 已存在，跳过创建"
             exit 0
           fi
           if [ -n "$NOTES_FILE" ]; then
-            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
-              --notes-file "$NOTES_FILE"
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --title "$GITHUB_REF_NAME" --notes-file "$NOTES_FILE"
           else
-            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
-              --generate-notes
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --title "$GITHUB_REF_NAME" --generate-notes
           fi
 
   build:
     needs: prepare
-    if: always() && (needs.prepare.result == 'success' || github.event_name == 'workflow_dispatch')
+    # prepare 被跳过时（手动触发）也照常构建；已有正式 Release 时跳过
+    if: |
+      always() &&
+      needs.prepare.outputs.exists != 'true' &&
+      (needs.prepare.result == 'success' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -166,7 +186,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" dist-release/* --clobber
+        run: |
+          gh release upload "$GITHUB_REF_NAME" dist-release/* \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: 保留构建产物
         uses: actions/upload-artifact@v4
@@ -183,4 +205,5 @@ jobs:
       - name: 发布 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        # 这个 job 不 checkout，靠 --repo 给出仓库上下文
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

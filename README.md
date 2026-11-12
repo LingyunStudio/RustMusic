@@ -151,7 +151,8 @@ macOS 安装包未做代码签名与公证，首次打开需在「访达」中�
 ```bash
 npm install          # 安装前端依赖
 npm run tauri dev    # 开发模式（热更新）
-npm run tauri build  # 构建发布版（Windows：Inno 安装包；macOS：dmg；Linux：deb / AppImage）
+npm run tauri build  # 构建发布版（Windows：exe；macOS：dmg；Linux：deb / AppImage）
+                     # Windows 的 Inno 安装包另用 installer/build.ps1 打包
 ```
 
 要求：Rust **1.87+**（依赖 `rodio 0.22` 的最低版本要求）、Node **20+**；Windows 需 WebView2 Runtime（Win10/11 通常自带）。macOS 需要 Xcode Command Line Tools（`xcode-select --install`），dmg 最低支持 macOS 11.0（见 `src-tauri/tauri.macos.conf.json`）。

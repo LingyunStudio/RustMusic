@@ -520,8 +520,9 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
                 "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --memory-usage-target-level=low",
             );
     }
-    // macOS：WKWebView 的 drawsBackground 走私有 API（tauri.conf.json 的
-    // macOSPrivateApi 已开启）。无边框 + 透明窗口即纯悬浮文字形态
+    // macOS：WKWebView 的 drawsBackground 是私有 API，对应 tauri.conf.json
+    // 的 macOSPrivateApi；不开这个透明窗口拿不到 alpha。上面的 Linux/Windows
+    // 分支都不覆盖 macOS，这里单独开
     #[cfg(target_os = "macos")]
     {
         builder = builder.transparent(true);

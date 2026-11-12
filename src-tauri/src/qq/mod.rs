@@ -46,18 +46,15 @@ pub fn init_guid(conn: &rusqlite::Connection) {
     });
 }
 
-/// 读取环境变量中的代理配置（与 ureq 内建逻辑一致）。
-/// 顺序上先试 HTTP/HTTPS 代理再试 ALL_PROXY：ureq 的 socks 后端是可选特性，
-/// 本构建未启用，socks5:// 的 ALL_PROXY 会让 Proxy::new 直接失败。先命中
-/// HTTP 代理时不会走到 ALL_PROXY，常见 Clash 系环境（两者同端口）照常可用
+/// 读取环境变量中的代理配置（与 ureq 内建逻辑一致）
 pub fn system_proxy() -> Option<ureq::Proxy> {
     for k in [
+        "ALL_PROXY",
+        "all_proxy",
         "HTTPS_PROXY",
         "https_proxy",
         "HTTP_PROXY",
         "http_proxy",
-        "ALL_PROXY",
-        "all_proxy",
     ] {
         if let Ok(v) = std::env::var(k) {
             if let Ok(p) = ureq::Proxy::new(v) {

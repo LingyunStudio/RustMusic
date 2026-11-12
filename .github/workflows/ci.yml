@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 两个架构都跑：cpal 的设备枚举与打包脚本对架构敏感
+          # 两个架构都跑：cpal 的 ALSA 绑定与 deb/AppImage 打包产物都按架构分叉
           - runner: ubuntu-latest
             label: x64
           - runner: ubuntu-24.04-arm
