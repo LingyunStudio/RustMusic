@@ -520,6 +520,12 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
                 "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --memory-usage-target-level=low",
             );
     }
+    // macOS：WKWebView 的 drawsBackground 走私有 API（tauri.conf.json 的
+    // macOSPrivateApi 已开启）。无边框 + 透明窗口即纯悬浮文字形态
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.transparent(true);
+    }
     builder
         .build()
         .map_err(|e| format!("创建桌面歌词窗口失败: {e}"))?;
@@ -795,7 +801,7 @@ pub async fn dlyrics_taskbar_color(color: Option<String>) -> Result<(), String> 
 /// 用系统默认浏览器打开链接（release notes 内的跳转用）。
 /// Windows 走 explorer 而不是 `cmd /C start`：URL 未加引号时 cmd 会把 & | ^
 /// 当命令分隔符执行（含查询串的链接直接命令注入），explorer 按单个参数透传；
-/// Linux 走 xdg-open（浏览器打开是副作用，URL 本身不进 shell 求值）
+/// Linux 走 xdg-open，macOS 走 open（浏览器打开是副作用，URL 本身不进 shell 求值）
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -803,7 +809,9 @@ pub async fn open_url(url: String) -> Result<(), String> {
     }
     #[cfg(windows)]
     let mut cmd = std::process::Command::new("explorer");
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(not(any(windows, target_os = "macos")))]
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(&url)
         .spawn()

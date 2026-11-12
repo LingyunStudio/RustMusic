@@ -1,0 +1,186 @@
+name: Release
+
+# 打 tag（v0.7.2 之类）时构建各平台安装包并附到 Release，全部成功后才发布；
+# 手动触发只构建、保留 artifact，不碰 Release。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    outputs:
+      notes_file: ${{ steps.notes.outputs.file }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: notes
+        name: 查找该版本的发布说明
+        run: |
+          f="installer/release-notes-${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then
+            echo "file=$f" >> "$GITHUB_OUTPUT"
+          else
+            echo "file=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 先建草稿：各平台并行往上传附件，全部成功再由 publish 转正，
+      # 避免用户看到附件还没传完的 Release
+      - name: 创建草稿 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release 已存在，跳过创建"
+            exit 0
+          fi
+          if [ -n "$NOTES_FILE" ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
+              --notes-file "$NOTES_FILE"
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+
+  build:
+    needs: prepare
+    if: always() && (needs.prepare.result == 'success' || github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: ubuntu-latest
+            label: linux-x64
+          # 公共仓库的 ubuntu-24.04-arm 是原生 arm64，免交叉编译
+          - os: ubuntu-24.04-arm
+            label: linux-arm64
+          # macos-latest 是 Apple Silicon；Intel 用显式标签
+          - os: macos-latest
+            label: macos-arm64
+          - os: macos-15-intel
+            label: macos-x64
+    name: build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装 Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev \
+            libasound2-dev
+
+      - name: 安装 Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      # Linux/Windows 的应用内更新要验 ed25519 签名（客户端 fail-closed 拒绝
+      # 无签名安装包），流水线必须拿到与本地 signing.key 同一份私钥
+      - name: 写入更新包签名私钥
+        if: runner.os != 'macOS'
+        shell: bash
+        env:
+          KEY: ${{ secrets.RUSTMUSIC_SIGNING_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "缺少仓库 secret RUSTMUSIC_SIGNING_KEY（内容与 installer/signing.key 相同）" >&2
+            exit 1
+          fi
+          printf '%s' "$KEY" | tr -d '[:space:]' > installer/signing.key
+
+      - name: 构建安装包（Linux / macOS）
+        if: runner.os != 'Windows'
+        run: npm run tauri build
+
+      # Inno 脚本自己再打一层安装包，所以这里先只出 exe 不打包
+      - name: 构建可执行文件（Windows）
+        if: runner.os == 'Windows'
+        run: npm run tauri build -- --no-bundle
+
+      - name: 打包并签名（Windows，Inno Setup）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File installer\build.ps1 -SkipBuild
+
+      - name: 收集产物并签名（Linux / macOS）
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          case "${{ runner.os }}" in
+            Linux)
+              # AppImage 承载应用内更新，deb 供 apt 系安装；两者都随 Release 发布
+              cp src-tauri/target/release/bundle/appimage/*.AppImage dist-release/
+              cp src-tauri/target/release/bundle/deb/*.deb dist-release/
+              for f in dist-release/*; do
+                cargo run --quiet --manifest-path src-tauri/Cargo.toml \
+                  --example asset_signer -- sign "$f" installer/signing.key
+              done
+              ;;
+            macOS)
+              # macOS 走应用内更新不可用，只用 dmg 供手动安装
+              cp src-tauri/target/release/bundle/dmg/*.dmg dist-release/
+              ;;
+          esac
+          ls -lh dist-release
+
+      - name: 收集产物（Windows，build.ps1 已完成签名）
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          cp installer/output/*.exe dist-release/
+          cp installer/output/*.sig dist-release/
+          ls -lh dist-release
+
+      - name: 上传到 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist-release/* --clobber
+
+      - name: 保留构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustmusic-${{ matrix.label }}
+          path: dist-release/*
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    if: startsWith(github.ref, 'refs/tags/') && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

@@ -79,24 +79,22 @@ pub async fn open_folder(path: String) -> Result<(), String> {
     if !p.is_dir() {
         return Err("该路径不是文件夹".into());
     }
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(windows)]
+    // explorer 已打开该目录时聚焦，否则新开窗口
+    let mut cmd = std::process::Command::new("explorer");
+    #[cfg(target_os = "linux")]
+    let mut cmd = std::process::Command::new("xdg-open");
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
-        #[cfg(target_os = "windows")]
-        let mut cmd = {
-            // explorer 已打开该目录时聚焦，否则新开窗口
-            std::process::Command::new("explorer")
-        };
-        #[cfg(target_os = "linux")]
-        let mut cmd = std::process::Command::new("xdg-open");
         cmd.arg(&path)
             .spawn()
             .map_err(|e| format!("打开文件管理器失败: {e}"))?;
+        return Ok(());
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        return Err("当前平台不支持".into());
-    }
-    Ok(())
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    Err("当前平台不支持".into())
 }
 #[derive(serde::Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]

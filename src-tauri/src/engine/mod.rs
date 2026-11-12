@@ -259,9 +259,10 @@ impl Engine {
     {
         let wrapped =
             EqSource::new(src, self.eq.clone(), self.pos_ms.clone()).with_fx(self.fx.clone());
-        let diag_sr = wrapped.sample_rate();
-        let diag_ch = wrapped.channels();
         let diag_dur = wrapped.total_duration();
+        // 仅调试构建打印诊断，release 下这两个值没有任何读者
+        #[cfg(debug_assertions)]
+        let (diag_sr, diag_ch) = (wrapped.sample_rate(), wrapped.channels());
         self.pos_ms.store(0, Ordering::Relaxed);
         // 边下边播起播时元数据可能未带时长：用解码器上报的总时长兜底
         let dur_ms = if info.duration_ms > 0 {

@@ -18,7 +18,7 @@ custom-protocol = ["tauri/custom-protocol"]
 tauri-build = { version = "~2.6", features = [] }
 
 [dependencies]
-tauri = { version = "~2.11", features = ["tray-icon", "protocol-asset"] }
+tauri = { version = "~2.11", features = ["tray-icon", "protocol-asset", "macos-private-api"] }
 tauri-plugin-dialog = "~2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -72,6 +72,11 @@ keyring = { version = "~3.6", default-features = false, features = ["windows-nat
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "~3.6", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# 不开 apple-native 时 keyring 静默退回内存 mock：应用重启后登录 token
+# 与 Navidrome 密码全部丢失
+keyring = { version = "~3.6", default-features = false, features = ["apple-native"] }
 
 [dev-dependencies]
 

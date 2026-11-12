@@ -16,7 +16,10 @@ pub struct DisplayInfo {
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskbarLine {
+    // 反序列化时填充，本平台无消费者
+    #[allow(dead_code)]
     pub time_ms: u64,
+    #[allow(dead_code)]
     pub text: String,
 }
 
