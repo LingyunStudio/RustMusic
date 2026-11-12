@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手动触发（含在 fork 上跑而不必开 PR）
+  workflow_dispatch:
 
 jobs:
   check:
