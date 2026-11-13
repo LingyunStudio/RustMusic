@@ -2,7 +2,7 @@
 
 一款用 **Rust + Tauri 2 + React** 打造的高性能、精美界面的桌面音乐播放器。
 
-![Rust](https://img.shields.io/badge/Rust-1.87%2B-DEA584?logo=rust&logoColor=white) ![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white) ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black) ![Node](https://img.shields.io/badge/Node-20%2B-5FA04E?logo=nodedotjs&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6)
+![Rust](https://img.shields.io/badge/Rust-1.87%2B-DEA584?logo=rust&logoColor=white) ![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white) ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black) ![Node](https://img.shields.io/badge/Node-20%2B-5FA04E?logo=nodedotjs&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6)
 
 
 
@@ -26,7 +26,7 @@
 - **网易云在线曲库**：内置网易云音乐接口（官方客户端同款 weapi 协议），搜索即点即播；扫码登录自己的账号后按账号权益播放（免费曲目标准音质 / 会员曲目按会员权益），登录凭证仅存本机。支持排行榜、歌单广场「随便听听」、每日推荐、私人 FM、账号歌单导入与「我喜欢」红心同步
 - **QQ 音乐在线曲库**：搜索 / 播放 / 排行榜 / 歌单广场「随便听听」 / 账号歌单导入 / 扫码登录，免费曲目匿名可播，VIP 曲目登录后按会员权益获取播放链接
 - **酷狗音乐在线曲库**：搜索 / 官方排行榜（TOP500 等）/ 歌单广场「随便听听」/ 账号歌单导入；扫码登录后 VIP 曲目按会员权益播放，支持无损（FLAC）/ Hi-Res 音质
-- **Navidrome（Subsonic API）**：连接自建服务器（主要面向 Navidrome），专辑库浏览 / 全曲库 / 搜索 / 歌词（优先使用 OpenSubsonic 同步歌词接口，旧版接口自动回退）/ 下载；密码存 Windows 凭据管理器；页面状态记忆——切走再回来原样恢复，不重新连接
+- **Navidrome（Subsonic API）**：连接自建服务器（主要面向 Navidrome），专辑库浏览 / 全曲库 / 搜索 / 歌词（优先使用 OpenSubsonic 同步歌词接口，旧版接口自动回退）/ 下载；密码存入系统凭据管理器；页面状态记忆——切走再回来原样恢复，不重新连接
 - **B 站**：粘贴视频链接 / BV 号 / b23.tv 短链解析音频，UP 主空间浏览（投稿排序、合集与系列）、登录用户收藏夹浏览，字幕（作歌词）、下载入库；扫码登录
 - **本地媒体库**：多文件夹扫描（并行解析）、SQLite 存储、增量更新（按 mtime/size 跳过未变文件）、自动清理失效条目；支持从硬盘直接删除歌曲（带二次确认）
 - **标签元数据**：ID3v2 / FLAC / MP4 等标签解析（标题、艺术家、专辑、年份、音轨号），无标签时按文件名智能回退
@@ -46,10 +46,10 @@
 
 ### 桌面集成
 
-- **系统媒体控制**：Windows 走 SMTC（键盘媒体键、系统媒体浮窗显示曲名 / 艺术家 / 封面 / 进度）；Linux 走 MPRIS（GNOME/KDE 等桌面媒体控件、`playerctl` 均可控制）
+- **系统媒体控制**：Windows 走 SMTC（键盘媒体键、系统媒体浮窗显示曲名 / 艺术家 / 封面 / 进度）；Linux 走 MPRIS（GNOME/KDE 等桌面媒体控件、`playerctl` 均可控制）；macOS 走系统「正在播放」媒体面板与键盘媒体键
 - **系统托盘**：托盘菜单可显示主界面、开关 / 解锁桌面歌词、播放 / 暂停 / 上一首 / 下一首、退出，左键回到主界面；点击关闭按钮时可在设置中选择最小化到托盘或直接退出
-- **自动更新**（Windows / Linux AppImage）：检查 GitHub Release 新版本，按当前平台挑选安装包（Windows `*setup*.exe` / Linux AppImage，架构自动匹配），应用内下载（带进度、SHA-256 校验）并静默安装重启；Linux AppImage 为原地原子替换，deb 安装或 release 无本平台附件时引导前往发布页手动下载
-- **凭据管理**：Navidrome 密码存入系统凭据管理器（Windows 凭据管理器 / Linux Secret Service，keyring）
+- **自动更新**（Windows / Linux AppImage，macOS 需手动下载新版本）：检查 GitHub Release 新版本，按当前平台挑选安装包（Windows `*setup*.exe` / Linux AppImage，架构自动匹配），应用内下载（带进度、SHA-256 校验）并静默安装重启；Linux AppImage 为原地原子替换，deb 安装或 release 无本平台附件时引导前往发布页手动下载
+- **凭据管理**：登录 token 与 Navidrome 密码存入系统凭据管理器（Windows 凭据管理器 / macOS 钥匙串 / Linux Secret Service，keyring）
 - **窗口**：无边框自绘标题栏、拖拽文件 / 文件夹直接导入资料库
 
 ### 界面
@@ -65,7 +65,7 @@
 ```
 ├── index.html               # 主窗口入口
 ├── desktop-lyrics.html      # 桌面歌词窗口入口（Vite 多页构建）
-├── .github/workflows/       # CI（前端类型检查 + 构建、Rust 单元测试）
+├── .github/workflows/       # CI（三平台测试）与 Release（多平台打包）
 ├── src/                     # React 前端
 │   ├── components/          # 播放栏、歌词页、队列、音频律动层（AudioFxLayer）、通用组件
 │   ├── views/               # 资料库 / 播放列表 / 设置等页面
@@ -110,15 +110,15 @@
         ├── navidrome.rs     # Navidrome / Subsonic 接口客户端（凭据管理器存密码）
         ├── bilibili.rs      # B 站接口客户端（视频解析、空间/合集/收藏夹、字幕、扫码登录）
         ├── qrc.rs           # QQ QRC 加密歌词解密 → 逐字增强 LRC（来自开源实现，MIT）
-        ├── smtc.rs          # Windows 系统媒体控制（souvlaki）
+        ├── smtc.rs          # 系统媒体控制（souvlaki：Windows SMTC / Linux MPRIS / macOS 控制中心）
         └── updater.rs       # GitHub Release 自动更新（下载 + SHA-256 校验 + 静默安装）
 ```
 
-**选型说明**：Tauri 2 = Rust 高性能后端 + Web 渲染的精美界面；框架天然支持 Windows / macOS / Linux（当前支持 Windows 与 Linux 构建），未来可低成本扩展。
+**选型说明**：Tauri 2 = Rust 高性能后端 + Web 渲染的精美界面；构建覆盖 Windows、macOS（Apple Silicon / Intel）、Linux（x64 / arm64）。
 
 ### 💡 核心设计亮点：WebView2 TrySuspend 深度休眠与事件驱动后台切歌（Windows）
 
-> Linux 说明：WebKitGTK 没有 WebView2 的 TrySuspend 机制，Linux 构建下托盘隐藏仅隐藏窗口、WebView 保持后台运行（播放事件与托盘控制路径全部照常工作），内存优化仅在 Windows 上生效。
+> 非 Windows 说明：WebKit（Linux WebKitGTK / macOS WKWebView）没有 WebView2 的 TrySuspend 机制，这两个平台上托盘隐藏只隐藏窗口、WebView 保持后台运行（播放事件与托盘控制路径全部照常工作），内存优化仅在 Windows 上生效。
 
 许多桌面开发者在处理混合架构（如 Tauri / Electron）的“后台播放与内存占用”时常面临两难：
 
@@ -138,19 +138,24 @@ RustMusic 设计了一套高效的**事件驱动状态唤醒 + 延迟重休眠**
 前往 [Releases](https://github.com/LingyunStudio/RustMusic/releases/latest) 下载对应平台安装包：
 
 - **Windows**（10/11 x64）：`RustMusic_<版本>_x64-setup.exe`（Inno Setup 安装器）
+- **macOS**（Apple Silicon / Intel）：`RustMusic_<版本>_aarch64.dmg` / `RustMusic_<版本>_x64.dmg`
 - **Linux** x64：`RustMusic_<版本>_amd64.deb`（Debian/Ubuntu 系）或 `RustMusic_<版本>_amd64.AppImage`（免安装，`chmod +x` 后直接运行）
+- **Linux** arm64：`RustMusic_<版本>_arm64.deb` 或 `RustMusic_<版本>_aarch64.AppImage`
 
-已安装的旧版本会通过应用内自动更新提示升级（按平台挑选安装包，下载带 SHA-256 校验，静默安装后自动重启；Linux deb 安装会在弹窗中引导前往发布页）。
+已安装的旧版本会通过应用内自动更新提示升级（按平台挑选安装包，下载带 SHA-256 校验，静默安装后自动重启；Linux deb 安装与 macOS 会在弹窗中引导前往发布页）。
+
+macOS 安装包未做代码签名与公证，首次打开需在「访达」中右键点图标选「打开」，或到「系统设置 → 隐私与安全性」里允许。
 
 ## 🚀 开发与构建
 
 ```bash
 npm install          # 安装前端依赖
 npm run tauri dev    # 开发模式（热更新）
-npm run tauri build  # 构建发布版（Windows：exe；Linux：deb / AppImage）
+npm run tauri build  # 构建发布版（Windows：exe；macOS：dmg；Linux：deb / AppImage）
+                     # Windows 的 Inno 安装包另用 installer/build.ps1 打包
 ```
 
-要求：Rust (MSVC) **1.87+**（依赖 `rodio 0.22` 的最低版本要求）、Node **20+**；Windows 需 WebView2 Runtime（Win10/11 通常自带）。
+要求：Rust **1.87+**（依赖 `rodio 0.22` 的最低版本要求）、Node **20+**；Windows 需 WebView2 Runtime（Win10/11 通常自带）。macOS 需要 Xcode Command Line Tools（`xcode-select --install`），dmg 最低支持 macOS 11.0（见 `src-tauri/tauri.macos.conf.json`）。
 
 Linux 还需要系统构建依赖（Debian / Ubuntu）：
 
@@ -185,6 +190,7 @@ cd src-tauri && cargo test --bin rustmusic --locked
 
 - 自动更新源默认为 `LingyunStudio/RustMusic`，可用环境变量 `RUSTMUSIC_UPDATE_REPO`（`owner/name`）指向测试 / 内部仓库。
 - Windows 安装包：需先安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，并把 `installer/build.ps1` 中的 `$Iscc` 改成本机 `ISCC.exe` 的路径（默认 `D:\InnoSetup6\ISCC.exe`），然后运行 `powershell -ExecutionPolicy Bypass -File installer\build.ps1` （输出于 `installer/output/`；加 `-SkipBuild` 可跳过构建直接用现有产物打包）
+- 正式发布：打 `v<版本>` tag 推送即触发 Release 流水线，构建 Windows x64、macOS（Apple Silicon / Intel）、Linux（x64 / arm64）安装包并附到 Release。流水线需要仓库 secret `RUSTMUSIC_SIGNING_KEY`（内容与本地 `installer/signing.key` 相同），缺失时 Linux / Windows 构建直接失败，以免发出去客户端拒绝安装的无签名更新包。
 
 ## ⚖️ 音源与版权
 
@@ -195,8 +201,8 @@ cd src-tauri && cargo test --bin rustmusic --locked
 - [ ] HLS / m3u8 流媒体支持
 - [ ] QQ / 酷狗 / Navidrome 歌词翻译（网易云已支持）
 - [ ] 音频转码 / 标签批量编辑
-- [x] Linux 构建
-- [ ] macOS 构建
+- [x] Linux 构建（x64 / arm64）
+- [x] macOS 构建（Apple Silicon / Intel）
 
 ## 📄 许可证
 

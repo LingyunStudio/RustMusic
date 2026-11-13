@@ -468,6 +468,24 @@ fn main() {
             commands::set_auto_update,
             commands::open_url,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // macOS 关闭窗口是隐藏（关闭行为=托盘）；Dock 图标始终存在，
+            // 点它就应当把隐藏的主窗口唤回来，否则只能从菜单栏托盘菜单进入
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = event
+            {
+                if !has_visible_windows {
+                    webview_suspend::show_main(app);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (app, event);
+            }
+        });
 }

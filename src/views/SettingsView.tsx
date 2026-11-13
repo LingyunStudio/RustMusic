@@ -12,6 +12,7 @@ import {
 import { useStore } from "../store";
 import { api } from "../api";
 import { Select } from "../components/Select";
+import { PLATFORM } from "../platform";
 import { getMenubarLyricsColor, setMenubarLyricsColor } from "../store/menubar";
 import {
   getTaskbarLyricsColor,
@@ -128,9 +129,7 @@ export default function SettingsView() {
   const [customHex, setCustomHex] = useState(loadCustomAccentHex);
   // 关于与更新
   const [appVersion, setAppVersion] = useState("");
-  const [platform, setPlatform] = useState(() =>
-    /windows/i.test(navigator.userAgent) ? "windows" : "other",
-  );
+  const [platform, setPlatform] = useState<string>(() => PLATFORM);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const refreshDevices = async () => {

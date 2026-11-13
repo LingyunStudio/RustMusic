@@ -5,13 +5,12 @@ import "./index.css";
 import { initTheme } from "./theme";
 import { applySkin, loadSkin } from "./skins";
 
+import { PLATFORM } from "./platform";
+
 initTheme();
 applySkin(loadSkin());
-// 平台标记（CSS 按平台差异化）。UA 即时可得，无异步闪烁；
-// Windows WebView2 恒含 "Windows NT"
-document.documentElement.dataset.platform = /windows/i.test(navigator.userAgent)
-  ? "windows"
-  : "linux";
+// 平台标记（CSS 按平台差异化），首屏即可用，无异步闪烁
+document.documentElement.dataset.platform = PLATFORM;
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

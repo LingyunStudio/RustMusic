@@ -18,7 +18,7 @@ custom-protocol = ["tauri/custom-protocol"]
 tauri-build = { version = "~2.6", features = [] }
 
 [dependencies]
-tauri = { version = "~2.11", features = ["tray-icon", "protocol-asset"] }
+tauri = { version = "~2.11", features = ["tray-icon", "protocol-asset", "macos-private-api"] }
 tauri-plugin-dialog = "~2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -31,7 +31,9 @@ walkdir = "2"
 rayon = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 # 同步 HTTP 客户端：ureq 3 重写了 API 与 TLS 栈，minor 也可能有行为差异
-ureq = { version = "~2.12", features = ["json"] }
+# socks-proxy：ALL_PROXY=socks5://... 是 Clash 等代理工具的常见配置，
+# 不启用该特性时 ureq 会在连接阶段直接报 "SOCKS feature disabled"
+ureq = { version = "~2.12", features = ["json", "socks-proxy"] }
 percent-encoding = "2"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "isomp4"] }
 # 系统媒体控制：Windows=SMTC；Linux=MPRIS(D-Bus)。
@@ -72,6 +74,11 @@ keyring = { version = "~3.6", default-features = false, features = ["windows-nat
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "~3.6", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# 不开 apple-native 时 keyring 静默退回内存 mock：应用重启后登录 token
+# 与 Navidrome 密码全部丢失
+keyring = { version = "~3.6", default-features = false, features = ["apple-native"] }
 
 [dev-dependencies]
 
