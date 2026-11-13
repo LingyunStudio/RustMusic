@@ -138,13 +138,13 @@ RustMusic 设计了一套高效的**事件驱动状态唤醒 + 延迟重休眠**
 前往 [Releases](https://github.com/LingyunStudio/RustMusic/releases/latest) 下载对应平台安装包：
 
 - **Windows**（10/11 x64）：`RustMusic_<版本>_x64-setup.exe`（Inno Setup 安装器）
-- **macOS**（Apple Silicon / Intel）：`RustMusic_<版本>_aarch64.dmg` / `RustMusic_<版本>_x64.dmg`
+- **macOS**（Apple Silicon / Intel，实验性支持）：`RustMusic_<版本>_aarch64.dmg` / `RustMusic_<版本>_x64.dmg`
 - **Linux** x64：`RustMusic_<版本>_amd64.deb`（Debian/Ubuntu 系）或 `RustMusic_<版本>_amd64.AppImage`（免安装，`chmod +x` 后直接运行）
-- **Linux** arm64：`RustMusic_<版本>_arm64.deb` 或 `RustMusic_<版本>_aarch64.AppImage`
+- **Linux** arm64：`RustMusic_<版本>_arm64.deb` 或 `RustMusic_<版本>_aarch64.AppImage`（CI 构建）
 
 已安装的旧版本会通过应用内自动更新提示升级（按平台挑选安装包，下载带 SHA-256 校验，静默安装后自动重启；Linux deb 安装与 macOS 会在弹窗中引导前往发布页）。
 
-macOS 安装包未做代码签名与公证，首次打开需在「访达」中右键点图标选「打开」，或到「系统设置 → 隐私与安全性」里允许。
+> **macOS 说明（实验性支持 / 社区测试中）**：macOS 安装包由 GitHub Actions 自动构建，维护者暂无 Mac 真机全量回归测试，且未做代码签名与公证。首次打开若被系统拦截：可在「访达」中右键点图标选「打开」；若使用较新的 macOS（如 Sequoia 15+）未提供该选项，请先取消弹窗，再到「系统设置 → 隐私与安全性」底部点击「仍要打开」（或在终端执行 `xattr -cr /Applications/RustMusic.app`）。欢迎在 Issue 反馈 macOS 实机体验。
 
 ## 🚀 开发与构建
 
@@ -190,7 +190,7 @@ cd src-tauri && cargo test --bin rustmusic --locked
 
 - 自动更新源默认为 `LingyunStudio/RustMusic`，可用环境变量 `RUSTMUSIC_UPDATE_REPO`（`owner/name`）指向测试 / 内部仓库。
 - Windows 安装包：需先安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，并把 `installer/build.ps1` 中的 `$Iscc` 改成本机 `ISCC.exe` 的路径（默认 `D:\InnoSetup6\ISCC.exe`），然后运行 `powershell -ExecutionPolicy Bypass -File installer\build.ps1` （输出于 `installer/output/`；加 `-SkipBuild` 可跳过构建直接用现有产物打包）
-- 正式发布：打 `v<版本>` tag 推送即触发 Release 流水线，构建 Windows x64、macOS（Apple Silicon / Intel）、Linux（x64 / arm64）安装包并附到 Release。流水线需要仓库 secret `RUSTMUSIC_SIGNING_KEY`（内容与本地 `installer/signing.key` 相同），缺失时 Linux / Windows 构建直接失败，以免发出去客户端拒绝安装的无签名更新包。
+- 发布流程：Windows x64 与 Linux x64 仍由维护者本地 / 虚拟机打包并离线签名（`installer/signing.key` 不出本机）；推送 `v<版本>` tag 触发 `release.yml` 自动构建 macOS（Apple Silicon / Intel）与 Linux arm64 安装包并附到草稿 Release，补齐本地包（及可选的 arm64 离线 `.sig` 签名）后手动转正发布。
 
 ## ⚖️ 音源与版权
 
@@ -202,7 +202,7 @@ cd src-tauri && cargo test --bin rustmusic --locked
 - [ ] QQ / 酷狗 / Navidrome 歌词翻译（网易云已支持）
 - [ ] 音频转码 / 标签批量编辑
 - [x] Linux 构建（x64 / arm64）
-- [x] macOS 构建（Apple Silicon / Intel）
+- [x] macOS 构建（实验性：Apple Silicon / Intel）
 
 ## 📄 许可证
 

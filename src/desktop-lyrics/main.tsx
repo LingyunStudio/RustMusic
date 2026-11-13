@@ -351,7 +351,7 @@ function DesktopLyrics() {
     void (async () => {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().startResizeDragging("SouthEast");
-    })();
+    })().catch(() => {});
   };
 
   return (
@@ -549,8 +549,9 @@ function DesktopLyrics() {
           </div>
         )}
         </div>
-        {/* 缩放手柄：贴在歌词框自身右下角（跟随歌词框而非窗口角） */}
-        {!locked && (
+        {/* 缩放手柄：贴在歌词框自身右下角（跟随歌词框而非窗口角）；
+            macOS 上 tao 的 drag_resize_window 返回 NotSupported，隐藏以免误导 */}
+        {!locked && PLATFORM !== "macos" && (
           <div
             onMouseDown={startResize}
             className="absolute right-0 bottom-0 w-[20px] h-[20px] cursor-nwse-resize z-10 flex items-center justify-center pointer-events-auto"

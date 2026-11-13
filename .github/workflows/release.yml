@@ -1,7 +1,9 @@
 name: Release
 
-# 打 tag（v0.7.2 之类）时构建各平台安装包并附到 Release，全部成功后才发布；
-# 手动触发只构建、保留 artifact，不碰 Release。
+# 打 tag（v0.7.3 之类）时在云端构建 macOS（Apple Silicon / Intel）与 Linux arm64
+# 安装包并上传到草稿 Release，不自动转正；Windows x64 与 Linux x64 仍由本地 /
+# 虚拟机打包并离线签名后手动补齐并发布。
+# 手动触发（workflow_dispatch）只构建、保留 artifact，不碰 Release。
 on:
   push:
     tags: ["v*"]
@@ -49,8 +51,8 @@ jobs:
             echo "file=" >> "$GITHUB_OUTPUT"
           fi
 
-      # 先建草稿：各平台并行往上传附件，全部成功再由 publish 转正，
-      # 避免用户看到附件还没传完的 Release
+      # 始终保持草稿状态：等本地打包的 Windows x64 / Linux x64 安装包与签名
+      # 补齐后，由维护者在 Release 页面核对无误再手动转正
       - name: 创建草稿 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -79,10 +81,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            label: windows-x64
-          - os: ubuntu-latest
-            label: linux-x64
+          # Windows x64 与 Linux x64 保留本地 / 虚拟机打包与离线签名；
+          # 云端仅补齐本机缺少环境的 Linux arm64 与 macOS 双架构。
           # 公共仓库的 ubuntu-24.04-arm 是原生 arm64，免交叉编译
           - os: ubuntu-24.04-arm
             label: linux-arm64
@@ -113,75 +113,36 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev libxdo-dev libdbus-1-dev \
-            libasound2-dev
-
-      - name: 安装 Inno Setup
-        if: runner.os == 'Windows'
-        run: choco install innosetup --no-progress -y
+            libasound2-dev patchelf
 
       - name: 安装前端依赖
         run: npm ci
 
-      # Linux/Windows 的应用内更新要验 ed25519 签名（客户端 fail-closed 拒绝
-      # 无签名安装包），流水线必须拿到与本地 signing.key 同一份私钥
-      - name: 写入更新包签名私钥
-        if: runner.os != 'macOS'
-        shell: bash
+      - name: 构建安装包
         env:
-          KEY: ${{ secrets.RUSTMUSIC_SIGNING_KEY }}
-        run: |
-          if [ -z "$KEY" ]; then
-            echo "缺少仓库 secret RUSTMUSIC_SIGNING_KEY（内容与 installer/signing.key 相同）" >&2
-            exit 1
-          fi
-          printf '%s' "$KEY" | tr -d '[:space:]' > installer/signing.key
-
-      - name: 构建安装包（Linux / macOS）
-        if: runner.os != 'Windows'
+          # CI 容器内无 FUSE 设备时免挂载直接运行 linuxdeploy/appimagetool
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npm run tauri build
 
-      # Inno 脚本自己再打一层安装包，所以这里先只出 exe 不打包
-      - name: 构建可执行文件（Windows）
-        if: runner.os == 'Windows'
-        run: npm run tauri build -- --no-bundle
-
-      - name: 打包并签名（Windows，Inno Setup）
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File installer\build.ps1 -SkipBuild
-
-      - name: 收集产物并签名（Linux / macOS）
-        if: runner.os != 'Windows'
+      - name: 收集产物
         shell: bash
         run: |
           mkdir -p dist-release
           case "${{ runner.os }}" in
             Linux)
-              # AppImage 承载应用内更新，deb 供 apt 系安装；两者都随 Release 发布
+              # 签名私钥（installer/signing.key）始终离线保管，不在 CI 签名；
+              # 如需为 arm64 AppImage 提供应用内更新，可下载后在本机补签 .sig
               cp src-tauri/target/release/bundle/appimage/*.AppImage dist-release/
               cp src-tauri/target/release/bundle/deb/*.deb dist-release/
-              for f in dist-release/*; do
-                cargo run --quiet --manifest-path src-tauri/Cargo.toml \
-                  --example asset_signer -- sign "$f" installer/signing.key
-              done
               ;;
             macOS)
-              # macOS 走应用内更新不可用，只用 dmg 供手动安装
+              # macOS 暂不支持应用内自动更新，只产 dmg 供手动安装
               cp src-tauri/target/release/bundle/dmg/*.dmg dist-release/
               ;;
           esac
           ls -lh dist-release
 
-      - name: 收集产物（Windows，build.ps1 已完成签名）
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          mkdir -p dist-release
-          cp installer/output/*.exe dist-release/
-          cp installer/output/*.sig dist-release/
-          ls -lh dist-release
-
-      - name: 上传到 Release
+      - name: 上传到草稿 Release
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
@@ -196,14 +157,3 @@ jobs:
           name: rustmusic-${{ matrix.label }}
           path: dist-release/*
           if-no-files-found: error
-
-  publish:
-    needs: [prepare, build]
-    if: startsWith(github.ref, 'refs/tags/') && needs.build.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: 发布 Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # 这个 job 不 checkout，靠 --repo 给出仓库上下文
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
