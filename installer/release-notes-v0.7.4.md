@@ -1,0 +1,28 @@
+# RustMusic v0.7.4
+
+## v0.7.4 更新内容
+
+### 多语言支持与文档国际化
+- **完整英语支持与自动系统语言检测**：
+  - 全软件（主界面、标准 / 液态玻璃 / 复古拟物三大主题、桌面歌词窗口、系统托盘菜单、自动更新弹窗以及 Rust 后端错误 / 音质回退提示）全面支持简体中文与英语。
+  - 默认「自动（跟随系统）」检测操作系统语言（中文环境显示简体中文，其余环境自动显示英文），也可在「设置 → 通用 → 界面语言」手动切换 `自动（跟随系统）` / `简体中文` / `English`，主窗口、桌面歌词及系统托盘即时生效，无需重启。
+- **配套英文文档**：
+  - 新增英文版 [README.en.md](https://github.com/LingyunStudio/RustMusic/blob/main/README.en.md) 与 [DOWNLOAD.en.md](https://github.com/LingyunStudio/RustMusic/blob/main/DOWNLOAD.en.md)，并在中英文文档顶部提供语言切换入口。
+
+---
+
+# RustMusic v0.7.3 更新内容
+
+### 歌词同步与显示修复
+- **音频输出延迟补偿**：为播放进度查询加入音频输出缓冲延迟补偿（含 WASAPI 独占模式缓冲延迟），改善逐字歌词与实际出声的同步精度。
+- **手动歌词时间偏移设置**：在设置中新增歌词延迟微调开关与 ±50ms 调节/重置控制，便于针对不同蓝牙设备或系统音频链路手动校准。
+- **多行换行逐字填充修复**：改进折行后逐字歌词的渐变高亮计算与清理逻辑，并保留 YRC 歌词解析中的词间空格。
+
+### 跨平台与网络增强
+- **macOS 实验性支持（Apple Silicon / Intel）**：通过 GitHub Actions 云端提供 `.dmg` 安装包（含钥匙串适配、透明桌面歌词与 Dock 恢复窗口等适配）。macOS 版本尚未经过 Apple 公证且暂未实机充分验证；更新 macOS 版本请直接从 Releases 手动下载安装，如遇系统拦截可执行 `xattr -cr /Applications/RustMusic.app` 或在“隐私与安全性”中点击“仍要打开”。
+- **Linux arm64 构建支持**：在云端自动构建并发布 Linux arm64 `.deb` 与 `.AppImage` 安装包。
+- **SOCKS5 代理支持**：为内置网络请求客户端启用 `socks-proxy` 特性，支持 `ALL_PROXY=socks5://...` 等代理配置。
+
+---
+
+不知道该下载哪个文件？请查看：[下载文件选择指南](https://github.com/LingyunStudio/RustMusic/blob/main/DOWNLOAD.md) | [Download Guide (English)](https://github.com/LingyunStudio/RustMusic/blob/main/DOWNLOAD.en.md)
