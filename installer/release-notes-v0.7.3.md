@@ -11,3 +11,7 @@
 - **macOS 实验性支持（Apple Silicon / Intel）**：通过 GitHub Actions 云端提供 `.dmg` 安装包（含钥匙串适配、透明桌面歌词与 Dock 恢复窗口等适配）。macOS 版本尚未经过 Apple 公证且暂未实机充分验证；更新 macOS 版本请直接从 Releases 手动下载安装，如遇系统拦截可执行 `xattr -cr /Applications/RustMusic.app` 或在“隐私与安全性”中点击“仍要打开”。
 - **Linux arm64 构建支持**：在云端自动构建并发布 Linux arm64 `.deb` 与 `.AppImage` 安装包。
 - **SOCKS5 代理支持**：为内置网络请求客户端启用 `socks-proxy` 特性，支持 `ALL_PROXY=socks5://...` 等代理配置。
+
+---
+
+不知道该下载哪个文件？请查看：[下载文件选择指南](https://github.com/LingyunStudio/RustMusic/blob/main/DOWNLOAD.md)
