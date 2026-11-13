@@ -26,7 +26,7 @@ pub fn lyric(songmid: &str) -> Result<Option<LyricTrans>, String> {
     );
     let text = plain_get(&url, "https://y.qq.com/")?;
     let resp: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("歌词解析失败: {e}"))?;
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", crate::i18n::pick("歌词解析失败", "Failed to parse lyrics")))?;
     let lrc = resp.get("lyric").and_then(|v| decode_b64_lrc(v));
     // 响应里的 trans 字段是官方翻译（同为 base64 LRC）——此前被直接丢弃
     let trans = resp.get("trans").and_then(|v| decode_b64_lrc(v));

@@ -1,3 +1,5 @@
+**语言 / Language**: [简体中文](README.md) | [English](README.en.md)
+
 # RustMusic 🎵
 
 一款用 **Rust + Tauri 2 + React** 打造的高性能、精美界面的桌面音乐播放器。

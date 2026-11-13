@@ -74,10 +74,12 @@ fn extract_id(input: &str) -> Result<(String, Option<u32>), String> {
         if !s.to_lowercase().starts_with("http://") && !s.to_lowercase().starts_with("https://") {
             s = format!("https://{s}");
         }
-        let resp = agent()
-            .get(&s)
-            .call()
-            .map_err(|e| format!("B 站短链解析失败: {e}"))?;
+        let resp = agent().get(&s).call().map_err(|e| {
+            crate::i18n::pick(
+                format!("B 站短链解析失败: {e}"),
+                format!("Failed to resolve Bilibili short link: {e}"),
+            )
+        })?;
         s = resp.get_url().to_string();
     }
     let page = re_page()
@@ -90,7 +92,11 @@ fn extract_id(input: &str) -> Result<(String, Option<u32>), String> {
     if let Some(c) = re_av().captures(&s) {
         return Ok((format!("av{}", &c[1]), page));
     }
-    Err("无法从输入中识别 B 站视频（支持 BV 号 / av 号 / 视频链接）".into())
+    Err(crate::i18n::pick(
+        "无法从输入中识别 B 站视频（支持 BV 号 / av 号 / 视频链接）",
+        "Could not recognize a Bilibili video from input (supports BV / av / video URL)",
+    )
+    .into())
 }
 
 /// 接口响应内存缓存：B 站风控按请求频率触发（连续请求 412），缓存直接削减请求量
@@ -181,16 +187,30 @@ fn api_json(url: &str) -> Result<Value, String> {
                     last_err = format!("HTTP {code}");
                     continue;
                 }
-                return Err(format!("请求 B 站接口失败: HTTP {code}"));
+                return Err(crate::i18n::pick(
+                    format!("请求 B 站接口失败: HTTP {code}"),
+                    format!("Bilibili API request failed: HTTP {code}"),
+                ));
             }
-            Err(e) => return Err(format!("请求 B 站接口失败: {e}")),
+            Err(e) => {
+                return Err(crate::i18n::pick(
+                    format!("请求 B 站接口失败: {e}"),
+                    format!("Bilibili API request failed: {e}"),
+                ))
+            }
         };
-        let v: Value = resp
-            .into_json()
-            .map_err(|e| format!("解析 B 站接口响应失败: {e}"))?;
+        let v: Value = resp.into_json().map_err(|e| {
+            crate::i18n::pick(
+                format!("解析 B 站接口响应失败: {e}"),
+                format!("Failed to parse Bilibili API response: {e}"),
+            )
+        })?;
         let code = v["code"].as_i64().unwrap_or(0);
         if (code == -412 || code == -352) && attempt < 3 {
-            last_err = format!("接口风控 code {code}");
+            last_err = crate::i18n::pick(
+                format!("接口风控 code {code}"),
+                format!("rate limited code {code}"),
+            );
             continue;
         }
         if code == 0 {
@@ -198,19 +218,37 @@ fn api_json(url: &str) -> Result<Value, String> {
         }
         return Ok(v);
     }
-    Err(format!("请求 B 站接口失败（{last_err}），请稍后重试"))
+    Err(crate::i18n::pick(
+        format!("请求 B 站接口失败（{last_err}），请稍后重试"),
+        format!("Bilibili API request failed ({last_err}); please try again later"),
+    ))
 }
 
-/// 统一把 B 站业务错误码转成用户可读的中文提示
+/// 统一把 B 站业务错误码转成用户可读的提示
 fn bili_error(v: &Value, ctx: &str) -> String {
     let code = v["code"].as_i64().unwrap_or(-1);
     let msg = v["message"].as_str().unwrap_or("");
     match code {
-        -404 => format!("{ctx}：视频不存在或已被删除"),
-        62002 => format!("{ctx}：稿件不可见"),
-        62012 => format!("{ctx}：该视频仅 UP 主自己可见"),
-        -403 => format!("{ctx}：无权访问（可能需要大会员或已下架）"),
-        _ => format!("{ctx}失败（code {code}）：{msg}"),
+        -404 => crate::i18n::pick(
+            format!("{ctx}：视频不存在或已被删除"),
+            format!("{ctx}: video not found or deleted"),
+        ),
+        62002 => crate::i18n::pick(
+            format!("{ctx}：稿件不可见"),
+            format!("{ctx}: video is unavailable"),
+        ),
+        62012 => crate::i18n::pick(
+            format!("{ctx}：该视频仅 UP 主自己可见"),
+            format!("{ctx}: video is private to the uploader"),
+        ),
+        -403 => crate::i18n::pick(
+            format!("{ctx}：无权访问（可能需要大会员或已下架）"),
+            format!("{ctx}: access denied (membership required or removed)"),
+        ),
+        _ => crate::i18n::pick(
+            format!("{ctx}失败（code {code}）：{msg}"),
+            format!("{ctx} failed (code {code}): {msg}"),
+        ),
     }
 }
 
@@ -222,7 +260,10 @@ fn fetch_view(id: &str) -> Result<Value, String> {
     };
     let v = api_json(&format!("{VIEW_API}?{query}"))?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取视频信息"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取视频信息", "Fetch video info"),
+        ));
     }
     Ok(v["data"].clone())
 }
@@ -244,7 +285,7 @@ pub fn parse_rid(rid: &str) -> Result<(String, i64), String> {
     if let Some(c) = re.captures(rid.trim()) {
         let cid = c[2]
             .parse::<i64>()
-            .map_err(|_| "B 站曲目 cid 无效".to_string())?;
+            .map_err(|_| crate::i18n::pick("B 站曲目 cid 无效", "Invalid Bilibili cid").to_string())?;
         return Ok((c[1].to_string(), cid));
     }
     static RE_BV: OnceLock<regex::Regex> = OnceLock::new();
@@ -260,13 +301,19 @@ pub fn parse_rid(rid: &str) -> Result<(String, i64), String> {
             }
         }
         let view = fetch_view(&bvid)?;
-        let cid = view["cid"].as_i64().ok_or("视频缺少 cid")?;
+        let cid = view["cid"]
+            .as_i64()
+            .ok_or_else(|| crate::i18n::pick("视频缺少 cid", "Video is missing cid"))?;
         if let Ok(mut m) = cache.lock() {
             m.insert(bvid.clone(), cid);
         }
         return Ok((bvid, cid));
     }
-    Err("B 站曲目标识无效（应为 BVxxx 或 BVxxx-cid）".into())
+    Err(crate::i18n::pick(
+        "B 站曲目标识无效（应为 BVxxx 或 BVxxx-cid）",
+        "Invalid Bilibili track ID (expected BVxxx or BVxxx-cid)",
+    )
+    .into())
 }
 
 /// 取音频直链（bilibili_play / download_online 共用；playurl 响应有 10min 内存缓存）。
@@ -310,7 +357,10 @@ fn fetch_audio(
         api_json(&url)?
     };
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取音频流"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取音频流", "Fetch audio stream"),
+        ));
     }
     let data = &v["data"];
     // DASH 音频：按偏好档从高到低选（AAC-LC，symphonia 可直接解）
@@ -335,7 +385,11 @@ fn fetch_audio(
             }
         }
     }
-    Err("该视频没有可用的独立音频流".into())
+    Err(crate::i18n::pick(
+        "该视频没有可用的独立音频流",
+        "No standalone audio stream available for this video",
+    )
+    .into())
 }
 
 /// 解析输入为可加入音源列表的条目列表（多P视频每个分P一条）。
@@ -345,7 +399,10 @@ pub fn resolve_pages(input: &str) -> Result<Vec<(String, String)>, String> {
     let (id, _) = extract_id(input)?;
     let view = fetch_view(&id)?;
     let bvid = view["bvid"].as_str().unwrap_or(&id).to_string();
-    let title = view["title"].as_str().unwrap_or("B站视频").to_string();
+    let title = view["title"]
+        .as_str()
+        .unwrap_or_else(|| crate::i18n::pick("B站视频", "Bilibili Video"))
+        .to_string();
     let mut rows = Vec::new();
     let pages: Vec<Value> = view["pages"].as_array().cloned().unwrap_or_default();
     if pages.len() <= 1 {
@@ -380,10 +437,13 @@ pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
     let (id, page) = extract_id(&stored)?;
     let view = fetch_view(&id)?;
     let bvid = view["bvid"].as_str().unwrap_or(&id).to_string();
-    let video_title = view["title"].as_str().unwrap_or("B站视频").to_string();
+    let video_title = view["title"]
+        .as_str()
+        .unwrap_or_else(|| crate::i18n::pick("B站视频", "Bilibili Video"))
+        .to_string();
     let artist = view["owner"]["name"]
         .as_str()
-        .unwrap_or("B站UP主")
+        .unwrap_or_else(|| crate::i18n::pick("B站UP主", "Bilibili Uploader"))
         .to_string();
     // 封面统一转 https：WebView 下 http 图片可能被混合内容策略拦截
     let cover = view["pic"]
@@ -396,17 +456,24 @@ pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
     let want = page.unwrap_or(1).max(1) as usize;
     let (cid, part, duration_s, multi) = if pages.is_empty() {
         (
-            view["cid"].as_i64().ok_or("视频信息异常：缺少 cid")?,
+            view["cid"].as_i64().ok_or_else(|| {
+                crate::i18n::pick("视频信息异常：缺少 cid", "Invalid video info: missing cid")
+            })?,
             "",
             view["duration"].as_u64().unwrap_or(0),
             false,
         )
     } else {
-        let p = pages
-            .get(want - 1)
-            .ok_or_else(|| format!("分P {want} 不存在（该视频共 {} 个分P）", pages.len()))?;
+        let p = pages.get(want - 1).ok_or_else(|| {
+            crate::i18n::pick(
+                format!("分P {want} 不存在（该视频共 {} 个分P）", pages.len()),
+                format!("Part P{want} not found (video has {} parts)", pages.len()),
+            )
+        })?;
         (
-            p["cid"].as_i64().ok_or("分P信息异常：缺少 cid")?,
+            p["cid"].as_i64().ok_or_else(|| {
+                crate::i18n::pick("分P信息异常：缺少 cid", "Invalid part info: missing cid")
+            })?,
             p["part"].as_str().unwrap_or(""),
             p["duration"].as_u64().unwrap_or(0),
             pages.len() > 1,
@@ -430,7 +497,7 @@ pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
         path: String::new(),
         title,
         artist,
-        album: "哔哩哔哩".into(),
+        album: crate::i18n::pick("哔哩哔哩", "Bilibili").into(),
         cover,
         duration_ms: duration_s * 1000,
         nid: None,
@@ -527,18 +594,18 @@ pub fn login_qr_create() -> Result<(String, String), String> {
         }),
     )?;
     if v["code"].as_i64() != Some(0) {
-        return Err(format!("获取登录二维码失败: {v}"));
+        return Err(format!("{}: {v}", crate::i18n::pick("获取登录二维码失败", "Failed to fetch login QR code")));
     }
     let key = v["data"]["qrcode_key"]
         .as_str()
-        .ok_or("登录二维码响应缺少 qrcode_key")?
+        .ok_or(crate::i18n::pick("登录二维码响应缺少 qrcode_key", "QR code response missing qrcode_key"))?
         .to_string();
     let url = v["data"]["url"]
         .as_str()
-        .ok_or("登录二维码响应缺少 url")?
+        .ok_or(crate::i18n::pick("登录二维码响应缺少 url", "QR code response missing url"))?
         .to_string();
     let code = qrcode::QrCode::with_error_correction_level(url.as_bytes(), qrcode::EcLevel::M)
-        .map_err(|e| format!("生成二维码失败: {e:?}"))?;
+        .map_err(|e| format!("{}: {e:?}", crate::i18n::pick("生成二维码失败", "Failed to generate QR code")))?;
     let img = code
         .render::<image::Luma<u8>>()
         .quiet_zone(true)
@@ -547,7 +614,7 @@ pub fn login_qr_create() -> Result<(String, String), String> {
     let mut png = Vec::new();
     image::DynamicImage::ImageLuma8(img)
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-        .map_err(|e| format!("编码二维码图片失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("编码二维码图片失败", "Failed to encode QR code image")))?;
 
     let mut b64 = String::new();
     b64_encode_into(&png, &mut b64);
@@ -600,7 +667,9 @@ pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
     if !buvid3.is_empty() {
         req = req.set("Cookie", &format!("buvid3={buvid3}"));
     }
-    let resp = req.call().map_err(|e| format!("登录状态查询失败: {e}"))?;
+    let resp = req
+        .call()
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("登录状态查询失败", "Failed to check login status")))?;
     let set_cookies: Vec<String> = resp
         .all("Set-Cookie")
         .into_iter()
@@ -608,9 +677,9 @@ pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
         .collect();
     let v: Value = resp
         .into_json()
-        .map_err(|e| format!("解析登录响应失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("解析登录响应失败", "Failed to parse login response")))?;
     if v["code"].as_i64() != Some(0) {
-        return Err(format!("登录状态查询失败: {v}"));
+        return Err(format!("{}: {v}", crate::i18n::pick("登录状态查询失败", "Failed to check login status")));
     }
     let code = v["data"]["code"].as_i64().unwrap_or(-1);
     qr_debug_log(&format!(
@@ -655,7 +724,11 @@ pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
         }
     }
     if sessdata.is_empty() {
-        return Err("登录成功但未取得会话凭证（SESSDATA）".into());
+        return Err(crate::i18n::pick(
+            "登录成功但未取得会话凭证（SESSDATA）",
+            "Signed in, but no session credential (SESSDATA) returned",
+        )
+        .into());
     }
     let cookies = BiliCookies { sessdata, buvid3 };
     let nickname = nav_uname(&cookies);
@@ -687,7 +760,9 @@ fn wbi_mixin_key() -> Result<String, String> {
     static CACHE: OnceLock<Mutex<Option<(String, Instant)>>> = OnceLock::new();
     let slot = CACHE.get_or_init(|| Mutex::new(None));
     {
-        let guard = slot.lock().map_err(|_| "wbi 缓存锁失败")?;
+        let guard = slot
+            .lock()
+            .map_err(|_| crate::i18n::pick("wbi 缓存锁失败", "Failed to lock WBI cache"))?;
         if let Some((key, at)) = guard.as_ref() {
             if at.elapsed() < Duration::from_secs(3600) {
                 return Ok(key.clone());
@@ -706,7 +781,7 @@ fn wbi_mixin_key() -> Result<String, String> {
         .unwrap_or("")
         .trim_end_matches(".png");
     if img.is_empty() || sub.is_empty() {
-        return Err("获取 WBI 密钥失败".into());
+        return Err(crate::i18n::pick("获取 WBI 密钥失败", "Failed to fetch WBI signing keys").into());
     }
     let raw: Vec<u8> = format!("{img}{sub}").into_bytes();
     let mut key = String::new();
@@ -798,21 +873,38 @@ fn api_json_auth_ref(
                     last_err = format!("HTTP {code}");
                     continue;
                 }
-                return Err(format!("请求 B 站接口失败: HTTP {code}"));
+                return Err(crate::i18n::pick(
+                    format!("请求 B 站接口失败: HTTP {code}"),
+                    format!("Bilibili API request failed: HTTP {code}"),
+                ));
             }
-            Err(e) => return Err(format!("请求 B 站接口失败: {e}")),
+            Err(e) => {
+                return Err(crate::i18n::pick(
+                    format!("请求 B 站接口失败: {e}"),
+                    format!("Bilibili API request failed: {e}"),
+                ))
+            }
         };
-        let v: Value = resp
-            .into_json()
-            .map_err(|e| format!("解析 B 站接口响应失败: {e}"))?;
+        let v: Value = resp.into_json().map_err(|e| {
+            crate::i18n::pick(
+                format!("解析 B 站接口响应失败: {e}"),
+                format!("Failed to parse Bilibili API response: {e}"),
+            )
+        })?;
         let code = v["code"].as_i64().unwrap_or(0);
         if (code == -412 || code == -352) && attempt < 2 {
-            last_err = format!("接口风控 code {code}");
+            last_err = crate::i18n::pick(
+                format!("接口风控 code {code}"),
+                format!("rate limited code {code}"),
+            );
             continue;
         }
         return Ok(v);
     }
-    Err(format!("请求 B 站接口失败（{last_err}），请稍后重试"))
+    Err(crate::i18n::pick(
+        format!("请求 B 站接口失败（{last_err}），请稍后重试"),
+        format!("Bilibili API request failed ({last_err}); please try again later"),
+    ))
 }
 
 const SPACE_REFERER: &str = "https://space.bilibili.com/";
@@ -829,7 +921,10 @@ pub fn subtitle_lyrics(
     let signed = wbi_sign(&format!("bvid={bvid}&cid={cid}"))?;
     let v = api_json_auth(&format!("{PLAYURL_API_WBI}?{signed}"), cookies)?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取字幕列表"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取字幕列表", "Fetch subtitles"),
+        ));
     }
     let subs = v["data"]["subtitle"]["subtitles"]
         .as_array()
@@ -861,14 +956,14 @@ pub fn subtitle_lyrics(
                 u.to_string()
             }
         })
-        .ok_or("字幕项缺少下载地址")?;
+        .ok_or(crate::i18n::pick("字幕项缺少下载地址", "Subtitle entry missing download URL"))?;
     let mut req = agent().get(&sub_url);
     req = req.set("User-Agent", UA_WEB).set("Referer", REFERER);
     let sub: Value = req
         .call()
-        .map_err(|e| format!("下载字幕失败: {e}"))?
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("下载字幕失败", "Failed to download subtitles")))?
         .into_json()
-        .map_err(|e| format!("解析字幕失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("解析字幕失败", "Failed to parse subtitles")))?;
     let body = sub["body"].as_array().cloned().unwrap_or_default();
     let mut lines: Vec<crate::models::LyricLine> = body
         .iter()
@@ -918,9 +1013,14 @@ pub struct SpaceVideo {
 pub fn space_card(mid: &str) -> Result<(String, String, String, u64), String> {
     let v = api_json(&format!("{CARD_API}?mid={mid}&photo=true"))?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取 UP 主信息"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取 UP 主信息", "Fetch uploader info"),
+        ));
     }
-    let name = v["data"]["card"]["name"].as_str().unwrap_or("未知UP主");
+    let name = v["data"]["card"]["name"]
+        .as_str()
+        .unwrap_or(crate::i18n::pick("未知UP主", "Unknown Uploader"));
     let face = v["data"]["card"]["face"]
         .as_str()
         .unwrap_or("")
@@ -935,7 +1035,13 @@ pub fn space_card(mid: &str) -> Result<(String, String, String, u64), String> {
 
 fn format_fans(n: u64) -> String {
     if n >= 10_000 {
-        format!("{:.1}万粉丝", n as f64 / 10_000.0)
+        if crate::i18n::is_en() {
+            format!("{:.1}K followers", n as f64 / 1_000.0)
+        } else {
+            format!("{:.1}万粉丝", n as f64 / 10_000.0)
+        }
+    } else if crate::i18n::is_en() {
+        format!("{n} followers")
     } else {
         format!("{n}粉丝")
     }
@@ -952,7 +1058,11 @@ pub fn parse_space(input: &str) -> Result<String, String> {
     if !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) {
         return Ok(s.to_string());
     }
-    Err("无法从输入识别 UP 主（支持 space.bilibili.com 链接或纯数字 UID）".into())
+    Err(crate::i18n::pick(
+        "无法从输入识别 UP 主（支持 space.bilibili.com 链接或纯数字 UID）",
+        "Could not recognize uploader from input (supports space.bilibili.com URL or numeric UID)",
+    )
+    .into())
 }
 
 /// "MM:SS" / "HH:MM:SS" → 毫秒
@@ -992,7 +1102,7 @@ pub fn space_videos(
     cookies: Option<&BiliCookies>,
 ) -> Result<(Vec<SpaceVideo>, u64, bool), String> {
     if !matches!(order, "pubdate" | "click" | "stow") {
-        return Err("未知排序方式".into());
+        return Err(crate::i18n::pick("未知排序方式", "Unknown sort order").into());
     }
     let signed = wbi_sign(&format!("mid={mid}&order={order}&pn={pn}&ps=30"))?;
     let v = api_json_auth_ref(
@@ -1002,9 +1112,16 @@ pub fn space_videos(
     )?;
     if v["code"].as_i64() != Some(0) {
         if v["code"].as_i64() == Some(-352) {
-            return Err("按收藏排序需要先登录 B 站（右上角「B站登录」）".into());
+            return Err(crate::i18n::pick(
+                "按收藏排序需要先登录 B 站（右上角「B站登录」）",
+                "Sorting by favorites requires signing in to Bilibili first",
+            )
+            .into());
         }
-        return Err(bili_error(&v, "获取 UP 主视频列表"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取 UP 主视频列表", "Fetch uploader videos"),
+        ));
     }
     let items = parse_vlist(&v["data"]);
     // 新版响应不再带 list.count：total=0 时按“返回满 30 条”判断还有更多
@@ -1039,14 +1156,20 @@ pub fn space_seasons(
         SPACE_REFERER,
     )?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取合集列表"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取合集列表", "Fetch collections"),
+        ));
     }
     let mut out: Vec<SpaceCollection> = Vec::new();
     for s in v["data"]["seasons"].as_array().cloned().unwrap_or_default() {
         out.push(SpaceCollection {
             id: s["season_id"].as_i64().unwrap_or(0),
             kind: "season".into(),
-            title: s["name"].as_str().unwrap_or("合集").to_string(),
+            title: s["name"]
+                .as_str()
+                .unwrap_or(crate::i18n::pick("合集", "Collection"))
+                .to_string(),
             total: s["total"].as_u64().unwrap_or(0),
         });
     }
@@ -1054,7 +1177,10 @@ pub fn space_seasons(
         out.push(SpaceCollection {
             id: s["series_id"].as_i64().unwrap_or(0),
             kind: "series".into(),
-            title: s["name"].as_str().unwrap_or("系列").to_string(),
+            title: s["name"]
+                .as_str()
+                .unwrap_or(crate::i18n::pick("系列", "Series"))
+                .to_string(),
             total: s["total"].as_u64().unwrap_or(0),
         });
     }
@@ -1077,7 +1203,10 @@ pub fn space_season_archives(
         SPACE_REFERER,
     )?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取合集视频"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取合集视频", "Fetch collection videos"),
+        ));
     }
     let items: Vec<SpaceVideo> = (v["data"]["archives"]
         .as_array()
@@ -1117,7 +1246,10 @@ pub fn space_series_archives(
         SPACE_REFERER,
     )?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取系列视频"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取系列视频", "Fetch series videos"),
+        ));
     }
     let items: Vec<SpaceVideo> = (v["data"]["archives"]
         .as_array()
@@ -1159,11 +1291,15 @@ pub struct NavUser {
 pub fn nav_user(cookies: &BiliCookies) -> Result<NavUser, String> {
     let v = api_json_auth_ref(NAV_API, Some(cookies), "https://www.bilibili.com")?;
     if v["code"].as_i64() != Some(0) {
-        return Err("获取 B 站登录信息失败（登录可能已过期，请重新扫码）".into());
+        return Err(crate::i18n::pick(
+            "获取 B 站登录信息失败（登录可能已过期，请重新扫码）",
+            "Failed to fetch Bilibili account info (session may have expired, please scan again)",
+        )
+        .into());
     }
     let mid = v["data"]["mid"].as_u64().unwrap_or(0);
     if mid == 0 {
-        return Err("B 站未登录".into());
+        return Err(crate::i18n::pick("B 站未登录", "Not signed in to Bilibili").into());
     }
     Ok(NavUser {
         mid: mid.to_string(),
@@ -1194,7 +1330,10 @@ pub fn fav_folders(cookies: &BiliCookies) -> Result<(NavUser, Vec<FavFolder>), S
         FAV_REFERER,
     )?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取收藏夹列表"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取收藏夹列表", "Fetch favorite folders"),
+        ));
     }
     let mut out = Vec::new();
     for f in v["data"]["list"].as_array().cloned().unwrap_or_default() {
@@ -1227,7 +1366,10 @@ pub fn fav_folder_videos(
         FAV_REFERER,
     )?;
     if v["code"].as_i64() != Some(0) {
-        return Err(bili_error(&v, "获取收藏夹内容"));
+        return Err(bili_error(
+            &v,
+            crate::i18n::pick("获取收藏夹内容", "Fetch favorite folder items"),
+        ));
     }
     let items: Vec<SpaceVideo> = (v["data"]["medias"].as_array().cloned().unwrap_or_default())
         .iter()
@@ -1260,13 +1402,16 @@ pub fn video_rows(input: &str) -> Result<Vec<(String, String, String, String, u6
     let bvid = view["bvid"].as_str().unwrap_or(&id).to_string();
     let artist = view["owner"]["name"]
         .as_str()
-        .unwrap_or("哔哩哔哩")
+        .unwrap_or(crate::i18n::pick("哔哩哔哩", "Bilibili"))
         .to_string();
     let cover = view["pic"]
         .as_str()
         .unwrap_or("")
         .replace("http://", "https://");
-    let video_title = view["title"].as_str().unwrap_or("B站视频").to_string();
+    let video_title = view["title"]
+        .as_str()
+        .unwrap_or(crate::i18n::pick("B站视频", "Bilibili Video"))
+        .to_string();
     let pages: Vec<Value> = view["pages"].as_array().cloned().unwrap_or_default();
     let mut rows = Vec::new();
     if pages.len() <= 1 {

@@ -81,17 +81,26 @@ fn form_encode(s: &str) -> String {
 /// 读取响应体文本
 fn read_body(resp: ureq::Response) -> Result<String, String> {
     let mut buf = String::new();
-    resp.into_reader()
-        .read_to_string(&mut buf)
-        .map_err(|e| format!("酷狗响应读取失败: {e}"))?;
+    resp.into_reader().read_to_string(&mut buf).map_err(|e| {
+        crate::i18n::pick(
+            format!("酷狗响应读取失败: {e}"),
+            format!("Failed to read KuGou response: {e}"),
+        )
+    })?;
     Ok(buf)
 }
 
 fn parse_json(text: &str, what: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(text).map_err(|e| {
-        format!(
-            "{what}解析失败: {e} | body: {}",
-            text.chars().take(150).collect::<String>()
+        crate::i18n::pick(
+            format!(
+                "{what}解析失败: {e} | body: {}",
+                text.chars().take(150).collect::<String>()
+            ),
+            format!(
+                "{what} parse failed: {e} | body: {}",
+                text.chars().take(150).collect::<String>()
+            ),
         )
     })
 }
@@ -108,7 +117,10 @@ fn get_text(url: &str, referer: &str, ua: &str) -> Result<String, String> {
     }) {
         Ok(resp) => read_body(resp),
         Err(ureq::Error::Status(_, resp)) => read_body(resp),
-        Err(e) => Err(format!("请求酷狗接口失败: {e}")),
+        Err(e) => Err(crate::i18n::pick(
+            format!("请求酷狗接口失败: {e}"),
+            format!("KuGou API request failed: {e}"),
+        )),
     }
 }
 
@@ -221,9 +233,9 @@ fn gateway_ex(
     let text = match resp {
         Ok(r) => read_body(r)?,
         Err(ureq::Error::Status(_, r)) => read_body(r)?,
-        Err(e) => return Err(format!("酷狗网关请求失败: {e}")),
+        Err(e) => return Err(format!("{}: {e}", crate::i18n::pick("酷狗网关请求失败", "Kugou gateway request failed"))),
     };
-    let v = parse_json(&text, "酷狗网关响应")?;
+    let v = parse_json(&text, crate::i18n::pick("酷狗网关响应", "Kugou gateway response"))?;
     if v.get("status").and_then(|s| s.as_i64()) == Some(0) {
         let msg = v
             .get("error_msg")
@@ -233,7 +245,11 @@ fn gateway_ex(
             .and_then(|m| m.as_str())
             .unwrap_or("");
         let code = v.get("error_code").and_then(|c| c.as_i64()).unwrap_or(0);
-        return Err(format!("酷狗接口请求失败（{code} {msg}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("Kugou API request failed ({code} {msg})")
+        } else {
+            format!("酷狗接口请求失败（{code} {msg}）")
+        });
     }
     Ok(v)
 }

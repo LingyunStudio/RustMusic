@@ -36,7 +36,7 @@ pub async fn add_folder(
 ) -> Result<(), String> {
     let p = std::path::PathBuf::from(&path);
     if !p.is_dir() {
-        return Err("该路径不是文件夹".into());
+        return Err(crate::i18n::pick("该路径不是文件夹", "Path is not a directory").into());
     }
     let norm = library::norm_path(&p);
     let added = {
@@ -77,7 +77,7 @@ pub async fn open_folder(path: String) -> Result<(), String> {
         let _ = std::fs::create_dir_all(&p);
     }
     if !p.is_dir() {
-        return Err("该路径不是文件夹".into());
+        return Err(crate::i18n::pick("该路径不是文件夹", "Path is not a directory").into());
     }
     #[cfg(windows)]
     // explorer 已打开该目录时聚焦，否则新开窗口
@@ -88,13 +88,16 @@ pub async fn open_folder(path: String) -> Result<(), String> {
     let mut cmd = std::process::Command::new("open");
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
-        cmd.arg(&path)
-            .spawn()
-            .map_err(|e| format!("打开文件管理器失败: {e}"))?;
+        cmd.arg(&path).spawn().map_err(|e| {
+            crate::i18n::pick(
+                format!("打开文件管理器失败: {e}"),
+                format!("Failed to open file manager: {e}"),
+            )
+        })?;
         return Ok(());
     }
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-    Err("当前平台不支持".into())
+    Err(crate::i18n::pick("当前平台不支持", "Not supported on this platform").into())
 }
 #[derive(serde::Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -255,7 +258,10 @@ fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
                 }
             }
             if let Err(e) = std::fs::remove_file(&pb) {
-                last_err = Some(format!("删除文件失败 ({}): {e}", t.path));
+                last_err = Some(crate::i18n::pick(
+                    format!("删除文件失败 ({}): {e}", t.path),
+                    format!("Failed to delete file ({}): {e}", t.path),
+                ));
                 continue;
             }
             let lrc = pb.with_extension("lrc");

@@ -82,10 +82,18 @@ impl Engine {
     pub fn play_url(self: &Arc<Self>, url: String, info: TrackInfo) -> Result<(), String> {
         let url = url.trim().to_string();
         if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err("音源地址必须以 http:// 或 https:// 开头".into());
+            return Err(crate::i18n::pick(
+                "音源地址必须以 http:// 或 https:// 开头",
+                "Source URL must start with http:// or https://",
+            )
+            .into());
         }
         if url.contains(".m3u8") {
-            return Err("暂不支持 m3u8/HLS 流，请使用音频文件直链".into());
+            return Err(crate::i18n::pick(
+                "暂不支持 m3u8/HLS 流，请使用音频文件直链",
+                "m3u8/HLS streams are not supported yet; use a direct audio URL",
+            )
+            .into());
         }
         let (key, ext) = self.cache_key_for(&url, &info);
         let cache = self.cache_path_for(&key, &ext);
@@ -172,7 +180,10 @@ impl Engine {
                         "download://progress",
                         serde_json::json!({
                             "url": url, "done": true,
-                            "error": format!("播放失败：{e}")
+                            "error": crate::i18n::pick(
+                                format!("播放失败：{e}"),
+                                format!("Playback failed: {e}"),
+                            )
                         }),
                     );
                 }
@@ -226,7 +237,10 @@ impl Engine {
                                     "download://progress",
                                     serde_json::json!({
                                         "url": url, "done": true,
-                                        "error": format!("播放失败：{e}")
+                                        "error": crate::i18n::pick(
+                                            format!("播放失败：{e}"),
+                                            format!("Playback failed: {e}"),
+                                        )
                                     }),
                                 );
                             }
@@ -386,8 +400,12 @@ fn download_inner(
     // 连接建立传输级重试（issue#8-2：网络/代理切换后死连接自愈）。
     // 仅重试"拿到响应头之前"的失败——此刻尚未向流式读取端发布过字节，
     // 重开连接从零下载是安全的；已经开始读取后的中断仍走原有 EOF 语义。
-    let resp = crate::net::with_retry(|| req.clone().call())
-        .map_err(|e| format!("下载音源失败: {e}"))?;
+    let resp = crate::net::with_retry(|| req.clone().call()).map_err(|e| {
+        crate::i18n::pick(
+            format!("下载音源失败: {e}"),
+            format!("Failed to download audio source: {e}"),
+        )
+    })?;
     let total: u64 = resp
         .header("content-length")
         .and_then(|v| v.parse().ok())
@@ -406,21 +424,33 @@ fn download_inner(
         })
         .unwrap_or_default();
 
-    let mut file = File::create(&part).map_err(|e| format!("创建缓存文件失败: {e}"))?;
+    let mut file = File::create(&part).map_err(|e| {
+        crate::i18n::pick(
+            format!("创建缓存文件失败: {e}"),
+            format!("Failed to create cache file: {e}"),
+        )
+    })?;
     let mut reader = resp.into_reader();
     let mut buf = [0u8; 64 * 1024];
     let mut received: u64 = 0;
     let mut last_emit = std::time::Instant::now();
     let io_result = (|| -> Result<(), String> {
         loop {
-            let n = reader
-                .read(&mut buf)
-                .map_err(|e| format!("下载数据流中断: {e}"))?;
+            let n = reader.read(&mut buf).map_err(|e| {
+                crate::i18n::pick(
+                    format!("下载数据流中断: {e}"),
+                    format!("Audio stream interrupted: {e}"),
+                )
+            })?;
             if n == 0 {
                 break;
             }
-            file.write_all(&buf[..n])
-                .map_err(|e| format!("写入缓存失败: {e}"))?;
+            file.write_all(&buf[..n]).map_err(|e| {
+                crate::i18n::pick(
+                    format!("写入缓存失败: {e}"),
+                    format!("Failed to write cache: {e}"),
+                )
+            })?;
             received += n as u64;
             // 边下边播：推进数据前沿，唤醒阻塞中的播放端读取器
             if let Some(s) = stream {

@@ -10,7 +10,48 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 use crate::webview_suspend::{resume_main_webview, schedule_resuspend, show_main};
 use crate::AppState;
 
-static DLYRICS_ITEM: std::sync::Mutex<Option<MenuItem<tauri::Wry>>> = std::sync::Mutex::new(None);
+struct TrayItems {
+    show: MenuItem<tauri::Wry>,
+    dlyrics: MenuItem<tauri::Wry>,
+    pp: MenuItem<tauri::Wry>,
+    prev: MenuItem<tauri::Wry>,
+    next: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+static TRAY_ITEMS: std::sync::Mutex<Option<TrayItems>> = std::sync::Mutex::new(None);
+
+fn dlyrics_label(app: &AppHandle) -> &'static str {
+    let is_open = app
+        .get_webview_window("desktop-lyrics")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    let is_locked = app
+        .state::<AppState>()
+        .dlyrics_locked
+        .load(Ordering::SeqCst);
+
+    if !is_open {
+        crate::i18n::pick("开启桌面歌词", "Show Desktop Lyrics")
+    } else if is_locked {
+        crate::i18n::pick("解锁桌面歌词", "Unlock Desktop Lyrics")
+    } else {
+        crate::i18n::pick("关闭桌面歌词", "Hide Desktop Lyrics")
+    }
+}
+
+/// 刷新系统托盘全部菜单文案（语言切换时调用）
+pub(crate) fn refresh_tray_labels(app: &AppHandle) {
+    let dlyrics = dlyrics_label(app);
+    if let Some(items) = TRAY_ITEMS.lock().unwrap().as_ref() {
+        let _ = items.show.set_text(crate::i18n::pick("显示主界面", "Show Main Window"));
+        let _ = items.dlyrics.set_text(dlyrics);
+        let _ = items.pp.set_text(crate::i18n::pick("播放 / 暂停", "Play / Pause"));
+        let _ = items.prev.set_text(crate::i18n::pick("上一首", "Previous"));
+        let _ = items.next.set_text(crate::i18n::pick("下一首", "Next"));
+        let _ = items.quit.set_text(crate::i18n::pick("退出", "Quit"));
+    }
+}
 
 /// 统一的媒体控制转发（托盘/SMTC → 前端）。
 /// WebView 挂起中：先唤醒再延迟转发，控制恢复可用；窗口仍隐藏时稍后重新挂起。
@@ -45,39 +86,65 @@ pub(crate) fn media_control(app: &AppHandle, action: &str, value: Option<f64>) {
 
 /// 更新托盘菜单中桌面歌词控制项的文本（开启 / 关闭 / 解锁）
 pub(crate) fn update_dlyrics_tray(app: &AppHandle) {
-    // 窗口常驻（关闭=隐藏），"开启"以可见性为准
-    let is_open = app
-        .get_webview_window("desktop-lyrics")
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false);
-    let is_locked = app
-        .state::<AppState>()
-        .dlyrics_locked
-        .load(Ordering::SeqCst);
-
-    let text = if !is_open {
-        "开启桌面歌词"
-    } else if is_locked {
-        "解锁桌面歌词"
-    } else {
-        "关闭桌面歌词"
-    };
-
-    if let Some(item) = DLYRICS_ITEM.lock().unwrap().as_ref() {
-        let _ = item.set_text(text);
+    let text = dlyrics_label(app);
+    if let Some(items) = TRAY_ITEMS.lock().unwrap().as_ref() {
+        let _ = items.dlyrics.set_text(text);
     }
 }
 
 pub(crate) fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
-    let dlyrics = MenuItem::with_id(app, "dlyrics", "开启桌面歌词", true, None::<&str>)?;
-    *DLYRICS_ITEM.lock().unwrap() = Some(dlyrics.clone());
+    let show = MenuItem::with_id(
+        app,
+        "show",
+        crate::i18n::pick("显示主界面", "Show Main Window"),
+        true,
+        None::<&str>,
+    )?;
+    let dlyrics = MenuItem::with_id(
+        app,
+        "dlyrics",
+        crate::i18n::pick("开启桌面歌词", "Show Desktop Lyrics"),
+        true,
+        None::<&str>,
+    )?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let pp = MenuItem::with_id(app, "pp", "播放 / 暂停", true, None::<&str>)?;
-    let prev = MenuItem::with_id(app, "prev", "上一首", true, None::<&str>)?;
-    let next = MenuItem::with_id(app, "next", "下一首", true, None::<&str>)?;
+    let pp = MenuItem::with_id(
+        app,
+        "pp",
+        crate::i18n::pick("播放 / 暂停", "Play / Pause"),
+        true,
+        None::<&str>,
+    )?;
+    let prev = MenuItem::with_id(
+        app,
+        "prev",
+        crate::i18n::pick("上一首", "Previous"),
+        true,
+        None::<&str>,
+    )?;
+    let next = MenuItem::with_id(
+        app,
+        "next",
+        crate::i18n::pick("下一首", "Next"),
+        true,
+        None::<&str>,
+    )?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        crate::i18n::pick("退出", "Quit"),
+        true,
+        None::<&str>,
+    )?;
+    *TRAY_ITEMS.lock().unwrap() = Some(TrayItems {
+        show: show.clone(),
+        dlyrics: dlyrics.clone(),
+        pp: pp.clone(),
+        prev: prev.clone(),
+        next: next.clone(),
+        quit: quit.clone(),
+    });
 
     let menu = Menu::with_items(
         app,

@@ -3,6 +3,7 @@
 //! 父组件只传行数据与回调，保证列表逻辑集中在上层。
 import { Heart, MoreHorizontal, Pause, Play, Check } from "lucide-react";
 import { useStore } from "../../store";
+import { useI18n } from "../../i18n";
 import { fmtTime } from "../../utils";
 import type { OnlineRow } from "./shared";
 
@@ -35,6 +36,7 @@ export function TrackRowItem({
     source?: "netease" | "qq" | "kugou"
   ) => void;
 }) {
+  const { tr } = useI18n();
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
   const savedOnline = useStore((s) => s.savedOnline);
@@ -120,7 +122,7 @@ export function TrackRowItem({
                   onPlay();
                 }
               }}
-              title={active ? (playing ? "暂停" : "播放") : "播放"}
+              title={active ? (playing ? tr("暂停", "Pause") : tr("播放", "Play")) : tr("播放", "Play")}
             >
               {active && playing ? (
                 <Pause size={14} className="fill-current" />
@@ -178,9 +180,12 @@ export function TrackRowItem({
               active ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]"
             }`}
             onClick={(ev) => { ev.stopPropagation(); onOpenDetail("artist", t.artist, t.kind); }}
-            title={`查看歌手：${t.artist || "未知艺术家"}`}
+            title={tr(
+              `查看歌手：${t.artist || "未知艺术家"}`,
+              `View artist: ${t.artist || "Unknown Artist"}`,
+            )}
           >
-            {t.artist || "未知艺术家"}
+            {t.artist || tr("未知艺术家", "Unknown Artist")}
           </button>
         </div>
       </div>
@@ -188,9 +193,12 @@ export function TrackRowItem({
       <button
         className="block text-left text-[12.5px] text-[var(--ink-3)] truncate max-w-full hover:text-[var(--accent-strong)] transition-colors"
         onClick={(ev) => { ev.stopPropagation(); onOpenDetail("album", t.album, t.kind); }}
-        title={`查看专辑：${t.album || "未知专辑"}`}
+        title={tr(
+          `查看专辑：${t.album || "未知专辑"}`,
+          `View album: ${t.album || "Unknown Album"}`,
+        )}
       >
-        {t.album || "未知专辑"}
+        {t.album || tr("未知专辑", "Unknown Album")}
       </button>
 
       <div className="text-right text-[12.5px] text-[var(--ink-2)] tabular-nums">
@@ -201,7 +209,7 @@ export function TrackRowItem({
         <button
           className="btn-ghost w-8 h-8"
           onClick={(e) => { e.stopPropagation(); onLike(); }}
-          title={saved ? "取消喜欢" : "收藏到“我喜欢”"}
+          title={saved ? tr("取消喜欢", "Remove Favorite") : tr("收藏到“我喜欢”", "Add to Favorites")}
         >
           <Heart
             size={15}
@@ -217,7 +225,7 @@ export function TrackRowItem({
         <button
           className="btn-ghost w-8 h-8"
           onClick={(e) => { e.stopPropagation(); onNext(); }}
-          title="下一首播放"
+          title={tr("下一首播放", "Play Next")}
         >
           <Play
             size={14}
@@ -231,7 +239,7 @@ export function TrackRowItem({
         <button
           className="btn-ghost w-8 h-8"
           onClick={onMore}
-          title={isSkeuo ? "更多选项" : undefined}
+          title={isSkeuo ? tr("更多选项", "More Options") : undefined}
         >
           <MoreHorizontal
             size={16}

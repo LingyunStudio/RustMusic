@@ -24,7 +24,7 @@ pub async fn set_play_quality(
                 quality.as_str(),
                 "standard" | "high" | "lossless" | "hires" | "atmos_2" | "atmos" | "master"
             ) {
-                return Err("无效的音质选项".into());
+                return Err(crate::i18n::pick("无效的音质选项", "Invalid audio quality option").into());
             }
             "quality_qq".to_string()
         }
@@ -43,7 +43,7 @@ pub async fn set_play_quality(
                     | "sky"
                     | "jymaster"
             ) {
-                return Err("无效的音质选项".into());
+                return Err(crate::i18n::pick("无效的音质选项", "Invalid audio quality option").into());
             }
             "quality_netease".to_string()
         }
@@ -62,11 +62,11 @@ pub async fn set_play_quality(
                     | "viper_tape"
                     | "master"
             ) {
-                return Err("无效的音质选项".into());
+                return Err(crate::i18n::pick("无效的音质选项", "Invalid audio quality option").into());
             }
             "quality_kugou".to_string()
         }
-        _ => return Err("无效的音源".into()),
+        _ => return Err(crate::i18n::pick("无效的音源", "Invalid audio source").into()),
     };
     let conn = state.db.lock();
     db::set_setting(&conn, &key, &quality);
@@ -77,7 +77,7 @@ pub async fn set_play_quality(
 #[tauri::command]
 pub async fn set_close_action(state: State<'_, AppState>, action: String) -> Result<(), String> {
     if !matches!(action.as_str(), "tray" | "exit") {
-        return Err("无效的关闭行为".into());
+        return Err(crate::i18n::pick("无效的关闭行为", "Invalid close window action").into());
     }
     let conn = state.db.lock();
     db::set_setting(&conn, "close_action", &action);
@@ -114,6 +114,9 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
     let wasapi_exclusive = db::get_setting(&conn, "wasapi_exclusive")
         .map(|s| s == "true")
         .unwrap_or(false);
+    let language = db::get_setting(&conn, "language")
+        .map(|s| crate::i18n::normalize_pref(&s).to_string())
+        .unwrap_or_else(|| "auto".to_string());
     Ok(SettingsPayload {
         volume,
         speed,
@@ -127,7 +130,51 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<SettingsPayload,
         close_action,
         auto_update,
         wasapi_exclusive,
+        language,
     })
+}
+
+/// 设置界面语言（"auto" | "zh" | "en"），并即时同步托盘与桌面歌词窗口标题
+#[tauri::command]
+pub async fn set_language(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    lang: String,
+    system_hint: Option<String>,
+) -> Result<String, String> {
+    use tauri::{Emitter, Manager};
+    let normalized = crate::i18n::normalize_pref(&lang).to_string();
+    {
+        let conn = state.db.lock();
+        db::set_setting(&conn, "language", &normalized);
+    }
+    if let Some(hint) = system_hint.as_deref() {
+        crate::i18n::set_system_hint(Some(hint));
+    }
+    crate::i18n::set_preference(&normalized);
+    crate::tray::refresh_tray_labels(&app);
+    if let Some(w) = app.get_webview_window("desktop-lyrics") {
+        let _ = w.set_title(crate::i18n::pick("桌面歌词", "Desktop Lyrics"));
+    }
+    let _ = app.emit(
+        "app://language-changed",
+        serde_json::json!({ "language": normalized }),
+    );
+    Ok(normalized)
+}
+
+/// 同步系统语言提示（macOS/Linux GUI 启动无 LANG 时由前端传入 navigator.language）
+#[tauri::command]
+pub async fn sync_system_lang(app: tauri::AppHandle, hint: String) -> Result<(), String> {
+    use tauri::Manager;
+    crate::i18n::set_system_hint(Some(&hint));
+    if crate::i18n::get_preference() == "auto" {
+        crate::tray::refresh_tray_labels(&app);
+        if let Some(w) = app.get_webview_window("desktop-lyrics") {
+            let _ = w.set_title(crate::i18n::pick("桌面歌词", "Desktop Lyrics"));
+        }
+    }
+    Ok(())
 }
 
 /// 设置是否在启动时自动检查更新

@@ -173,17 +173,32 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
         &quality,
     )?;
     let fallback_reason = if token.is_empty() {
-        "酷狗未登录，匿名通道仅提供标准音质".to_string()
+        crate::i18n::pick(
+            "酷狗未登录，匿名通道仅提供标准音质",
+            "KuGou not signed in; guest access provides Standard quality only",
+        )
+        .to_string()
     } else if matches!(
         quality.as_str(),
         "viper_tape" | "master" | "viper_atmos" | "viper_clear" | "hires"
     ) {
         match crate::kugou::last_hires_error() {
-            Some(e) => format!("高阶音质请求被服务端拒绝（{e}），已自动回退"),
-            None => "该曲无对应全景声/母带版本，已为你播放最佳可用音质".to_string(),
+            Some(e) => crate::i18n::pick(
+                format!("高阶音质请求被服务端拒绝（{e}），已自动回退"),
+                format!("High-tier quality rejected by server ({e}); downgraded automatically"),
+            ),
+            None => crate::i18n::pick(
+                "该曲无对应全景声/母带版本，已为你播放最佳可用音质",
+                "No Spatial/Master version available; playing best available quality",
+            )
+            .to_string(),
         }
     } else {
-        "账号权益或曲目音源限制了更高音质".to_string()
+        crate::i18n::pick(
+            "账号权益或曲目音源限制了更高音质",
+            "membership or track source limits higher quality",
+        )
+        .to_string()
     };
     notify_quality_fallback(app, "酷狗", &quality, &quality_label, &fallback_reason);
     // 封面：数据库存的完整 URL 优先（收藏/最近播放已入库），缺失用搜索带的
@@ -283,8 +298,12 @@ pub async fn kugou_qr_check(
         if let (Some(token), Some(userid)) = (&r.token, &r.userid) {
             crate::kugou::set_account(token, userid);
             let conn = state.db.lock();
-            crate::credentials::set("kg_token", &token)
-                .map_err(|e| format!("登录成功但凭据保存失败: {e}"))?;
+            crate::credentials::set("kg_token", &token).map_err(|e| {
+                crate::i18n::pick(
+                    format!("登录成功但凭据保存失败: {e}"),
+                    format!("Signed in, but failed to save credentials: {e}"),
+                )
+            })?;
             db::set_setting(&conn, "kg_userid", userid);
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "kg_nickname", nick);

@@ -1,6 +1,7 @@
 //! 播放器域：播放队列、切歌/上一首/自动跳过失败项、进度与音量倍速、均衡器、歌词加载。
 import type { StateCreator } from "zustand";
 import { api } from "../api";
+import { tr } from "../i18n";
 import type { CurrentTrack, PlaylistEntryMeta, QueueItem } from "../types";
 import type { Store } from "./contract";
 import { capOnlineCache, pinnedIdsOf } from "./onlineCache";
@@ -99,24 +100,24 @@ function titleOfQueueItem(
   >
 ): string {
   if (item.kind === "track") {
-    return caches.tracks.find((t) => t.id === item.id)?.title ?? `曲目 #${item.id}`;
+    return caches.tracks.find((t) => t.id === item.id)?.title ?? tr(`曲目 #${item.id}`, `Track #${item.id}`);
   }
   if (item.kind === "netease") {
-    return caches.neteaseCache[item.id as number]?.name ?? `网易云 #${item.id}`;
+    return caches.neteaseCache[item.id as number]?.name ?? tr(`网易云 #${item.id}`, `NetEase #${item.id}`);
   }
   if (item.kind === "qq") {
-    return caches.qqCache[item.id as string]?.name ?? `QQ音乐 #${item.id}`;
+    return caches.qqCache[item.id as string]?.name ?? tr(`QQ音乐 #${item.id}`, `QQ Music #${item.id}`);
   }
   if (item.kind === "kugou") {
-    return caches.kugouCache[item.id as string]?.name ?? `酷狗 #${item.id}`;
+    return caches.kugouCache[item.id as string]?.name ?? tr(`酷狗 #${item.id}`, `KuGou #${item.id}`);
   }
   if (item.kind === "navidrome") {
     return caches.ndCache[item.id as string]?.title ?? `Navidrome #${item.id}`;
   }
   if (item.kind === "bilibili") {
-    return caches.biliCache[item.id as string]?.title ?? `B站 #${item.id}`;
+    return caches.biliCache[item.id as string]?.title ?? tr(`B站 #${item.id}`, `Bilibili #${item.id}`);
   }
-  return caches.sources.find((s) => s.id === item.id)?.title ?? `音源 #${item.id}`;
+  return caches.sources.find((s) => s.id === item.id)?.title ?? tr(`音源 #${item.id}`, `Source #${item.id}`);
 }
 
 /** 下一曲索引选择（纯函数，无副作用）：next() 与引擎预载共用同一套判定，
@@ -250,7 +251,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     }));
     api
       .playSource(s.id)
-      .catch((e) => get().toast(`播放音源失败：${e}`, "error"));
+      .catch((e) => get().toast(tr(`播放音源失败：${e}`, `Failed to play source: ${e}`), "error"));
   },
   playEntries(entries: PlaylistEntryMeta[], idx: number) {
     const queue: QueueItem[] = [];
@@ -437,9 +438,20 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const i = st.qIndex;
     const item = st.queue[i];
     if (!item) return;
-    const needRelogin = /登录已过期|请重新登录|未登录/.test(msg);
-    const permanent = !needRelogin && /无版权|下架|已失效|信息失效/.test(msg);
-    const vipRelated = !needRelogin && /VIP|会员|付费|权益/.test(msg);
+    const needRelogin =
+      /登录已过期|请重新登录|未登录|session expired|not logged in|please log in|sign in/i.test(
+        msg
+      );
+    const permanent =
+      !needRelogin &&
+      /无版权|下架|已失效|信息失效|copyright|unavailable|removed|taken down/i.test(
+        msg
+      );
+    const vipRelated =
+      !needRelogin &&
+      /VIP|会员|付费|权益|membership|entitlement|paid|purchase|premium/i.test(
+        msg
+      );
     const key = `${item.kind}:${item.id}`;
     set((s) => ({
       unavailable: permanent ? { ...s.unavailable, [key]: msg } : s.unavailable,
@@ -450,8 +462,14 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const text = needRelogin
       ? msg
       : streak > 1
-        ? `已连续 ${streak} 首播放失败（最近：「${title}」${msg}）`
-        : `「${title}」播放失败：${msg}`;
+        ? tr(
+            `已连续 ${streak} 首播放失败（最近：「${title}」${msg}）`,
+            `${streak} tracks failed in a row (latest: "${title}" ${msg})`
+          )
+        : tr(
+            `「${title}」播放失败：${msg}`,
+            `Failed to play "${title}": ${msg}`
+          );
     const prev = get().failToastId;
     if (prev != null) get().dismissToast(prev);
     set({ failToastId: get().toast(text, "error") });
@@ -462,7 +480,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         api.stop().catch(() => {});
         set({ playing: false, pos: 0 });
         get().toast(
-          `已连续 ${vipFailStreak} 首 VIP/付费曲目无法播放——账号会员可能已过期，已停止自动跳歌`,
+          tr(
+            `已连续 ${vipFailStreak} 首 VIP/付费曲目无法播放——账号会员可能已过期，已停止自动跳歌`,
+            `${vipFailStreak} VIP/paid tracks failed in a row — membership may have expired, auto-skip stopped`
+          ),
           "error"
         );
         return;
@@ -474,7 +495,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       api.stop().catch(() => {});
       set({ playing: false, pos: 0 });
       get().toast(
-        `已连续 ${streak} 首无法播放——已停止自动跳歌，请检查网络或登录状态后重试`,
+        tr(
+          `已连续 ${streak} 首无法播放——已停止自动跳歌，请检查网络或登录状态后重试`,
+          `${streak} tracks failed to play — auto-skip stopped; check your network or login status and retry`
+        ),
         "error"
       );
     }
@@ -501,7 +525,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
               // 续页对用户可见化：这是“最后一首播完继续播下一页”的来源，
               // 不提示的话表现为“不知道在播什么”
               get().toast(
-                `已自动加载下一页，队列追加 ${items.length} 首（当前列表播完后继续播放）`,
+                tr(
+                  `已自动加载下一页，队列追加 ${items.length} 首（当前列表播完后继续播放）`,
+                  `Loaded next page automatically: appended ${items.length} track(s) to queue`
+                ),
                 "info"
               );
             } else {
@@ -524,11 +551,22 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
      *  下次仍会尝试。登录过期则整个队列都会失败：立即停止并提示重新登录，
      *  不再连跳刷屏。 */
     const fail = (msg: string) => {
-      const needRelogin = /登录已过期|请重新登录|未登录/.test(msg);
-      const permanent = !needRelogin && /无版权|下架|已失效|信息失效/.test(msg);
+      const needRelogin =
+        /登录已过期|请重新登录|未登录|session expired|not logged in|please log in|sign in/i.test(
+          msg
+        );
+      const permanent =
+        !needRelogin &&
+        /无版权|下架|已失效|信息失效|copyright|unavailable|removed|taken down/i.test(
+          msg
+        );
       // VIP/权益类失败与登录过期同级对待的信号：会员过期后队列里的
       // VIP 歌会全部逐首失败，不能像坏歌那样一路跳下去
-      const vipRelated = !needRelogin && /VIP|会员|付费|权益/.test(msg);
+      const vipRelated =
+        !needRelogin &&
+        /VIP|会员|付费|权益|membership|entitlement|paid|purchase|premium/i.test(
+          msg
+        );
       const key = `${item.kind}:${item.id}`;
       set((s) => ({
         unavailable: permanent
@@ -544,8 +582,14 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       const text = needRelogin
         ? msg
         : streak > 1
-          ? `已连续跳过 ${streak} 首无法播放的歌曲（最近：「${title}」${msg}）`
-          : `跳过「${title}」：${msg}`;
+          ? tr(
+              `已连续跳过 ${streak} 首无法播放的歌曲（最近：「${title}」${msg}）`,
+              `Skipped ${streak} unplayable tracks in a row (latest: "${title}" ${msg})`
+            )
+          : tr(
+              `跳过「${title}」：${msg}`,
+              `Skipped "${title}": ${msg}`
+            );
       const prev = get().failToastId;
       if (prev != null) get().dismissToast(prev);
       set({ failToastId: get().toast(text, "error") });
@@ -562,7 +606,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
           api.stop().catch(() => {});
           set({ playing: false, pos: 0 });
           get().toast(
-            `已连续 ${vipFailStreak} 首 VIP/付费曲目无法播放——账号会员可能已过期，已停止自动跳歌（续费或换免费曲目后继续）`,
+            tr(
+              `已连续 ${vipFailStreak} 首 VIP/付费曲目无法播放——账号会员可能已过期，已停止自动跳歌（续费或换免费曲目后继续）`,
+              `${vipFailStreak} VIP/paid tracks failed in a row — membership may have expired, auto-skip stopped (renew or switch to free tracks)`
+            ),
             "error"
           );
           return;
@@ -578,7 +625,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         api.stop().catch(() => {});
         set({ playing: false, pos: 0 });
         get().toast(
-          `已连续 ${streak} 首无法播放——已停止自动跳歌，请检查网络或登录状态后重试`,
+          tr(
+            `已连续 ${streak} 首无法播放——已停止自动跳歌，请检查网络或登录状态后重试`,
+            `${streak} tracks failed to play — auto-skip stopped; check your network or login status and retry`
+          ),
           "error"
         );
       }
@@ -602,7 +652,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else if (item.kind === "netease") {
       const t = get().neteaseCache[item.id];
       if (!t) {
-        fail("曲目信息缺失，请重试");
+        fail(tr("曲目信息缺失，请重试", "Missing track metadata, please retry"));
         return;
       }
       api
@@ -619,7 +669,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else if (item.kind === "qq") {
       const t = get().qqCache[item.id];
       if (!t) {
-        fail("曲目信息缺失，请重试");
+        fail(tr("曲目信息缺失，请重试", "Missing track metadata, please retry"));
         return;
       }
       api
@@ -638,7 +688,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else if (item.kind === "kugou") {
       const t = get().kugouCache[item.id];
       if (!t) {
-        fail("曲目信息缺失，请重试");
+        fail(tr("曲目信息缺失，请重试", "Missing track metadata, please retry"));
         return;
       }
       api
@@ -661,7 +711,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else if (item.kind === "navidrome") {
       const t = get().ndCache[item.id as string];
       if (!t) {
-        fail("曲目信息缺失，请重试");
+        fail(tr("曲目信息缺失，请重试", "Missing track metadata, please retry"));
         return;
       }
       const server = localStorage.getItem("navidrome.ui.server") ?? "";
@@ -680,7 +730,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     } else if (item.kind === "bilibili") {
       const t = get().biliCache[item.id as string];
       if (!t) {
-        fail("曲目信息缺失，请重试");
+        fail(tr("曲目信息缺失，请重试", "Missing track metadata, please retry"));
         return;
       }
       api
@@ -790,7 +840,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     pushDesktopLyrics(get());
     api
       .seek(Math.round(ms))
-      .catch((e) => get().toast(`跳转失败：${e}`, "error"))
+      .catch((e) => get().toast(tr(`跳转失败：${e}`, `Seek failed: ${e}`), "error"))
       .finally(() => set({ scrubbing: false }));
   },
 
@@ -834,7 +884,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       set({ sleepAt: null, playing: false, pos: 0 });
       // 停引擎（后端会同步 SMTC 等）；失败也无害——UI 已复位
       api.stop().catch(() => {});
-      get().toast("定时时间到，已停止播放", "info");
+      get().toast(tr("定时时间到，已停止播放", "Sleep timer ended, playback stopped"), "info");
     }, min * 60000);
   },
 
@@ -846,7 +896,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         sleepTimerRef = null;
       }
       set({ sleepStopAfterTrack: true, sleepStopAfterQueue: false, sleepAt: null });
-      get().toast("将在播完当前歌曲后停止", "info");
+      get().toast(tr("将在播完当前歌曲后停止", "Will stop after current track"), "info");
     } else if (mode === "queue") {
       if (sleepTimerRef) {
         clearTimeout(sleepTimerRef);
@@ -858,8 +908,11 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       set({ sleepStopAfterTrack: false, sleepStopAfterQueue: true, sleepAt: null });
       get().toast(
         sleepQueueTarget > 0
-          ? `将在播完当前列表（剩 ${Math.max(1, sleepQueueTarget - get().qIndex)} 首）后停止`
-          : "将在播完当前列表后停止",
+          ? tr(
+              `将在播完当前列表（剩 ${Math.max(1, sleepQueueTarget - get().qIndex)} 首）后停止`,
+              `Will stop after current queue (${Math.max(1, sleepQueueTarget - get().qIndex)} tracks left)`
+            )
+          : tr("将在播完当前列表后停止", "Will stop after current queue"),
         "info"
       );
     } else {
@@ -881,7 +934,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
   addToQueue(item) {
     set((s) => ({ queue: [...s.queue, item] }));
-    get().toast("已加入播放队列", "success");
+    get().toast(tr("已加入播放队列", "Added to queue"), "success");
   },
 
   playNext(item) {
@@ -890,7 +943,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       q.splice(s.qIndex + 1, 0, item);
       return { queue: q };
     });
-    get().toast("将在当前曲目后播放", "success");
+    get().toast(tr("将在当前曲目后播放", "Playing next"), "success");
   },
 
   removeQueueItem(i) {
@@ -911,7 +964,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       queue: keep.filter(Boolean),
       qIndex: 0,
     });
-    get().toast("已清空播放队列（保留正在播放的曲目）", "info");
+    get().toast(tr("已清空播放队列（保留正在播放的曲目）", "Queue cleared (kept current track)"), "info");
   },
 
   /** 睡眠“播完列表”已播计数（ended 事件每次消费时 +1；uiSlice 调用） */
@@ -926,12 +979,15 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   clearQueueFromCurrent() {
     const { queue, qIndex } = get();
     if (qIndex >= queue.length - 1) {
-      get().toast("当前曲目之后没有待播放项", "info");
+      get().toast(tr("当前曲目之后没有待播放项", "No upcoming tracks after current"), "info");
       return;
     }
     const removed = queue.length - 1 - qIndex;
     set({ queue: queue.slice(0, qIndex + 1) });
-    get().toast(`已清除当前之后的 ${removed} 首队列项`, "info");
+    get().toast(
+      tr(`已清除当前之后的 ${removed} 首队列项`, `Cleared ${removed} upcoming track(s)`),
+      "info"
+    );
   },
 
   dedupeQueue() {
@@ -953,7 +1009,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       }
     });
     if (next.length === queue.length) {
-      get().toast("队列中没有重复项", "info");
+      get().toast(tr("队列中没有重复项", "No duplicates in queue"), "info");
       return;
     }
     const removed = queue.length - next.length;
@@ -965,7 +1021,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         : (firstIdxOf.get(`${cur.kind}:${cur.id}`) ?? 0)
       : 0;
     set({ queue: next, qIndex: newQIndex });
-    get().toast(`已去重：移除 ${removed} 首重复项`, "success");
+    get().toast(tr(`已去重：移除 ${removed} 首重复项`, `Deduplicated: removed ${removed} item(s)`), "success");
   },
 
   jumpTo(i) {

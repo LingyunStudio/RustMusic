@@ -99,7 +99,12 @@ where
             exited.store(true, Ordering::Relaxed);
             let _ = tx.send(result);
         })
-        .map_err(|e| format!("启动独占播放线程失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("启动独占播放线程失败: {e}"),
+                format!("Failed to start exclusive playback thread: {e}"),
+            )
+        })?;
     Ok((ctl, rx))
 }
 
@@ -235,23 +240,42 @@ fn pick_device(pref: Option<&str>) -> Result<wasapi::Device, String> {
         }
         eprintln!("[wasapi] 未找到输出设备「{name}」，回退系统默认");
     }
-    wasapi::get_default_device(&Direction::Render)
-        .map_err(|e| wasapi_err("没有可用的音频输出设备", e.as_ref()))
+    wasapi::get_default_device(&Direction::Render).map_err(|e| {
+        wasapi_err(
+            crate::i18n::pick("没有可用的音频输出设备", "No audio output device available"),
+            e.as_ref(),
+        )
+    })
 }
 
 /// 关键 HRESULT 的可行动提示
 fn exclusive_hint(code: u32) -> Option<&'static str> {
     match code {
         // AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED
-        0x8889_000E => Some("系统禁用了独占授权：在声音设置中打开该设备的属性，关掉「音频增强」并允许应用程序独占控制此设备"),
+        0x8889_000E => Some(crate::i18n::pick(
+            "系统禁用了独占授权：在声音设置中打开该设备的属性，关掉「音频增强」并允许应用程序独占控制此设备",
+            "Exclusive mode is disabled by system settings: open device properties in Sound settings, turn off Audio Enhancements and allow exclusive control",
+        )),
         // AUDCLNT_E_INVALID_STREAM_FLAG：实测部分驱动（蓝牙/网络音箱）对独占一律返回此码
-        0x8889_000A => Some("该设备驱动不支持独占模式（常见于蓝牙/网络音箱），请切换到其它输出设备"),
+        0x8889_000A => Some(crate::i18n::pick(
+            "该设备驱动不支持独占模式（常见于蓝牙/网络音箱），请切换到其它输出设备",
+            "Device driver does not support exclusive mode (common on Bluetooth/network speakers); switch to another output device",
+        )),
         // AUDCLNT_E_UNSUPPORTED_FORMAT
-        0x8889_0008 => Some("设备不接受以上任何候选格式"),
+        0x8889_0008 => Some(crate::i18n::pick(
+            "设备不接受以上任何候选格式",
+            "Device rejected all candidate audio formats",
+        )),
         // AUDCLNT_E_DEVICE_IN_USE
-        0x8889_000C => Some("设备正被其它程序以独占方式占用"),
+        0x8889_000C => Some(crate::i18n::pick(
+            "设备正被其它程序以独占方式占用",
+            "Device is currently in use exclusively by another application",
+        )),
         // AUDCLNT_E_DEVICE_INVALIDATED
-        0x8889_0004 => Some("设备已失效（被拔出或已禁用）"),
+        0x8889_0004 => Some(crate::i18n::pick(
+            "设备已失效（被拔出或已禁用）",
+            "Device invalidated (unplugged or disabled)",
+        )),
         _ => None,
     }
 }
@@ -260,7 +284,7 @@ fn wasapi_err_hint(what: &str, e: &(dyn std::error::Error + 'static)) -> String 
     let code = e.downcast_ref::<WinError>().map(|we| we.code().0 as u32);
     let base = wasapi_err(what, e);
     match code.and_then(exclusive_hint) {
-        Some(h) => format!("{base}；{h}"),
+        Some(h) => crate::i18n::pick(format!("{base}；{h}"), format!("{base}; {h}")),
         None => base,
     }
 }
@@ -280,10 +304,9 @@ fn try_initialize(
         c.initialize_client(fmt, p, &Direction::Render, &ShareMode::Exclusive, false)
     };
     let what = |p: i64| {
-        format!(
-            "独占初始化失败（{}Hz，周期 {:.2}ms）",
-            rate,
-            p as f64 / 10_000.0
+        crate::i18n::pick(
+            format!("独占初始化失败（{}Hz，周期 {:.2}ms）", rate, p as f64 / 10_000.0),
+            format!("Exclusive init failed ({}Hz, period {:.2}ms)", rate, p as f64 / 10_000.0),
         )
     };
     match init(&mut client, period) {
@@ -300,8 +323,13 @@ fn try_initialize(
             let aligned = match client.get_bufferframecount() {
                 Ok(frames) => calculate_period_100ns(frames as i64, rate),
                 Err(e2) => {
-                    let msg =
-                        wasapi_err_hint(&format!("{first}；随后获取对齐缓冲也失败"), e2.as_ref());
+                    let msg = wasapi_err_hint(
+                        &crate::i18n::pick(
+                            format!("{first}；随后获取对齐缓冲也失败"),
+                            format!("{first}; failed to query aligned buffer"),
+                        ),
+                        e2.as_ref(),
+                    );
                     return Err((client, msg));
                 }
             };
@@ -316,8 +344,13 @@ fn try_initialize(
                     let mut fresh = match device.get_iaudioclient() {
                         Ok(c) => c,
                         Err(e3) => {
-                            let msg =
-                                wasapi_err_hint(&format!("{first}；重建客户端也失败"), e3.as_ref());
+                            let msg = wasapi_err_hint(
+                                &crate::i18n::pick(
+                                    format!("{first}；重建客户端也失败"),
+                                    format!("{first}; recreating client failed"),
+                                ),
+                                e3.as_ref(),
+                            );
                             return Err((client, msg));
                         }
                     };
@@ -326,7 +359,10 @@ fn try_initialize(
                         Ok(()) => Ok((fmt.clone(), fresh)),
                         Err(e4) => {
                             let msg = wasapi_err_hint(
-                                &format!("独占初始化失败（{}Hz，对齐周期 {aligned}）", rate),
+                                &crate::i18n::pick(
+                                    format!("独占初始化失败（{}Hz，对齐周期 {aligned}）", rate),
+                                    format!("Exclusive init failed ({}Hz, aligned period {aligned})", rate),
+                                ),
                                 e4.as_ref(),
                             );
                             Err((fresh, msg))
@@ -353,9 +389,12 @@ where
     let _ = initialize_mta();
     let init_result = (|| -> Result<(), String> {
         let device = pick_device(params.device_pref.as_deref())?;
-        let mut audio_client = device
-            .get_iaudioclient()
-            .map_err(|e| wasapi_err("获取音频客户端失败", e.as_ref()))?;
+        let mut audio_client = device.get_iaudioclient().map_err(|e| {
+            wasapi_err(
+                crate::i18n::pick("获取音频客户端失败", "Failed to get audio client"),
+                e.as_ref(),
+            )
+        })?;
 
         // 格式协商：同一客户端实例上依次尝试「格式 × 周期」。
         // 实测要点（用原生 COM 调用逐设备实测得出）：
@@ -377,9 +416,12 @@ where
             .get_mixformat()
             .map(|f| f.get_samplespersec())
             .unwrap_or(48_000);
-        let (def_period, min_period) = audio_client
-            .get_periods()
-            .map_err(|e| wasapi_err("独占模式获取周期失败", e.as_ref()))?;
+        let (def_period, min_period) = audio_client.get_periods().map_err(|e| {
+            wasapi_err(
+                crate::i18n::pick("独占模式获取周期失败", "Failed to get exclusive device period"),
+                e.as_ref(),
+            )
+        })?;
 
         let mut fmt_cands: Vec<(usize, usize, SampleType, u32)> = Vec::new();
         for &(store, valid, kind) in &candidates {
@@ -450,12 +492,21 @@ where
         let (wave_fmt, fmt, rate_ratio) = inited.ok_or_else(|| {
             // 所有候选都在探测阶段被拒：驱动不给独占任何格式，给出可行动提示
             if probe_rejected > 0 && last_err.is_none() {
-                return format!(
-                    "设备拒绝了独占模式的全部候选格式（{ch} 声道）；该设备驱动不支持独占模式（常见于蓝牙/网络音箱），或系统禁用了独占授权，可切换到其它输出设备再试"
+                return crate::i18n::pick(
+                    format!(
+                        "设备拒绝了独占模式的全部候选格式（{ch} 声道）；该设备驱动不支持独占模式（常见于蓝牙/网络音箱），或系统禁用了独占授权，可切换到其它输出设备再试"
+                    ),
+                    format!(
+                        "Device rejected all exclusive mode candidate formats ({ch} ch); the driver may not support exclusive mode (common on Bluetooth/network speakers), or system settings disallow exclusive access"
+                    ),
                 );
             }
-            let detail = last_err.unwrap_or_else(|| "未知".into());
-            format!("设备不接受独占模式的任何格式/周期组合（{ch} 声道）。{detail}")
+            let detail = last_err
+                .unwrap_or_else(|| crate::i18n::pick("未知", "Unknown").into());
+            crate::i18n::pick(
+                format!("设备不接受独占模式的任何格式/周期组合（{ch} 声道）。{detail}"),
+                format!("Device rejected all exclusive format/period combinations ({ch} ch). {detail}"),
+            )
         })?;
         let dev_rate = wave_fmt.get_samplespersec();
         let blockalign = fmt.bytes_per_sample * ch.max(1);
@@ -466,14 +517,23 @@ where
             return Ok(());
         }
 
-        let h_event = audio_client
-            .set_get_eventhandle()
-            .map_err(|e| wasapi_err("独占模式创建事件失败", e.as_ref()))?;
-        let render = audio_client
-            .get_audiorenderclient()
-            .map_err(|e| wasapi_err("独占模式获取渲染端失败", e.as_ref()))?;
+        let h_event = audio_client.set_get_eventhandle().map_err(|e| {
+            wasapi_err(
+                crate::i18n::pick("独占模式创建事件失败", "Failed to create exclusive event handle"),
+                e.as_ref(),
+            )
+        })?;
+        let render = audio_client.get_audiorenderclient().map_err(|e| {
+            wasapi_err(
+                crate::i18n::pick("独占模式获取渲染端失败", "Failed to get exclusive render client"),
+                e.as_ref(),
+            )
+        })?;
         audio_client.start_stream().map_err(|e| {
-            let e = format!("独占模式启动流失败: {e}");
+            let e = crate::i18n::pick(
+                format!("独占模式启动流失败: {e}"),
+                format!("Failed to start exclusive stream: {e}"),
+            );
             let _ = tx.send(Err(e.clone()));
             e
         })?;
@@ -499,8 +559,12 @@ where
         // 超量喂入，表现为进度条倍速 + 采样乱码）。
         let buffer_frames = audio_client
             .get_bufferframecount()
-            .map_err(|e| wasapi_err("独占模式获取缓冲大小失败", e.as_ref()))?
-            as usize;
+            .map_err(|e| {
+                wasapi_err(
+                    crate::i18n::pick("独占模式获取缓冲大小失败", "Failed to get exclusive buffer size"),
+                    e.as_ref(),
+                )
+            })? as usize;
         let excl_ms = ((buffer_frames as u64) * 1000) / u64::from(dev_rate).max(1);
         params.output_latency_ms.store(excl_ms, Ordering::Relaxed);
         eprintln!("[wasapi] 独占缓冲 = {buffer_frames} 帧/周期（约 {excl_ms}ms）");

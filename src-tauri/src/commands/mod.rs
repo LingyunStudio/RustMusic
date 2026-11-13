@@ -84,7 +84,12 @@ where
 {
     tauri::async_runtime::spawn_blocking(f)
         .await
-        .map_err(|e| format!("后台任务失败：{e}"))?
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("后台任务失败：{e}"),
+                format!("Background task failed: {e}"),
+            )
+        })?
 }
 /// 音质标签（在线曲目播放栏徽标）：FLAC → 无损；≥320kbps → HQ；其余 → 标准
 fn quality_tag(ext: &str, br_kbps: i64) -> String {
@@ -159,8 +164,47 @@ fn notify_quality_fallback(
     if wanted_rank <= 10 || actual_rank == 0 || actual_rank >= wanted_rank {
         return;
     }
+fn quality_display_label(label: &str) -> &str {
+    if !crate::i18n::is_en() {
+        return label;
+    }
+    match label {
+        "超清母带" | "臻品母带" | "蝰蛇母带" | "超品母带" => "Master",
+        "沉浸环绕声" | "臻品全景声" | "蝰蛇全景声" => "Dolby / Spatial",
+        "高清环绕声" => "HD Surround",
+        "臻品音质 2.0" | "臻品音质2.0" => "Premium 2.0",
+        "蝰蛇超清" => "Viper HD",
+        "Hi-Res" => "Hi-Res",
+        "无损" => "Lossless",
+        "HQ" => "HQ",
+        "极高" => "Very High",
+        "较高" => "Higher",
+        "标准" => "Standard",
+        other => other,
+    }
+}
+
+fn source_display_label(source: &str) -> &str {
+    if !crate::i18n::is_en() {
+        return source;
+    }
+    match source {
+        "网易云" | "网易云音乐" => "NetEase Cloud",
+        "QQ 音乐" | "QQ音乐" => "QQ Music",
+        "酷狗" | "酷狗音乐" => "KuGou",
+        other => other,
+    }
+}
+
+    let source_disp = source_display_label(source);
+    let label_disp = quality_display_label(actual_label);
     let _ = app.emit(
         "player://quality-fallback",
-        serde_json::json!({ "message": format!("{source}：当前以「{actual_label}」音质播放（{reason}）") }),
+        serde_json::json!({
+            "message": crate::i18n::pick(
+                format!("{source_disp}：当前以「{label_disp}」音质播放（{reason}）"),
+                format!("{source_disp}: playing in \"{label_disp}\" quality ({reason})"),
+            )
+        }),
     );
 }

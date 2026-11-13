@@ -39,7 +39,11 @@ pub async fn navidrome_save(state: State<'_, AppState>, req: NdSaveReq) -> Resul
     let server = crate::navidrome::norm_base(&req.server);
     let username = req.username.trim().to_string();
     if server.is_empty() || username.is_empty() || req.password.is_empty() {
-        return Err("服务器地址、用户名、密码均不能为空".into());
+        return Err(crate::i18n::pick(
+            "服务器地址、用户名、密码均不能为空",
+            "Server URL, username, and password are all required",
+        )
+        .into());
     }
     // 先验证再落凭据（ping 为网络调用、keyring 为阻塞 IO，统一进阻塞线程池）
     let password = req.password.clone();
@@ -66,7 +70,12 @@ pub async fn navidrome_connect(server: String, username: String) -> Result<(), S
         crate::navidrome::ping(&server, &username, &pw)
     })
     .await
-    .map_err(|e| format!("连接失败：{e}（请检查服务器地址或重新保存密码）"))
+    .map_err(|e| {
+        crate::i18n::pick(
+            format!("连接失败：{e}（请检查服务器地址或重新保存密码）"),
+            format!("Connection failed: {e} (check server URL or re-save password)"),
+        )
+    })
 }
 
 #[tauri::command]

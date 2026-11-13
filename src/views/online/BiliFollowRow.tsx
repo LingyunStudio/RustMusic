@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import CoverImg from "../../components/CoverImg";
+import { useI18n } from "../../i18n";
 import type { BiliFollow } from "../../types";
 
 /** 收藏 UP 主横排：一行头像（下方名字），最右一对箭头按钮横向滚动；
@@ -26,6 +27,7 @@ export function UpFollowRow({
   onRemove: (f: BiliFollow) => void;
   onReorder: (from: number, to: number) => void;
 }) {
+  const { tr } = useI18n();
   const scRef = useRef<HTMLDivElement | null>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
@@ -195,7 +197,10 @@ export function UpFollowRow({
       >
         {!follows.length && (
           <span className="text-[11.5px] text-[var(--ink-3)] px-1 leading-relaxed">
-            暂无收藏的 UP 主：解析 UP 主空间后点「收藏UP主」，会显示在这里
+            {tr(
+              "暂无收藏的 UP 主：解析 UP 主空间后点「收藏UP主」，会显示在这里",
+              'No followed creators yet. Open a creator space and click "Follow" to pin them here.',
+            )}
           </span>
         )}
         {follows.map((f, i) => {
@@ -234,7 +239,7 @@ export function UpFollowRow({
                 }`}
                 disabled={busy}
                 onClick={() => onOpen(f)}
-                title={`打开「${f.name}」的投稿空间`}
+                title={tr(`打开「${f.name}」的投稿空间`, `Open ${f.name}'s space`)}
               >
                 <CoverImg
                   src={f.face}
@@ -254,7 +259,7 @@ export function UpFollowRow({
               </button>
               <button
                 className="absolute top-0 right-0.5 w-4 h-4 rounded-full bg-black/55 text-white hidden group-hover:flex items-center justify-center hover:bg-black/80 transition-colors"
-                title="取消收藏"
+                title={tr("取消收藏", "Unfollow")}
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(f);
@@ -271,7 +276,7 @@ export function UpFollowRow({
           className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
           disabled={!canLeft}
           onClick={() => scroll(-1)}
-          title="向左滚动"
+          title={tr("向左滚动", "Scroll left")}
         >
           <ChevronLeft size={15} />
         </button>
@@ -279,7 +284,7 @@ export function UpFollowRow({
           className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
           disabled={!canRight}
           onClick={() => scroll(1)}
-          title="向右滚动"
+          title={tr("向右滚动", "Scroll right")}
         >
           <ChevronRight size={15} />
         </button>

@@ -200,7 +200,7 @@ fn space_items(rows: Vec<crate::bilibili::SpaceVideo>, up: &str) -> Vec<BiliSpac
             rid: v.bvid.clone(),
             title: v.title,
             artist: if up.is_empty() {
-                "哔哩哔哩".into()
+                crate::i18n::pick("哔哩哔哩", "Bilibili").into()
             } else {
                 up.to_string()
             },
@@ -287,7 +287,11 @@ fn bili_cookies_req(state: &State<'_, AppState>) -> Result<crate::bilibili::Bili
         buvid3: String::new(),
     });
     if c.sessdata.is_empty() {
-        return Err("请先扫码登录 B 站账号".into());
+        return Err(crate::i18n::pick(
+            "请先扫码登录 B 站账号",
+            "Please scan the QR code to sign in to Bilibili first",
+        )
+        .into());
     }
     Ok(c)
 }
@@ -337,7 +341,13 @@ pub async fn bilibili_space_collection(
         match kind.as_str() {
             "season" => crate::bilibili::space_season_archives(&mid, id, 1, c.as_ref()),
             "fav" => {
-                let sess = sess.ok_or_else(|| "请先扫码登录 B 站账号".to_string())?;
+                let sess = sess.ok_or_else(|| {
+                    crate::i18n::pick(
+                        "请先扫码登录 B 站账号",
+                        "Please scan the QR code to sign in to Bilibili first",
+                    )
+                    .to_string()
+                })?;
                 crate::bilibili::fav_folder_videos(id, 1, &sess)
             }
             _ => crate::bilibili::space_series_archives(&mid, id, 1, c.as_ref()),
@@ -367,7 +377,13 @@ pub async fn bilibili_space_collection_more(
         match kind.as_str() {
             "season" => crate::bilibili::space_season_archives(&mid, id, pn, c.as_ref()),
             "fav" => {
-                let sess = sess.ok_or_else(|| "请先扫码登录 B 站账号".to_string())?;
+                let sess = sess.ok_or_else(|| {
+                    crate::i18n::pick(
+                        "请先扫码登录 B 站账号",
+                        "Please scan the QR code to sign in to Bilibili first",
+                    )
+                    .to_string()
+                })?;
                 crate::bilibili::fav_folder_videos(id, pn, &sess)
             }
             _ => crate::bilibili::space_series_archives(&mid, id, pn, c.as_ref()),

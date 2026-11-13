@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-react";
 import { useStore } from "../store";
+import { formatLyricSource, useI18n } from "../i18n";
 import CoverImg from "./CoverImg";
 import NowPlayingSkeuo from "./NowPlaying.skeuo";
 import { api, coverSrc } from "../api";
@@ -20,6 +21,7 @@ export default function NowPlaying() {
 }
 
 function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
+  const { tr } = useI18n();
   const current = useStore((s) => s.current);
   const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
   const fullscreen = useStore((s) => s.fullscreen);
@@ -342,14 +344,14 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
       <div className="relative flex items-center justify-between px-8 pt-12 h-24">
         <span className="text-[11px] text-[var(--ink-3)] tracking-[0.26em] flex items-center gap-2.5">
           <Music4 size={14} />
-          正在播放
+          {tr("正在播放", "NOW PLAYING")}
         </span>
         {isLiquid ? (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full liquid-dock shadow-lg">
             <button
               className="btn-ghost w-9 h-9 !rounded-full"
               onClick={() => toggleFullscreen()}
-              title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
+              title={fullscreen ? tr("退出全屏", "Exit Fullscreen") : tr("全屏播放（无边框）", "Fullscreen (Borderless)")}
             >
               {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
@@ -359,7 +361,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                 if (fullscreen) toggleFullscreen(false);
                 setNowPlayingOpen(false);
               }}
-              title="收起播放页"
+              title={tr("收起播放页", "Collapse Now Playing")}
             >
               <ChevronDown size={19} />
             </button>
@@ -369,7 +371,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
             <button
               className="btn-ghost w-10 h-10 !rounded-full"
               onClick={() => toggleFullscreen()}
-              title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
+              title={fullscreen ? tr("退出全屏", "Exit Fullscreen") : tr("全屏播放（无边框）", "Fullscreen (Borderless)")}
             >
               {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
             </button>
@@ -379,7 +381,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                 if (fullscreen) toggleFullscreen(false);
                 setNowPlayingOpen(false);
               }}
-              title="收起播放页"
+              title={tr("收起播放页", "Collapse Now Playing")}
             >
               <ChevronDown size={20} />
             </button>
@@ -470,7 +472,11 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                       vip: entry?.vip ?? false,
                     });
                   }}
-                  title={savedOnline[`qq-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                  title={
+                    savedOnline[`qq-${current.qid}`]
+                      ? tr("取消喜欢", "Unlike")
+                      : tr("收藏到“我喜欢”", "Add to Liked Songs")
+                  }
                 >
                   <Heart
                     size={16}
@@ -496,7 +502,11 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                       durationMs: current.durationMs,
                     });
                   }}
-                  title={savedOnline[`bilibili-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                  title={
+                    savedOnline[`bilibili-${current.qid}`]
+                      ? tr("取消喜欢", "Unlike")
+                      : tr("收藏到“我喜欢”", "Add to Liked Songs")
+                  }
                 >
                   <Heart
                     size={16}
@@ -522,7 +532,11 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                       durationMs: current.durationMs,
                     });
                   }}
-                  title={savedOnline[`navidrome-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                  title={
+                    savedOnline[`navidrome-${current.qid}`]
+                      ? tr("取消喜欢", "Unlike")
+                      : tr("收藏到“我喜欢”", "Add to Liked Songs")
+                  }
                 >
                   <Heart
                     size={16}
@@ -553,7 +567,11 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                       vip: entry?.vip ?? false,
                     });
                   }}
-                  title={savedOnline[`kugou-${current.kgid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                  title={
+                    savedOnline[`kugou-${current.kgid}`]
+                      ? tr("取消喜欢", "Unlike")
+                      : tr("收藏到“我喜欢”", "Add to Liked Songs")
+                  }
                 >
                   <Heart
                     size={16}
@@ -576,21 +594,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
               {lyricSource && (
                 <span className="flex items-center gap-1 opacity-75">
                   <Mic2 size={11} />
-                  {lyricSource === "local-embedded"
-                    ? "内嵌歌词"
-                    : lyricSource === "local-lrc"
-                      ? "本地 LRC"
-                      : lyricSource === "netease"
-                        ? "网易云歌词"
-                        : lyricSource === "qq"
-                          ? "QQ音乐歌词"
-                          : lyricSource === "kugou"
-                            ? "酷狗歌词"
-                            : lyricSource === "bilibili"
-                              ? "B站歌词"
-                              : lyricSource === "navidrome"
-                                ? "Navidrome 歌词"
-                                : lyricSource}
+                  {formatLyricSource(lyricSource)}
                 </span>
               )}
               {lyrics?.synced && (
@@ -606,27 +610,27 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                   onClick={() => setLyricsShowTrans(!lyricsShowTrans)}
                   title={
                     !hasTrans
-                      ? "当前歌词无翻译"
+                      ? tr("当前歌词无翻译", "No translation available")
                       : lyricsShowTrans
-                        ? "隐藏歌词翻译"
-                        : "显示歌词翻译"
+                        ? tr("隐藏歌词翻译", "Hide translation")
+                        : tr("显示歌词翻译", "Show translation")
                   }
                 >
-                  译
+                  {tr("译", "TR")}
                 </button>
               )}
               <span className="opacity-40">|</span>
               <button
                 className="px-1 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-semibold"
                 onClick={() => setLyricsFontScale(lyricsFontScale - 0.1)}
-                title="减小歌词字号"
+                title={tr("减小歌词字号", "Decrease lyric font size")}
               >
                 A-
               </button>
               <button
                 className="px-1 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-semibold"
                 onClick={() => setLyricsFontScale(lyricsFontScale + 0.1)}
-                title="增大歌词字号"
+                title={tr("增大歌词字号", "Increase lyric font size")}
               >
                 A+
               </button>
@@ -658,7 +662,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
           >
             {lyricsLoading && (
               <div className="text-[var(--ink-3)] text-[13px] text-center pt-20">
-                正在加载歌词…
+                {tr("正在加载歌词…", "Loading lyrics…")}
               </div>
             )}
             {!lyricsLoading && syncedLines.length === 0 && (
@@ -673,7 +677,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
                         {l.text}
                       </p>
                     ))
-                  : "暂无歌词"}
+                  : tr("暂无歌词", "No lyrics")}
               </div>
             )}
             {syncedLines.map((l, i) => {

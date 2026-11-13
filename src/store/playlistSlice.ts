@@ -1,6 +1,7 @@
 //! 播放列表域：歌单增删改、条目管理（本地 + 在线）、手动排序持久化。
 import type { StateCreator } from "zustand";
 import { api } from "../api";
+import { tr } from "../i18n";
 import type { Store } from "./contract";
 import { jsonEq } from "./util";
 
@@ -44,7 +45,7 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
     try {
       const id = await api.createPlaylist(name);
       await get().refreshPlaylists();
-      get().toast(`已创建播放列表「${name}」`, "success");
+      get().toast(tr(`已创建播放列表「${name}」`, `Created playlist "${name}"`), "success");
       return id;
     } catch (e) {
       get().toast(String(e), "error");
@@ -59,7 +60,7 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       if (get().view === "playlist" && get().viewParam === id) {
         set({ view: "library" });
       }
-      get().toast("播放列表已删除", "success");
+      get().toast(tr("播放列表已删除", "Playlist deleted"), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -76,7 +77,10 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       ) {
         set({ view: "library" });
       }
-      get().toast(`已删除 ${ids.length} 个播放列表`, "success");
+      get().toast(
+        tr(`已删除 ${ids.length} 个播放列表`, `Deleted ${ids.length} playlist${ids.length === 1 ? "" : "s"}`),
+        "success"
+      );
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -96,7 +100,8 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       await api.addToPlaylist(pid, tid);
       await get().refreshPlaylists();
       const pl = get().playlists.find((p) => p.id === pid);
-      get().toast(`已添加到「${pl?.name ?? "播放列表"}」`, "success");
+      const plName = pl?.name ?? tr("播放列表", "Playlist");
+      get().toast(tr(`已添加到「${plName}」`, `Added to "${plName}"`), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -108,10 +113,11 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       const added = await api.addTracksToPlaylist(pid, tids);
       await get().refreshPlaylists();
       const pl = get().playlists.find((p) => p.id === pid);
+      const plName = pl?.name ?? tr("播放列表", "Playlist");
       get().toast(
         added > 0
-          ? `已添加 ${added} 首到「${pl?.name ?? "播放列表"}」`
-          : `所选歌曲都已在「${pl?.name ?? "播放列表"}」中`,
+          ? tr(`已添加 ${added} 首到「${plName}」`, `Added ${added} track${added === 1 ? "" : "s"} to "${plName}"`)
+          : tr(`所选歌曲都已在「${plName}」中`, `Selected tracks are already in "${plName}"`),
         added > 0 ? "success" : "info"
       );
     } catch (e) {
@@ -122,7 +128,10 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
   async exportPlaylistM3u(pid, path) {
     try {
       const n = await api.exportPlaylistM3u(pid, path);
-      get().toast(`已导出 ${n} 条到 ${path}`, "success");
+      get().toast(
+        tr(`已导出 ${n} 条到 ${path}`, `Exported ${n} track${n === 1 ? "" : "s"} to ${path}`),
+        "success"
+      );
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -133,7 +142,10 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       const r = await api.importPlaylistM3u(name, path);
       await get().refreshPlaylists();
       get().toast(
-        `已导入「${name}」：${r.added} 首${r.skipped > 0 ? `（跳过 ${r.skipped} 条无效条目）` : ""}`,
+        tr(
+          `已导入「${name}」：${r.added} 首${r.skipped > 0 ? `（跳过 ${r.skipped} 条无效条目）` : ""}`,
+          `Imported "${name}": ${r.added} track${r.added === 1 ? "" : "s"}${r.skipped > 0 ? ` (${r.skipped} invalid skipped)` : ""}`
+        ),
         "success"
       );
     } catch (e) {
@@ -165,7 +177,8 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       });
       await get().refreshPlaylists();
       const pl = get().playlists.find((p) => p.id === pid);
-      get().toast(`已添加到「${pl?.name ?? "播放列表"}」`, "success");
+      const plName = pl?.name ?? tr("播放列表", "Playlist");
+      get().toast(tr(`已添加到「${plName}」`, `Added to "${plName}"`), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -184,7 +197,10 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
     try {
       await api.removePlaylistEntries(rowids);
       await get().refreshPlaylists();
-      get().toast(`已从歌单中移除 ${rowids.length} 首歌曲`, "success");
+      get().toast(
+        tr(`已从歌单中移除 ${rowids.length} 首歌曲`, `Removed ${rowids.length} track${rowids.length === 1 ? "" : "s"} from playlist`),
+        "success"
+      );
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -215,7 +231,7 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       await api.saveManualOrder(list, keys);
     } catch (e) {
       set((s) => ({ manualOrder: { ...s.manualOrder, [list]: prev } }));
-      get().toast("顺序保存失败", "error");
+      get().toast(tr("顺序保存失败", "Failed to save order"), "error");
     }
   },
 
@@ -242,7 +258,7 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       await api.reorderPlaylist(pid, rowids);
     } catch (e) {
       set({ playlists: prev });
-      get().toast("顺序保存失败", "error");
+      get().toast(tr("顺序保存失败", "Failed to save order"), "error");
     }
   },
 
@@ -263,7 +279,7 @@ export const createPlaylistSlice: StateCreator<Store, [], [], Fields> = (set, ge
       await api.reorderPlaylists(ids);
     } catch {
       set({ playlists: prev });
-      get().toast("顺序保存失败", "error");
+      get().toast(tr("顺序保存失败", "Failed to save order"), "error");
     }
   },
 });

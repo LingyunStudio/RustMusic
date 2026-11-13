@@ -2,6 +2,7 @@
 //! 收藏/下载/最近播放、歌单导入，以及各平台的入队播放入口。
 import type { StateCreator } from "zustand";
 import { api } from "../api";
+import { formatQualityLabel, tr } from "../i18n";
 import type { BiliFollow, KgSong, NeteaseTrack, NdSong, QqSong, QueueItem } from "../types";
 import type { Store } from "./contract";
 import { capOnlineCache, pinnedIdsOf } from "./onlineCache";
@@ -250,7 +251,9 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     set({ biliFollows: next });
     saveBiliFollows(next);
     get().toast(
-      exists ? `已取消收藏 UP主「${up.name}」` : `已收藏 UP主「${up.name}」`,
+      exists
+        ? tr(`已取消收藏 UP主「${up.name}」`, `Unfollowed "${up.name}"`)
+        : tr(`已收藏 UP主「${up.name}」`, `Followed "${up.name}"`),
       exists ? "info" : "success"
     );
   },
@@ -278,7 +281,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         rid: r.rid,
         title: r.title,
         artist: r.artist,
-        album: "哔哩哔哩",
+        album: tr("哔哩哔哩", "Bilibili"),
         cover: r.cover,
         durationMs: r.durationMs,
       };
@@ -310,7 +313,9 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       failStreak: 0,
       failToastId: null,
     }));
-    api.playSource(id).catch((e) => get().toast(`播放音源失败：${e}`, "error"));
+    api
+      .playSource(id)
+      .catch((e) => get().toast(tr(`播放音源失败：${e}`, `Failed to play source: ${e}`), "error"));
   },
   async biliSpace(input, order) {
     return api.biliSpace(input, order);
@@ -340,7 +345,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     try {
       await api.biliLogout();
       set({ biliLoggedIn: false, biliNickname: "" });
-      get().toast("已退出 B 站登录", "success");
+      get().toast(tr("已退出 B 站登录", "Signed out of Bilibili"), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -517,7 +522,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       // 走 SetLogin 包装：退出登录同样改变曲目可用性，需清掉 qq: 前缀的
       // 置灰标记（与 kugouLogout 行为一致；直接 set 曾让标记残留到下次登录）
       get().qqSetLogin(false, "");
-      get().toast("已退出 QQ 音乐登录", "success");
+      get().toast(tr("已退出 QQ 音乐登录", "Signed out of QQ Music"), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -556,7 +561,10 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   downloadOnline(row) {
     // 返回是否成功：批量下载靠它统计失败数（错误已 toast，不 reject）
     const run = async (): Promise<boolean> => {
-      get().toast(`开始下载「${row.name}」…`, "info");
+      get().toast(
+        tr(`开始下载「${row.name}」…`, `Downloading "${row.name}"…`),
+        "info"
+      );
       try {
         const r = await api.downloadOnline({
           kind: row.kind,
@@ -574,7 +582,10 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         });
         await get().refreshTracks();
         get().toast(
-          `已下载到资料库：${r.name}${r.quality ? `（${r.quality}）` : ""}`,
+          tr(
+            `已下载到资料库：${r.name}${r.quality ? `（${formatQualityLabel(r.quality)}）` : ""}`,
+            `Downloaded to library: ${r.name}${r.quality ? ` (${formatQualityLabel(r.quality)})` : ""}`
+          ),
           "success"
         );
         return true;
@@ -596,7 +607,13 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const pending = downloadQueue.splice(0, downloadQueue.length);
     for (const p of pending) p.abort();
     if (pending.length > 0) {
-      get().toast(`已取消排队中的 ${pending.length} 个下载`, "info");
+      get().toast(
+        tr(
+          `已取消排队中的 ${pending.length} 个下载`,
+          `Cancelled ${pending.length} queued downloads`
+        ),
+        "info"
+      );
     }
     return pending.length;
   },
@@ -658,8 +675,8 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         await get().refreshPlaylists();
         get().toast(
           added > 0
-            ? `已同步「${name}」：新增 ${added} 首`
-            : `「${name}」没有新歌需要同步`,
+            ? tr(`已同步「${name}」：新增 ${added} 首`, `Synced "${name}": ${added} added`)
+            : tr(`「${name}」没有新歌需要同步`, `"${name}" is already up to date`),
           "success"
         );
       }
@@ -689,13 +706,22 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     if (failed === 0) {
       get().toast(
         added > 0
-          ? `已导入全部 ${list.length} 个歌单：新增 ${added} 首`
-          : `${list.length} 个歌单均已同步，没有新歌`,
+          ? tr(
+              `已导入全部 ${list.length} 个歌单：新增 ${added} 首`,
+              `Imported all ${list.length} playlists: ${added} added`
+            )
+          : tr(
+              `${list.length} 个歌单均已同步，没有新歌`,
+              `All ${list.length} playlists synced, no new tracks`
+            ),
         "success"
       );
     } else {
       get().toast(
-        `已导入 ${list.length - failed}/${list.length} 个歌单（新增 ${added} 首），${failed} 个失败`,
+        tr(
+          `已导入 ${list.length - failed}/${list.length} 个歌单（新增 ${added} 首），${failed} 个失败`,
+          `Imported ${list.length - failed}/${list.length} playlists (${added} added), ${failed} failed`
+        ),
         failed >= list.length ? "error" : "info"
       );
     }
@@ -779,7 +805,12 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     api
       .neteaseLike(id, next)
       .then(() =>
-        get().toast(next ? "已收藏到账号的“我喜欢”" : "已取消收藏", "success")
+        get().toast(
+          next
+            ? tr("已收藏到账号的“我喜欢”", "Added to your account's Liked Songs")
+            : tr("已取消收藏", "Removed from Liked Songs"),
+          "success"
+        )
       )
       .catch((e) => {
         // 回滚
@@ -795,7 +826,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
     try {
       await api.neteaseLogout();
       get().neteaseSetLogin(false, "");
-      get().toast("已退出网易云登录", "success");
+      get().toast(tr("已退出网易云登录", "Signed out of NetEase Cloud Music"), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }

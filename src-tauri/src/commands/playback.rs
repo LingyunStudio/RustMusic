@@ -98,7 +98,7 @@ pub async fn engine_preload_next(
 pub async fn play_track(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     let meta = {
         let conn = state.db.lock();
-        db::get_track(&conn, id).ok_or("曲目不存在")?
+        db::get_track(&conn, id).ok_or_else(|| crate::i18n::pick("曲目不存在", "Track not found"))?
     };
     let local_quality = if meta.bit_depth >= 16 && meta.sample_rate >= 44100 {
         format!(
@@ -199,7 +199,11 @@ pub async fn set_eq(
     enabled: bool,
 ) -> Result<(), String> {
     if gains.len() != 10 {
-        return Err("均衡器需要 10 个频段的增益".into());
+        return Err(crate::i18n::pick(
+            "均衡器需要 10 个频段的增益",
+            "Equalizer requires 10 band gain values",
+        )
+        .into());
     }
     let mut arr = [0f32; 10];
     arr.copy_from_slice(&gains);

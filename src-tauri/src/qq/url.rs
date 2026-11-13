@@ -284,7 +284,11 @@ pub fn song_url(
     let resp = musicu_signed(&payload, Some(&cookie))?;
     let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64());
     if code == Some(104009) {
-        return Err("QQ 音乐登录已过期，请重新登录".into());
+        return Err(crate::i18n::pick(
+            "QQ 音乐登录已过期，请重新登录",
+            "QQ Music session expired, please sign in again",
+        )
+        .into());
     }
     let all_ok_but_no_url = code == Some(0);
     let sip = resp
@@ -330,14 +334,23 @@ pub fn song_url(
     let last_resp = serde_json::to_string(&resp).unwrap_or_default();
     Err(if all_ok_but_no_url {
         if vip {
-            "该曲目需要 QQ 音乐 VIP 权益（请确认已登录且会员状态有效）".into()
+            crate::i18n::pick(
+                "该曲目需要 QQ 音乐 VIP 权益（请确认已登录且会员状态有效）",
+                "This track requires QQ Music VIP (verify you are signed in with active membership)",
+            )
+            .into()
         } else {
-            "该歌曲在 QQ 音乐无版权或已下架".into()
+            crate::i18n::pick(
+                "该歌曲在 QQ 音乐无版权或已下架",
+                "Track unavailable on QQ Music due to copyright or removal",
+            )
+            .into()
         }
     } else {
-        format!(
-            "该歌曲暂无可播放链接（接口异常，可稍后重试）| {}",
-            last_resp.chars().take(120).collect::<String>()
+        let head: String = last_resp.chars().take(120).collect();
+        crate::i18n::pick(
+            format!("该歌曲暂无可播放链接（接口异常，可稍后重试）| {head}"),
+            format!("No playable URL right now (API error, try again later) | {head}"),
         )
     })
 }

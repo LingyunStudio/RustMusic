@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useStore } from "../../store";
+import { useI18n } from "../../i18n";
 import { api } from "../../api";
 import Modal from "../../components/Modal";
 import type { Source } from "./shared";
@@ -18,6 +19,7 @@ export function QrLoginModal({
   source: Source | null;
   onClose: () => void;
 }) {
+  const { tr } = useI18n();
   const open = source != null;
   const [mode, setMode] = useState<QqMode>("qq");
   const [qr, setQr] = useState("");
@@ -44,7 +46,12 @@ export function QrLoginModal({
 
   const qqSetLoginAndClose = (nickname?: string) => {
     qqSetLogin(true, nickname ?? "");
-    toast(`登录成功：${nickname ?? ""}`, "success");
+    toast(
+      nickname
+        ? tr(`登录成功：${nickname}`, `Signed in: ${nickname}`)
+        : tr("登录成功", "Signed in"),
+      "success",
+    );
     onClose();
   };
 
@@ -78,7 +85,12 @@ export function QrLoginModal({
           } else {
             kugouSetLogin(true, c.nickname ?? "");
           }
-          toast(`登录成功：${c.nickname ?? ""}`, "success");
+          toast(
+            c.nickname
+              ? tr(`登录成功：${c.nickname}`, `Signed in: ${c.nickname}`)
+              : tr("登录成功", "Signed in"),
+            "success",
+          );
           onClose();
         }
       } catch (e) {
@@ -151,7 +163,11 @@ export function QrLoginModal({
         startPolling("qq", r.qrsig);
       } else {
         const r = await api.kugouQrCreate();
-        if (!r.qr) throw new Error("二维码图片获取失败，请重试");
+        if (!r.qr) {
+          throw new Error(
+            tr("二维码图片获取失败，请重试", "Failed to load QR code image, please retry"),
+          );
+        }
         setQr(r.qr);
         setStatus("waiting");
         startPolling("kugou", r.key);
@@ -204,18 +220,27 @@ export function QrLoginModal({
   };
 
   const sourceName =
-    source === "qq" ? "QQ 音乐" : source === "kugou" ? "酷狗音乐" : "网易云";
+    source === "qq"
+      ? tr("QQ 音乐", "QQ Music")
+      : source === "kugou"
+        ? tr("酷狗音乐", "KuGou Music")
+        : tr("网易云", "NetEase Cloud");
   const appName =
     mode === "wx" && source === "qq"
-      ? "微信"
+      ? tr("微信", "WeChat")
       : source === "qq"
         ? "QQ"
         : source === "kugou"
-          ? "酷狗"
-          : "网易云";
+          ? tr("酷狗", "KuGou")
+          : tr("网易云", "NetEase Cloud Music");
 
   return (
-    <Modal open={open} onClose={onClose} title={`扫码登录${sourceName}`} width={360}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={tr(`扫码登录${sourceName}`, `Sign in to ${sourceName} via QR Code`)}
+      width={360}
+    >
       <div className="flex flex-col items-center gap-4 py-2">
         {source === "qq" && (
           <div className={isLiquid ? "flex gap-1 rounded-xl liquid-input p-1" : "flex gap-1 rounded-lg bg-[var(--shade)] p-1"}>
@@ -229,7 +254,7 @@ export function QrLoginModal({
                     : "text-[var(--ink-2)] hover:text-[var(--ink)]"
                 }`}
               >
-                {m === "qq" ? "QQ 扫码" : "微信扫码"}
+                {m === "qq" ? tr("QQ 扫码", "QQ QR") : tr("微信扫码", "WeChat QR")}
               </button>
             ))}
           </div>
@@ -238,7 +263,7 @@ export function QrLoginModal({
           {qr ? (
             <img
               src={qr}
-              alt="二维码"
+              alt={tr("二维码", "QR code")}
               className="h-full w-full"
               draggable={false}
             />
@@ -252,29 +277,38 @@ export function QrLoginModal({
         </div>
         <div className="text-center text-[12.5px] leading-relaxed text-[var(--ink-2)]">
           {status === "loading"
-            ? "正在生成二维码…"
+            ? tr("正在生成二维码…", "Generating QR code…")
             : status === "waiting"
-              ? `打开${appName} App 扫一扫`
+              ? tr(`打开${appName} App 扫一扫`, `Scan with the ${appName} app`)
               : status === "scanned"
-                ? "已在手机上确认，请在手机上点击登录"
+                ? tr(
+                    "已在手机上确认，请在手机上点击登录",
+                    "Scanned — please tap Sign In on your phone",
+                  )
                 : status === "expired"
-                  ? "二维码已过期"
-                  : `出错了：${errMsg}`}
+                  ? tr("二维码已过期", "QR code expired")
+                  : tr(`出错了：${errMsg}`, `Error: ${errMsg}`)}
           {status === "expired" && (
             <button className="btn-secondary !py-1.5 !px-3 ml-2" onClick={create}>
-              刷新
+              {tr("刷新", "Refresh")}
             </button>
           )}
         </div>
         <div className="max-w-[300px] text-center text-[10.5px] leading-relaxed text-[var(--ink-3)]">
           {mode === "wx" && source === "qq"
-            ? "登录凭证仅保存在本机设置中，用于按你的账号权益获取播放链接；QQ 与微信账号的音乐资产、付费特权不互通。"
-            : "登录凭证仅保存在本机设置中，用于按你的账号权益获取播放链接；RustMusic 不提供任何绕过会员/版权限制的能力。"}
+            ? tr(
+                "登录凭证仅保存在本机设置中，用于按你的账号权益获取播放链接；QQ 与微信账号的音乐资产、付费特权不互通。",
+                "Credentials are stored locally only to fetch streams for your account tier; QQ and WeChat music assets and paid entitlements are separate.",
+              )
+            : tr(
+                "登录凭证仅保存在本机设置中，用于按你的账号权益获取播放链接；RustMusic 不提供任何绕过会员/版权限制的能力。",
+                "Credentials are stored locally only to fetch streams for your account tier; RustMusic does not bypass VIP or copyright restrictions.",
+              )}
         </div>
       </div>
       <div className="mt-3 flex justify-end">
         <button className="btn-secondary" onClick={onClose}>
-          关闭
+          {tr("关闭", "Close")}
         </button>
       </div>
     </Modal>

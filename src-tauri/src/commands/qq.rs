@@ -42,7 +42,11 @@ pub(crate) fn qq_credential(state: &State<AppState>) -> Result<(String, String),
         )
     };
     if musicid.is_empty() || musickey.is_empty() {
-        return Err("未登录 QQ 音乐账号，无法获取播放链接，请先扫码登录".into());
+        return Err(crate::i18n::pick(
+            "未登录 QQ 音乐账号，无法获取播放链接，请先扫码登录",
+            "Not signed in to QQ Music. Scan QR code to sign in first.",
+        )
+        .into());
     }
     Ok((musicid, musickey))
 }
@@ -81,7 +85,10 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
         "QQ 音乐",
         &quality_setting,
         quality_label,
-        "账号权益未含该音质或该曲无对应音源版本",
+        crate::i18n::pick(
+            "账号权益未含该音质或该曲无对应音源版本",
+            "membership doesn't include this quality or no matching track version exists",
+        ),
     );
     // 封面优先用数据库存的完整 URL（歌单导入时已写入），缺失再拼 album_mid
     let cover = {
@@ -181,8 +188,12 @@ fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) -> Resu
     if let (Some(musicid), Some(musickey)) = (&r.musicid, &r.musickey) {
         let conn = state.db.lock();
         db::set_setting(&conn, "qq_musicid", musicid);
-        crate::credentials::set("qq_musickey", &musickey)
-            .map_err(|e| format!("登录成功但凭据保存失败: {e}"))?;
+        crate::credentials::set("qq_musickey", &musickey).map_err(|e| {
+            crate::i18n::pick(
+                format!("登录成功但凭据保存失败: {e}"),
+                format!("Signed in, but failed to save credentials: {e}"),
+            )
+        })?;
         // 拉取“我喜欢/收藏”夹需要加密 uin（登录响应里带，错过就没了）
         if let Some(euin) = &r.encrypt_uin {
             db::set_setting(&conn, "qq_encrypt_uin", euin);

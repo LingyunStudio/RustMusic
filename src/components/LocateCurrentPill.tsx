@@ -1,4 +1,5 @@
 import { LocateFixed } from "lucide-react";
+import { useI18n } from "../i18n";
 import { useStore } from "../store";
 
 export default function LocateCurrentPill({
@@ -10,6 +11,7 @@ export default function LocateCurrentPill({
   onClick: () => void;
   className?: string;
 }) {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
 
@@ -24,7 +26,7 @@ export default function LocateCurrentPill({
       onClick={onClick}
     >
       <LocateFixed size={13} />
-      定位到正在播放
+      {tr("定位到正在播放", "Locate Playing")}
     </button>
   );
 }

@@ -192,15 +192,23 @@ pub fn musicu_signed(
     if let Some(c) = cookie {
         req = req.set("Cookie", c);
     }
-    let resp = send_with_recover(|| req.clone().send_string(&body))
-        .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?;
-    let text = resp
-        .into_string()
-        .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))?;
+    let resp = send_with_recover(|| req.clone().send_string(&body)).map_err(|e| {
+        crate::i18n::pick(
+            format!("QQ 音乐接口请求失败: {e}"),
+            format!("QQ Music API request failed: {e}"),
+        )
+    })?;
+    let text = resp.into_string().map_err(|e| {
+        crate::i18n::pick(
+            format!("QQ 音乐响应读取失败: {e}"),
+            format!("Failed to read QQ Music response: {e}"),
+        )
+    })?;
     serde_json::from_str(&text).map_err(|e| {
-        format!(
-            "QQ 音乐响应解析失败: {e} | body: {}",
-            text.chars().take(150).collect::<String>()
+        let snippet: String = text.chars().take(150).collect();
+        crate::i18n::pick(
+            format!("QQ 音乐响应解析失败: {e} | body: {snippet}"),
+            format!("Failed to parse QQ Music response: {e} | body: {snippet}"),
         )
     })
 }
@@ -221,9 +229,19 @@ fn plain_get(url: &str, referer: &str) -> Result<String, String> {
             .timeout(TIMEOUT)
             .call()
     })
-    .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?
+    .map_err(|e| {
+        crate::i18n::pick(
+            format!("QQ 音乐接口请求失败: {e}"),
+            format!("QQ Music API request failed: {e}"),
+        )
+    })?
     .into_string()
-    .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))
+    .map_err(|e| {
+        crate::i18n::pick(
+            format!("QQ 音乐响应读取失败: {e}"),
+            format!("Failed to read QQ Music response: {e}"),
+        )
+    })
 }
 
 // ---------- 数据模型 ----------

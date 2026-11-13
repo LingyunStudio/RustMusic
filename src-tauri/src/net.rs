@@ -11,7 +11,10 @@ pub fn is_transport_err(e: &ureq::Error) -> bool {
 
 /// 传输错误的用户可读文案（替代裸 ureq 英文文本）
 pub fn transport_text() -> &'static str {
-    "网络连接失败（请检查网络或代理设置后重试）"
+    crate::i18n::pick(
+        "网络连接失败（请检查网络或代理设置后重试）",
+        "Network connection failed (check network or proxy settings and retry)",
+    )
 }
 
 /// 带一次传输级重试：`f` 每次调用须新建请求（不复用可疑连接）。

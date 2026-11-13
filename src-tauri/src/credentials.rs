@@ -23,7 +23,12 @@ const KEYS: [&str; 5] = [
 ];
 
 fn entry(key: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, key).map_err(|e| format!("凭据管理器不可用: {e}"))
+    keyring::Entry::new(SERVICE, key).map_err(|e| {
+        crate::i18n::pick(
+            format!("凭据管理器不可用: {e}"),
+            format!("Credential manager unavailable: {e}"),
+        )
+    })
 }
 
 /// 读取平台 token；无凭据返回 None（含空串视为无）
@@ -39,10 +44,18 @@ pub fn set(key: &str, value: &str) -> Result<(), String> {
         match e.delete_credential() {
             Ok(()) => Ok(()),
             Err(keyring::Error::NoEntry) => Ok(()),
-            Err(err) => Err(format!("清除凭据失败: {err}")),
+            Err(err) => Err(crate::i18n::pick(
+                format!("清除凭据失败: {err}"),
+                format!("Failed to clear credentials: {err}"),
+            )),
         }
     } else {
-        e.set_password(value).map_err(|err| format!("保存凭据失败: {err}"))
+        e.set_password(value).map_err(|err| {
+            crate::i18n::pick(
+                format!("保存凭据失败: {err}"),
+                format!("Failed to save credentials: {err}"),
+            )
+        })
     }
 }
 

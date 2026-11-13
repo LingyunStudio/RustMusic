@@ -376,6 +376,8 @@ export interface DownloadState {
   pct: number;
 }
 
+export type LanguagePref = "auto" | "zh" | "en";
+
 export interface SettingsPayload {
   volume: number;
   speed: number;
@@ -392,6 +394,8 @@ export interface SettingsPayload {
   autoUpdate: boolean;
   /** WASAPI 独占模式（默认关闭；切换后下一首生效） */
   wasapiExclusive: boolean;
+  /** 界面语言：auto = 跟随系统（默认）；zh = 简体中文；en = English */
+  language?: LanguagePref;
 }
 
 /** GitHub 最新 release 的更新信息（asset 为本平台安装包） */

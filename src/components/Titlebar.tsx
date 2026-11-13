@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Minus, Square, Copy, X } from "lucide-react";
+import { useI18n } from "../i18n";
 import { useStore } from "../store";
 
 const win = getCurrentWebviewWindow();
 
 export default function Titlebar() {
+  const { tr } = useI18n();
   const [maximized, setMaximized] = useState(false);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
@@ -43,21 +45,21 @@ export default function Titlebar() {
           <button
             className="titlebar-btn w-8 h-7 rounded-lg flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] active:scale-90 transition-all"
             onClick={() => win.minimize()}
-            title="最小化"
+            title={tr("最小化", "Minimize")}
           >
             <Minus size={14} />
           </button>
           <button
             className="titlebar-btn w-8 h-7 rounded-lg flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] active:scale-90 transition-all"
             onClick={() => win.toggleMaximize()}
-            title={maximized ? "向下还原" : "最大化"}
+            title={maximized ? tr("向下还原", "Restore Down") : tr("最大化", "Maximize")}
           >
             {maximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
           </button>
           <button
             className="titlebar-btn w-8 h-7 rounded-lg flex items-center justify-center text-[var(--ink-2)] hover:bg-[#e04a3f] hover:text-white active:scale-90 transition-all"
             onClick={() => win.close()}
-            title="关闭"
+            title={tr("关闭", "Close")}
           >
             <X size={15} />
           </button>
@@ -80,21 +82,21 @@ export default function Titlebar() {
           <button
             className="titlebar-btn"
             onClick={() => win.minimize()}
-            title="最小化"
+            title={tr("最小化", "Minimize")}
           >
             <Minus size={12} />
           </button>
           <button
             className="titlebar-btn"
             onClick={() => win.toggleMaximize()}
-            title="最大化 / 还原"
+            title={tr("最大化 / 还原", "Maximize / Restore")}
           >
             {maximized ? <Copy size={11} className="-scale-x-100" /> : <Square size={10} />}
           </button>
           <button
             className="titlebar-btn close-btn"
             onClick={() => win.close()}
-            title="关闭"
+            title={tr("关闭", "Close")}
           >
             <X size={13} />
           </button>

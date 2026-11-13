@@ -23,29 +23,32 @@ import {
 import {
   ACCENTS,
   UI_THEMES,
+  accentLabel,
   loadCustomAccentHex,
   saveCustomAccentHex,
+  uiThemeLabel,
 } from "../theme";
+import { useI18n } from "../i18n";
 import { showUpdateDialog } from "../components/UpdateDialog";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
-const PRESETS: Record<string, number[]> = {
-  平直: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  流行: [-1, 1, 3, 4, 3, 0, -1, -1, -1, -2],
-  摇滚: [4, 3, 2, 0, -1, 0, 2, 4, 4, 3],
-  古典: [3, 2, 0, 0, 0, 0, -2, -2, 0, 3],
-  爵士: [2, 1, 0, 2, -1, -1, 0, 1, 2, 3],
-  电子: [4, 3, 1, 0, -2, 1, 1, 2, 3, 4],
-  人声: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1],
-};
+const PRESETS: { key: string; zh: string; en: string; gains: number[] }[] = [
+  { key: "flat", zh: "平直", en: "Flat", gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  { key: "pop", zh: "流行", en: "Pop", gains: [-1, 1, 3, 4, 3, 0, -1, -1, -1, -2] },
+  { key: "rock", zh: "摇滚", en: "Rock", gains: [4, 3, 2, 0, -1, 0, 2, 4, 4, 3] },
+  { key: "classical", zh: "古典", en: "Classical", gains: [3, 2, 0, 0, 0, 0, -2, -2, 0, 3] },
+  { key: "jazz", zh: "爵士", en: "Jazz", gains: [2, 1, 0, 2, -1, -1, 0, 1, 2, 3] },
+  { key: "electronic", zh: "电子", en: "Electronic", gains: [4, 3, 1, 0, -2, 1, 1, 2, 3, 4] },
+  { key: "vocal", zh: "人声", en: "Vocal", gains: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1] },
+];
 
-const CACHE_LIMITS: { bytes: number; label: string }[] = [
+const CACHE_LIMITS: { bytes: number; label?: string }[] = [
   { bytes: 512 * 1024 * 1024, label: "512 MB" },
   { bytes: 1024 * 1024 * 1024, label: "1 GB" },
   { bytes: 2 * 1024 * 1024 * 1024, label: "2 GB" },
   { bytes: 5 * 1024 * 1024 * 1024, label: "5 GB" },
-  { bytes: 0, label: "不限制" },
+  { bytes: 0 },
 ];
 
 /** 缓存占用展示（GB 感知） */
@@ -58,6 +61,7 @@ function fmtCache(bytes: number): string {
 }
 
 export default function SettingsView() {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isSkeuo = uiTheme === "skeuo";
   const isLiquid = uiTheme === "liquid";
@@ -74,6 +78,8 @@ export default function SettingsView() {
   const setSpeed = useStore((s) => s.setSpeed);
   const qualities = useStore((s) => s.qualities);
   const setSourceQuality = useStore((s) => s.setSourceQuality);
+  const language = useStore((s) => s.language);
+  const setLanguage = useStore((s) => s.setLanguage);
   const closeAction = useStore((s) => s.closeAction);
   const setCloseAction = useStore((s) => s.setCloseAction);
   const autoUpdate = useStore((s) => s.autoUpdate);
@@ -113,11 +119,12 @@ export default function SettingsView() {
   const [saveDirDefault, setSaveDirDefault] = useState("");
   // 挂载时按持久化的增益识别已选预设
   const [preset, setPreset] = useState(() => {
-    const hit = Object.entries(PRESETS).find(
-      ([, g]) =>
-        g.length === eqGains.length && g.every((v, i) => Math.abs(v - eqGains[i]) < 0.01)
+    const hit = PRESETS.find(
+      (p) =>
+        p.gains.length === eqGains.length &&
+        p.gains.every((v, i) => Math.abs(v - eqGains[i]) < 0.01)
     );
-    return hit ? hit[0] : "自定义";
+    return hit ? hit.key : "custom";
   });
   const [devices, setDevices] = useState<
     { name: string; isDefault: boolean }[]
@@ -149,7 +156,9 @@ export default function SettingsView() {
       await api.setOutputDevice(value === "" ? null : value);
       await refreshDevices();
       useStore.getState().toast(
-        value === "" ? "已跟随系统默认输出设备" : `输出已切换到「${value}」`,
+        value === ""
+          ? tr("已跟随系统默认输出设备", "Following system default output device")
+          : tr(`输出已切换到「${value}」`, `Output switched to "${value}"`),
         "success"
       );
     } catch (e) {
@@ -203,12 +212,12 @@ export default function SettingsView() {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "选择下载保存目录",
+        title: tr("选择下载保存目录", "Select Download Folder"),
       });
       if (!selected || typeof selected !== "string") return;
       await api.saveDirSet(selected);
       setSaveDir(selected);
-      useStore.getState().toast("下载目录已更新", "success");
+      useStore.getState().toast(tr("下载目录已更新", "Download folder updated"), "success");
     } catch (e) {
       useStore.getState().toast(String(e), "error");
     }
@@ -218,7 +227,7 @@ export default function SettingsView() {
     const g = [...eqGains];
     g[i] = v;
     setEq(g, eqEnabled);
-    setPreset("自定义");
+    setPreset("custom");
   };
 
   const checkForUpdate = async () => {
@@ -228,7 +237,10 @@ export default function SettingsView() {
       if (info) {
         showUpdateDialog(info);
       } else {
-        useStore.getState().toast(`当前已是最新版本（v${appVersion}）`, "success");
+        useStore.getState().toast(
+          tr(`当前已是最新版本（v${appVersion}）`, `Already up to date (v${appVersion})`),
+          "success"
+        );
       }
     } catch (e) {
       useStore.getState().toast(String(e), "error");
@@ -253,20 +265,57 @@ export default function SettingsView() {
         }
       >
         <SettingsIcon size={isLiquid ? 22 : 20} className="text-[var(--accent)]" />
-        设置
+        {tr("设置", "Settings")}
       </h1>
 
       <div className={`flex flex-col gap-4 ${isLiquid ? "max-w-[820px]" : "max-w-[760px]"}`}>
         {/* 通用 */}
         <section style={{ ["--row-idx" as string]: 0 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-4">通用</h2>
+          <h2 className="text-[14.5px] font-semibold mb-4">{tr("通用", "General")}</h2>
+          <div className="flex items-center gap-4 mb-4">
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("界面语言", "Language")}
+            </span>
+            <div className={isSkeuo ? "skeuo-segmented" : "flex items-center gap-1.5 flex-wrap"}>
+              {(
+                [
+                  { key: "auto", label: tr("自动（跟随系统）", "Auto (System)") },
+                  { key: "zh", label: "简体中文" },
+                  { key: "en", label: "English" },
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.key}
+                  onClick={() => setLanguage(o.key)}
+                  className={
+                    isSkeuo
+                      ? `skeuo-segmented-btn ${language === o.key ? "active" : ""}`
+                      : `px-4 py-1.5 rounded-full text-[12px] transition-colors ${
+                          language === o.key
+                            ? "text-[var(--accent-strong)] font-medium"
+                            : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                        }`
+                  }
+                  style={
+                    !isSkeuo && language === o.key
+                      ? { background: "var(--accent-weak)" }
+                      : undefined
+                  }
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">关闭窗口时</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("关闭窗口时", "On Close")}
+            </span>
             <div className={isSkeuo ? "skeuo-segmented" : "flex items-center gap-1.5"}>
               {(
                 [
-                  { key: "tray", label: "最小化到托盘" },
-                  { key: "exit", label: "直接退出应用" },
+                  { key: "tray", label: tr("最小化到托盘", "Minimize to Tray") },
+                  { key: "exit", label: tr("直接退出应用", "Quit App") },
                 ] as const
               ).map((o) => (
                 <button
@@ -293,15 +342,20 @@ export default function SettingsView() {
             </div>
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            最小化到托盘后音乐继续播放，从任务栏托盘图标可重新打开主界面或完全退出。
+            {tr(
+              "最小化到托盘后音乐继续播放，从任务栏托盘图标可重新打开主界面或完全退出。",
+              "Audio continues playing in the tray; use the tray icon to reopen the window or quit."
+            )}
           </p>
         </section>
 
         {/* 外观 */}
         <section style={{ ["--row-idx" as string]: 1 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-4">外观</h2>
+          <h2 className="text-[14.5px] font-semibold mb-4">{tr("外观", "Appearance")}</h2>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">界面风格</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("界面风格", "UI Style")}
+            </span>
             <div className={isSkeuo ? "skeuo-segmented" : "flex items-center gap-1.5"}>
               {UI_THEMES.map((t) => (
                 <button
@@ -318,18 +372,20 @@ export default function SettingsView() {
                   }
                   style={!isSkeuo && uiTheme === t.key ? { background: "var(--accent-weak)" } : undefined}
                 >
-                  {t.label}
+                  {uiThemeLabel(t)}
                 </button>
               ))}
             </div>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">界面模式</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("界面模式", "Color Mode")}
+            </span>
             <div className={isSkeuo ? "skeuo-segmented" : "flex items-center gap-1.5"}>
               {(
                 [
-                  { key: "light", label: "浅色" },
-                  { key: "dark", label: "深色" },
+                  { key: "light", label: tr("浅色", "Light") },
+                  { key: "dark", label: tr("深色", "Dark") },
                 ] as const
               ).map((t) => (
                 <button
@@ -356,13 +412,15 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">强调色</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("强调色", "Accent Color")}
+            </span>
             <div className="flex items-center gap-2 flex-wrap">
               {ACCENTS.map((a) => (
                 <button
                   key={a.key}
                   onClick={() => setAccent(a.key)}
-                  title={a.label}
+                  title={accentLabel(a)}
                   className={
                     isSkeuo
                       ? `w-7 h-7 rounded-full transition-all hover:scale-110 active:scale-95 ${
@@ -389,7 +447,7 @@ export default function SettingsView() {
 
               {/* 自定义取色盘 */}
               <label
-                title="自定义颜色"
+                title={tr("自定义颜色", "Custom color")}
                 className={`relative w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110 ${
                   accent.startsWith("custom:") ? "ring-2 ring-offset-2" : ""
                 }`}
@@ -417,7 +475,9 @@ export default function SettingsView() {
 
           {/* 桌面歌词开关 */}
           <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">桌面歌词</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("桌面歌词", "Desktop Lyrics")}
+            </span>
             <button
               className={
                 isSkeuo
@@ -437,48 +497,58 @@ export default function SettingsView() {
                   : openDesktopLyrics()
               }
             >
-              {desktopLyricsOn ? (desktopLyricsLock ? "已锁定（点按解锁）" : "已开启") : "已关闭"}
+              {desktopLyricsOn
+                ? desktopLyricsLock
+                  ? tr("已锁定（点按解锁）", "Locked (Click to Unlock)")
+                  : tr("已开启", "On")
+                : tr("已关闭", "Off")}
             </button>
             <span className="text-[11.5px] text-[var(--ink-3)]">
-              快捷键 L：开启 / 关闭 / 解锁
+              {tr("快捷键 L：开启 / 关闭 / 解锁", "Shortcut L: Toggle / Unlock")}
             </span>
           </div>
 
           {/* 桌面歌词配色 */}
           <div className="flex items-center gap-4 mt-3 pl-0">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">桌面歌词配色</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("桌面歌词配色", "Lyrics Colors")}
+            </span>
             <LyricColorPickers
               values={dlyricsColors}
               onChange={(k, v) => setDlyricsColors({ ...dlyricsColors, [k]: v })}
             />
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。
-            播放页歌词颜色由封面自动适配（取封面主色保证对比可读），不在此设置。
+            {tr(
+              "已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。播放页歌词颜色由封面自动适配（取封面主色保证对比可读），不在此设置。",
+              "Sung = active line fill; Unsung = current line text; Next = upcoming line. Now Playing lyric colors adapt automatically from album art."
+            )}
           </p>
 
           {/* 歌词时间偏移微调（蓝牙延迟等场景可手动延后/提前） */}
           <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">歌词偏移</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("歌词偏移", "Lyrics Offset")}
+            </span>
             <div className="flex items-center gap-1.5">
               <button
                 className="btn-secondary !py-1 !px-2.5 !text-[11.5px]"
                 onClick={() => setLyricOffsetMs(lyricOffsetMs - 50)}
-                title="延后 50ms（歌词偏快时点此）"
+                title={tr("延后 50ms（歌词偏快时点此）", "Delay 50ms (if lyrics are early)")}
               >
                 -50ms
               </button>
-              <span className="text-[12px] text-[var(--ink)] tabular-nums min-w-[78px] text-center">
+              <span className="text-[12px] text-[var(--ink)] tabular-nums min-w-[84px] text-center">
                 {lyricOffsetMs === 0
                   ? "0 ms"
                   : lyricOffsetMs < 0
-                    ? `延后 ${-lyricOffsetMs}ms`
-                    : `提前 ${lyricOffsetMs}ms`}
+                    ? tr(`延后 ${-lyricOffsetMs}ms`, `Delay ${-lyricOffsetMs}ms`)
+                    : tr(`提前 ${lyricOffsetMs}ms`, `Ahead ${lyricOffsetMs}ms`)}
               </span>
               <button
                 className="btn-secondary !py-1 !px-2.5 !text-[11.5px]"
                 onClick={() => setLyricOffsetMs(lyricOffsetMs + 50)}
-                title="提前 50ms（歌词偏慢时点此）"
+                title={tr("提前 50ms（歌词偏慢时点此）", "Advance 50ms (if lyrics are late)")}
               >
                 +50ms
               </button>
@@ -487,12 +557,15 @@ export default function SettingsView() {
                   className="btn-secondary !py-1 !px-2.5 !text-[11px] ml-1"
                   onClick={() => setLyricOffsetMs(0)}
                 >
-                  归零
+                  {tr("归零", "Reset")}
                 </button>
               )}
             </div>
             <span className="text-[11.5px] text-[var(--ink-3)]">
-              已自动补偿声卡缓冲；使用蓝牙耳机等高延迟设备时可继续调负延后
+              {tr(
+                "已自动补偿声卡缓冲；使用蓝牙耳机等高延迟设备时可继续调负延后",
+                "Audio buffer delay is auto-compensated; lower further for high-latency Bluetooth headphones"
+              )}
             </span>
           </div>
 
@@ -500,7 +573,9 @@ export default function SettingsView() {
           {platform === "linux" && (
             <>
               <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
-                <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">菜单栏歌词</span>
+                <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+                  {tr("菜单栏歌词", "Top Bar Lyrics")}
+                </span>
                 <button
                   className={
                     isSkeuo
@@ -514,7 +589,7 @@ export default function SettingsView() {
                   style={!isSkeuo && menubarLyricsOn ? { background: "var(--accent-weak)" } : undefined}
                   onClick={() => setMenubarLyrics(!menubarLyricsOn)}
                 >
-                  {menubarLyricsOn ? "已开启" : "已关闭"}
+                  {menubarLyricsOn ? tr("已开启", "On") : tr("已关闭", "Off")}
                 </button>
                 <button
                   className="btn-secondary !py-1 !px-2.5 !text-[11px]"
@@ -530,7 +605,9 @@ export default function SettingsView() {
                     }
                   }}
                 >
-                  {installingExt ? "安装中…" : "安装 GNOME 扩展"}
+                  {installingExt
+                    ? tr("安装中…", "Installing…")
+                    : tr("安装 GNOME 扩展", "Install GNOME Extension")}
                 </button>
                 <label
                   className="relative w-7 h-7 shrink-0 overflow-hidden rounded-full cursor-pointer transition-transform hover:scale-110"
@@ -538,11 +615,11 @@ export default function SettingsView() {
                     background: menubarColor || "var(--shade-strong)",
                     boxShadow: "0 0 0 1px var(--line), inset 0 0 0 1px rgba(0,0,0,0.06)",
                   }}
-                  title="顶栏歌词颜色"
+                  title={tr("顶栏歌词颜色", "Top bar lyrics color")}
                 >
                   {!menubarColor && (
                     <span className="absolute inset-0 flex items-center justify-center text-[9px] text-[var(--ink-3)]">
-                      默认
+                      {tr("默认", "Auto")}
                     </span>
                   )}
                   <input
@@ -563,13 +640,15 @@ export default function SettingsView() {
                       setMenubarLyricsColor("");
                     }}
                   >
-                    默认
+                    {tr("默认", "Default")}
                   </button>
                 )}
               </div>
               <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-                在系统顶栏显示当前歌词行，与悬浮歌词相互独立；色块可自定义文字颜色（默认跟随顶栏主题）。
-                首次使用先点「安装 GNOME 扩展」；Wayland 下安装后需注销并重新登录一次扩展才会出现。
+                {tr(
+                  "在系统顶栏显示当前歌词行，与悬浮歌词相互独立；色块可自定义文字颜色（默认跟随顶栏主题）。首次使用先点「安装 GNOME 扩展」；Wayland 下安装后需注销并重新登录一次扩展才会出现。",
+                  'Shows the current lyric line in the system top bar independently from desktop lyrics. Color follows your top bar theme by default. Click "Install GNOME Extension" first (on Wayland, log out and back in for it to appear).'
+                )}
               </p>
             </>
           )}
@@ -578,7 +657,9 @@ export default function SettingsView() {
           {platform === "windows" && (
             <>
               <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
-                <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">任务栏歌词</span>
+                <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+                  {tr("任务栏歌词", "Taskbar Lyrics")}
+                </span>
                 <button
                   className={
                     isSkeuo
@@ -592,16 +673,16 @@ export default function SettingsView() {
                   style={!isSkeuo && taskbarLyricsOn ? { background: "var(--accent-weak)" } : undefined}
                   onClick={() => setTaskbarLyrics(!taskbarLyricsOn)}
                 >
-                  {taskbarLyricsOn ? "已开启" : "已关闭"}
+                  {taskbarLyricsOn ? tr("已开启", "On") : tr("已关闭", "Off")}
                 </button>
                 <Select
                   value={taskbarDisplay}
-                  className="!h-7 !text-[11.5px] w-[150px]"
+                  className="!h-7 !text-[11.5px] min-w-[175px]"
                   options={[
-                    { value: "all", label: "全部显示器" },
+                    { value: "all", label: tr("全部显示器", "All Displays") },
                     ...taskbarDisplays.map((d) => ({
                       value: d.id,
-                      label: `${d.primary ? "主显示器" : "副屏"} · ${d.name}${d.has_taskbar ? "" : "（无任务栏）"}`,
+                      label: `${d.primary ? tr("主显示器", "Primary") : tr("副屏", "Secondary")} · ${d.name}${d.has_taskbar ? "" : tr("（无任务栏）", " (No taskbar)")}`,
                     })),
                   ]}
                   onChange={(v) => {
@@ -615,11 +696,11 @@ export default function SettingsView() {
                     background: taskbarColor || "var(--shade-strong)",
                     boxShadow: "0 0 0 1px var(--line), inset 0 0 0 1px rgba(0,0,0,0.06)",
                   }}
-                  title="任务栏歌词颜色"
+                  title={tr("任务栏歌词颜色", "Taskbar lyrics color")}
                 >
                   {!taskbarColor && (
                     <span className="absolute inset-0 flex items-center justify-center text-[9px] text-[var(--ink-3)]">
-                      默认
+                      {tr("默认", "Auto")}
                     </span>
                   )}
                   <input
@@ -640,13 +721,15 @@ export default function SettingsView() {
                       setTaskbarLyricsColor("");
                     }}
                   >
-                    默认
+                    {tr("默认", "Default")}
                   </button>
                 )}
               </div>
               <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-                在任务栏右侧托盘图标旁显示当前歌词行，随托盘图标增减自动移动，与悬浮歌词相互独立；
-                色块可自定义文字颜色（默认随任务栏深浅取黑/白）。副屏任务栏无托盘区，歌词紧跟应用图标右侧。
+                {tr(
+                  "在任务栏右侧托盘图标旁显示当前歌词行，随托盘图标增减自动移动，与悬浮歌词相互独立；色块可自定义文字颜色（默认随任务栏深浅取黑/白）。副屏任务栏无托盘区，歌词紧跟应用图标右侧。",
+                  "Displays current lyrics beside the system tray independently from desktop lyrics. Color adapts to taskbar contrast by default; secondary displays show lyrics next to taskbar app icons."
+                )}
               </p>
             </>
           )}
@@ -655,21 +738,21 @@ export default function SettingsView() {
         {/* 音乐文件夹 */}
         <section style={{ ["--row-idx" as string]: 2 }} className={sectionClass}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[14.5px] font-semibold">音乐文件夹</h2>
+            <h2 className="text-[14.5px] font-semibold">{tr("音乐文件夹", "Music Folders")}</h2>
             <div className="flex items-center gap-2">
               {scan.active && (
                 <span className="text-[12px] text-[var(--accent)] flex items-center gap-1.5">
                   <Loader2 size={12} className="animate-spin" />
-                  {scan.total ? `${scan.done}/${scan.total}` : "扫描中…"}
+                  {scan.total ? `${scan.done}/${scan.total}` : tr("扫描中…", "Scanning…")}
                 </span>
               )}
               <button className="btn-secondary !py-1.5 !px-3" onClick={rescan}>
                 <RefreshCw size={12.5} />
-                重新扫描
+                {tr("重新扫描", "Rescan")}
               </button>
               <button className="btn-primary !py-1.5 !px-3" onClick={addFolderByDialog}>
                 <FolderPlus size={13} />
-                添加文件夹
+                {tr("添加文件夹", "Add Folder")}
               </button>
             </div>
           </div>
@@ -697,18 +780,18 @@ export default function SettingsView() {
                       onClick={() =>
                         api.openFolder(f.path).catch((e) => useStore.getState().toast(String(e), "error"))
                       }
-                      title="在文件管理器中打开"
+                      title={tr("在文件管理器中打开", "Open in File Manager")}
                     >
                       <FolderOpen size={13} />
-                      在文件管理器中打开
+                      {tr("在文件管理器中打开", "Show in Folder")}
                     </button>
                     <button
                       className="btn-secondary !py-1 !px-2.5 text-[12px] flex items-center gap-1.5 hover:!text-rose-400"
                       onClick={() => removeFolder(f.id)}
-                      title="移除（不会删除文件）"
+                      title={tr("移除（不会删除文件）", "Remove folder (files stay on disk)")}
                     >
                       <Trash2 size={13} />
-                      移除
+                      {tr("移除", "Remove")}
                     </button>
                   </div>
                 </div>
@@ -716,7 +799,10 @@ export default function SettingsView() {
             </div>
           ) : (
             <div className="text-[12.5px] text-[var(--ink-2)] py-2">
-              还没有添加文件夹。也可以直接把文件 / 文件夹拖进窗口。
+              {tr(
+                "还没有添加文件夹。也可以直接把文件 / 文件夹拖进窗口。",
+                "No folders added yet. You can also drag and drop files or folders here."
+              )}
             </div>
           )}
         </section>
@@ -725,36 +811,51 @@ export default function SettingsView() {
         <section style={{ ["--row-idx" as string]: 3 }} className={sectionClass}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[14.5px] font-semibold">
-              均衡器
-              <span className="ml-2 text-[11.5px] font-normal text-[var(--ink-2)]">10 段</span>
+              {tr("均衡器", "Equalizer")}
+              <span className="ml-2 text-[11.5px] font-normal text-[var(--ink-2)]">
+                {tr("10 段", "10-Band")}
+              </span>
             </h2>
             <div className="flex items-center gap-1.5 flex-wrap">
-              {Object.keys(PRESETS).concat("自定义").map((name) => (
+              {PRESETS.map((p) => (
                 <button
-                  key={name}
+                  key={p.key}
                   onClick={() => {
-                    if (name === "自定义") return;
-                    setEq(PRESETS[name], eqEnabled);
-                    setPreset(name);
+                    setEq(p.gains, eqEnabled);
+                    setPreset(p.key);
                   }}
                   className={
                     isSkeuo
-                      ? `skeuo-pill !py-1 !px-2.5 !text-[11.5px] ${preset === name ? "active" : ""}`
+                      ? `skeuo-pill !py-1 !px-2.5 !text-[11.5px] ${preset === p.key ? "active" : ""}`
                       : `px-2.5 py-1 rounded-full text-[11.5px] transition-colors ${
-                          preset === name
+                          preset === p.key
                             ? "bg-[var(--shade-strong)] text-[var(--ink)]"
                             : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
                         }`
                   }
                 >
-                  {name}
+                  {tr(p.zh, p.en)}
                 </button>
               ))}
+              <button
+                onClick={() => {}}
+                className={
+                  isSkeuo
+                    ? `skeuo-pill !py-1 !px-2.5 !text-[11.5px] ${preset === "custom" ? "active" : ""}`
+                    : `px-2.5 py-1 rounded-full text-[11.5px] transition-colors ${
+                        preset === "custom"
+                          ? "bg-[var(--shade-strong)] text-[var(--ink)]"
+                          : "text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--shade-hover)]"
+                      }`
+                }
+              >
+                {tr("自定义", "Custom")}
+              </button>
               {isSkeuo ? (
                 <button
                   className={`skeuo-switch ml-2 ${eqEnabled ? "active" : ""}`}
                   onClick={() => setEq(eqGains, !eqEnabled)}
-                  title={eqEnabled ? "关闭均衡器" : "启用均衡器"}
+                  title={eqEnabled ? tr("关闭均衡器", "Disable EQ") : tr("启用均衡器", "Enable EQ")}
                 >
                   <span className="skeuo-switch-thumb" />
                 </button>
@@ -764,7 +865,7 @@ export default function SettingsView() {
                     eqEnabled ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
                   }`}
                   onClick={() => setEq(eqGains, !eqEnabled)}
-                  title={eqEnabled ? "关闭均衡器" : "启用均衡器"}
+                  title={eqEnabled ? tr("关闭均衡器", "Disable EQ") : tr("启用均衡器", "Enable EQ")}
                 >
                   <span
                     className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
@@ -797,20 +898,22 @@ export default function SettingsView() {
 
         {/* 播放 */}
         <section style={{ ["--row-idx" as string]: 4 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-4">播放</h2>
+          <h2 className="text-[14.5px] font-semibold mb-4">{tr("播放", "Playback")}</h2>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px] shrink-0">网易云音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("网易云音质", "NetEase Quality")}
+            </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" },
-                  { value: "higher", label: "较高", desc: "192k" },
-                  { value: "high", label: "极高", desc: "320k · VIP" },
-                  { value: "lossless", label: "无损", desc: "FLAC · VIP" },
+                  { value: "standard", label: tr("标准", "Standard"), desc: "128k" },
+                  { value: "higher", label: tr("较高", "Higher"), desc: "192k" },
+                  { value: "high", label: tr("极高", "Very High"), desc: "320k · VIP" },
+                  { value: "lossless", label: tr("无损", "Lossless"), desc: "FLAC · VIP" },
                   { value: "hires", label: "Hi-Res", desc: "24bit · VIP" },
-                  { value: "jyeffect", label: "高清环绕声", desc: "VIP" },
-                  { value: "sky", label: "沉浸环绕声", desc: "SVIP" },
-                  { value: "jymaster", label: "超清母带", desc: "SVIP" },
+                  { value: "jyeffect", label: tr("高清环绕声", "Surround"), desc: "VIP" },
+                  { value: "sky", label: tr("沉浸环绕声", "Spatial"), desc: "SVIP" },
+                  { value: "jymaster", label: tr("超清母带", "Master"), desc: "SVIP" },
                 ] as const
               ).map((o) => (
                 <button
@@ -833,17 +936,19 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px] shrink-0">QQ 音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("QQ 音质", "QQ Quality")}
+            </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" },
-                  { value: "high", label: "HQ 高品质", desc: "320k · VIP" },
-                  { value: "lossless", label: "SQ 无损", desc: "FLAC · VIP" },
+                  { value: "standard", label: tr("标准", "Standard"), desc: "128k" },
+                  { value: "high", label: tr("HQ 高品质", "HQ High"), desc: "320k · VIP" },
+                  { value: "lossless", label: tr("SQ 无损", "SQ Lossless"), desc: "FLAC · VIP" },
                   { value: "hires", label: "Hi-Res", desc: "24bit · VIP" },
-                  { value: "atmos_2", label: "臻品音质 2.0", desc: "SVIP" },
-                  { value: "atmos", label: "臻品全景声", desc: "SVIP" },
-                  { value: "master", label: "臻品母带", desc: "192kHz · SVIP" },
+                  { value: "atmos_2", label: tr("臻品音质 2.0", "Supreme 2.0"), desc: "SVIP" },
+                  { value: "atmos", label: tr("臻品全景声", "Atmos"), desc: "SVIP" },
+                  { value: "master", label: tr("臻品母带", "Master"), desc: "192kHz · SVIP" },
                 ] as const
               ).map((o) => (
                 <button
@@ -866,17 +971,19 @@ export default function SettingsView() {
             </div>
           </div>
           <div className="flex items-center gap-4 mb-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px] shrink-0">酷狗音质</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("酷狗音质", "Kugou Quality")}
+            </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {(
                 [
-                  { value: "standard", label: "标准", desc: "128k" },
-                  { value: "high", label: "HQ 高品", desc: "320k · VIP" },
-                  { value: "lossless", label: "SQ 无损", desc: "FLAC · VIP" },
+                  { value: "standard", label: tr("标准", "Standard"), desc: "128k" },
+                  { value: "high", label: tr("HQ 高品", "HQ High"), desc: "320k · VIP" },
+                  { value: "lossless", label: tr("SQ 无损", "SQ Lossless"), desc: "FLAC · VIP" },
                   { value: "hires", label: "Hi-Res", desc: "24bit · VIP" },
-                  { value: "viper_clear", label: "蝰蛇超清", desc: "SVIP" },
-                  { value: "viper_atmos", label: "蝰蛇全景声", desc: "SVIP" },
-                  { value: "viper_tape", label: "蝰蛇母带", desc: "SVIP" },
+                  { value: "viper_clear", label: tr("蝰蛇超清", "Viper Clear"), desc: "SVIP" },
+                  { value: "viper_atmos", label: tr("蝰蛇全景声", "Viper Atmos"), desc: "SVIP" },
+                  { value: "viper_tape", label: tr("蝰蛇母带", "Viper Master"), desc: "SVIP" },
                 ] as const
               ).map((o) => (
                 <button
@@ -899,10 +1006,15 @@ export default function SettingsView() {
             </div>
           </div>
           <span className="text-[11px] text-[var(--ink-3)] block mb-3">
-            各音源独立设置（播放、缓存与下载同步生效）。标有 VIP / SVIP 的音质需账号具备对应会员权益；当曲目无该档音源或账号权益不足时，将沿音质阶梯自动向下一档无损/高品回退。
+            {tr(
+              "各音源独立设置（播放、缓存与下载同步生效）。标有 VIP / SVIP 的音质需账号具备对应会员权益；当曲目无该档音源或账号权益不足时，将沿音质阶梯自动向下一档无损/高品回退。",
+              "Per-source preference applies to playback, caching, and downloads. VIP/SVIP tiers require matching account privileges; unavailable tiers automatically fall back down the quality ladder."
+            )}
           </span>
           <div className="flex items-center gap-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">播放速度</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("播放速度", "Playback Speed")}
+            </span>
             <input
               type="range"
               min={0.5}
@@ -918,18 +1030,21 @@ export default function SettingsView() {
             </span>
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            变速通过重采样实现，音调会随之变化；均衡器实时作用于所有播放。
+            {tr(
+              "变速通过重采样实现，音调会随之变化；均衡器实时作用于所有播放。",
+              "Speed adjustment uses resampling and shifts pitch; the equalizer applies live to all playback."
+            )}
           </p>
         </section>
 
         {/* 输出设备 */}
         <section style={{ ["--row-idx" as string]: 5 }} className={sectionClass}>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[14.5px] font-semibold">输出设备</h2>
+            <h2 className="text-[14.5px] font-semibold">{tr("输出设备", "Output Device")}</h2>
             <button
               className="btn-ghost w-7 h-7"
               onClick={refreshDevices}
-              title="刷新设备列表"
+              title={tr("刷新设备列表", "Refresh device list")}
             >
               <RefreshCw size={13} />
             </button>
@@ -944,11 +1059,14 @@ export default function SettingsView() {
               options={[
                 {
                   value: "",
-                  label: `跟随系统默认${deviceCurrent && devicePref == null ? `（${deviceCurrent}）` : ""}`,
+                  label: tr(
+                    `跟随系统默认${deviceCurrent && devicePref == null ? `（${deviceCurrent}）` : ""}`,
+                    `Follow System Default${deviceCurrent && devicePref == null ? ` (${deviceCurrent})` : ""}`
+                  ),
                 },
                 ...devices.map((d) => ({
                   value: d.name,
-                  label: `${d.name}${d.isDefault ? "（系统默认）" : ""}`,
+                  label: `${d.name}${d.isDefault ? tr("（系统默认）", " (System Default)") : ""}`,
                 })),
               ]}
             />
@@ -957,17 +1075,26 @@ export default function SettingsView() {
             )}
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            跟随系统默认时，插入耳机等设备热插拔会自动切换并从当前进度续播；固定设备则始终使用所选设备。
+            {tr(
+              "跟随系统默认时，插入耳机等设备热插拔会自动切换并从当前进度续播；固定设备则始终使用所选设备。",
+              "When following system default, plugging/unplugging devices switches automatically and resumes playback. Selecting a specific device keeps output pinned to it."
+            )}
           </p>
           {platform === "windows" && (
             <>
               <div className="flex items-center gap-4 mt-4">
-                <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">独占模式</span>
+                <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+                  {tr("独占模式", "Exclusive Mode")}
+                </span>
                 {isSkeuo ? (
                   <button
                     className={`skeuo-switch ${wasapiExclusive ? "active" : ""}`}
                     onClick={() => setWasapiExclusive(!wasapiExclusive)}
-                    title={wasapiExclusive ? "关闭 WASAPI 独占模式" : "开启 WASAPI 独占模式"}
+                    title={
+                      wasapiExclusive
+                        ? tr("关闭 WASAPI 独占模式", "Disable WASAPI Exclusive")
+                        : tr("开启 WASAPI 独占模式", "Enable WASAPI Exclusive")
+                    }
                   >
                     <span className="skeuo-switch-thumb" />
                   </button>
@@ -977,7 +1104,11 @@ export default function SettingsView() {
                       wasapiExclusive ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
                     }`}
                     onClick={() => setWasapiExclusive(!wasapiExclusive)}
-                    title={wasapiExclusive ? "关闭 WASAPI 独占模式" : "开启 WASAPI 独占模式"}
+                    title={
+                      wasapiExclusive
+                        ? tr("关闭 WASAPI 独占模式", "Disable WASAPI Exclusive")
+                        : tr("开启 WASAPI 独占模式", "Enable WASAPI Exclusive")
+                    }
                   >
                     <span
                       className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
@@ -987,13 +1118,17 @@ export default function SettingsView() {
                   </button>
                 )}
                 <span className="text-[11.5px] text-[var(--ink-3)]">
-                  绕过系统混音器直连声卡（WASAPI Exclusive）
+                  {tr(
+                    "绕过系统混音器直连声卡（WASAPI Exclusive）",
+                    "Bypass Windows mixer directly to audio device (WASAPI Exclusive)"
+                  )}
                 </span>
               </div>
               <p className="text-[11.5px] text-[var(--ink-3)] mt-2 leading-relaxed">
-                WASAPI
-                独占模式下，应用将独占声卡、绕过 Windows
-                音量混音器：采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质。注意：独占播放期间其它应用将暂时无法发声；独占需要声卡驱动支持，蓝牙/网络音箱等设备驱动不支持独占，若当前设备不支持或系统禁用了独占授权，该曲目会自动回退普通模式播放（以提示说明原因）；均衡器与音量在独占模式下仍有效；开启后下一首生效，关闭则立即切回普通模式（从当前进度继续播放，其它应用恢复出声）。
+                {tr(
+                  "WASAPI 独占模式下，应用将独占声卡、绕过 Windows 音量混音器：采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质。注意：独占播放期间其它应用将暂时无法发声；独占需要声卡驱动支持，蓝牙/网络音箱等设备驱动不支持独占，若当前设备不支持或系统禁用了独占授权，该曲目会自动回退普通模式播放（以提示说明原因）；均衡器与音量在独占模式下仍有效；开启后下一首生效，关闭则立即切回普通模式（从当前进度继续播放，其它应用恢复出声）。",
+                  "In WASAPI Exclusive mode, RustMusic takes exclusive control of the audio device and bypasses the Windows mixer so source sample rates pass through bit-perfectly without OS resampling or DSP. Other apps will be muted while active. Requires driver support (Bluetooth/network devices are unsupported and fall back to shared mode automatically with a toast). EQ and volume still apply; enabling takes effect on the next track, disabling switches back immediately."
+                )}
               </p>
             </>
           )}
@@ -1001,7 +1136,7 @@ export default function SettingsView() {
 
         {/* 下载目录 */}
         <section style={{ ["--row-idx" as string]: 6 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-3">下载保存目录</h2>
+          <h2 className="text-[14.5px] font-semibold mb-3">{tr("下载保存目录", "Download Folder")}</h2>
           <div className="flex items-center gap-3">
             <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
             <span
@@ -1019,39 +1154,46 @@ export default function SettingsView() {
                     api.openFolder(target).catch((e) => useStore.getState().toast(String(e), "error"));
                   }
                 }}
-                title="在资源管理器中显示"
+                title={tr("在资源管理器中显示", "Open in File Manager")}
               >
                 <FolderOpen size={13} />
-                在资源管理器中显示
+                {tr("在资源管理器中显示", "Show in Folder")}
               </button>
               <button className="btn-secondary !py-1.5 !px-3" onClick={pickSaveDir}>
-                更改目录
+                {tr("更改目录", "Change Folder")}
               </button>
             </div>
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            在线歌曲“下载到本地”将保存到此目录，并自动加入资料库（含标签与歌词）。
+            {tr(
+              "在线歌曲“下载到本地”将保存到此目录，并自动加入资料库（含标签与歌词）。",
+              'Online tracks saved via "Download to Local" are stored here and added to your library with tags and lyrics.'
+            )}
           </p>
         </section>
 
         {/* 缓存 */}
         <section style={{ ["--row-idx" as string]: 7 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-2">缓存</h2>
+          <h2 className="text-[14.5px] font-semibold mb-2">{tr("缓存", "Cache")}</h2>
           <div className="flex items-center gap-4 mb-3">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">当前占用</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("当前占用", "Cache Size")}
+            </span>
             <span className="text-[12.5px] text-[var(--ink)] tabular-nums">
-              {cacheBytes == null ? "查询中…" : fmtCache(cacheBytes)}
+              {cacheBytes == null ? tr("查询中…", "Calculating…") : fmtCache(cacheBytes)}
             </span>
             <button
               className="btn-ghost !py-1 !px-2 ml-1"
               onClick={() => useStore.getState().refreshCacheBytes()}
-              title="刷新占用"
+              title={tr("刷新占用", "Refresh size")}
             >
               <RefreshCw size={12} />
             </button>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">自动清理</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("自动清理", "Size Limit")}
+            </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {CACHE_LIMITS.map((o) => (
                 <button
@@ -1067,26 +1209,30 @@ export default function SettingsView() {
                         }`
                   }
                 >
-                  {o.label}
+                  {o.label ?? tr("不限制", "Unlimited")}
                 </button>
               ))}
             </div>
           </div>
           <button className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15 mt-3" onClick={clearCache}>
             <Trash2 size={13} />
-            立即清理全部缓存
+            {tr("立即清理全部缓存", "Clear All Cache")}
           </button>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            在线歌曲播放时会自动缓存到应用数据目录（同一首歌同一音质只缓存一份，重复播放不再下载）。
-            超过上限后从最旧缓存开始自动清理，正在播放的文件不受影响；「不限制」则永久保留。
+            {tr(
+              "在线歌曲播放时会自动缓存到应用数据目录（同一首歌同一音质只缓存一份，重复播放不再下载）。超过上限后从最旧缓存开始自动清理，正在播放的文件不受影响；「不限制」则永久保留。",
+              "Online streams are cached automatically per track and quality tier. When exceeding the limit, oldest entries are pruned automatically while the playing track is preserved."
+            )}
           </p>
         </section>
 
         {/* 关于与更新 */}
         <section style={{ ["--row-idx" as string]: 8 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-3">关于与更新</h2>
+          <h2 className="text-[14.5px] font-semibold mb-3">{tr("关于与更新", "About & Updates")}</h2>
           <div className="flex items-center gap-4">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">当前版本</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("当前版本", "Version")}
+            </span>
             <span className="text-[12.5px] text-[var(--ink)] tabular-nums">
               {appVersion ? `v${appVersion}` : "…"}
             </span>
@@ -1100,16 +1246,22 @@ export default function SettingsView() {
               ) : (
                 <RefreshCw size={12.5} />
               )}
-              检查更新
+              {tr("检查更新", "Check for Updates")}
             </button>
           </div>
           <div className="flex items-center gap-4 mt-3">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[80px]">自动检查</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("自动检查", "Auto Check")}
+            </span>
             {isSkeuo ? (
               <button
                 className={`skeuo-switch ${autoUpdate ? "active" : ""}`}
                 onClick={() => setAutoUpdate(!autoUpdate)}
-                title={autoUpdate ? "关闭自动检查更新" : "开启自动检查更新"}
+                title={
+                  autoUpdate
+                    ? tr("关闭自动检查更新", "Disable auto update check")
+                    : tr("开启自动检查更新", "Enable auto update check")
+                }
               >
                 <span className="skeuo-switch-thumb" />
               </button>
@@ -1119,7 +1271,11 @@ export default function SettingsView() {
                   autoUpdate ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
                 }`}
                 onClick={() => setAutoUpdate(!autoUpdate)}
-                title={autoUpdate ? "关闭自动检查更新" : "开启自动检查更新"}
+                title={
+                  autoUpdate
+                    ? tr("关闭自动检查更新", "Disable auto update check")
+                    : tr("开启自动检查更新", "Enable auto update check")
+                }
               >
                 <span
                   className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
@@ -1129,17 +1285,26 @@ export default function SettingsView() {
               </button>
             )}
             <span className="text-[11.5px] text-[var(--ink-3)]">
-              启动时自动检测 GitHub 上的新版本
+              {tr(
+                "启动时自动检测 GitHub 上的新版本",
+                "Automatically check GitHub releases on startup"
+              )}
             </span>
           </div>
           <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            发现新版本时会展示更新说明，确认后自动下载并原地安装（不改变安装位置），完成后自动重启应用。
+            {tr(
+              "发现新版本时会展示更新说明，确认后自动下载并原地安装（不改变安装位置），完成后自动重启应用。",
+              "Shows release notes when a new version is found, downloads and installs in-place upon confirmation, then restarts automatically."
+            )}
           </p>
         </section>
 
         <div className="text-[11.5px] text-[var(--ink-3)] px-1 pb-2">
-          RustMusic {appVersion ? `v${appVersion}` : ""} · Rust + Tauri 2 + React ·
-          引擎 rodio / symphonia · 界面支持 Windows / Linux（WASAPI 独占输出仅 Windows）
+          RustMusic {appVersion ? `v${appVersion}` : ""} · Rust + Tauri 2 + React ·{" "}
+          {tr(
+            "引擎 rodio / symphonia · 界面支持 Windows / Linux（WASAPI 独占输出仅 Windows）",
+            "Engine: rodio / symphonia · Windows / Linux (WASAPI Exclusive on Windows only)"
+          )}
         </div>
       </div>
     </div>
@@ -1267,13 +1432,14 @@ function LyricColorPickers({
   defaults?: { sung: string; unsung: string; next: string };
   onChange: (key: "sung" | "unsung" | "next", v: string) => void;
 }) {
+  const { tr } = useI18n();
   return (
     <div className="flex items-center gap-5">
       {(
         [
-          { key: "sung", label: "已唱" },
-          { key: "unsung", label: "未唱" },
-          { key: "next", label: "下一句" },
+          { key: "sung", label: tr("已唱", "Sung") },
+          { key: "unsung", label: tr("未唱", "Unsung") },
+          { key: "next", label: tr("下一句", "Next") },
         ] as const
       ).map((c) => {
         const raw = values[c.key] || defaults?.[c.key] || "#ffffff";
@@ -1289,7 +1455,7 @@ function LyricColorPickers({
           <label
             key={c.key}
             className="flex items-center gap-1.5 cursor-pointer"
-            title={`${c.label}颜色（点击选择）`}
+            title={tr(`${c.label}颜色（点击选择）`, `${c.label} color (click to pick)`)}
           >
             <span
               className="w-5 h-5 rounded-full inline-block"

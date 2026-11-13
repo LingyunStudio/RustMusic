@@ -240,12 +240,18 @@ impl Engine {
                 if total > 0 {
                     builder = builder.with_byte_len(total);
                 }
-                let file = crate::streaming::StreamingFile::open(shared)
-                    .map_err(|e| format!("打开下载缓存失败: {e}"))?;
-                let decoder = builder
-                    .with_data(file)
-                    .build()
-                    .map_err(|e| format!("无法解码该音频文件: {e}"))?;
+                let file = crate::streaming::StreamingFile::open(shared).map_err(|e| {
+                    crate::i18n::pick(
+                        format!("打开下载缓存失败: {e}"),
+                        format!("Failed to open download cache: {e}"),
+                    )
+                })?;
+                let decoder = builder.with_data(file).build().map_err(|e| {
+                    crate::i18n::pick(
+                        format!("无法解码该音频文件: {e}"),
+                        format!("Unable to decode audio file: {e}"),
+                    )
+                })?;
                 return Ok(Box::new(
                     decoder.skip_duration(Duration::from_millis(skip_ms)),
                 ));
@@ -416,17 +422,19 @@ impl Engine {
     pub fn seek(&self, ms: u64) -> Result<(), String> {
         // 独占模式：解码器在会话线程内，seek 走会话重建（同 FLAC 策略）
         if self.excl_active() {
-            let info = self
-                .current
-                .read()
-                .clone()
-                .ok_or("当前没有正在播放的曲目")?;
+            let info = self.current.read().clone().ok_or_else(|| {
+                crate::i18n::pick("当前没有正在播放的曲目", "No track currently playing")
+            })?;
             let was_paused = self.user_paused.load(Ordering::Relaxed);
             return self.rebuild_exclusive_at(&info, ms, was_paused);
         }
         let sink = self.sink.read();
         if sink.empty() {
-            return Err("当前没有正在播放的曲目".into());
+            return Err(crate::i18n::pick(
+                "当前没有正在播放的曲目",
+                "No track currently playing",
+            )
+            .into());
         }
         // FLAC：解码器不支持 seek，失败的 try_seek 还会重置解码器状态
         // （表现为进度先跳回开头再跳目标），直接走重建路径
@@ -449,7 +457,9 @@ impl Engine {
             .unwrap_or(false)
             || is_streaming;
         if is_flac {
-            let info = info_opt.ok_or("当前没有正在播放的曲目")?;
+            let info = info_opt.ok_or_else(|| {
+                crate::i18n::pick("当前没有正在播放的曲目", "No track currently playing")
+            })?;
             drop(sink);
             self.rebuilding.store(true, Ordering::Relaxed);
             let r = self.rebuild_at(&info, ms);
@@ -464,7 +474,10 @@ impl Engine {
                 let back = ms.saturating_sub(300);
                 match sink.try_seek(Duration::from_millis(back)) {
                     Ok(()) => Ok(()),
-                    Err(_) => Err(format!("定位失败: {first}")),
+                    Err(_) => Err(crate::i18n::pick(
+                        format!("定位失败: {first}"),
+                        format!("Seek failed: {first}"),
+                    )),
                 }
             }
         }
@@ -640,7 +653,12 @@ fn open_playable_source(path: &str, skip_ms: u64) -> Result<Box<dyn rodio::Sourc
             path, skip_ms,
         )?));
     }
-    let file = File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
+    let file = File::open(path).map_err(|e| {
+        crate::i18n::pick(
+            format!("打开文件失败: {e}"),
+            format!("Failed to open file: {e}"),
+        )
+    })?;
     // MP4 族解码器初始化依赖文件总长 + 可寻址标记，缺失会直接失败；
     // 常规格式二者同样成立（本地文件皆可寻址），seek/时长计算亦受益
     let mut builder = Decoder::builder().with_seekable(true);
@@ -650,7 +668,12 @@ fn open_playable_source(path: &str, skip_ms: u64) -> Result<Box<dyn rodio::Sourc
     let decoder = builder
         .with_data(BufReader::new(file))
         .build()
-        .map_err(|e| format!("无法解码该音频文件: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("无法解码该音频文件: {e}"),
+                format!("Unable to decode audio file: {e}"),
+            )
+        })?;
     Ok(Box::new(
         decoder.skip_duration(Duration::from_millis(skip_ms)),
     ))

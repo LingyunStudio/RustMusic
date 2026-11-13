@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ListPlus, Loader2 } from "lucide-react";
 import { useStore } from "../../store";
+import { useI18n } from "../../i18n";
 import Modal from "../../components/Modal";
 import type { Source } from "./shared";
 
@@ -18,6 +19,7 @@ export function ImportPlaylistModal({
   source: Source;
   sourceName: string;
 }) {
+  const { tr } = useI18n();
   const importNeteasePlaylist = useStore((s) => s.importNeteasePlaylist);
   const importQqPlaylist = useStore((s) => s.importQqPlaylist);
   const importKugouPlaylist = useStore((s) => s.importKugouPlaylist);
@@ -33,12 +35,12 @@ export function ImportPlaylistModal({
       <Modal
         open={open}
         onClose={onClose}
-        title={`导入${sourceName}歌单`}
+        title={tr(`导入${sourceName}歌单`, `Import ${sourceName} Playlists`)}
         width={400}
       >
         {list === null ? (
           <div className="flex items-center justify-center gap-2 text-[13px] text-[var(--ink-2)] py-6">
-            <Loader2 size={15} className="animate-spin" /> 获取中…
+            <Loader2 size={15} className="animate-spin" /> {tr("获取中…", "Loading…")}
           </div>
         ) : (
           <>
@@ -63,18 +65,23 @@ export function ImportPlaylistModal({
                     <span className="flex items-center gap-2 text-[var(--ink-2)] min-w-0">
                       <Loader2 size={14} className="animate-spin shrink-0 text-[var(--accent)]" />
                       <span className="truncate">
-                        正在导入 {importProgress.done + 1}/{importProgress.total}
-                        ：「{importProgress.name}」
+                        {tr(
+                          `正在导入 ${importProgress.done + 1}/${importProgress.total}：「${importProgress.name}」`,
+                          `Importing ${importProgress.done + 1}/${importProgress.total}: "${importProgress.name}"`,
+                        )}
                       </span>
                     </span>
                   ) : (
                     <>
                       <span className="flex items-center gap-2 text-[var(--accent)] font-medium">
                         <ListPlus size={15} />
-                        全部导入
+                        {tr("全部导入", "Import All")}
                       </span>
                       <span className="text-[11px] text-[var(--ink-3)] shrink-0 ml-3">
-                        共 {list.length} 个歌单
+                        {tr(
+                          `共 ${list.length} 个歌单`,
+                          `${list.length} ${list.length === 1 ? "playlist" : "playlists"}`,
+                        )}
                       </span>
                     </>
                   )}
@@ -99,18 +106,23 @@ export function ImportPlaylistModal({
                 >
                   <span className="truncate">{p.name}</span>
                   <span className="text-[11px] text-[var(--ink-2)] shrink-0 ml-3">
-                    {p.trackCount} 首
+                    {tr(`${p.trackCount} 首`, `${p.trackCount} ${p.trackCount === 1 ? "track" : "tracks"}`)}
                   </span>
                 </button>
               ))}
               {!list.length && (
-                <div className="text-[12.5px] text-[var(--ink-2)] py-2">账号下没有歌单</div>
+                <div className="text-[12.5px] text-[var(--ink-2)] py-2">
+                  {tr("账号下没有歌单", "No playlists found on this account")}
+                </div>
               )}
             </div>
           </>
         )}
         <div className="text-[10.5px] text-[var(--ink-3)] mt-3 leading-relaxed">
-          导入的歌单以在线条目保存：播放时按账号权益实时获取播放链接，不占用本地磁盘。
+          {tr(
+            "导入的歌单以在线条目保存：播放时按账号权益实时获取播放链接，不占用本地磁盘。",
+            "Imported playlists are saved as online entries: streams are resolved live using your account when played, taking no local disk space.",
+          )}
         </div>
       </Modal>
   );

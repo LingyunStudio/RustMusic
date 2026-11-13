@@ -21,6 +21,7 @@ import { coverSrc } from "./api";
 import { extractColor } from "./utils";
 import { applySkin, skinSupportsFx, skinUri } from "./skins";
 import { initFx, setFxWanted } from "./fx";
+import { tr, useI18n } from "./i18n";
 import AudioFxLayer from "./components/AudioFxLayer";
 
 function DynamicBackdrop() {
@@ -199,6 +200,7 @@ function DynamicBackdrop() {
 }
 
 export default function App() {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const miniPlayer = useStore((s) => s.miniPlayer);
   const ready = useStore((s) => s.ready);
@@ -304,14 +306,20 @@ export default function App() {
                   useStore
                     .getState()
                     .toast(
-                      `已添加 ${res.foldersAdded} 个音乐文件夹并开始扫描，已添加 ${res.tracksAdded.length} 首歌曲并开始播放`,
+                      tr(
+                        `已添加 ${res.foldersAdded} 个音乐文件夹并开始扫描，已添加 ${res.tracksAdded.length} 首歌曲并开始播放`,
+                        `Added ${res.foldersAdded} music folder(s) (scanning) and queued ${res.tracksAdded.length} track(s)`
+                      ),
                       "success"
                     );
                 } else if (res.foldersAdded > 0) {
                   useStore
                     .getState()
                     .toast(
-                      `已添加 ${res.foldersAdded} 个音乐文件夹，正在扫描…`,
+                      tr(
+                        `已添加 ${res.foldersAdded} 个音乐文件夹，正在扫描…`,
+                        `Added ${res.foldersAdded} music folder(s), scanning…`
+                      ),
                       "success"
                     );
                 } else if (res.tracksAdded.length > 0) {
@@ -319,12 +327,20 @@ export default function App() {
                     .getState()
                     .toast(
                       res.tracksAdded.length === 1
-                        ? `已添加「${res.tracksAdded[0].title}」并开始播放`
-                        : `已添加 ${res.tracksAdded.length} 首歌曲并开始播放`,
+                        ? tr(
+                            `已添加「${res.tracksAdded[0].title}」并开始播放`,
+                            `Added "${res.tracksAdded[0].title}" and started playback`
+                          )
+                        : tr(
+                            `已添加 ${res.tracksAdded.length} 首歌曲并开始播放`,
+                            `Added ${res.tracksAdded.length} tracks and started playback`
+                          ),
                       "success"
                     );
                 } else {
-                  useStore.getState().toast("未检测到有效音频文件或文件夹", "info");
+                  useStore
+                    .getState()
+                    .toast(tr("未检测到有效音频文件或文件夹", "No valid audio files or folders detected"), "info");
                 }
               })
               .catch((err) => useStore.getState().toast(String(err), "error"));
@@ -348,7 +364,7 @@ export default function App() {
         <div className="animate-pulse">
           <Logo size={64} />
         </div>
-        <div className="text-[13px] text-[var(--ink-2)]">RustMusic 正在启动…</div>
+        <div className="text-[13px] text-[var(--ink-2)]">{tr("RustMusic 正在启动…", "Starting RustMusic…")}</div>
       </div>
     );
   }
@@ -426,8 +442,12 @@ export default function App() {
         <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-black/45 backdrop-blur-[2px] transition-all">
           <div className="rounded-2xl border-2 border-dashed border-[var(--primary)] bg-[var(--card)]/95 px-8 py-6 shadow-2xl flex flex-col items-center gap-3">
             <Music2 className="w-10 h-10 text-[var(--primary)] animate-bounce" />
-            <div className="text-[15px] font-medium text-[var(--ink)]">释放以导入歌曲或文件夹</div>
-            <div className="text-[12px] text-[var(--ink-2)]">单曲即刻播放 · 文件夹自动添加扫描</div>
+            <div className="text-[15px] font-medium text-[var(--ink)]">
+              {tr("释放以导入歌曲或文件夹", "Drop to import tracks or folders")}
+            </div>
+            <div className="text-[12px] text-[var(--ink-2)]">
+              {tr("单曲即刻播放 · 文件夹自动添加扫描", "Tracks play immediately · Folders are added & scanned")}
+            </div>
           </div>
         </div>
       )}

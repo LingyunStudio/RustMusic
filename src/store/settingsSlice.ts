@@ -1,6 +1,7 @@
 //! 设置域：音质 / 关闭行为 / 自动更新 / WASAPI 独占 / 缓存上限与占用。
 import type { StateCreator } from "zustand";
 import { api } from "../api";
+import { detectSystemLang, setLanguagePref, tr } from "../i18n";
 import type { Store } from "./contract";
 
 type Fields = Pick<
@@ -9,12 +10,14 @@ type Fields = Pick<
   | "qualities"
   | "setSourceQuality"
   | "closeAction"
+  | "language"
   | "autoUpdate"
   | "wasapiExclusive"
   | "cacheLimit"
   | "cacheBytes"
   | "setQuality"
   | "setCloseAction"
+  | "setLanguage"
   | "setAutoUpdate"
   | "setWasapiExclusive"
   | "setCacheLimit"
@@ -26,6 +29,7 @@ export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, ge
   quality: "high",
   qualities: { netease: "high", qq: "high", kugou: "high" },
   closeAction: "tray",
+  language: "auto",
   autoUpdate: true,
   wasapiExclusive: false,
   cacheLimit: 2 * 1024 * 1024 * 1024,
@@ -33,7 +37,10 @@ export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, ge
   async clearCache() {
     try {
       const n = await api.clearCache();
-      get().toast(`已清理 ${n} 个缓存文件`, "success");
+      get().toast(
+        tr(`已清理 ${n} 个缓存文件`, `Cleared ${n} cached file${n === 1 ? "" : "s"}`),
+        "success"
+      );
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -87,6 +94,18 @@ export const createSettingsSlice: StateCreator<Store, [], [], Fields> = (set, ge
     set({ closeAction: a });
     api.setCloseAction(a).catch((e) => {
       set({ closeAction: prev });
+      get().toast(String(e), "error");
+    });
+  },
+
+  setLanguage(lang) {
+    const prev = get().language;
+    const hint = detectSystemLang();
+    set({ language: lang });
+    setLanguagePref(lang);
+    api.setLanguage(lang, hint).catch((e) => {
+      set({ language: prev });
+      setLanguagePref(prev);
       get().toast(String(e), "error");
     });
   },

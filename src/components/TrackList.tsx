@@ -2,6 +2,7 @@ import { Ban, Check, Heart, ListMusic, MoreHorizontal, Pause, Play, Trash2 } fro
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import { useDragList } from "../hooks/useDragList";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { useLocatePill } from "../hooks/useLocatePill";
@@ -83,6 +84,7 @@ export default function TrackList({
   onDeleteTrack,
   onPlayMerged,
 }: TrackListProps) {
+  const { tr } = useI18n();
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [pickerFor, setPickerFor] = useState<TrackMeta | null>(null);
   const [pickerOnline, setPickerOnline] = useState<PlaylistEntryMeta | null>(null);
@@ -142,7 +144,7 @@ export default function TrackList({
     });
     return () => cancelAnimationFrame(raf);
   }, [menu, onlineMenu, rawX, rawY]);
-  const menuPos = refined ?? clampMenuPos(rawX, rawY, 190, 200);
+  const menuPos = refined ?? clampMenuPos(rawX, rawY, 210, 200);
   const menuX = menuPos.x;
   const menuY = menuPos.y;
 
@@ -257,7 +259,9 @@ export default function TrackList({
             <Play size={30} className="text-[var(--ink-2)] ml-1" />
           </div>
         </div>
-        <div className="text-[13.5px] text-[var(--ink-2)]">{emptyHint ?? "这里空空如也"}</div>
+        <div className="text-[13.5px] text-[var(--ink-2)]">
+          {emptyHint ?? tr("这里空空如也", "Nothing here yet")}
+        </div>
         {emptyAction && (
           <button className="btn-primary mt-1" onClick={emptyAction.onClick}>
             {emptyAction.label}
@@ -352,7 +356,13 @@ export default function TrackList({
                       : playTracks(tracks, i);
                   }
                 }}
-                title={active ? (playing ? "暂停" : "播放") : "播放"}
+                title={
+                  active
+                    ? playing
+                      ? tr("暂停", "Pause")
+                      : tr("播放", "Play")
+                    : tr("播放", "Play")
+                }
               >
                 {active && playing ? (
                   <Pause size={14} className="fill-current" />
@@ -398,9 +408,12 @@ export default function TrackList({
               {t.missing && (
                 <span
                   className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0"
-                  title="文件已不在监控文件夹中（记录保留，重新添加文件夹后恢复）"
+                  title={tr(
+                    "文件已不在监控文件夹中（记录保留，重新添加文件夹后恢复）",
+                    "File missing from watched folders (kept in library until folder returns)"
+                  )}
                 >
-                  文件缺失
+                  {tr("文件缺失", "Missing")}
                 </span>
               )}
             </div>
@@ -416,7 +429,11 @@ export default function TrackList({
                     }
                   : undefined
               }
-              title={onMetaClick ? `搜索：${trackArtist(t)}` : undefined}
+              title={
+                onMetaClick
+                  ? tr(`搜索：${trackArtist(t)}`, `Search: ${trackArtist(t)}`)
+                  : undefined
+              }
             >
               {trackArtist(t)}
             </button>
@@ -432,13 +449,20 @@ export default function TrackList({
             onMetaClick
               ? (ev) => {
                   ev.stopPropagation();
-                  onMetaClick("album", t.album || "未知专辑");
+                  onMetaClick("album", t.album || tr("未知专辑", "Unknown Album"));
                 }
               : undefined
           }
-          title={onMetaClick ? `搜索：${t.album || "未知专辑"}` : undefined}
+          title={
+            onMetaClick
+              ? tr(
+                  `搜索：${t.album || "未知专辑"}`,
+                  `Search: ${t.album || "Unknown Album"}`
+                )
+              : undefined
+          }
         >
-          {t.album || "未知专辑"}
+          {t.album || tr("未知专辑", "Unknown Album")}
         </button>
 
         {/* 格式 / 时长（与表头同列，右对齐） */}
@@ -459,7 +483,7 @@ export default function TrackList({
               e.stopPropagation();
               toggleLike(t.id);
             }}
-            title={t.liked ? "取消喜欢" : "喜欢"}
+            title={t.liked ? tr("取消喜欢", "Unlike") : tr("喜欢", "Like")}
           >
             <Heart
               size={15}
@@ -479,7 +503,7 @@ export default function TrackList({
                 e.stopPropagation();
                 playNext({ kind: "track", id: t.id });
               }}
-              title="下一首播放"
+              title={tr("下一首播放", "Play next")}
             >
               <Play size={14} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
             </button>
@@ -489,10 +513,10 @@ export default function TrackList({
             onClick={(e) => {
               e.stopPropagation();
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              // 菜单右缘对齐按钮右缘、顶边贴按钮下方（190 宽，clamp 负责防出屏）
-              setMenu({ x: r.right - 190, y: r.bottom + 4, track: t });
+              // 菜单右缘对齐按钮右缘、顶边贴按钮下方（210 宽，clamp 负责防出屏）
+              setMenu({ x: r.right - 210, y: r.bottom + 4, track: t });
             }}
-            title={isSkeuo ? "更多选项" : undefined}
+            title={isSkeuo ? tr("更多选项", "More options") : undefined}
           >
             <MoreHorizontal
               size={16}
@@ -546,7 +570,11 @@ export default function TrackList({
         key={`online-${e.kind}-${e.onlineId}`}
         {...(dragSortable && onDragReorder ? rowProps(idxNum) : {})}
         style={{ ["--row-idx" as string]: Math.min(idxNum, 12) }}
-        title={dead ? `无法播放：${unavailable[failKey]}` : undefined}
+        title={
+          dead
+            ? tr(`无法播放：${unavailable[failKey]}`, `Unplayable: ${unavailable[failKey]}`)
+            : undefined
+        }
         className={rowClass}
         onClick={
           selection?.active
@@ -603,7 +631,13 @@ export default function TrackList({
                       : playEntries(onlineEntries, Math.max(0, i));
                   }
                 }}
-                title={active ? (playing ? "暂停" : "播放") : "播放"}
+                title={
+                  active
+                    ? playing
+                      ? tr("暂停", "Pause")
+                      : tr("播放", "Play")
+                    : tr("播放", "Play")
+                }
               >
                 {active && playing ? (
                   <Pause size={14} className="fill-current" />
@@ -637,14 +671,14 @@ export default function TrackList({
               </span>
               <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0">
                 {e.kind === "netease"
-                  ? "网易云"
+                  ? tr("网易云", "NetEase")
                   : e.kind === "kugou"
-                    ? "酷狗"
+                    ? tr("酷狗", "Kugou")
                     : e.kind === "bilibili"
-                      ? "B站"
+                      ? tr("B站", "Bilibili")
                       : e.kind === "navidrome"
                         ? "Navidrome"
-                        : "QQ音乐"}
+                        : tr("QQ音乐", "QQ Music")}
               </span>
               {e.vip && !dead && (
                 <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--accent-weak)] text-[var(--accent-strong)] font-bold shrink-0">
@@ -657,7 +691,7 @@ export default function TrackList({
                   title={unavailable[failKey]}
                 >
                   <Ban size={9} />
-                  无版权
+                  {tr("无版权", "Unavailable")}
                 </span>
               )}
               {active && (
@@ -678,13 +712,26 @@ export default function TrackList({
                 onMetaClick
                   ? (ev) => {
                       ev.stopPropagation();
-                      onMetaClick("artist", e.artist || "未知艺术家", e.kind === "netease" || e.kind === "qq" || e.kind === "kugou" ? e.kind : undefined);
+                      onMetaClick(
+                        "artist",
+                        e.artist || tr("未知艺术家", "Unknown Artist"),
+                        e.kind === "netease" || e.kind === "qq" || e.kind === "kugou"
+                          ? e.kind
+                          : undefined
+                      );
                     }
                   : undefined
               }
-              title={onMetaClick ? `搜索：${e.artist || "未知艺术家"}` : undefined}
+              title={
+                onMetaClick
+                  ? tr(
+                      `搜索：${e.artist || "未知艺术家"}`,
+                      `Search: ${e.artist || "Unknown Artist"}`
+                    )
+                  : undefined
+              }
             >
-              {e.artist || "未知艺术家"}
+              {e.artist || tr("未知艺术家", "Unknown Artist")}
             </button>
           </div>
         </div>
@@ -696,17 +743,30 @@ export default function TrackList({
             onMetaClick
               ? (ev) => {
                   ev.stopPropagation();
-                  onMetaClick("album", e.album || "未知专辑", e.kind === "netease" || e.kind === "qq" || e.kind === "kugou" ? e.kind : undefined);
+                  onMetaClick(
+                    "album",
+                    e.album || tr("未知专辑", "Unknown Album"),
+                    e.kind === "netease" || e.kind === "qq" || e.kind === "kugou"
+                      ? e.kind
+                      : undefined
+                  );
                 }
               : undefined
           }
-          title={onMetaClick ? `搜索：${e.album || "未知专辑"}` : undefined}
+          title={
+            onMetaClick
+              ? tr(
+                  `搜索：${e.album || "未知专辑"}`,
+                  `Search: ${e.album || "Unknown Album"}`
+                )
+              : undefined
+          }
         >
-          {e.album || "未知专辑"}
+          {e.album || tr("未知专辑", "Unknown Album")}
         </button>
         <div className="flex items-center justify-end gap-2.5 min-w-0">
           <span className="text-[10px] px-1.5 py-[2px] rounded-md bg-[var(--shade)] text-[var(--ink-2)] font-semibold tracking-wider whitespace-nowrap shrink-0">
-            在线
+            {tr("在线", "Online")}
           </span>
           <span className="text-[12.5px] text-[var(--ink-2)] tabular-nums w-10 text-right shrink-0">
             {fmtTime(e.duration * 1000)}
@@ -732,7 +792,11 @@ export default function TrackList({
                 vip: e.vip,
               });
             }}
-            title={savedOnline[`${e.kind}-${e.onlineId}`] ? "取消喜欢" : "喜欢"}
+            title={
+              savedOnline[`${e.kind}-${e.onlineId}`]
+                ? tr("取消喜欢", "Unlike")
+                : tr("喜欢", "Like")
+            }
           >
             <Heart
               size={15}
@@ -753,7 +817,7 @@ export default function TrackList({
                 const item = entryToQueueItem(e);
                 if (item) playNext(item);
               }}
-              title="下一首播放"
+              title={tr("下一首播放", "Play next")}
             >
               <Play size={14} className="text-[var(--ink-3)] group-hover:text-[var(--ink-2)] transition-colors" />
             </button>
@@ -764,9 +828,9 @@ export default function TrackList({
               ev.stopPropagation();
               const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
               // 与本地行一致：菜单右缘对齐按钮、顶边贴按钮下方
-              setOnlineMenu({ x: r.right - 190, y: r.bottom + 4, entry: e });
+              setOnlineMenu({ x: r.right - 210, y: r.bottom + 4, entry: e });
             }}
-            title={isSkeuo ? "更多选项" : undefined}
+            title={isSkeuo ? tr("更多选项", "More options") : undefined}
           >
             <MoreHorizontal
               size={16}
@@ -786,7 +850,10 @@ export default function TrackList({
     <>
       {dragTooBig && (
         <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg text-[11.5px] text-[var(--ink-2)] glass">
-          当前列表 {rows.length} 首，超过 {DRAG_MAX} 首暂不支持拖拽排序（已临时关闭，其它排序方式不受影响）
+          {tr(
+            `当前列表 ${rows.length} 首，超过 ${DRAG_MAX} 首暂不支持拖拽排序（已临时关闭，其它排序方式不受影响）`,
+            `List has ${rows.length} tracks; drag reorder is disabled above ${DRAG_MAX} tracks (other sort modes still work)`
+          )}
         </div>
       )}
       <div className="relative flex-1 min-h-0 flex flex-col">
@@ -821,7 +888,7 @@ export default function TrackList({
         createPortal(
           <div
             ref={menuRef}
-            className={`fixed z-[75] w-[190px] glass-strong ${isLiquid ? "!rounded-2xl" : "rounded-xl"} p-1.5 shadow-2xl anim-menu`}
+            className={`fixed z-[75] w-[210px] glass-strong ${isLiquid ? "!rounded-2xl" : "rounded-xl"} p-1.5 shadow-2xl anim-menu`}
             style={{ left: menuX, top: menuY }}
             onMouseDown={(ev) => ev.stopPropagation()}
             onMouseLeave={() => setOnlineMenu(null)}
@@ -844,7 +911,7 @@ export default function TrackList({
               setOnlineMenu(null);
             }}
           >
-            <Play size={13} /> 播放
+            <Play size={13} /> {tr("播放", "Play")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -854,7 +921,7 @@ export default function TrackList({
               setOnlineMenu(null);
             }}
           >
-            <Play size={13} /> 下一首播放
+            <Play size={13} /> {tr("下一首播放", "Play Next")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -864,7 +931,7 @@ export default function TrackList({
               setOnlineMenu(null);
             }}
           >
-            <Play size={13} /> 加入队列
+            <Play size={13} /> {tr("加入队列", "Add to Queue")}
           </button>
           <div className="my-1 mx-2 border-t border-[var(--line)]" />
           <button
@@ -889,7 +956,7 @@ export default function TrackList({
               setOnlineMenu(null);
             }}
           >
-            <Play size={13} /> 下载到本地
+            <Play size={13} /> {tr("下载到本地", "Download to Local")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -898,7 +965,7 @@ export default function TrackList({
               setOnlineMenu(null);
             }}
           >
-            <ListMusic size={13} /> 添加到播放列表…
+            <ListMusic size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -923,7 +990,10 @@ export default function TrackList({
               setOnlineMenu(null);
             }}
           >
-            <Play size={13} /> 取消喜欢
+            <Play size={13} />{" "}
+            {savedOnline[`${onlineMenu.entry.kind}-${onlineMenu.entry.onlineId}`]
+              ? tr("取消喜欢", "Unlike")
+              : tr("喜欢", "Like")}
           </button>
         </div>,
           document.body
@@ -934,7 +1004,7 @@ export default function TrackList({
         createPortal(
         <div
           ref={menuRef}
-          className={`fixed z-[75] w-[190px] glass-strong ${isLiquid ? "!rounded-2xl" : "rounded-xl"} p-1.5 shadow-2xl anim-menu`}
+          className={`fixed z-[75] w-[210px] glass-strong ${isLiquid ? "!rounded-2xl" : "rounded-xl"} p-1.5 shadow-2xl anim-menu`}
           style={{ left: menuX, top: menuY }}
           onMouseDown={(ev) => ev.stopPropagation()}
           onMouseLeave={() => setMenu(null)}
@@ -952,7 +1022,7 @@ export default function TrackList({
               setMenu(null);
             }}
           >
-            <Play size={13} /> 播放
+            <Play size={13} /> {tr("播放", "Play")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -961,7 +1031,7 @@ export default function TrackList({
               setMenu(null);
             }}
           >
-            <Play size={13} /> 下一首播放
+            <Play size={13} /> {tr("下一首播放", "Play Next")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -970,7 +1040,7 @@ export default function TrackList({
               setMenu(null);
             }}
           >
-            <Play size={13} /> 加入队列
+            <Play size={13} /> {tr("加入队列", "Add to Queue")}
           </button>
           <div className="my-1 mx-2 border-t border-[var(--line)]" />
           <button
@@ -980,7 +1050,7 @@ export default function TrackList({
               setMenu(null);
             }}
           >
-            <ListMusic size={13} /> 添加到播放列表…
+            <ListMusic size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
           </button>
           {onDeleteTrack && (
             <>
@@ -993,7 +1063,7 @@ export default function TrackList({
                   onDeleteTrack(target);
                 }}
               >
-                <Trash2 size={13} /> 从硬盘删除
+                <Trash2 size={13} /> {tr("从硬盘删除", "Delete from Disk")}
               </button>
             </>
           )}
@@ -1005,7 +1075,7 @@ export default function TrackList({
       <Modal
         open={!!pickerOnline}
         onClose={() => setPickerOnline(null)}
-        title="添加到播放列表"
+        title={tr("添加到播放列表", "Add to Playlist")}
         width={380}
       >
         <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
@@ -1033,19 +1103,22 @@ export default function TrackList({
             >
               <span className="truncate">{p.name}</span>
               <span className="text-[11px] text-[var(--ink-2)]">
-                {p.entries.length} 首
+                {tr(
+                  `${p.entries.length} 首`,
+                  `${p.entries.length} ${p.entries.length === 1 ? "track" : "tracks"}`
+                )}
               </span>
             </button>
           ))}
           {!playlists.length && (
             <div className="text-[12.5px] text-[var(--ink-2)] py-2">
-              还没有播放列表，请先在侧边栏创建
+              {tr("还没有播放列表，请先在侧边栏创建", "No playlists yet. Create one in the sidebar first.")}
             </div>
           )}
         </div>
         <div className="flex justify-end mt-2">
           <button className="btn-secondary" onClick={() => setPickerOnline(null)}>
-            关闭
+            {tr("关闭", "Close")}
           </button>
         </div>
       </Modal>
@@ -1054,7 +1127,7 @@ export default function TrackList({
       <Modal
         open={!!pickerFor}
         onClose={() => setPickerFor(null)}
-        title="添加到播放列表"
+        title={tr("添加到播放列表", "Add to Playlist")}
         width={380}
       >
         <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
@@ -1069,13 +1142,16 @@ export default function TrackList({
             >
               <span className="truncate">{p.name}</span>
               <span className="text-[11px] text-[var(--ink-2)]">
-                {p.entries.length} 首
+                {tr(
+                  `${p.entries.length} 首`,
+                  `${p.entries.length} ${p.entries.length === 1 ? "track" : "tracks"}`
+                )}
               </span>
             </button>
           ))}
           {!playlists.length && (
             <div className="text-[12.5px] text-[var(--ink-2)] py-2">
-              还没有播放列表，在下方创建
+              {tr("还没有播放列表，在下方创建", "No playlists yet. Create one below.")}
             </div>
           )}
         </div>
@@ -1084,7 +1160,7 @@ export default function TrackList({
             type="text"
             value={newPlName}
             onChange={(e) => setNewPlName(e.target.value)}
-            placeholder="新播放列表名称"
+            placeholder={tr("新播放列表名称", "New playlist name")}
             className={
               isLiquid
                 ? "flex-1 h-9 rounded-xl liquid-input px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none"
@@ -1101,7 +1177,7 @@ export default function TrackList({
               setPickerFor(null);
             }}
           >
-            创建并添加
+            {tr("创建并添加", "Create & Add")}
           </button>
         </div>
       </Modal>

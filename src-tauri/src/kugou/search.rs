@@ -193,7 +193,7 @@ fn hires_hash_by_privilege(hash: &str) -> Option<String> {
         &[],
         Some(&body),
     )
-    .map_err(|e| format!("权益查询失败: {e}"))
+    .map_err(|e| format!("{}: {e}", crate::i18n::pick("权益查询失败", "Privilege query failed")))
     .ok()?;
     fn scan(node: &serde_json::Value, out: &mut Option<String>) {
         if out.is_some() {
@@ -253,7 +253,12 @@ fn hashes_by_songsearch_v2(hash: &str, keyword: &str) -> Option<(String, String,
         "https://songsearch.kugou.com/song_search_v2?keyword={}&page=1&pagesize=30",
         form_encode(keyword)
     );
-    let v = match get_json(&url, "https://www.kugou.com/", UA, "酷狗搜索增强") {
+    let v = match get_json(
+        &url,
+        "https://www.kugou.com/",
+        UA,
+        crate::i18n::pick("酷狗搜索增强", "Kugou search enrichment"),
+    ) {
         Ok(v) => v,
         Err(e) => {
             // 此处失败被静默吞掉会让 Hi-Res 标识永远补不上——必须留痕
@@ -298,7 +303,12 @@ fn enrich_from_songsearch(songs: &mut [KgSong], keyword: &str, page: i64) {
         "https://songsearch.kugou.com/song_search_v2?keyword={}&page={page}&pagesize=30",
         form_encode(keyword)
     );
-    let Ok(v) = get_json(&url, "https://www.kugou.com/", UA, "酷狗搜索增强") else {
+    let Ok(v) = get_json(
+        &url,
+        "https://www.kugou.com/",
+        UA,
+        crate::i18n::pick("酷狗搜索增强", "Kugou search enrichment"),
+    ) else {
         return;
     };
     let Some(list) = v.pointer("/data/lists").and_then(|x| x.as_array()) else {
@@ -343,9 +353,9 @@ fn search_fallback(keyword: &str, page: i64) -> Result<Vec<KgSong>, String> {
         "https://mobiles.kugou.com/api/v3/search/song?format=json&keyword={}&page={page}&pagesize=30",
         form_encode(keyword)
     );
-    let v = get_json(&url, "https://mobiles.kugou.com/", UA, "酷狗搜索")?;
+    let v = get_json(&url, "https://mobiles.kugou.com/", UA, crate::i18n::pick("酷狗搜索", "Kugou search"))?;
     if v.get("status").and_then(|s| s.as_i64()) != Some(1) {
-        return Err("酷狗搜索失败".into());
+        return Err(crate::i18n::pick("酷狗搜索失败", "Kugou search failed").into());
     }
     let mut out = Vec::new();
     if let Some(list) = v.pointer("/data/info").and_then(|x| x.as_array()) {

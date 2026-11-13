@@ -20,6 +20,7 @@ import {
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import Logo from "./Logo";
 import SkinPicker from "./SkinPicker";
 import { ConfirmModal, InputModal } from "./Dialogs";
@@ -27,17 +28,18 @@ import { clampMenuPos } from "../utils";
 import { useDragList } from "../hooks/useDragList";
 import type { ViewName } from "../types";
 
-const NAV: { key: ViewName; label: string; icon: typeof Library }[] = [
-  { key: "library", label: "资料库", icon: Library },
-  { key: "liked", label: "我喜欢", icon: Heart },
-  { key: "recent", label: "最近播放", icon: Clock3 },
-  { key: "netease", label: "网易云", icon: Cloud },
-  { key: "qq", label: "QQ音乐", icon: DiscAlbum },
-  { key: "kugou", label: "酷狗", icon: Music2 },
-  { key: "sources", label: "在线音源", icon: Radio },
+const NAV: { key: ViewName; zh: string; en: string; icon: typeof Library }[] = [
+  { key: "library", zh: "资料库", en: "Library", icon: Library },
+  { key: "liked", zh: "我喜欢", en: "Liked", icon: Heart },
+  { key: "recent", zh: "最近播放", en: "Recently Played", icon: Clock3 },
+  { key: "netease", zh: "网易云", en: "NetEase", icon: Cloud },
+  { key: "qq", zh: "QQ音乐", en: "QQ Music", icon: DiscAlbum },
+  { key: "kugou", zh: "酷狗", en: "KuGou", icon: Music2 },
+  { key: "sources", zh: "在线音源", en: "Online Sources", icon: Radio },
 ];
 
 export default function Sidebar() {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isSkeuo = uiTheme === "skeuo";
   const isLiquid = uiTheme === "liquid";
@@ -137,7 +139,8 @@ export default function Sidebar() {
       {/* 导航 + 播放列表（可滚动区） */}
       <div className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-3 ${isLiquid ? "pr-0.5" : ""}`}>
         <nav className="flex flex-col gap-1.5">
-          {NAV.map(({ key, label, icon: Icon }) => {
+          {NAV.map(({ key, zh, en, icon: Icon }) => {
+            const label = tr(zh, en);
             const active = view === key;
             return (
               <button
@@ -246,7 +249,9 @@ export default function Sidebar() {
           }
         >
           <span className="text-[10.5px] font-semibold text-[var(--ink-3)] tracking-[0.18em]">
-            {batchMode ? `已选 ${batchSel.size} 个` : "播放列表"}
+            {batchMode
+              ? tr(`已选 ${batchSel.size} 个`, `${batchSel.size} Selected`)
+              : tr("播放列表", "PLAYLISTS")}
           </span>
           <div className="flex items-center gap-1">
             {batchMode ? (
@@ -260,13 +265,13 @@ export default function Sidebar() {
                       setBatchSel(new Set(playlists.map((p) => p.id)));
                     }
                   }}
-                  title={batchSel.size === playlists.length ? "取消全选" : "全选"}
+                  title={batchSel.size === playlists.length ? tr("取消全选", "Deselect All") : tr("全选", "Select All")}
                 >
-                  {batchSel.size === playlists.length ? "取消" : "全选"}
+                  {batchSel.size === playlists.length ? tr("取消", "None") : tr("全选", "All")}
                 </button>
                 <button
                   className="btn-ghost w-6 h-6 rounded text-[#e0533f] hover:bg-[#e0533f]/10 disabled:opacity-30"
-                  title="删除所选歌单"
+                  title={tr("删除所选歌单", "Delete Selected Playlists")}
                   disabled={batchSel.size === 0}
                   onClick={() => setConfirmBatchDel(true)}
                 >
@@ -274,7 +279,7 @@ export default function Sidebar() {
                 </button>
                 <button
                   className="btn-ghost w-6 h-6 rounded text-[var(--ink-3)]"
-                  title="退出批量模式"
+                  title={tr("退出批量模式", "Exit Batch Mode")}
                   onClick={() => {
                     setBatchMode(false);
                     setBatchSel(new Set());
@@ -293,7 +298,7 @@ export default function Sidebar() {
                       ? "btn-ghost w-7 h-7 rounded-xl text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
                       : "btn-ghost w-7 h-7 rounded-lg text-[var(--ink-3)] hover:text-[var(--ink)] disabled:opacity-40"
                   }
-                  title="批量删除歌单"
+                  title={tr("批量删除歌单", "Batch Delete Playlists")}
                   disabled={playlists.length === 0}
                   onClick={() => {
                     setBatchMode(true);
@@ -310,7 +315,7 @@ export default function Sidebar() {
                       ? "btn-ghost w-7 h-7 rounded-xl text-[var(--ink-3)] hover:text-[var(--ink)]"
                       : "btn-ghost w-7 h-7 rounded-lg"
                   }
-                  title="新建播放列表"
+                  title={tr("新建播放列表", "New Playlist")}
                   onClick={() => setPlModalOpen(true)}
                 >
                   <Plus size={isSkeuo ? 14 : 15} />
@@ -326,8 +331,11 @@ export default function Sidebar() {
             const checked = batchMode && batchSel.has(p.id);
             const originTip =
               p.originName && p.originName !== p.name
-                ? `原名：${p.originName}（长按可拖动排序）`
-                : "长按可拖动排序";
+                ? tr(
+                    `原名：${p.originName}（长按可拖动排序）`,
+                    `Original: ${p.originName} (hold & drag to reorder)`
+                  )
+                : tr("长按可拖动排序", "Hold & drag to reorder");
             return (
               <div key={p.id} {...(batchMode ? {} : rowProps(i))}>
                 <div
@@ -431,7 +439,7 @@ export default function Sidebar() {
                   : "mx-1 h-10 rounded-xl border border-dashed border-[rgba(243,233,216,0.14)] text-[12px] text-[var(--ink-3)] hover:text-[var(--ink-2)] hover:border-[rgba(243,233,216,0.26)] transition-colors"
               }
             >
-              + 创建播放列表
+              {tr("+ 创建播放列表", "+ New Playlist")}
             </button>
           )}
         </div>
@@ -459,7 +467,7 @@ export default function Sidebar() {
           >
             <Loader2 size={isSkeuo ? 12 : 13} className="animate-spin shrink-0" />
             <span className="truncate">
-              扫描中 {scan.total ? `${scan.done}/${scan.total}` : "…"}
+              {tr("扫描中 ", "Scanning ")}{scan.total ? `${scan.done}/${scan.total}` : "…"}
             </span>
           </div>
         )}
@@ -495,11 +503,11 @@ export default function Sidebar() {
             }
           >
             <Settings size={isSkeuo || isLiquid ? 16 : 17} strokeWidth={isSkeuo || isLiquid ? 2 : 1.9} />
-            设置
+            {tr("设置", "Settings")}
           </button>
           <button
             onClick={() => setSkinOpen(true)}
-            title="皮肤"
+            title={tr("皮肤", "Skins")}
             className={
               isSkeuo
                 ? `btn-ghost h-10 px-3 rounded-xl flex items-center justify-center gap-1.5 text-[13px] shrink-0 ${
@@ -528,7 +536,7 @@ export default function Sidebar() {
             }
           >
             <Palette size={isSkeuo || isLiquid ? 16 : 17} strokeWidth={isSkeuo || isLiquid ? 2 : 1.9} />
-            皮肤
+            {tr("皮肤", "Skins")}
           </button>
         </div>
       </div>
@@ -537,18 +545,18 @@ export default function Sidebar() {
 
       <InputModal
         open={plModalOpen}
-        title="新建播放列表"
-        placeholder="播放列表名称"
-        confirmText="创建"
+        title={tr("新建播放列表", "New Playlist")}
+        placeholder={tr("播放列表名称", "Playlist name")}
+        confirmText={tr("创建", "Create")}
         onClose={() => setPlModalOpen(false)}
         onConfirm={(name) => useStore.getState().createPlaylist(name)}
       />
 
       <InputModal
         open={renaming != null}
-        title="重命名播放列表"
+        title={tr("重命名播放列表", "Rename Playlist")}
         initialValue={renaming?.name}
-        confirmText="重命名"
+        confirmText={tr("重命名", "Rename")}
         onClose={() => setRenaming(null)}
         onConfirm={(name) => {
           if (renaming) void renamePlaylist(renaming.id, name);
@@ -579,7 +587,7 @@ export default function Sidebar() {
               }}
             >
               <Pencil size={13} className="text-[var(--ink-3)]" />
-              重命名
+              {tr("重命名", "Rename")}
             </button>
             {confirmDel === menu.id ? (
               <button
@@ -589,10 +597,13 @@ export default function Sidebar() {
                   setMenu(null);
                   setConfirmDel(null);
                 }}
-                title="再次确认删除（歌单内条目一并移除）"
+                title={tr(
+                  "再次确认删除（歌单内条目一并移除）",
+                  "Click again to confirm deletion (removes entries)"
+                )}
               >
                 <Trash2 size={13} />
-                确认删除？
+                {tr("确认删除？", "Confirm Delete?")}
               </button>
             ) : (
               <button
@@ -600,7 +611,7 @@ export default function Sidebar() {
                 onClick={() => setConfirmDel(menu.id)}
               >
                 <Trash2 size={13} className="text-[var(--ink-3)]" />
-                删除
+                {tr("删除", "Delete")}
               </button>
             )}
           </div>,
@@ -609,9 +620,9 @@ export default function Sidebar() {
 
       <ConfirmModal
         open={confirmBatchDel}
-        title="批量删除播放列表"
+        title={tr("批量删除播放列表", "Delete Playlists")}
         danger
-        confirmText={`确认删除 (${batchSel.size} 个)`}
+        confirmText={tr(`确认删除 (${batchSel.size} 个)`, `Delete (${batchSel.size})`)}
         onClose={() => setConfirmBatchDel(false)}
         onConfirm={async () => {
           const ids = Array.from(batchSel);
@@ -631,10 +642,16 @@ export default function Sidebar() {
         }}
       >
         <p className="text-[13px] text-[var(--ink)] font-medium mb-1.5">
-          确定删除选中的 {batchSel.size} 个播放列表？
+          {tr(
+            `确定删除选中的 ${batchSel.size} 个播放列表？`,
+            `Delete the ${batchSel.size} selected playlist(s)?`
+          )}
         </p>
         <p className="text-[12px] text-[var(--ink-3)]">
-          注意：列表中的条目引用将被移除，但本地歌曲源文件不会受任何影响。
+          {tr(
+            "注意：列表中的条目引用将被移除，但本地歌曲源文件不会受任何影响。",
+            "Note: Playlist entries will be removed, but local audio files on disk will not be affected."
+          )}
         </p>
       </ConfirmModal>
     </aside>

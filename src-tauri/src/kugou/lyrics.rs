@@ -8,9 +8,14 @@ use super::*;
 fn decrypt_krc(content_b64: &str) -> Result<String, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(content_b64.trim())
-        .map_err(|e| format!("KRC base64 解码失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("KRC base64 解码失败: {e}"),
+                format!("KRC base64 decode failed: {e}"),
+            )
+        })?;
     if bytes.len() <= 4 {
-        return Err("KRC 内容为空".into());
+        return Err(crate::i18n::pick("KRC 内容为空", "KRC content is empty").into());
     }
     const KEY: [u8; 16] = [
         64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105,
@@ -24,7 +29,12 @@ fn decrypt_krc(content_b64: &str) -> Result<String, String> {
     let mut out = String::new();
     ZlibDecoder::new(xored.as_slice())
         .read_to_string(&mut out)
-        .map_err(|e| format!("KRC 解压失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("KRC 解压失败: {e}"),
+                format!("KRC decompression failed: {e}"),
+            )
+        })?;
     Ok(out)
 }
 
@@ -36,7 +46,7 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
         form_encode(hash)
     );
     let text = get_text(&search_url, "https://krcs.kugou.com/", UA)?;
-    let v = parse_json(&text, "酷狗歌词检索")?;
+    let v = parse_json(&text, crate::i18n::pick("酷狗歌词检索", "KuGou lyric search"))?;
     let cand = v
         .pointer("/candidates/0")
         .cloned()
@@ -67,16 +77,16 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
     );
     match (|| -> Result<String, String> {
         let text = get_text(&krc_url, "https://krcs.kugou.com/", UA)?;
-        let v = parse_json(&text, "酷狗 KRC 下载")?;
+        let v = parse_json(&text, crate::i18n::pick("酷狗 KRC 下载", "KuGou KRC download"))?;
         let content = v
             .get("content")
             .and_then(|c| c.as_str())
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| "KRC content 为空".to_string())?;
+            .ok_or_else(|| "KRC content empty".to_string())?;
         let krc = decrypt_krc(content)?;
         let trimmed = krc.trim_start_matches('\u{feff}').trim().to_string();
         crate::lyrics::krc_to_enhanced_lrc(&trimmed)
-            .ok_or_else(|| "KRC 转增强 LRC 失败".to_string())
+            .ok_or_else(|| "KRC conversion failed".to_string())
     })() {
         Ok(enhanced) => return Ok(Some(enhanced)),
         Err(e) => eprintln!("[kugou] {id} KRC 通道失败，回落 LRC: {e}"),
@@ -87,7 +97,7 @@ pub fn lyric(hash: &str) -> Result<Option<String>, String> {
         "https://krcs.kugou.com/download?ver=1&client=pc&fmt=lrc&charset=utf8&id={id}&accesskey={accesskey}"
     );
     let text = get_text(&dl_url, "https://krcs.kugou.com/", UA)?;
-    let v = parse_json(&text, "酷狗歌词下载")?;
+    let v = parse_json(&text, crate::i18n::pick("酷狗歌词下载", "KuGou lyric download"))?;
     let content = v
         .get("content")
         .and_then(|c| c.as_str())

@@ -7,6 +7,7 @@ mod db;
 mod engine;
 mod eq;
 mod fx;
+mod i18n;
 mod kugou;
 mod library;
 mod lyrics;
@@ -252,6 +253,7 @@ fn main() {
                 .map(|s| s == "true")
                 .unwrap_or(false);
             let eq = Arc::new(eq::EqShared::new(eq_gains, eq_enabled));
+            i18n::init_from_db(&conn);
 
             let smtc_tx = smtc::spawn(handle.clone());
             // 任务栏歌词渲染线程（Windows 常驻控制窗口；其它平台桩为空）
@@ -343,6 +345,8 @@ fn main() {
             commands::navidrome_all_songs,
             commands::navidrome_play,
             commands::navidrome_lyric,
+            commands::set_language,
+            commands::sync_system_lang,
             commands::kugou_search,
             commands::kugou_play,
             commands::kugou_lyric,

@@ -10,11 +10,14 @@
  */
 
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { tr } from "./i18n";
 
 export interface Skin {
   key: string;
   name: string;
+  nameEn: string;
   desc: string;
+  descEn: string;
   /** 完整 SVG 源码（单引号属性，无文字，纯矢量场景） */
   svg: string;
   /** 音频律动基座版（可选）：律动层接管动态元素后背景退化的静态底座。
@@ -600,59 +603,67 @@ const lightScrim = (a1: number, a2: number) =>
 export const SKINS: Skin[] = [
   // 每套皮肤按自身明暗分布单独调纱：深色场景轻压暗+重提亮，明亮场景反之
   {
-    key: "starry", name: "星夜", desc: "静谧深蓝 · 山月相伴", svg: STARRY,
+    key: "starry", name: "星夜", nameEn: "Starry Night", desc: "静谧深蓝 · 山月相伴", descEn: "Deep indigo sky · Moonlit peaks", svg: STARRY,
     scrimDark: darkScrim(0.1, 0.24, 0.38), scrimLight: lightScrim(0.74, 0.82),
   },
   {
-    key: "aurora", name: "极光", desc: "寒夜雪原 · 光幕流动", svg: AURORA,
+    key: "aurora", name: "极光", nameEn: "Aurora", desc: "寒夜雪原 · 光幕流动", descEn: "Arctic tundra · Flowing lights", svg: AURORA,
     scrimDark: darkScrim(0.14, 0.3, 0.44), scrimLight: lightScrim(0.72, 0.8),
   },
   {
-    key: "sunset", name: "晚霞", desc: "海面落日 · 云霞归鸟", svg: SUNSET,
+    key: "sunset", name: "晚霞", nameEn: "Sunset", desc: "海面落日 · 云霞归鸟", descEn: "Ocean sundown · Rosy dusk", svg: SUNSET,
     scrimDark: darkScrim(0.42, 0.56, 0.66), scrimLight: lightScrim(0.36, 0.5),
   },
   {
-    key: "ink", name: "水墨", desc: "远山淡影 · 留白朱砂", svg: INK,
+    key: "ink", name: "水墨", nameEn: "Ink Wash", desc: "远山淡影 · 留白朱砂", descEn: "Misty peaks · Cinnabar stamp", svg: INK,
     scrimDark: darkScrim(0.48, 0.62, 0.7), scrimLight: lightScrim(0.22, 0.38),
   },
   {
-    key: "neon", name: "霓虹", desc: "合成波 · 网格都市", svg: NEON,
+    key: "neon", name: "霓虹", nameEn: "Neon Grid", desc: "合成波 · 网格都市", descEn: "Synthwave · Retro grid city", svg: NEON,
     scrimDark: darkScrim(0.16, 0.32, 0.44), scrimLight: lightScrim(0.74, 0.82),
   },
   {
-    key: "forest", name: "晨林", desc: "雾中林线 · 斜阳流萤", svg: FOREST,
+    key: "forest", name: "晨林", nameEn: "Misty Forest", desc: "雾中林线 · 斜阳流萤", descEn: "Morning pine mist · Golden rays", svg: FOREST,
     scrimDark: darkScrim(0.28, 0.44, 0.56), scrimLight: lightScrim(0.46, 0.6),
   },
   {
-    key: "snow", name: "初雪", desc: "冬日暮雪 · 灯火可亲", svg: SNOW,
+    key: "snow", name: "初雪", nameEn: "First Snow", desc: "冬日暮雪 · 灯火可亲", descEn: "Winter twilight · Warm lanterns", svg: SNOW,
     scrimDark: darkScrim(0.5, 0.64, 0.72), scrimLight: lightScrim(0.2, 0.36),
   },
   {
-    key: "desert", name: "大漠", desc: "长河落日 · 沙丘驼影", svg: DESERT,
+    key: "desert", name: "大漠", nameEn: "Dunes", desc: "长河落日 · 沙丘驼影", descEn: "Desert dusk · Golden sands", svg: DESERT,
     scrimDark: darkScrim(0.42, 0.58, 0.68), scrimLight: lightScrim(0.32, 0.46),
   },
   {
-    key: "sakura", name: "樱雨", desc: "春山樱雪 · 落英缤纷", svg: SAKURA,
+    key: "sakura", name: "樱雨", nameEn: "Sakura Rain", desc: "春山樱雪 · 落英缤纷", descEn: "Spring blossoms · Drifting petals", svg: SAKURA,
     scrimDark: darkScrim(0.44, 0.58, 0.66), scrimLight: lightScrim(0.24, 0.4),
   },
   {
-    key: "abyss", name: "深海", desc: "光柱入海 · 鲸游深蓝", svg: ABYSS,
+    key: "abyss", name: "深海", nameEn: "Deep Sea", desc: "光柱入海 · 鲸游深蓝", descEn: "Ocean shafts · Whale in blue", svg: ABYSS,
     scrimDark: darkScrim(0.1, 0.26, 0.38), scrimLight: lightScrim(0.74, 0.82),
   },
   {
-    key: "wheat", name: "麦浪", desc: "金色麦田 · 暮色四合", svg: WHEAT,
+    key: "wheat", name: "麦浪", nameEn: "Wheat Field", desc: "金色麦田 · 暮色四合", descEn: "Golden harvest · Amber dusk", svg: WHEAT,
     scrimDark: darkScrim(0.4, 0.56, 0.64), scrimLight: lightScrim(0.34, 0.5),
   },
   {
-    key: "firefly", name: "萤火", desc: "夏夜塘畔 · 流萤点点", svg: FIREFLY,
+    key: "firefly", name: "萤火", nameEn: "Fireflies", desc: "夏夜塘畔 · 流萤点点", descEn: "Summer pond · Glowing fireflies", svg: FIREFLY,
     scrimDark: darkScrim(0.28, 0.46, 0.56), scrimLight: lightScrim(0.54, 0.66),
   },
   {
-    key: "vinyl", name: "黑胶", desc: "聆听室 · 唱片旋转与频谱律动", svg: VINYL,
+    key: "vinyl", name: "黑胶", nameEn: "Vinyl Room", desc: "聆听室 · 唱片旋转与频谱律动", descEn: "Listening room · Spinning vinyl", svg: VINYL,
     svgCalm: VINYL_CALM,
     scrimDark: darkScrim(0.12, 0.26, 0.4), scrimLight: lightScrim(0.74, 0.84),
   },
 ];
+
+export function skinName(s: Skin): string {
+  return tr(s.name, s.nameEn);
+}
+
+export function skinDesc(s: Skin): string {
+  return tr(s.desc, s.descEn);
+}
 
 const SKIN_KEY = "rustmusic.skin";
 export const DEFAULT_SKIN = "default";

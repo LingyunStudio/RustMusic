@@ -20,6 +20,7 @@ import {
 } from "../theme";
 import { applySkin, loadSkin, saveSkin } from "../skins";
 import { loadFxPref, saveFxPref } from "../fx";
+import { detectSystemLang, normalizeLanguagePref, setLanguagePref, tr } from "../i18n";
 import type { PlayState, ScanState } from "../types";
 import type { Store } from "./contract";
 import { initMenubarLyrics, setMenubarLyricsEnabled, syncMenubarLyrics } from "./menubar";
@@ -351,7 +352,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
           set({ sleepStopAfterTrack: false });
           api.stop().catch(() => {});
           set({ playing: false, pos: 0 });
-          get().toast("定时停止：当前歌曲已播完", "info");
+          get().toast(tr("定时停止：当前歌曲已播完", "Sleep timer: stopped after track"), "info");
           return;
         }
         // 睡眠定时“播完列表停止”：按已播计数判定——随机播放不按序到尾、
@@ -366,7 +367,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
             set({ sleepStopAfterQueue: false });
             api.stop().catch(() => {});
             set({ playing: false, pos: 0 });
-            get().toast("定时停止：列表已播完", "info");
+            get().toast(tr("定时停止：列表已播完", "Sleep timer: stopped after queue"), "info");
             return;
           }
         }
@@ -392,7 +393,13 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
     // 独占模式协商失败回退共享模式时，明确告知用户（否则无声降级难以察觉）
     unbinds.push(
       await listenEvent<{ reason: string }>("player://exclusive-fallback", (p) => {
-        get().toast(`WASAPI 独占模式不可用，已自动回退普通模式：${p.reason}`, "error");
+        get().toast(
+          tr(
+            `WASAPI 独占模式不可用，已自动回退普通模式：${p.reason}`,
+            `WASAPI exclusive mode unavailable, fell back to shared mode: ${p.reason}`
+          ),
+          "error"
+        );
       })
     );
 
@@ -514,7 +521,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       }>("download://progress", (p) => {
         if (p.error) {
           set({ download: null });
-          get().toast(`音源下载失败：${p.error}`, "error");
+          get().toast(tr(`音源下载失败：${p.error}`, `Stream download failed: ${p.error}`), "error");
           return;
         }
         if (p.done) {
@@ -541,6 +548,11 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
         api.listPlaylists(),
         api.listSources(),
       ]);
+      const langPref = normalizeLanguagePref(settings.language);
+      setLanguagePref(langPref);
+      if (langPref === "auto") {
+        api.syncSystemLang(detectSystemLang()).catch(() => {});
+      }
       const [neteaseStatus, qqStatus, biliStatus, kugouStatus] = await Promise.all(
         [
           api.neteaseStatus().catch(() => ({ loggedIn: false, nickname: "" })),
@@ -577,6 +589,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
           kugou: settings.qualityKugou,
         },
         closeAction: settings.closeAction ?? "tray",
+        language: langPref,
         autoUpdate: settings.autoUpdate ?? true,
         wasapiExclusive: settings.wasapiExclusive ?? false,
         cacheLimit: settings.cacheLimit ?? 2 * 1024 * 1024 * 1024,
@@ -590,7 +603,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       get().loadManualOrder("liked");
     } catch (e) {
       set({ ready: true });
-      get().toast(`初始化失败：${e}`, "error");
+      get().toast(tr(`初始化失败：${e}`, `Initialization failed: ${e}`), "error");
     }
     })();
     return initPromise;
@@ -650,7 +663,15 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
 
   openDetailPage(kind, name, source) {
     const nameTrim = name.trim();
-    if (!nameTrim || nameTrim === "未知艺术家" || nameTrim === "未知专辑") return;
+    if (
+      !nameTrim ||
+      nameTrim === "未知艺术家" ||
+      nameTrim === "未知专辑" ||
+      nameTrim === "Unknown Artist" ||
+      nameTrim === "Unknown Album"
+    ) {
+      return;
+    }
     set((s) => ({
       view: kind,
       viewParam: 0,
@@ -709,12 +730,12 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
           await win.setFullscreen(next);
         } catch (e) {
           if (get().fullscreen === next) set({ fullscreen: prev });
-          get().toast(`全屏切换失败：${e}`, "error");
+          get().toast(tr(`全屏切换失败：${e}`, `Failed to toggle fullscreen: ${e}`), "error");
         }
       })
       .catch((e) => {
         if (get().fullscreen === next) set({ fullscreen: prev });
-        get().toast(`全屏切换失败：${e}`, "error");
+        get().toast(tr(`全屏切换失败：${e}`, `Failed to toggle fullscreen: ${e}`), "error");
       });
   },
 
@@ -824,7 +845,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       resetDesktopLyricsFrame();
       // 立即推一帧当前状态（窗口加载完成可能晚于这次推送，靠后续 pos 事件补）
       pushDesktopLyrics(get());
-      get().toast("桌面歌词已开启（L 键切换）", "info");
+      get().toast(tr("桌面歌词已开启（L 键切换）", "Desktop lyrics enabled (press L to toggle)"), "info");
     } catch (e) {
       get().toast(String(e), "error");
     }

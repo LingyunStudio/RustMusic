@@ -355,7 +355,7 @@ pub fn add_folder(conn: &Connection, path: &str) -> Result<(i64, bool), String> 
                 .flatten();
             match id {
                 Some(id) => Ok((id, false)),
-                None => Err("写入监控文件夹失败".into()),
+                None => Err(crate::i18n::pick("写入监控文件夹失败", "Failed to save watched folder").into()),
             }
         }
     }

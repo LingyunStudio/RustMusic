@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Modal from "./Modal";
+import { useI18n } from "../i18n";
 import { useStore } from "../store";
 
 interface InputModalProps {
@@ -17,14 +18,16 @@ export function InputModal({
   open,
   title,
   placeholder,
-  confirmText = "确定",
+  confirmText,
   initialValue,
   onClose,
   onConfirm,
 }: InputModalProps) {
+  const { tr } = useI18n();
   const [value, setValue] = useState("");
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
+  const confirmLabel = confirmText ?? tr("确定", "OK");
 
   useEffect(() => {
     if (open) setValue(initialValue ?? "");
@@ -55,10 +58,10 @@ export function InputModal({
       />
       <div className="flex justify-end gap-2 mt-4">
         <button className="btn-secondary" onClick={onClose}>
-          取消
+          {tr("取消", "Cancel")}
         </button>
         <button className="btn-primary" disabled={!value.trim()} onClick={submit} style={{ opacity: value.trim() ? 1 : 0.5 }}>
-          {confirmText}
+          {confirmLabel}
         </button>
       </div>
     </Modal>
@@ -79,17 +82,19 @@ export function ConfirmModal({
   open,
   title,
   children,
-  confirmText = "确定",
+  confirmText,
   danger,
   onClose,
   onConfirm,
 }: ConfirmModalProps) {
+  const { tr } = useI18n();
+  const confirmLabel = confirmText ?? tr("确定", "OK");
   return (
     <Modal open={open} onClose={onClose} title={title} width={380}>
       <div className="text-[13px] text-[var(--ink-2)] leading-relaxed">{children}</div>
       <div className="flex justify-end gap-2 mt-5">
         <button className="btn-secondary" onClick={onClose}>
-          取消
+          {tr("取消", "Cancel")}
         </button>
         <button
           className="btn-primary"
@@ -106,7 +111,7 @@ export function ConfirmModal({
             onClose();
           }}
         >
-          {confirmText}
+          {confirmLabel}
         </button>
       </div>
     </Modal>

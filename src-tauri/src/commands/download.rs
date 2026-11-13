@@ -128,7 +128,7 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
     let state = app.state::<AppState>();
     let title = req.title.trim().to_string();
     if title.is_empty() {
-        return Err("歌曲标题为空".into());
+        return Err(crate::i18n::pick("歌曲标题为空", "Track title is empty").into());
     }
 
     // 1) 按当前音源设置的音质取播放/下载链接（此前误读全局旧 key "quality"，忽略了分平台音质设置）
@@ -144,11 +144,11 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
             let id: i64 = req
                 .id
                 .parse()
-                .map_err(|_| "网易云歌曲 ID 无效".to_string())?;
+                .map_err(|_| crate::i18n::pick("网易云歌曲 ID 无效", "Invalid NetEase track ID").to_string())?;
             let music_u = netease_cookie(&state);
             let (u, br, ext, delivered_level) =
                 crate::netease::song_url(id, music_u.as_deref(), &quality)?
-                    .ok_or("该歌曲暂无可播放链接")?;
+                    .ok_or_else(|| crate::i18n::pick("该歌曲暂无可播放链接", "No playable stream URL for this track"))?;
             let label = super::netease::netease_level_label(&delivered_level)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| super::quality_tag(&ext, br));
@@ -205,7 +205,11 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
             let username = db::get_setting(&conn, "navidrome_username").unwrap_or_default();
             drop(conn);
             if server.is_empty() {
-                return Err("尚未连接 Navidrome 服务器".into());
+                return Err(crate::i18n::pick(
+                    "尚未连接 Navidrome 服务器",
+                    "Not connected to a Navidrome server",
+                )
+                .into());
             }
             let url = crate::navidrome::stream_url(&server, &username, &req.id)?;
             // 扩展名从流 URL 路径推断，推断不出按 mp3
@@ -218,13 +222,18 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
                 .to_string();
             (url, ext, None)
         }
-        _ => return Err("未知音源类型".into()),
+        _ => return Err(crate::i18n::pick("未知音源类型", "Unknown audio source type").into()),
     };
 
     // 2) 下载到保存目录：先写 .part 临时文件，成功后原子改名——
     //    直接 create 目标文件会在网络中断时把已有完好文件截断损毁
     let dir = save_dir(&state);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建保存目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        crate::i18n::pick(
+            format!("创建保存目录失败: {e}"),
+            format!("Failed to create download folder: {e}"),
+        )
+    })?;
     let artist = sanitize_filename(&req.artist);
     let name = format!(
         "{} - {}.{}",
@@ -238,8 +247,9 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
     );
     let dest = dir.join(&name);
     if dest.exists() {
-        return Err(format!(
-            "保存目录已存在同名文件：{name}（如需重新下载请先删除旧文件）"
+        return Err(crate::i18n::pick(
+            format!("保存目录已存在同名文件：{name}（如需重新下载请先删除旧文件）"),
+            format!("File already exists: {name} (delete it first to re-download)"),
         ));
     }
     // 同名并发下载登记：两个线程交错写同一文件必然产出损坏数据。
@@ -249,7 +259,11 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
     {
         let mut dl = downloading_set().lock().unwrap();
         if dl.contains(&reg_key) {
-            return Err("该歌曲正在下载中".into());
+            return Err(crate::i18n::pick(
+                "该歌曲正在下载中",
+                "This track is already downloading",
+            )
+            .into());
         }
         dl.insert(reg_key.clone());
     }
@@ -281,7 +295,12 @@ fn download_to_dest(
     dest: &std::path::Path,
 ) -> Result<(), String> {
     let part = dest.with_extension("part");
-    let mut file = std::fs::File::create(&part).map_err(|e| format!("创建缓存文件失败: {e}"))?;
+    let mut file = std::fs::File::create(&part).map_err(|e| {
+        crate::i18n::pick(
+            format!("创建缓存文件失败: {e}"),
+            format!("Failed to create temp file: {e}"),
+        )
+    })?;
     let (total, reader) = http_get_for(&req.kind, url)?;
     let mut reader = reader.take(MAX_DOWNLOAD);
     let mut buf = [0u8; 64 * 1024];
@@ -291,14 +310,21 @@ fn download_to_dest(
     // 分块读取并回报进度（download://progress 驱动进度条；无 content-length 时 pct 为 0）
     let dl = (|| -> Result<(), String> {
         loop {
-            let n = reader
-                .read(&mut buf)
-                .map_err(|e| format!("下载失败: {e}"))?;
+            let n = reader.read(&mut buf).map_err(|e| {
+                crate::i18n::pick(
+                    format!("下载失败: {e}"),
+                    format!("Download failed: {e}"),
+                )
+            })?;
             if n == 0 {
                 break;
             }
-            file.write_all(&buf[..n])
-                .map_err(|e| format!("写入文件失败: {e}"))?;
+            file.write_all(&buf[..n]).map_err(|e| {
+                crate::i18n::pick(
+                    format!("写入文件失败: {e}"),
+                    format!("Failed to write file: {e}"),
+                )
+            })?;
             received += n as u64;
             if last_emit.elapsed() >= std::time::Duration::from_millis(300) {
                 last_emit = std::time::Instant::now();
@@ -329,12 +355,24 @@ fn download_to_dest(
     }
     // 完整性校验：长度不符（连接中途断开被当成 EOF、超上限被截断）不能当成功
     if total > 0 && received != total {
-        return Err(format!("下载不完整（{received}/{total} 字节），已放弃"));
+        return Err(crate::i18n::pick(
+            format!("下载不完整（{received}/{total} 字节），已放弃"),
+            format!("Incomplete download ({received}/{total} bytes), aborted"),
+        ));
     }
     if received == MAX_DOWNLOAD && (total == 0 || total > received) {
-        return Err("文件超过 512MB 下载上限，已放弃".into());
+        return Err(crate::i18n::pick(
+            "文件超过 512MB 下载上限，已放弃",
+            "File exceeds 512 MB download limit, aborted",
+        )
+        .into());
     }
-    std::fs::rename(&part, dest).map_err(|e| format!("保存文件失败: {e}"))?;
+    std::fs::rename(&part, dest).map_err(|e| {
+        crate::i18n::pick(
+            format!("保存文件失败: {e}"),
+            format!("Failed to save file: {e}"),
+        )
+    })?;
     let _ = app.emit(
         "download://progress",
         json!({ "url": &title, "received": received, "total": if total == 0 { received } else { total }, "pct": 100, "done": true }),
@@ -373,7 +411,11 @@ fn download_to_dest(
         Some(t) if t.duration > 0.0 || req.duration_ms > 0 || received >= 64 * 1024 => t,
         _ => {
             let _ = std::fs::remove_file(dest);
-            return Err("下载的文件无法解析为有效音频，已删除".into());
+            return Err(crate::i18n::pick(
+                "下载的文件无法解析为有效音频，已删除",
+                "Downloaded file is not valid audio and was removed",
+            )
+            .into());
         }
     };
     // 文件标签缺失时长时，用前端传入的元数据时长兜底
@@ -486,7 +528,7 @@ pub async fn save_dir_get(state: State<'_, AppState>) -> Result<serde_json::Valu
 pub async fn save_dir_set(state: State<'_, AppState>, dir: String) -> Result<(), String> {
     let p = std::path::PathBuf::from(&dir);
     if !p.is_dir() {
-        return Err("该路径不是文件夹".into());
+        return Err(crate::i18n::pick("该路径不是文件夹", "Path is not a directory").into());
     }
     let conn = state.db.lock();
     db::set_setting(&conn, "save_dir", &dir);
@@ -516,7 +558,9 @@ fn http_get_for(kind: &str, url: &str) -> Result<(u64, impl std::io::Read), Stri
             .set("Referer", "https://www.bilibili.com/")
             .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
     }
-    let resp = req.call().map_err(|e| format!("下载失败: {e}"))?;
+    let resp = req.call().map_err(|e| {
+        crate::i18n::pick(format!("下载失败: {e}"), format!("Download failed: {e}"))
+    })?;
     let total: u64 = resp
         .header("content-length")
         .and_then(|v| v.parse().ok())
@@ -542,7 +586,9 @@ fn write_tags(
                 Some(t) => t,
                 None => {
                     tagged.insert_tag(lofty::tag::Tag::new(tag_type));
-                    tagged.primary_tag_mut().ok_or("无主标签")?
+                    tagged
+                        .primary_tag_mut()
+                        .ok_or(crate::i18n::pick("无主标签", "Missing primary tag"))?
                 }
             };
             tag.insert_text(lofty::tag::ItemKey::TrackTitle, title.to_string());

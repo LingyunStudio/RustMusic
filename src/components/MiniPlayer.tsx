@@ -14,12 +14,14 @@ import {
   X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { formatQualityLabel, useI18n } from "../i18n";
 import { useStore } from "../store";
 import CoverImg from "./CoverImg";
 import { fmtTime } from "../utils";
 
 /** 实时滚动/跑马灯歌词栏组件（隔离 pos 高频刷新，避免小窗主体每帧重渲染） */
 function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
+  const { tr } = useI18n();
   const pos = useStore((s) => s.pos);
   const dur = useStore((s) => s.dur);
   const lyrics = useStore((s) => s.lyrics);
@@ -63,8 +65,8 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
       ? `${lyricText}  (${lyricTrans})`
       : lyricText
     : current
-    ? "♪ 纯音乐 / 暂无滚动歌词"
-    : "双击此处或右上角还原主窗口";
+    ? tr("♪ 纯音乐 / 暂无滚动歌词", "♪ Instrumental / No synced lyrics")
+    : tr("双击此处或右上角还原主窗口", "Double-click here or top-right to restore");
 
   // 歌词超长跑马灯：利用独立不可见标尺精确测量文字真实宽度
   const containerRef = useRef<HTMLDivElement>(null);
@@ -95,7 +97,7 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
   return (
     <div
       onDoubleClick={onRestore}
-      title="双击还原主窗口"
+      title={tr("双击还原主窗口", "Double-click to restore main window")}
       className="mx-2.5 mb-1.5 px-2.5 h-[25px] rounded-md bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center gap-1.5 overflow-hidden pointer-events-auto cursor-pointer"
     >
       <Music2 size={11} className="text-[var(--accent)] shrink-0 opacity-80" />
@@ -139,6 +141,7 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
 }
 
 export default function MiniPlayer() {
+  const { tr } = useI18n();
   const current = useStore((s) => s.current);
   const playing = useStore((s) => s.playing);
   const togglePlay = useStore((s) => s.togglePlay);
@@ -345,7 +348,7 @@ export default function MiniPlayer() {
     <div
       data-tauri-drag-region
       onDoubleClick={handleRestore}
-      title="双击还原主窗口 · 拖拽移动"
+      title={tr("双击还原主窗口 · 拖拽移动", "Double-click to restore · Drag to move")}
       className="mini-player w-full h-full relative select-none flex flex-col justify-between overflow-hidden cursor-move"
     >
       {/* 拟物主题沉头螺栓 */}
@@ -366,7 +369,11 @@ export default function MiniPlayer() {
             togglePlay();
           }}
           onDoubleClick={handleRestore}
-          title={playing ? "点击暂停 (双击还原主窗口)" : "点击播放 (双击还原主窗口)"}
+          title={
+            playing
+              ? tr("点击暂停 (双击还原主窗口)", "Click to pause (double-click to restore)")
+              : tr("点击播放 (双击还原主窗口)", "Click to play (double-click to restore)")
+          }
         >
           <CoverImg
             src={current?.cover}
@@ -393,7 +400,7 @@ export default function MiniPlayer() {
             className="text-[12.5px] font-semibold text-[var(--ink)] truncate leading-tight select-text"
             title={current?.title ?? "RustMusic"}
           >
-            {current?.title ?? "暂无播放曲目"}
+            {current?.title ?? tr("暂无播放曲目", "No Track Playing")}
           </div>
 
           <div className="flex items-center gap-1.5 mt-1 min-w-0">
@@ -401,11 +408,11 @@ export default function MiniPlayer() {
               className="text-[11px] text-[var(--ink-2)] truncate max-w-[115px] select-text"
               title={current?.artist ?? ""}
             >
-              {current?.artist || "双击还原完整窗口"}
+              {current?.artist || tr("双击还原完整窗口", "Double-click to restore")}
             </span>
             {current?.quality && (
               <span className="mini-quality shrink-0 px-1 py-0.2 text-[8.5px] font-bold text-[var(--accent-strong)] rounded">
-                {current.quality}
+                {formatQualityLabel(current.quality)}
               </span>
             )}
           </div>
@@ -418,7 +425,7 @@ export default function MiniPlayer() {
             <button
               className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--shade)] transition-colors"
               onClick={handleTogglePin}
-              title={pinned ? "取消置顶" : "固定在最前"}
+              title={pinned ? tr("取消置顶", "Unpin") : tr("固定在最前", "Pin on Top")}
             >
               {pinned ? (
                 <Pin size={11} className="text-[var(--accent)] fill-current" />
@@ -429,21 +436,21 @@ export default function MiniPlayer() {
             <button
               className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--shade)] text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors"
               onClick={handleRestore}
-              title="还原完整主窗口"
+              title={tr("还原完整主窗口", "Restore Main Window")}
             >
               <Maximize2 size={11} />
             </button>
             <button
               className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--shade)] text-[var(--ink-3)] hover:text-[var(--ink)] transition-colors"
               onClick={handleMinimize}
-              title="最小化"
+              title={tr("最小化", "Minimize")}
             >
               <Minus size={11} />
             </button>
             <button
               className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-500 hover:text-white text-[var(--ink-3)] transition-colors"
               onClick={handleClose}
-              title="关闭"
+              title={tr("关闭", "Close")}
             >
               <X size={12} />
             </button>
@@ -454,7 +461,7 @@ export default function MiniPlayer() {
             <button
               className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--shade)] transition-colors"
               onClick={handleToggleLike}
-              title={isLiked ? "取消喜欢" : "喜欢"}
+              title={isLiked ? tr("取消喜欢", "Unlike") : tr("喜欢", "Like")}
             >
               <Heart
                 size={13}
@@ -471,7 +478,7 @@ export default function MiniPlayer() {
                 e.stopPropagation();
                 prev();
               }}
-              title="上一首"
+              title={tr("上一首", "Previous")}
             >
               <SkipBack size={13} className="fill-current" />
             </button>
@@ -481,7 +488,7 @@ export default function MiniPlayer() {
                 e.stopPropagation();
                 togglePlay();
               }}
-              title="播放/暂停 (空格)"
+              title={tr("播放/暂停 (空格)", "Play/Pause (Space)")}
             >
               {playing ? (
                 <Pause size={12} className="fill-current" />
@@ -495,7 +502,7 @@ export default function MiniPlayer() {
                 e.stopPropagation();
                 next();
               }}
-              title="下一首"
+              title={tr("下一首", "Next")}
             >
               <SkipForward size={13} className="fill-current" />
             </button>
@@ -517,7 +524,10 @@ export default function MiniPlayer() {
           setScrubbing(false);
         }}
         className="group relative h-[3px] hover:h-[5px] w-full bg-black/10 dark:bg-white/10 cursor-pointer transition-all shrink-0"
-        title={`进度：${fmtTime(displayPos)} / ${fmtTime(total)}`}
+        title={tr(
+          `进度：${fmtTime(displayPos)} / ${fmtTime(total)}`,
+          `Progress: ${fmtTime(displayPos)} / ${fmtTime(total)}`
+        )}
       >
         <div
           className="h-full bg-[var(--accent)] transition-[width] duration-100 ease-linear pointer-events-none"

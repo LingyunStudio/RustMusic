@@ -103,13 +103,23 @@ impl Engine {
             Some(name) => {
                 let names = wasapi_name_map();
                 host.output_devices()
-                    .map_err(|e| format!("枚举输出设备失败: {e}"))?
+                    .map_err(|e| {
+                        crate::i18n::pick(
+                            format!("枚举输出设备失败: {e}"),
+                            format!("Failed to enumerate output devices: {e}"),
+                        )
+                    })?
                     .find(|d| device_matches(d, &names, name))
-                    .ok_or_else(|| format!("输出设备「{name}」不存在"))?
+                    .ok_or_else(|| {
+                        crate::i18n::pick(
+                            format!("输出设备「{name}」不存在"),
+                            format!("Output device \"{name}\" not found"),
+                        )
+                    })?
             }
-            None => host
-                .default_output_device()
-                .ok_or("没有可用的音频输出设备")?,
+            None => host.default_output_device().ok_or_else(|| {
+                crate::i18n::pick("没有可用的音频输出设备", "No audio output device available")
+            })?,
         };
         let device_name = device.name().unwrap_or_default();
         // 同一设备已有泄漏句柄：复用（旧 Player 已 stop， mixer 仍活着）
@@ -121,7 +131,12 @@ impl Engine {
         let leaked: &'static MixerDeviceSink = Box::leak(Box::new(
             rodio::DeviceSinkBuilder::from_device(device)
                 .and_then(|b| b.open_stream())
-                .map_err(|e| format!("打开输出设备失败: {e}"))?,
+                .map_err(|e| {
+                    crate::i18n::pick(
+                        format!("打开输出设备失败: {e}"),
+                        format!("Failed to open output device: {e}"),
+                    )
+                })?,
         ));
         LEAKED_SINKS
             .lock()
@@ -187,11 +202,9 @@ impl Engine {
             self.set_device_preference(name);
             self.rebuilding.store(true, Ordering::Relaxed);
             let result = (|| -> Result<(), String> {
-                let info = self
-                    .current
-                    .read()
-                    .clone()
-                    .ok_or("当前没有正在播放的曲目")?;
+                let info = self.current.read().clone().ok_or_else(|| {
+                    crate::i18n::pick("当前没有正在播放的曲目", "No track currently playing")
+                })?;
                 let pos = self.pos_ms.load(Ordering::Relaxed);
                 let was_paused = self.user_paused.load(Ordering::Relaxed);
                 self.rebuild_exclusive_at(&info, pos, was_paused)

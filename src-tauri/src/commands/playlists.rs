@@ -117,7 +117,11 @@ pub async fn list_playlists(state: State<'_, AppState>) -> Result<Vec<Playlist>,
 pub async fn create_playlist(state: State<'_, AppState>, name: String) -> Result<i64, String> {
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err("播放列表名称不能为空".into());
+        return Err(crate::i18n::pick(
+            "播放列表名称不能为空",
+            "Playlist name cannot be empty",
+        )
+        .into());
     }
     let conn = state.db.lock();
     db::create_playlist(&conn, &name)
@@ -243,7 +247,11 @@ pub async fn export_playlist_m3u(
         rows
     };
     if entries.is_empty() {
-        return Err("歌单是空的，没有可导出的内容".into());
+        return Err(crate::i18n::pick(
+            "歌单是空的，没有可导出的内容",
+            "Playlist is empty; nothing to export",
+        )
+        .into());
     }
     let mut out = String::from("#EXTM3U\n");
     let mut n = 0usize;
@@ -263,7 +271,12 @@ pub async fn export_playlist_m3u(
         }
         n += 1;
     }
-    std::fs::write(&path, out).map_err(|e| format!("写入文件失败：{e}"))?;
+    std::fs::write(&path, out).map_err(|e| {
+        crate::i18n::pick(
+            format!("写入文件失败：{e}"),
+            format!("Failed to write file: {e}"),
+        )
+    })?;
     Ok(n)
 }
 
@@ -279,10 +292,20 @@ pub async fn import_playlist_m3u(
 ) -> Result<serde_json::Value, String> {
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err("播放列表名称不能为空".into());
+        return Err(crate::i18n::pick(
+            "播放列表名称不能为空",
+            "Playlist name cannot be empty",
+        )
+        .into());
     }
     let text = super::lyrics::read_text_file_decoded(std::path::Path::new(&path))
-        .ok_or_else(|| "读取文件失败（既不是 UTF-8 也不是 GB18030 编码）".to_string())?;
+        .ok_or_else(|| {
+            crate::i18n::pick(
+                "读取文件失败（既不是 UTF-8 也不是 GB18030 编码）",
+                "Failed to read file (neither UTF-8 nor GB18030 encoded)",
+            )
+            .to_string()
+        })?;
     let mut local_paths: Vec<String> = Vec::new();
     let mut online_refs: Vec<(String, String)> = Vec::new();
     for line in text.lines() {
@@ -301,7 +324,11 @@ pub async fn import_playlist_m3u(
         local_paths.push(line.to_string());
     }
     if local_paths.is_empty() && online_refs.is_empty() {
-        return Err("文件里没有可导入的条目".into());
+        return Err(crate::i18n::pick(
+            "文件里没有可导入的条目",
+            "No importable entries found in file",
+        )
+        .into());
     }
 
     // 本地行解析入库（文件级元数据解析是阻塞 IO，走专用线程池）。
@@ -403,7 +430,11 @@ pub async fn import_playlist_m3u(
     }
     if added == 0 {
         let _ = db::delete_playlist(&conn, pid);
-        return Err("文件里的条目都无法解析（本地文件不存在且无在线元数据）".into());
+        return Err(crate::i18n::pick(
+            "文件里的条目都无法解析（本地文件不存在且无在线元数据）",
+            "None of the entries in the file could be resolved (local files missing and no online metadata)",
+        )
+        .into());
     }
     Ok(serde_json::json!({ "playlistId": pid, "added": added, "skipped": missing_files }))
 }
@@ -476,7 +507,7 @@ pub async fn save_manual_order(
     keys: Vec<String>,
 ) -> Result<(), String> {
     if !matches!(list.as_str(), "library" | "liked") {
-        return Err("未知排序列表".into());
+        return Err(crate::i18n::pick("未知排序列表", "Unknown sort list").into());
     }
     let conn = state.db.lock();
     db::save_manual_order(&conn, &list, &keys);
@@ -490,7 +521,7 @@ pub async fn get_manual_order(
     list: String,
 ) -> Result<std::collections::HashMap<String, i64>, String> {
     if !matches!(list.as_str(), "library" | "liked") {
-        return Err("未知排序列表".into());
+        return Err(crate::i18n::pick("未知排序列表", "Unknown sort list").into());
     }
     let conn = state.db.lock();
     Ok(db::manual_order_map(&conn, &list))

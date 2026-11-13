@@ -71,8 +71,10 @@ fn rsa_encrypt_hex(input: &[u8]) -> Result<String, String> {
     rev.reverse();
     // 文本按十六进制字节解读为大整数，裸 RSA（无填充，与平台约定一致）
     let m_bytes = hex::decode(&hex::encode(&rev)).map_err(|e| e.to_string())?;
-    let e_bytes = hex::decode(WEAPI_RSA_E_HEX).map_err(|e| format!("RSA 指数配置错误: {e}"))?;
-    let n_bytes = hex::decode(WEAPI_RSA_N_HEX).map_err(|e| format!("RSA 模数配置错误: {e}"))?;
+    let e_bytes = hex::decode(WEAPI_RSA_E_HEX)
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("RSA 指数配置错误", "Invalid RSA exponent config")))?;
+    let n_bytes = hex::decode(WEAPI_RSA_N_HEX)
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("RSA 模数配置错误", "Invalid RSA modulus config")))?;
     let m = BigUint::from_bytes_be(&m_bytes);
     let e = BigUint::from_bytes_be(&e_bytes);
     let n = BigUint::from_bytes_be(&n_bytes);
@@ -129,14 +131,18 @@ fn post_form(url: &str, body: &str, music_u: Option<&str>) -> Result<serde_json:
             .timeout(TIMEOUT)
             .send_string(body)
     })
-    .map_err(|e| format!("网易云接口请求失败: {e}"))?;
+    .map_err(|e| format!("{}: {e}", crate::i18n::pick("网易云接口请求失败", "NetEase API request failed")))?;
     let status = resp.status();
     let text = resp
         .into_string()
-        .map_err(|e| format!("网易云接口响应读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("网易云接口响应读取失败", "Failed to read NetEase API response")))?;
     serde_json::from_str(&text).map_err(|e| {
         let head: String = text.chars().take(180).collect();
-        format!("网易云接口响应异常（HTTP {status}）: {e} | body: {head}")
+        if crate::i18n::is_en() {
+            format!("Unexpected NetEase API response (HTTP {status}): {e} | body: {head}")
+        } else {
+            format!("网易云接口响应异常（HTTP {status}）: {e} | body: {head}")
+        }
     })
 }
 
@@ -263,7 +269,11 @@ pub fn search(
     let resp = weapi_post("/weapi/search/get", &payload, music_u)?;
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
-        return Err(format!("网易云搜索失败（code {code}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("NetEase search failed (code {code})")
+        } else {
+            format!("网易云搜索失败（code {code}）")
+        });
     }
     let songs_json = resp
         .pointer("/result/songs")
@@ -433,7 +443,11 @@ pub fn song_url(
     } else {
         levels
     };
-    let mut last_hint = String::from("该歌曲没有可播放的音频");
+    let mut last_hint = crate::i18n::pick(
+        "该歌曲没有可播放的音频",
+        "No playable audio stream for this track",
+    )
+    .to_string();
     let mut best_fallback: Option<(String, i64, String, String)> = None;
     for (idx, &(level, default_br)) in levels.iter().enumerate() {
         // 如果之前服务端自动降级已经拿到了比当前候选档位更高或相等的流，直接返回
@@ -450,17 +464,24 @@ pub fn song_url(
         let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         if code == 301 || code == 302 {
             // cookie 失效：换音质也无法挽回，整链中止并让前端引导重新登录
-            return Err("网易云登录已过期，请重新登录".into());
+            return Err(crate::i18n::pick(
+                "网易云登录已过期，请重新登录",
+                "NetEase Cloud session expired, please sign in again",
+            )
+            .into());
         }
         if code != 200 {
             // 其它非 200（如个别档位被权益/风控拒绝）：沿阶梯继续回落，
             // 不能整链中止——否则选高档时表现为"直接无法获取"
             continue;
         }
-        let first = resp
-            .pointer("/data/0")
-            .cloned()
-            .ok_or_else(|| "响应中没有该歌曲的数据".to_string())?;
+        let first = resp.pointer("/data/0").cloned().ok_or_else(|| {
+            crate::i18n::pick(
+                "响应中没有该歌曲的数据",
+                "No track data returned in response",
+            )
+            .to_string()
+        })?;
         let item_code = first.get("code").and_then(|c| c.as_i64()).unwrap_or(200);
         let url = first
             .get("url")
@@ -513,9 +534,21 @@ pub fn song_url(
             continue;
         }
         last_hint = match item_code {
-            404 => "该歌曲暂无版权音频（可能需要 VIP 或已下架）".into(),
-            402 => "该内容需要付费".into(),
-            600 => "该歌曲需要 VIP 权益".into(),
+            404 => crate::i18n::pick(
+                "该歌曲暂无版权音频（可能需要 VIP 或已下架）",
+                "Track unavailable due to copyright restrictions (may require VIP or be removed)",
+            )
+            .into(),
+            402 => crate::i18n::pick(
+                "该内容需要付费",
+                "This track requires purchase or subscription",
+            )
+            .into(),
+            600 => crate::i18n::pick(
+                "该歌曲需要 VIP 权益",
+                "VIP membership required for this track",
+            )
+            .into(),
             _ => last_hint,
         };
     }
@@ -542,7 +575,10 @@ pub fn lyric(id: i64, music_u: Option<&str>) -> Result<Option<LyricText>, String
     let resp = weapi_post("/weapi/song/lyric", &payload, music_u)?;
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
-        return Err(format!("获取歌词失败（code {code}）"));
+        return Err(crate::i18n::pick(
+            format!("获取歌词失败（code {code}）"),
+            format!("Failed to fetch lyrics (code {code})"),
+        ));
     }
     let trans = resp
         .pointer("/tlyric/lyric")
@@ -597,19 +633,23 @@ pub fn resolve_uid(music_u: &str) -> Result<i64, String> {
         .set("Referer", "https://music.163.com/")
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("账号信息请求失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("账号信息请求失败", "Account info request failed")))?;
     let text = resp
         .into_string()
-        .map_err(|e| format!("账号信息读取失败: {e}"))?;
-    let v: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("账号信息解析失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("账号信息读取失败", "Failed to read account info")))?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("账号信息解析失败", "Failed to parse account info")))?;
     let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
-        return Err(format!("账号信息获取失败（code {code}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("Failed to fetch account info (code {code})")
+        } else {
+            format!("账号信息获取失败（code {code}）")
+        });
     }
     v.pointer("/account/id")
         .and_then(|x| x.as_i64())
-        .ok_or_else(|| "响应中缺少账号 ID".into())
+        .ok_or_else(|| crate::i18n::pick("响应中缺少账号 ID", "Response missing account ID").into())
 }
 
 /// 获取登录账号的歌单列表（分页拉全：只取一页的话，超过 60 个歌单的
@@ -632,7 +672,11 @@ pub fn user_playlists(
         let resp = weapi_post("/weapi/user/playlist", &payload, Some(music_u))?;
         let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         if code != 200 {
-            return Err(format!("获取歌单列表失败（code {code}）"));
+            return Err(if crate::i18n::is_en() {
+                format!("Failed to fetch playlists (code {code})")
+            } else {
+                format!("获取歌单列表失败（code {code}）")
+            });
         }
         let list = resp
             .pointer("/playlist")
@@ -721,19 +765,24 @@ pub fn playlist_tracks(pid: i64, music_u: &str) -> Result<Vec<NetSong>, String> 
         .set("Referer", "https://music.163.com/")
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("获取歌单详情失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("获取歌单详情失败", "Failed to fetch playlist details")))?;
     let text = resp
         .into_string()
-        .map_err(|e| format!("歌单详情读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("歌单详情读取失败", "Failed to read playlist details")))?;
     let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
         format!(
-            "歌单详情解析失败: {e} | body: {}",
+            "{}: {e} | body: {}",
+            crate::i18n::pick("歌单详情解析失败", "Failed to parse playlist details"),
             text.chars().take(120).collect::<String>()
         )
     })?;
     let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
-        return Err(format!("获取歌单详情失败（code {code}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("Failed to fetch playlist details (code {code})")
+        } else {
+            format!("获取歌单详情失败（code {code}）")
+        });
     }
     let parse_song = |t: &serde_json::Value| -> Option<NetSong> {
         serde_json::from_value::<NetSong>(t.clone()).ok()
@@ -830,12 +879,22 @@ pub fn qr_create() -> Result<(String, String), String> {
         .get("unikey")
         .and_then(|v| v.as_str())
         .or_else(|| resp.pointer("/data/unikey").and_then(|v| v.as_str()))
-        .ok_or_else(|| format!("获取登录二维码失败: {}", resp))?
+        .ok_or_else(|| {
+            crate::i18n::pick(
+                format!("获取登录二维码失败: {}", resp),
+                format!("Failed to get login QR code: {}", resp),
+            )
+        })?
         .to_string();
 
     let text = format!("https://music.163.com/login?codekey={unikey}");
     let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M)
-        .map_err(|e| format!("生成二维码失败: {e:?}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("生成二维码失败: {e:?}"),
+                format!("Failed to generate QR code: {e:?}"),
+            )
+        })?;
     let img = code
         .render::<image::Luma<u8>>()
         .quiet_zone(true)
@@ -847,7 +906,12 @@ pub fn qr_create() -> Result<(String, String), String> {
             &mut std::io::Cursor::new(&mut png_bytes),
             image::ImageFormat::Png,
         )
-        .map_err(|e| format!("编码二维码图片失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("编码二维码图片失败: {e}"),
+                format!("Failed to encode QR image: {e}"),
+            )
+        })?;
     let b64 = b64_encode(&png_bytes);
     Ok((unikey, format!("data:image/png;base64,{b64}")))
 }
@@ -872,20 +936,29 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
         .set("Cookie", &cookie_header(None))
         .timeout(TIMEOUT)
         .send_string(&weapi_body(&payload)?)
-        .map_err(|e| format!("登录状态查询失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("登录状态查询失败: {e}"),
+                format!("Failed to check login status: {e}"),
+            )
+        })?;
 
     let set_cookies: Vec<String> = resp
         .all("Set-Cookie")
         .into_iter()
         .map(|s| s.to_string())
         .collect();
-    let text = resp
-        .into_string()
-        .map_err(|e| format!("登录响应读取失败: {e}"))?;
+    let text = resp.into_string().map_err(|e| {
+        crate::i18n::pick(
+            format!("登录响应读取失败: {e}"),
+            format!("Failed to read login response: {e}"),
+        )
+    })?;
     let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-        format!(
-            "登录响应解析失败: {e} | body: {}",
-            &text.chars().take(120).collect::<String>()
+        let head: String = text.chars().take(120).collect();
+        crate::i18n::pick(
+            format!("登录响应解析失败: {e} | body: {head}"),
+            format!("Failed to parse login response: {e} | body: {head}"),
         )
     })?;
 
@@ -918,7 +991,11 @@ pub fn qr_check(key: &str) -> Result<QrCheckResult, String> {
         .map(|s| s.to_string());
     let user_id = json.pointer("/profile/userId").and_then(|n| n.as_i64());
     if music_u.is_none() {
-        return Err("登录成功但未取到登录凭证，请重试".into());
+        return Err(crate::i18n::pick(
+            "登录成功但未取到登录凭证，请重试",
+            "Signed in, but no session credential returned; please retry",
+        )
+        .into());
     }
     Ok(QrCheckResult {
         status: "success".into(),
@@ -934,7 +1011,11 @@ pub fn like_list(uid: i64, music_u: &str) -> Result<Vec<i64>, String> {
     let resp = weapi_post("/weapi/song/likelist/get", &payload, Some(music_u))?;
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
-        return Err(format!("获取喜欢列表失败（code {code}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("Failed to fetch liked songs (code {code})")
+        } else {
+            format!("获取喜欢列表失败（code {code}）")
+        });
     }
     Ok(resp
         .get("ids")
@@ -957,8 +1038,12 @@ pub fn like(id: i64, like: bool, music_u: &str) -> Result<(), String> {
         let msg = resp
             .get("message")
             .and_then(|m| m.as_str())
-            .unwrap_or("未知错误");
-        return Err(format!("收藏失败（code {code}）: {msg}"));
+            .unwrap_or(crate::i18n::pick("未知错误", "Unknown error"));
+        return Err(if crate::i18n::is_en() {
+            format!("Favorite failed (code {code}): {msg}")
+        } else {
+            format!("收藏失败（code {code}）: {msg}")
+        });
     }
     Ok(())
 }
@@ -992,7 +1077,11 @@ pub fn toplists() -> Result<Vec<NetToplist>, String> {
     let resp = post_form("https://music.163.com/api/toplist", "", None)?;
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
-        return Err(format!("获取榜单列表失败（code {code}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("Failed to fetch charts (code {code})")
+        } else {
+            format!("获取榜单列表失败（code {code}）")
+        });
     }
     let mut out = Vec::new();
     if let Some(list) = resp.get("list").and_then(|v| v.as_array()) {
@@ -1035,17 +1124,20 @@ fn personalized_playlists(limit: i64) -> Result<Vec<NetRandomPlaylist>, String> 
         .set("Referer", "https://music.163.com/")
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("推荐歌单请求失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("推荐歌单请求失败", "Recommended playlists request failed")))?;
     let text = resp
         .into_string()
-        .map_err(|e| format!("推荐歌单响应读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("推荐歌单响应读取失败", "Failed to read recommended playlists response")))?;
     let v: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("推荐歌单解析失败: {e}"))?;
+        serde_json::from_str(&text)
+            .map_err(|e| format!("{}: {e}", crate::i18n::pick("推荐歌单解析失败", "Failed to parse recommended playlists")))?;
     if v.get("code").and_then(|c| c.as_i64()) != Some(200) {
-        return Err(format!(
-            "获取推荐歌单失败（code {}）",
-            v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1)
-        ));
+        let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        return Err(if crate::i18n::is_en() {
+            format!("Failed to fetch recommended playlists (code {code})")
+        } else {
+            format!("获取推荐歌单失败（code {code}）")
+        });
     }
     let mut out = Vec::new();
     if let Some(list) = v.pointer("/result").and_then(|x| x.as_array()) {
@@ -1085,7 +1177,7 @@ fn personalized_playlists(limit: i64) -> Result<Vec<NetRandomPlaylist>, String> 
 /// 榜单 ID 兜底（榜单 ID 即歌单 ID，playlist_tracks 匿名可拉）。
 pub fn random_playlist(music_u: &str) -> Result<NetRandomPlaylist, String> {
     use rand::seq::SliceRandom;
-    let mut last_err = String::from("未能抽中可用歌单");
+    let mut last_err = crate::i18n::pick("未能抽中可用歌单", "No usable playlist found").to_string();
     if let Ok(mut pool) = personalized_playlists(30) {
         pool.shuffle(&mut rand::thread_rng());
         for p in pool.iter().take(3) {
@@ -1100,7 +1192,7 @@ pub fn random_playlist(music_u: &str) -> Result<NetRandomPlaylist, String> {
                         songs,
                     });
                 }
-                Ok(_) => last_err = "抽中的歌单暂无曲目".into(),
+                Ok(_) => last_err = crate::i18n::pick("抽中的歌单暂无曲目", "Selected playlist has no tracks").into(),
                 Err(e) => last_err = e,
             }
         }
@@ -1124,19 +1216,24 @@ pub fn random_playlist(music_u: &str) -> Result<NetRandomPlaylist, String> {
             }
         }
     }
-    const FALLBACK: [(i64, &str); 4] = [
-        (3778678, "热歌榜"),
-        (3779629, "新歌榜"),
-        (19723756, "飙升榜"),
-        (25072823, "原创榜"),
+    const FALLBACK: [(i64, &str, &str); 4] = [
+        (3778678, "热歌榜", "Hot Songs"),
+        (3779629, "新歌榜", "New Songs"),
+        (19723756, "飙升榜", "Rising"),
+        (25072823, "原创榜", "Original"),
     ];
     use rand::Rng;
     let pick = FALLBACK[rand::thread_rng().gen_range(0..FALLBACK.len())];
-    let songs = playlist_tracks(pick.0, music_u)
-        .map_err(|e| format!("随机歌单获取失败：{last_err}；{e}"))?;
+    let songs = playlist_tracks(pick.0, music_u).map_err(|e| {
+        if crate::i18n::is_en() {
+            format!("Failed to load random playlist: {last_err}; {e}")
+        } else {
+            format!("随机歌单获取失败：{last_err}；{e}")
+        }
+    })?;
     Ok(NetRandomPlaylist {
         id: pick.0,
-        name: pick.1.to_string(),
+        name: crate::i18n::pick(pick.1, pick.2).to_string(),
         cover: String::new(),
         play_count: 0,
         creator: String::new(),
@@ -1148,7 +1245,7 @@ pub fn random_playlist(music_u: &str) -> Result<NetRandomPlaylist, String> {
 /// 按账号听歌口味生成，每天更新（约 30 首）
 pub fn daily_recommend(music_u: &str) -> Result<Vec<NetSong>, String> {
     if music_u.is_empty() {
-        return Err("请先登录网易云账号".into());
+        return Err(crate::i18n::pick("请先登录网易云账号", "Please sign in to NetEase Cloud Music first").into());
     }
     let payload = serde_json::json!({ "csrf_token": "" }).to_string();
     let resp = weapi_post(
@@ -1159,8 +1256,16 @@ pub fn daily_recommend(music_u: &str) -> Result<Vec<NetSong>, String> {
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(match code {
-            301 | 302 => "网易云登录已过期，请重新登录".into(),
-            _ => format!("获取每日推荐失败（code {code}）"),
+            301 | 302 => crate::i18n::pick(
+                "网易云登录已过期，请重新登录",
+                "NetEase session expired, please log in again",
+            )
+            .into(),
+            _ => if crate::i18n::is_en() {
+                format!("Failed to fetch Daily Recommend (code {code})")
+            } else {
+                format!("获取每日推荐失败（code {code}）")
+            },
         });
     }
     let songs = resp
@@ -1178,15 +1283,23 @@ pub fn daily_recommend(music_u: &str) -> Result<Vec<NetSong>, String> {
 /// 私人 FM（需登录）：/weapi/v1/radio/get，每次返回一批推荐歌曲
 pub fn personal_fm(music_u: &str) -> Result<Vec<NetSong>, String> {
     if music_u.is_empty() {
-        return Err("请先登录网易云账号".into());
+        return Err(crate::i18n::pick("请先登录网易云账号", "Please sign in to NetEase Cloud Music first").into());
     }
     let payload = serde_json::json!({ "csrf_token": "" }).to_string();
     let resp = weapi_post("/weapi/v1/radio/get", &payload, Some(music_u))?;
     let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     if code != 200 {
         return Err(match code {
-            301 | 302 => "网易云登录已过期，请重新登录".into(),
-            _ => format!("获取私人 FM 失败（code {code}）"),
+            301 | 302 => crate::i18n::pick(
+                "网易云登录已过期，请重新登录",
+                "NetEase session expired, please log in again",
+            )
+            .into(),
+            _ => if crate::i18n::is_en() {
+                format!("Failed to fetch Personal FM (code {code})")
+            } else {
+                format!("获取私人 FM 失败（code {code}）")
+            },
         });
     }
     let songs = resp

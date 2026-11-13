@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Disc3, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-react";
 import { useStore } from "../store";
+import { formatLyricSource, useI18n } from "../i18n";
 import CoverImg from "./CoverImg";
 import VUMeter from "./VUMeter";
 import Tonearm from "./Tonearm";
@@ -16,6 +17,7 @@ import {
 import { setFxWanted } from "../fx";
 
 export default function NowPlaying() {
+  const { tr } = useI18n();
   const current = useStore((s) => s.current);
   const setNowPlayingOpen = useStore((s) => s.setNowPlayingOpen);
   const fullscreen = useStore((s) => s.fullscreen);
@@ -360,16 +362,16 @@ export default function NowPlaying() {
 
   const platformBadge =
     current.kind === "netease"
-      ? "网易云音乐"
+      ? tr("网易云音乐", "NetEase Cloud Music")
       : current.kind === "qq"
-        ? "QQ音乐"
+        ? tr("QQ音乐", "QQ Music")
         : current.kind === "kugou"
-          ? "酷狗音乐"
+          ? tr("酷狗音乐", "KuGou Music")
           : current.kind === "bilibili"
-            ? "B站音频"
+            ? tr("B站音频", "Bilibili Audio")
             : current.kind === "navidrome"
               ? "Navidrome"
-              : "本地音源";
+              : tr("本地音源", "Local Audio");
 
   return (
     <div
@@ -425,7 +427,7 @@ export default function NowPlaying() {
           <button
             className="titlebar-btn !w-8 !h-7 !rounded-lg"
             onClick={() => toggleFullscreen()}
-            title={fullscreen ? "退出全屏" : "全屏播放（无边框）"}
+            title={fullscreen ? tr("退出全屏", "Exit Fullscreen") : tr("全屏播放（无边框）", "Fullscreen (Borderless)")}
           >
             {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
@@ -435,7 +437,7 @@ export default function NowPlaying() {
               if (fullscreen) toggleFullscreen(false);
               setNowPlayingOpen(false);
             }}
-            title="收起播放页"
+            title={tr("收起播放页", "Collapse Now Playing")}
           >
             <ChevronDown size={17} />
           </button>
@@ -553,7 +555,7 @@ export default function NowPlaying() {
                 <button
                   className="btn-ghost !w-7 !h-7 !rounded-lg relative flex items-center justify-center shrink-0"
                   onClick={handleToggleLike}
-                  title={isLiked ? "取消收藏" : "收藏至“我喜欢”"}
+                  title={isLiked ? tr("取消收藏", "Unlike") : tr("收藏至“我喜欢”", "Add to Liked Songs")}
                 >
                   <Heart
                     size={14}
@@ -586,7 +588,11 @@ export default function NowPlaying() {
                         : "btn-ghost"
                   }`}
                   onClick={() => setLyricsShowTrans(!lyricsShowTrans)}
-                  title={hasTrans ? "显示 / 隐藏歌词翻译" : "当前曲目无翻译"}
+                  title={
+                    hasTrans
+                      ? tr("显示 / 隐藏歌词翻译", "Show / Hide Lyrics Translation")
+                      : tr("当前曲目无翻译", "No translation available")
+                  }
                 >
                   {hasTrans && (
                     <span
@@ -595,7 +601,7 @@ export default function NowPlaying() {
                       }`}
                     />
                   )}
-                  译
+                  {tr("译", "TR")}
                 </button>
 
                 <div className="w-px h-3.5 bg-[var(--sk-divider)]" />
@@ -605,14 +611,14 @@ export default function NowPlaying() {
                   <button
                     className="btn-ghost !w-6 !h-6 !rounded-md text-[10.5px] font-black"
                     onClick={() => setLyricsFontScale(Math.max(0.8, lyricsFontScale - 0.1))}
-                    title="减小歌词字号"
+                    title={tr("减小歌词字号", "Decrease lyrics font size")}
                   >
                     A-
                   </button>
                   <button
                     className="btn-ghost !w-6 !h-6 !rounded-md text-[10.5px] font-black"
                     onClick={() => setLyricsFontScale(Math.min(1.5, lyricsFontScale + 0.1))}
-                    title="增大歌词字号"
+                    title={tr("增大歌词字号", "Increase lyrics font size")}
                   >
                     A+
                   </button>
@@ -621,7 +627,7 @@ export default function NowPlaying() {
 
               {lyricSource && (
                 <div className="text-[9.5px] font-mono text-[var(--ink-3)] tracking-wider mt-2 opacity-70">
-                  LYRICS SOURCE: {lyricSource}
+                  {tr("歌词来源：", "LYRICS SOURCE: ")}{formatLyricSource(lyricSource)}
                 </div>
               )}
             </div>
@@ -655,7 +661,7 @@ export default function NowPlaying() {
               {lyricsLoading && (
                 <div className="text-[var(--ink-3)] text-[13px] text-center pt-24 tracking-wider flex flex-col items-center gap-3">
                   <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-                  正在校准声学歌词母带…
+                  {tr("正在校准声学歌词母带…", "Calibrating acoustic lyric stream…")}
                 </div>
               )}
 
@@ -674,7 +680,7 @@ export default function NowPlaying() {
                             {l.text}
                           </p>
                         ))
-                      : "暂无同步歌词"}
+                      : tr("暂无同步歌词", "No synced lyrics")}
                   </div>
                 </div>
               )}

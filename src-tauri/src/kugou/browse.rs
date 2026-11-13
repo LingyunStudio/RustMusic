@@ -10,7 +10,7 @@ pub fn toplists() -> Result<Vec<KgToplist>, String> {
         "https://mobiles.kugou.com/api/v3/rank/list?format=json",
         "https://mobiles.kugou.com/",
         UA,
-        "酷狗榜单列表",
+        crate::i18n::pick("酷狗榜单列表", "KuGou charts list"),
     )?;
     let mut out = Vec::new();
     if let Some(list) = v.pointer("/data/info").and_then(|x| x.as_array()) {
@@ -59,7 +59,7 @@ pub fn toplist_tracks(rankid: i64, page: i64) -> Result<Vec<KgSong>, String> {
         Some(&body),
         &[("kg-tid", "369")],
     )
-    .map_err(|e| format!("获取榜单歌曲失败: {e}"))?;
+    .map_err(|e| format!("{}: {e}", crate::i18n::pick("获取榜单歌曲失败", "Failed to fetch chart tracks")))?;
     let list = v
         .pointer("/data/songlist")
         .and_then(|x| x.as_array())
@@ -175,7 +175,12 @@ pub(super) fn special_recommend(category_id: i64, page: i64) -> Result<Vec<KgPub
         &[],
         Some(&body),
     )
-    .map_err(|e| format!("获取歌单推荐失败: {e}"))?;
+    .map_err(|e| {
+        crate::i18n::pick(
+            format!("获取歌单推荐失败: {e}"),
+            format!("Failed to fetch recommended playlists: {e}"),
+        )
+    })?;
     let mut out = Vec::new();
     if let Some(list) = v.pointer("/data/special_list").and_then(|x| x.as_array()) {
         for p in list {
@@ -242,7 +247,7 @@ pub fn playlist_tracks(gcid: &str) -> Result<KgPublicPlaylist, String> {
             ("global_collection_id".into(), gcid.to_string()),
         ];
         let v = gateway("/pubsongs/v2/get_other_list_file_nofilt", "", &extra, None)
-            .map_err(|e| format!("获取歌单详情失败: {e}"))?;
+            .map_err(|e| format!("{}: {e}", crate::i18n::pick("获取歌单详情失败", "Failed to fetch playlist details")))?;
         if page == 1 {
             if let Some(info) = v.pointer("/data/list_info") {
                 name = info
@@ -275,7 +280,7 @@ pub fn playlist_tracks(gcid: &str) -> Result<KgPublicPlaylist, String> {
         }
     }
     if name.is_empty() && songs.is_empty() {
-        return Err("歌单不存在或为空".into());
+        return Err(crate::i18n::pick("歌单不存在或为空", "Playlist does not exist or is empty").into());
     }
     enrich_vip(&mut songs);
     Ok(KgPublicPlaylist {
@@ -320,7 +325,7 @@ fn privilege_map(
             &[],
             Some(&body),
         )
-        .map_err(|e| format!("权益查询失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("权益查询失败", "Privilege query failed")))?;
         // 响应结构：{data: [ {...,hash, pay_type, album_audio_id}, ... ]}
         let list = v
             .pointer("/data")
@@ -492,9 +497,9 @@ pub fn random_playlist() -> Result<KgPublicPlaylist, String> {
     use rand::seq::SliceRandom;
     let specials = special_recommend(0, 1)?;
     if specials.is_empty() {
-        return Err("歌单广场暂无数据".into());
+        return Err(crate::i18n::pick("歌单广场暂无数据", "Playlist plaza is currently empty").into());
     }
-    let mut last_err = String::from("未能抽中可用歌单");
+    let mut last_err = crate::i18n::pick("未能抽中可用歌单", "No usable playlist found").to_string();
     for _ in 0..4 {
         let pick = specials.choose(&mut rand::thread_rng()).unwrap();
         match playlist_tracks(&pick.id) {
@@ -511,10 +516,13 @@ pub fn random_playlist() -> Result<KgPublicPlaylist, String> {
                 if !pl.songs.is_empty() {
                     return Ok(pl);
                 }
-                last_err = "抽中的歌单暂无曲目".into();
+                last_err = crate::i18n::pick("抽中的歌单暂无曲目", "Selected playlist has no tracks").into();
             }
             Err(e) => last_err = e,
         }
     }
-    Err(format!("随机歌单获取失败：{last_err}"))
+    Err(crate::i18n::pick(
+        format!("随机歌单获取失败：{last_err}"),
+        format!("Failed to load random playlist: {last_err}"),
+    ))
 }

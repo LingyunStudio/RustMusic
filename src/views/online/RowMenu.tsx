@@ -2,6 +2,7 @@
 import { createPortal } from "react-dom";
 import { Heart, Play } from "lucide-react";
 import { useStore } from "../../store";
+import { useI18n } from "../../i18n";
 import { clampMenuPos } from "../../utils";
 import type { OnlineRow } from "./shared";
 
@@ -16,6 +17,7 @@ export function RowMenu({
   menuAction: (row: OnlineRow, action: "play" | "next" | "queue") => void;
   onAddToPlaylist: (row: OnlineRow) => void;
 }) {
+  const { tr } = useI18n();
   const toggleLikeOnline = useStore((s) => s.toggleLikeOnline);
   const downloadOnline = useStore((s) => s.downloadOnline);
   const uiTheme = useStore((s) => s.uiTheme);
@@ -23,20 +25,20 @@ export function RowMenu({
 
   return createPortal(
     <div
-      className={`fixed z-[75] w-[200px] glass-strong p-1.5 shadow-2xl anim-menu ${
+      className={`fixed z-[75] w-[215px] glass-strong p-1.5 shadow-2xl anim-menu ${
         isLiquid ? "!rounded-2xl" : "rounded-xl"
       }`}
       style={(() => {
-        const p = clampMenuPos(menu.x, menu.y, 200, 240);
+        const p = clampMenuPos(menu.x, menu.y, 215, 240);
         return { left: p.x, top: p.y };
       })()}
       onMouseDown={(e) => e.stopPropagation()}
       onMouseLeave={onClose}
     >
       {[
-        { label: "播放", action: "play" as const },
-        { label: "下一首播放", action: "next" as const },
-        { label: "加入队列", action: "queue" as const },
+        { label: tr("播放", "Play"), action: "play" as const },
+        { label: tr("下一首播放", "Play Next"), action: "next" as const },
+        { label: tr("加入队列", "Add to Queue"), action: "queue" as const },
       ].map((item) => (
         <button
           key={item.action}
@@ -57,7 +59,7 @@ export function RowMenu({
           onClose();
         }}
       >
-        <Heart size={13} /> 添加到播放列表…
+        <Heart size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
       </button>
       <button
         className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -76,7 +78,7 @@ export function RowMenu({
           onClose();
         }}
       >
-        <Heart size={13} /> 收藏到“我喜欢”
+        <Heart size={13} /> {tr("收藏到“我喜欢”", "Add to Favorites")}
       </button>
       <button
         className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -94,7 +96,7 @@ export function RowMenu({
           onClose();
         }}
       >
-        <Play size={13} /> 下载到本地
+        <Play size={13} /> {tr("下载到本地", "Download to Library")}
       </button>
     </div>,
     document.body

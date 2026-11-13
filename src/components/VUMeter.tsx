@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 import { getFxFrame } from "../fx";
+import { useI18n } from "../i18n";
 
 interface VUMeterProps {
   playing: boolean;
 }
 
 export default function VUMeter({ playing }: VUMeterProps) {
+  const { tr } = useI18n();
   const needleLRef = useRef<SVGLineElement>(null);
   const needleRRef = useRef<SVGLineElement>(null);
   const peakRef = useRef<HTMLDivElement>(null);
@@ -185,7 +187,11 @@ export default function VUMeter({ playing }: VUMeterProps) {
       {/* 中置发烧级状态仪表舱 */}
       <div className="flex flex-col items-center justify-center px-1.5 shrink-0">
         <div className="flex items-center gap-1.5 mb-1.5">
-          <div ref={peakRef} className="skeuo-led-off" title="信号过载指示" />
+          <div
+            ref={peakRef}
+            className="skeuo-led-off"
+            title={tr("信号过载指示", "Peak Overload Indicator")}
+          />
           <span className="text-[9px] font-black tracking-widest text-[var(--ink-2)]">
             PEAK
           </span>

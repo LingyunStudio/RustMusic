@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ChevronsDown, CopyX, ListMusic, Play, Trash2, X } from "lucide-react";
 import { useStore } from "../store";
+import { tr as trStatic, useI18n } from "../i18n";
 import { useLocatePill } from "../hooks/useLocatePill";
 import LocateCurrentPill from "./LocateCurrentPill";
 import { fmtTime } from "../utils";
@@ -19,58 +20,74 @@ interface LabelCtx {
   sources: Map<number, import("../types").SourceItem>;
 }
 
-function queueLabel(item: QueueItem, ctx: LabelCtx): { title: string; artist: string; cover?: string } {
+function queueLabel(
+  item: QueueItem,
+  ctx: LabelCtx,
+  tr: (zh: string, en: string) => string = trStatic
+): { title: string; artist: string; cover?: string } {
   if (item.kind === "track") {
     const t = ctx.tracksById.get(item.id as number);
     if (t)
       return {
         title: t.title,
-        artist: t.artist || "未知艺术家",
+        artist: t.artist || tr("未知艺术家", "Unknown Artist"),
         cover: t.cover,
       };
-    return { title: `曲目 #${item.id}`, artist: "" };
+    return { title: tr(`曲目 #${item.id}`, `Track #${item.id}`), artist: "" };
   }
   if (item.kind === "netease") {
     const t = ctx.netease[item.id as number];
     if (t)
       return {
         title: t.name,
-        artist: t.ar.map((a) => a.name).join(" / ") || "网易云",
+        artist: t.ar.map((a) => a.name).join(" / ") || tr("网易云", "NetEase"),
         cover: t.al?.picUrl ?? undefined,
       };
-    return { title: `网易云 #${item.id}`, artist: "在线曲库" };
+    return {
+      title: tr(`网易云 #${item.id}`, `NetEase #${item.id}`),
+      artist: tr("在线曲库", "Online Music"),
+    };
   }
   if (item.kind === "qq") {
     const t = ctx.qq[item.id as string];
     if (t)
       return {
         title: t.name,
-        artist: t.singer || "QQ音乐",
+        artist: t.singer || tr("QQ音乐", "QQ Music"),
         cover: t.albumMid
           ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${t.albumMid}.jpg`
           : undefined,
       };
-    return { title: `QQ音乐 #${item.id}`, artist: "在线曲库" };
+    return {
+      title: tr(`QQ音乐 #${item.id}`, `QQ Music #${item.id}`),
+      artist: tr("在线曲库", "Online Music"),
+    };
   }
   if (item.kind === "kugou") {
     const t = ctx.kugou[item.id as string];
     if (t)
       return {
         title: t.name,
-        artist: t.singer || "酷狗",
+        artist: t.singer || tr("酷狗", "KuGou"),
         cover: t.cover || undefined,
       };
-    return { title: `酷狗 #${item.id}`, artist: "在线曲库" };
+    return {
+      title: tr(`酷狗 #${item.id}`, `KuGou #${item.id}`),
+      artist: tr("在线曲库", "Online Music"),
+    };
   }
   if (item.kind === "bilibili") {
     const t = ctx.bili[item.id as string];
     if (t)
       return {
         title: t.title,
-        artist: t.artist || "哔哩哔哩",
+        artist: t.artist || tr("哔哩哔哩", "Bilibili"),
         cover: t.cover || undefined,
       };
-    return { title: `B站 #${item.id}`, artist: "哔哩哔哩" };
+    return {
+      title: tr(`B站 #${item.id}`, `Bilibili #${item.id}`),
+      artist: tr("哔哩哔哩", "Bilibili"),
+    };
   }
   if (item.kind === "navidrome") {
     const t = ctx.nd[item.id as string];
@@ -80,8 +97,8 @@ function queueLabel(item: QueueItem, ctx: LabelCtx): { title: string; artist: st
   }
   const src = ctx.sources.get(item.id as number);
   return {
-    title: src?.title || src?.url.split("/").pop() || "在线音源",
-    artist: "在线音源",
+    title: src?.title || src?.url.split("/").pop() || tr("在线音源", "Online Source"),
+    artist: tr("在线音源", "Online Source"),
   };
 }
 
@@ -97,6 +114,7 @@ function QueueFooterTime() {
 }
 
 export default function QueuePanel() {
+  const { tr } = useI18n();
   const queue = useStore((s) => s.queue);
   const unavailable = useStore((s) => s.unavailable);
   const qIndex = useStore((s) => s.qIndex);
@@ -188,23 +206,31 @@ export default function QueuePanel() {
       <div className={`h-14 px-5 flex items-center justify-between shrink-0 ${isLiquid ? "border-b border-[var(--line)]" : ""}`}>
         <span className="text-[13.5px] font-semibold flex items-center gap-2.5 text-[var(--ink)]">
           <ListMusic size={15} className="text-[var(--accent)]" />
-          播放队列
+          {tr("播放队列", "Play Queue")}
           <span className="text-[11.5px] text-[var(--ink-3)] font-normal">
-            {queue.length} 首
+            {tr(`${queue.length} 首`, `${queue.length}`)}
           </span>
         </span>
         <div className="flex items-center gap-1">
-          <button className="btn-ghost w-8 h-8" onClick={dedupeQueue} title="队列去重（移除重复曲目）">
+          <button
+            className="btn-ghost w-8 h-8"
+            onClick={dedupeQueue}
+            title={tr("队列去重（移除重复曲目）", "Deduplicate queue (remove duplicates)")}
+          >
             <CopyX size={14} />
           </button>
           <button
             className="btn-ghost w-8 h-8"
             onClick={clearQueueFromCurrent}
-            title="清除当前曲目之后的队列"
+            title={tr("清除当前曲目之后的队列", "Clear upcoming tracks after current")}
           >
             <ChevronsDown size={14} />
           </button>
-          <button className="btn-ghost w-8 h-8" onClick={clearQueue} title="清空队列">
+          <button
+            className="btn-ghost w-8 h-8"
+            onClick={clearQueue}
+            title={tr("清空队列", "Clear queue")}
+          >
             <Trash2 size={14} />
           </button>
           <button className="btn-ghost w-8 h-8" onClick={() => setQueueOpen(false)}>
@@ -222,12 +248,14 @@ export default function QueuePanel() {
           className="flex-1 overflow-y-auto px-2.5 py-1.5"
         >
           {queue.length === 0 && (
-            <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">队列是空的</div>
+            <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">
+              {tr("队列是空的", "Queue is empty")}
+            </div>
           )}
           <div style={{ height: win.start * ROW_H }} aria-hidden />
           {queue.slice(win.start, win.end).map((item, k) => {
             const i = win.start + k;
-            const { title, artist, cover } = queueLabel(item, labelCtx);
+            const { title, artist, cover } = queueLabel(item, labelCtx, tr);
             const active = i === qIndex;
             const dead = unavailable[`${item.kind}:${item.id}`] != null;
             const rowClass = isSkeuo
@@ -247,7 +275,7 @@ export default function QueuePanel() {
                 key={keySeq[i]}
                 style={{ ["--row-idx" as string]: Math.min(i, 12) }}
                 className={rowClass}
-                title={dead ? `无法播放：${unavailable[`${item.kind}:${item.id}`]}` : undefined}
+                title={dead ? tr(`无法播放：${unavailable[`${item.kind}:${item.id}`]}`, `Unplayable: ${unavailable[`${item.kind}:${item.id}`]}`) : undefined}
                 onClick={() => jumpTo(i)}
               >
                 <div className="relative w-9 h-9 rounded-lg overflow-hidden shrink-0">
@@ -302,7 +330,11 @@ export default function QueuePanel() {
 
       {queue.length > 0 && (
         <div className="px-5 py-3 border-t border-[var(--line)] text-[11px] text-[var(--ink-3)] flex items-center justify-between shrink-0">
-          <span>{upcomingCount > 0 ? `接下来 ${upcomingCount} 首` : "播放到列表末尾"}</span>
+          <span>
+            {upcomingCount > 0
+              ? tr(`接下来 ${upcomingCount} 首`, `${upcomingCount} up next`)
+              : tr("播放到列表末尾", "End of queue")}
+          </span>
           <QueueFooterTime />
         </div>
       )}

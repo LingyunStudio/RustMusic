@@ -115,7 +115,11 @@ pub fn register_dev() -> Result<String, String> {
             None => reset_mid(),
         }
     }
-    Err("register_dev: 换新 mid 后服务端仍返回空 dfid".into())
+    Err(crate::i18n::pick(
+        "register_dev: 换新 mid 后服务端仍返回空 dfid",
+        "register_dev: server still returned empty dfid after resetting mid",
+    )
+    .into())
 }
 
 /// 单次注册尝试；Ok(None) = 服务端认识该 mid 但未下发 dfid 且无缓存可复用
@@ -188,11 +192,11 @@ fn register_dev_once() -> Result<Option<String>, String> {
     .set("mid", &mid_of())
     .timeout(TIMEOUT)
     .send_string(&body_b64)
-    .map_err(|e| format!("register_dev 请求失败: {e}"))?;
+    .map_err(|e| format!("{}: {e}", crate::i18n::pick("register_dev 请求失败", "register_dev request failed")))?;
     let mut buf = Vec::new();
     resp.into_reader()
         .read_to_end(&mut buf)
-        .map_err(|e| format!("register_dev 响应读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("register_dev 响应读取失败", "Failed to read register_dev response")))?;
     let v = aes_128_cbc_decrypt(&buf, aes_key, aes_iv)?;
     if let Some(d) = v.pointer("/data/dfid").and_then(|x| x.as_str()) {
         let dfid = d.to_string();
@@ -243,7 +247,7 @@ fn aes_128_cbc_decrypt(
     use aes::cipher::{BlockDecrypt, KeyInit};
     use aes::Block;
     if cipher_bytes.is_empty() || cipher_bytes.len() % 16 != 0 {
-        return Err("register_dev 响应长度异常".into());
+        return Err(crate::i18n::pick("register_dev 响应长度异常", "Invalid register_dev response length").into());
     }
     let mut key_buf = [0u8; 16];
     key_buf.copy_from_slice(key.as_bytes());
@@ -265,15 +269,16 @@ fn aes_128_cbc_decrypt(
             out.truncate(out.len() - pad as usize);
         }
     }
-    parse_json(&String::from_utf8_lossy(&out), "register_dev 响应解密")
+    parse_json(&String::from_utf8_lossy(&out), crate::i18n::pick("register_dev 响应解密", "Decrypt register_dev response"))
 }
 
 /// RSA PKCS1 v1.5 加密（固定公钥，e=65537），返回小写 hex
 fn rsa_pkcs1_encrypt(data: &[u8], n_hex: &str, e: u32) -> Result<String, String> {
-    let n = BigUint::parse_bytes(n_hex.as_bytes(), 16).ok_or("RSA modulus 解析失败")?;
+    let n = BigUint::parse_bytes(n_hex.as_bytes(), 16)
+        .ok_or(crate::i18n::pick("RSA modulus 解析失败", "Failed to parse RSA modulus"))?;
     let key_len = (n.bits() as usize + 7) / 8;
     if data.len() + 11 > key_len {
-        return Err("RSA 明文过长".into());
+        return Err(crate::i18n::pick("RSA 明文过长", "RSA plaintext too long").into());
     }
     // EM = 0x00 || 0x02 || PS(非零随机) || 0x00 || data
     let mut em = Vec::with_capacity(key_len);

@@ -4,8 +4,15 @@ import CoverImg from "../../components/CoverImg";
 import { fmtDate, fmtTime } from "../../utils";
 import type { BiliSpaceItem } from "../../types";
 import { useStore } from "../../store";
+import { useI18n } from "../../i18n";
 
-function fmtPlay(n: number): string {
+function fmtPlay(n: number, lang: "zh" | "en"): string {
+  if (lang === "en") {
+    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return String(n);
+  }
   if (n >= 10000_0000) return `${(n / 10000_0000).toFixed(1)}亿`;
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
   return String(n);
@@ -34,6 +41,7 @@ export function BiliSpaceCard({
   onContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void;
   onCardClick: () => void;
 }) {
+  const { tr, lang } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
 
@@ -73,7 +81,7 @@ export function BiliSpaceCard({
         {!selMode && (
           <button
             className="absolute inset-0 m-auto w-10 h-10 rounded-full bg-black/55 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-            title="播放（整个列表连播）"
+            title={tr("播放（整个列表连播）", "Play (continuous playlist)")}
             onClick={onPlay}
           >
             <Play size={16} className="fill-current text-white ml-0.5" />
@@ -101,7 +109,7 @@ export function BiliSpaceCard({
         {!selMode && (
           <button
             className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/45 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-            title="从结果中移除"
+            title={tr("从结果中移除", "Remove from results")}
             onClick={(e) => {
               e.stopPropagation();
               onRemove();
@@ -113,7 +121,7 @@ export function BiliSpaceCard({
         {/* 正在播放标记 */}
         {active && (
           <span className="absolute left-1.5 bottom-1 px-1.5 py-0.5 rounded bg-[#fb7299] text-white text-[10px] font-semibold">
-            播放中
+            {tr("播放中", "Playing")}
           </span>
         )}
       </div>
@@ -129,14 +137,14 @@ export function BiliSpaceCard({
           overflow: "hidden",
         }}
       >
-        {r.title || "B站视频"}
+        {r.title || tr("B站视频", "Bilibili Video")}
       </div>
       <div className="text-[11px] text-[var(--ink-3)] truncate mt-0.5 flex items-center gap-1.5">
-        <span className="truncate">{r.artist || "哔哩哔哩"}</span>
+        <span className="truncate">{r.artist || tr("哔哩哔哩", "Bilibili")}</span>
         {r.play > 0 && (
           <>
             <span>·</span>
-            <span className="shrink-0">{fmtPlay(r.play)}</span>
+            <span className="shrink-0">{fmtPlay(r.play, lang)}</span>
           </>
         )}
         {r.created > 0 && (

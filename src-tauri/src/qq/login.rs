@@ -18,7 +18,7 @@ pub fn qr_create() -> Result<(String, String), String> {
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("获取登录二维码失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("获取登录二维码失败", "Failed to fetch login QR code")))?;
     let qrsig = resp
         .all("Set-Cookie")
         .into_iter()
@@ -28,13 +28,13 @@ pub fn qr_create() -> Result<(String, String), String> {
                 .and_then(|seg| seg.trim().strip_prefix("qrsig="))
                 .map(|s| s.to_string())
         })
-        .ok_or_else(|| "未获取到登录标识（qrsig）".to_string())?;
+        .ok_or_else(|| crate::i18n::pick("未获取到登录标识（qrsig）", "Login token (qrsig) not returned").to_string())?;
     let mut png = Vec::new();
     resp.into_reader()
         .read_to_end(&mut png)
-        .map_err(|e| format!("二维码读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("二维码读取失败", "Failed to read QR code")))?;
     if png.is_empty() {
-        return Err("二维码内容为空".into());
+        return Err(crate::i18n::pick("二维码内容为空", "QR code content is empty").into());
     }
     let b64 = b64_encode(&png);
     Ok((qrsig, format!("data:image/png;base64,{b64}")))
@@ -131,11 +131,13 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
 
     {
         if args.len() < 3 {
-            return Err("登录响应缺少必要参数".into());
+            return Err(crate::i18n::pick("登录响应缺少必要参数", "Login response missing required parameters").into());
         }
         let check_url = &args[2];
-        let uin = parse_query_param(check_url, "uin").ok_or("登录响应缺少 uin")?;
-        let sigx = parse_query_param(check_url, "ptsigx").ok_or("登录响应缺少 ptsigx")?;
+        let uin = parse_query_param(check_url, "uin")
+            .ok_or(crate::i18n::pick("登录响应缺少 uin", "Login response missing uin"))?;
+        let sigx = parse_query_param(check_url, "ptsigx")
+            .ok_or(crate::i18n::pick("登录响应缺少 ptsigx", "Login response missing ptsigx"))?;
 
         // Step 1: check_sig —— 换取 qq.com 域的登录 cookie（p_skey 等）
         let check_sig_url = format!(
@@ -147,7 +149,7 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             .set("User-Agent", UA)
             .timeout(TIMEOUT)
             .call()
-            .map_err(|e| format!("check_sig 请求失败: {e}"))?;
+            .map_err(|e| format!("{}: {e}", crate::i18n::pick("check_sig 请求失败", "check_sig request failed")))?;
         let check_cookies: Vec<String> = resp
             .all("Set-Cookie")
             .into_iter()
@@ -157,7 +159,7 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
         let p_skey = check_cookies
             .iter()
             .find_map(|c| c.strip_prefix("p_skey="))
-            .ok_or("未获取到 p_skey")?
+            .ok_or(crate::i18n::pick("未获取到 p_skey", "Failed to obtain p_skey"))?
             .to_string();
         let cookie_header = check_cookies.join("; ");
 
@@ -177,10 +179,16 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             .set("Cookie", &cookie_header)
             .timeout(TIMEOUT)
             .send_string(&form)
-            .map_err(|e| format!("OAuth 授权失败: {e}"))?;
+            .map_err(|e| format!("{}: {e}", crate::i18n::pick("OAuth 授权失败", "OAuth authorization failed")))?;
         let location = resp.header("Location").unwrap_or("").to_string();
-        let oauth_code = parse_query_param(&location, "code")
-            .ok_or_else(|| format!("OAuth 授权未返回 code（HTTP {}）", resp.status()))?;
+        let oauth_code = parse_query_param(&location, "code").ok_or_else(|| {
+            let status = resp.status();
+            if crate::i18n::is_en() {
+                format!("OAuth did not return code (HTTP {status})")
+            } else {
+                format!("OAuth 授权未返回 code（HTTP {status}）")
+            }
+        })?;
 
         // Step 3: QQLogin —— 用 code 换取播放凭证（musicid / musickey）
         // 先走签名通道（musics.fcg），失败再试明文通道（musicu.fcg）
@@ -230,7 +238,8 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
 
         let (musicid, musickey) = credential.ok_or_else(|| {
             format!(
-                "登录响应缺少凭证 | {}",
+                "{} | {}",
+                crate::i18n::pick("登录响应缺少凭证", "Login response missing credentials"),
                 raw_log.chars().take(200).collect::<String>()
             )
         })?;
@@ -292,9 +301,9 @@ pub fn wx_qr_create() -> Result<WxQr, String> {
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("获取微信登录页失败: {e}"))?
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("获取微信登录页失败", "Failed to fetch WeChat login page")))?
         .into_string()
-        .map_err(|e| format!("微信登录页读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信登录页读取失败", "Failed to read WeChat login page")))?;
     // 页面二维码 <img src="/connect/qrcode/{uuid}">（兜底：长轮询 URL 的 uuid 参数）
     let uuid = html
         .find("/connect/qrcode/")
@@ -309,7 +318,7 @@ pub fn wx_qr_create() -> Result<WxQr, String> {
         .or_else(|| parse_query_param(&html, "uuid"))
         .unwrap_or_default();
     if uuid.is_empty() || uuid.len() > 64 || !uuid.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return Err("微信二维码标识解析失败".into());
+        return Err(crate::i18n::pick("微信二维码标识解析失败", "Failed to parse WeChat QR code ID").into());
     }
 
     let img_url = format!("https://open.weixin.qq.com/connect/qrcode/{uuid}");
@@ -318,13 +327,13 @@ pub fn wx_qr_create() -> Result<WxQr, String> {
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("获取微信二维码失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("获取微信二维码失败", "Failed to fetch WeChat QR code")))?;
     let mut jpeg = Vec::new();
     resp.into_reader()
         .read_to_end(&mut jpeg)
-        .map_err(|e| format!("微信二维码读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信二维码读取失败", "Failed to read WeChat QR code")))?;
     if jpeg.is_empty() {
-        return Err("微信二维码内容为空".into());
+        return Err(crate::i18n::pick("微信二维码内容为空", "WeChat QR code content is empty").into());
     }
     Ok(WxQr {
         uuid,
@@ -391,7 +400,7 @@ fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
         .send_string(&payload.to_string())
-        .map_err(|e| format!("微信登录凭证交换失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信登录凭证交换失败", "Failed to exchange WeChat login credentials")))?;
     let cookies: Vec<String> = resp
         .all("Set-Cookie")
         .into_iter()
@@ -399,7 +408,7 @@ fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
         .collect();
     let body: serde_json::Value = resp
         .into_json()
-        .map_err(|e| format!("微信登录响应解析失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信登录响应解析失败", "Failed to parse WeChat login response")))?;
 
     let credential = find_credential(&body);
     let (musicid, musickey) = match credential {
@@ -411,7 +420,8 @@ fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
                 (Some(id), Some(key)) if !id.is_empty() && !key.is_empty() => (id, key),
                 _ => {
                     return Err(format!(
-                        "微信登录响应缺少凭证 | {}",
+                        "{} | {}",
+                        crate::i18n::pick("微信登录响应缺少凭证", "WeChat login response missing credentials"),
                         serde_json::to_string(&body)
                             .unwrap_or_default()
                             .chars()
@@ -442,7 +452,7 @@ fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
 /// 408=等待 / 404=已扫码待确认 / 405=已确认（带 wx_code，接交换）/ 402=已过期
 pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
     if uuid.is_empty() || uuid.len() > 64 || !uuid.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return Err("微信登录标识无效".into());
+        return Err(crate::i18n::pick("微信登录标识无效", "Invalid WeChat login token").into());
     }
     let url = format!("https://lp.open.weixin.qq.com/connect/l/qrconnect?uuid={uuid}");
     let text = http_agent()
@@ -451,9 +461,9 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
         .set("User-Agent", UA)
         .timeout(WX_LP_TIMEOUT)
         .call()
-        .map_err(|e| format!("微信扫码状态查询失败: {e}"))?
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信扫码状态查询失败", "Failed to check WeChat QR status")))?
         .into_string()
-        .map_err(|e| format!("微信扫码状态读取失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信扫码状态读取失败", "Failed to read WeChat QR status")))?;
     let (errcode, code) = parse_wx_lp(&text);
     match errcode {
         408 => Ok(QqQrCheck {
@@ -483,7 +493,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
         405 if !code.is_empty() => wx_exchange(&code),
         _ => {
             if errcode == 405 {
-                Err("微信授权未返回 code".into())
+                Err(crate::i18n::pick("微信授权未返回 code", "WeChat authorization did not return a code").into())
             } else {
                 Ok(QqQrCheck {
                     status: "waiting".into(),

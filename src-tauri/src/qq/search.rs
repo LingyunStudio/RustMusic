@@ -88,7 +88,12 @@ pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, Strin
         Ok(text) => {
             let resp: serde_json::Value = match serde_json::from_str(&text) {
                 Ok(v) => v,
-                Err(e) => return Err(format!("QQ 音乐搜索解析失败: {e}")),
+                Err(e) => {
+                    return Err(crate::i18n::pick(
+                        format!("QQ 音乐搜索解析失败: {e}"),
+                        format!("QQ Music search parse failed: {e}"),
+                    ))
+                }
             };
             if resp.get("code").and_then(|c| c.as_i64()) == Some(0) {
                 if let Some(list) = resp.pointer("/data/song/list").and_then(|v| v.as_array()) {
@@ -98,9 +103,10 @@ pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, Strin
                     }
                 }
             }
-            format!(
-                "soso 通道无数据（code {}）",
-                resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1)
+            let c = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+            crate::i18n::pick(
+                format!("soso 通道无数据（code {c}）"),
+                format!("soso channel returned no data (code {c})"),
             )
         }
     };
@@ -134,12 +140,24 @@ pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, Strin
                     return Ok(out);
                 }
             }
-            last_err = format!("{last_err}，签名通道无歌曲数据");
+            last_err = crate::i18n::pick(
+                format!("{last_err}，签名通道无歌曲数据"),
+                format!("{last_err}, signed channel returned no songs"),
+            );
         } else {
-            last_err = format!("{last_err}，签名通道 code {code}");
+            last_err = crate::i18n::pick(
+                format!("{last_err}，签名通道 code {code}"),
+                format!("{last_err}, signed channel code {code}"),
+            );
         }
     } else {
-        last_err = format!("{last_err}，签名通道请求失败");
+        last_err = crate::i18n::pick(
+            format!("{last_err}，签名通道请求失败"),
+            format!("{last_err}, signed channel request failed"),
+        );
     }
-    Err(format!("QQ 音乐搜索失败: {last_err}"))
+    Err(crate::i18n::pick(
+        format!("QQ 音乐搜索失败: {last_err}"),
+        format!("QQ Music search failed: {last_err}"),
+    ))
 }

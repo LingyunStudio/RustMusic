@@ -300,7 +300,7 @@ pub fn parse_track(path: &Path, app_data: &Path) -> Option<NewTrack> {
         let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("未知曲目");
+            .unwrap_or_else(|| crate::i18n::pick("未知曲目", "Unknown Track"));
         if let Some((a, t)) = stem.split_once(" - ") {
             if artist.is_empty() {
                 artist = a.trim().to_string();

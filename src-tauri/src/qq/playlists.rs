@@ -11,9 +11,19 @@ pub(super) fn plain_get_with_cookie(url: &str, referer: &str, cookie: &str) -> R
         .set("Cookie", cookie)
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("QQ 音乐接口请求失败: {e}"),
+                format!("QQ Music API request failed: {e}"),
+            )
+        })?
         .into_string()
-        .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("QQ 音乐响应读取失败: {e}"),
+                format!("Failed to read QQ Music response: {e}"),
+            )
+        })
 }
 
 /// 用户创建的歌单列表
@@ -36,9 +46,16 @@ pub fn user_playlists(
         .unwrap_or(0);
     if code != 0 {
         return Err(if code == 104009 {
-            "QQ 音乐登录已过期，请重新登录".into()
+            crate::i18n::pick(
+                "QQ 音乐登录已过期，请重新登录",
+                "QQ Music session expired, please sign in again",
+            )
+            .into()
         } else {
-            format!("获取歌单列表失败（code {code}）")
+            crate::i18n::pick(
+                format!("获取歌单列表失败（code {code}）"),
+                format!("Failed to fetch playlists (code {code})"),
+            )
         });
     }
     let mut out = Vec::new();
@@ -211,7 +228,13 @@ pub fn playlist_tracks(
             .unwrap_or(0);
         if code != 0 {
             return Err(if code == 104009 {
-                "QQ 音乐登录已过期，请重新登录".into()
+                crate::i18n::pick(
+                    "QQ 音乐登录已过期，请重新登录",
+                    "QQ Music session expired, please log in again",
+                )
+                .into()
+            } else if crate::i18n::is_en() {
+                format!("Failed to fetch playlist details (code {code})")
             } else {
                 format!("获取歌单详情失败（code {code}）")
             });

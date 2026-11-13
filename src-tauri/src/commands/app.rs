@@ -134,7 +134,7 @@ fn prepare_skin_image_task(app_data: std::path::PathBuf, path: String) -> Result
         .ok()
         .and_then(|r| r.with_guessed_format().ok())
         .and_then(|r| r.into_dimensions().ok())
-        .ok_or_else(|| "读取图片信息失败".to_string())?;
+        .ok_or_else(|| crate::i18n::pick("读取图片信息失败", "Failed to read image dimensions").to_string())?;
     if w <= 1920 && h <= 1920 {
         return Ok(path);
     }
@@ -170,6 +170,7 @@ pub async fn get_app_info(
         // 运行平台（"windows" / "linux" / "macos"）：前端据此决定
         // WASAPI 独占开关、自动更新安装等平台专属 UI 的显隐
         "platform": std::env::consts::OS,
+        "systemLang": crate::i18n::system_lang_code(),
     }))
 }
 // ---------- 封面取色（服务端，绕过 QQ 封面域无 CORS 的限制） ----------
@@ -187,7 +188,7 @@ pub async fn fetch_cover(state: State<'_, AppState>, url: String) -> Result<Stri
 
 fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("不支持的封面地址".into());
+        return Err(crate::i18n::pick("不支持的封面地址", "Unsupported cover URL").into());
     }
     // 缓存名 = URL 哈希 + 扩展名（重复调用直接命中，进程生命周期内零下载）
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -207,14 +208,14 @@ fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String,
         .set("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
         .call()
-        .map_err(|e| format!("封面下载失败: {e}"))?;
+        .map_err(|e| crate::i18n::pick(format!("封面下载失败: {e}"), format!("Cover download failed: {e}")))?;
     let mut buf = Vec::new();
     resp.into_reader()
         .take(8 * 1024 * 1024)
         .read_to_end(&mut buf)
         .map_err(|e| e.to_string())?;
     if buf.len() < 64 {
-        return Err("封面内容为空".into());
+        return Err(crate::i18n::pick("封面内容为空", "Cover image is empty").into());
     }
     std::fs::write(&dest, &buf).map_err(|e| e.to_string())?;
     Ok(dest.to_string_lossy().into_owned())
@@ -483,7 +484,7 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
         });
     let mut builder =
         WebviewWindowBuilder::new(&app, "desktop-lyrics", WebviewUrl::App(url.into()))
-            .title("桌面歌词")
+            .title(crate::i18n::pick("桌面歌词", "Desktop Lyrics"))
             .inner_size(ww, hh + CTRL_STRIP)
             .position(x, (y - CTRL_STRIP).max(0.0))
             .decorations(false)
@@ -529,7 +530,12 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
     }
     builder
         .build()
-        .map_err(|e| format!("创建桌面歌词窗口失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("创建桌面歌词窗口失败: {e}"),
+                format!("Failed to create desktop lyrics window: {e}"),
+            )
+        })?;
     app.state::<AppState>()
         .dlyrics_locked
         .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -601,7 +607,8 @@ fn menubar_file() -> Result<std::path::PathBuf, String> {
     if let Some(rt) = std::env::var_os("XDG_RUNTIME_DIR") {
         return Ok(std::path::PathBuf::from(rt).join("rustmusic-menubar.json"));
     }
-    let home = std::env::var_os("HOME").ok_or("无法定位运行时目录")?;
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| crate::i18n::pick("无法定位运行时目录", "Failed to locate runtime directory"))?;
     Ok(std::path::PathBuf::from(home).join(".cache/rustmusic-menubar.json"))
 }
 
@@ -612,7 +619,12 @@ fn menubar_file() -> Result<std::path::PathBuf, String> {
 fn menubar_write_line(line: &str, color: &str) -> Result<(), String> {
     let path = menubar_file()?;
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("创建运行时目录失败: {e}"))?;
+        std::fs::create_dir_all(dir).map_err(|e| {
+            crate::i18n::pick(
+                format!("创建运行时目录失败: {e}"),
+                format!("Failed to create runtime directory: {e}"),
+            )
+        })?;
     }
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -620,8 +632,18 @@ fn menubar_write_line(line: &str, color: &str) -> Result<(), String> {
         .unwrap_or(0);
     let payload = serde_json::json!({ "line": line, "ts": ts, "color": color });
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, payload.to_string()).map_err(|e| format!("写入菜单栏歌词失败: {e}"))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("替换菜单栏歌词失败: {e}"))
+    std::fs::write(&tmp, payload.to_string()).map_err(|e| {
+        crate::i18n::pick(
+            format!("写入菜单栏歌词失败: {e}"),
+            format!("Failed to write menu bar lyrics: {e}"),
+        )
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        crate::i18n::pick(
+            format!("替换菜单栏歌词失败: {e}"),
+            format!("Failed to replace menu bar lyrics: {e}"),
+        )
+    })
 }
 
 /// 前端在歌词行变化 / 心跳时调用；非 Linux 直接忽略
@@ -646,30 +668,55 @@ pub async fn dlyrics_menubar_line(line: String, color: Option<String>) -> Result
 pub async fn menubar_extension_install() -> Result<String, String> {
     super::blocking(|| {
         const UUID: &str = "rustmusic-lyrics@lingyunstudio";
-        let home = std::env::var_os("HOME").ok_or("无法定位主目录")?;
+        let home = std::env::var_os("HOME")
+            .ok_or_else(|| crate::i18n::pick("无法定位主目录", "Failed to locate home directory"))?;
         let dir = std::path::PathBuf::from(home)
             .join(".local/share/gnome-shell/extensions")
             .join(UUID);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("创建扩展目录失败: {e}"))?;
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            crate::i18n::pick(
+                format!("创建扩展目录失败: {e}"),
+                format!("Failed to create extension directory: {e}"),
+            )
+        })?;
         std::fs::write(
             dir.join("metadata.json"),
             include_str!("../../extensions/menubar-lyrics/metadata.json"),
         )
-        .map_err(|e| format!("写入扩展元数据失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("写入扩展元数据失败: {e}"),
+                format!("Failed to write extension metadata: {e}"),
+            )
+        })?;
         std::fs::write(
             dir.join("extension.js"),
             include_str!("../../extensions/menubar-lyrics/extension.js"),
         )
-        .map_err(|e| format!("写入扩展脚本失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("写入扩展脚本失败: {e}"),
+                format!("Failed to write extension script: {e}"),
+            )
+        })?;
 
         // 已启用则不再动 gsettings
         let get_out = std::process::Command::new("gsettings")
             .args(["get", "org.gnome.shell", "enabled-extensions"])
             .output()
-            .map_err(|e| format!("读取 GNOME 扩展配置失败（需要 gsettings）: {e}"))?;
+            .map_err(|e| {
+                crate::i18n::pick(
+                    format!("读取 GNOME 扩展配置失败（需要 gsettings）: {e}"),
+                    format!("Failed to read GNOME extension settings (requires gsettings): {e}"),
+                )
+            })?;
         let cur = String::from_utf8_lossy(&get_out.stdout).trim().to_string();
         if cur.contains(UUID) {
-            return Ok("扩展已安装并启用，顶栏未显示时请注销并重新登录一次".into());
+            return Ok(crate::i18n::pick(
+                "扩展已安装并启用，顶栏未显示时请注销并重新登录一次",
+                "Extension is installed and enabled. Log out and back in if it is not visible in the top bar.",
+            )
+            .into());
         }
         // gsettings 数组语法：空列表 "@as []"，非空 "['a', 'b']"
         let new_val = if cur.is_empty() || cur == "@as []" {
@@ -677,19 +724,32 @@ pub async fn menubar_extension_install() -> Result<String, String> {
         } else if let Some(stripped) = cur.strip_suffix(']') {
             format!("{stripped}, '{UUID}']")
         } else {
-            return Err(format!("GNOME 扩展配置格式异常: {cur}"));
+            return Err(crate::i18n::pick(
+                format!("GNOME 扩展配置格式异常: {cur}"),
+                format!("Unexpected GNOME extension config format: {cur}"),
+            ));
         };
         let set_out = std::process::Command::new("gsettings")
             .args(["set", "org.gnome.shell", "enabled-extensions", &new_val])
             .output()
-            .map_err(|e| format!("写入 GNOME 扩展配置失败: {e}"))?;
+            .map_err(|e| {
+                crate::i18n::pick(
+                    format!("写入 GNOME 扩展配置失败: {e}"),
+                    format!("Failed to write GNOME extension settings: {e}"),
+                )
+            })?;
         if !set_out.status.success() {
-            return Err(format!(
-                "写入 GNOME 扩展配置失败: {}",
-                String::from_utf8_lossy(&set_out.stderr).trim()
+            let stderr = String::from_utf8_lossy(&set_out.stderr).trim().to_string();
+            return Err(crate::i18n::pick(
+                format!("写入 GNOME 扩展配置失败: {stderr}"),
+                format!("Failed to write GNOME extension settings: {stderr}"),
             ));
         }
-        Ok("已安装并启用。注销并重新登录一次后，顶栏会出现歌词（GNOME 加载新扩展需要重启 Shell）".into())
+        Ok(crate::i18n::pick(
+            "已安装并启用。注销并重新登录一次后，顶栏会出现歌词（GNOME 加载新扩展需要重启 Shell）",
+            "Installed and enabled. Log out and back in to show lyrics in the top bar (GNOME Shell restart required).",
+        )
+        .into())
     })
     .await
 }
@@ -699,7 +759,11 @@ pub async fn menubar_extension_install() -> Result<String, String> {
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
 pub async fn menubar_extension_install() -> Result<String, String> {
-    Err("菜单栏歌词仅支持 Linux（GNOME 顶栏）".into())
+    Err(crate::i18n::pick(
+        "菜单栏歌词仅支持 Linux（GNOME 顶栏）",
+        "Menu bar lyrics are only supported on Linux (GNOME Top Bar)",
+    )
+    .into())
 }
 
 // ---------- 任务栏歌词（Windows，托盘折叠图标左侧） ----------
@@ -729,7 +793,11 @@ pub async fn taskbar_lyrics_set_enabled(on: bool) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let _ = on;
-        return Err("任务栏歌词仅支持 Windows".into());
+        return Err(crate::i18n::pick(
+            "任务栏歌词仅支持 Windows",
+            "Taskbar lyrics are only supported on Windows",
+        )
+        .into());
     }
     #[cfg(windows)]
     {
@@ -747,7 +815,11 @@ pub async fn taskbar_lyrics_list_displays(
     }
     #[cfg(not(windows))]
     {
-        Err("任务栏歌词仅支持 Windows".into())
+        Err(crate::i18n::pick(
+            "任务栏歌词仅支持 Windows",
+            "Taskbar lyrics are only supported on Windows",
+        )
+        .into())
     }
 }
 
@@ -759,7 +831,11 @@ pub async fn taskbar_lyrics_set_display(display: String) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let _ = display;
-        return Err("任务栏歌词仅支持 Windows".into());
+        return Err(crate::i18n::pick(
+            "任务栏歌词仅支持 Windows",
+            "Taskbar lyrics are only supported on Windows",
+        )
+        .into());
     }
     #[cfg(windows)]
     {
@@ -806,7 +882,7 @@ pub async fn dlyrics_taskbar_color(color: Option<String>) -> Result<(), String> 
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("不支持的链接".into());
+        return Err(crate::i18n::pick("不支持的链接", "Unsupported link").into());
     }
     #[cfg(windows)]
     let mut cmd = std::process::Command::new("explorer");
@@ -816,6 +892,6 @@ pub async fn open_url(url: String) -> Result<(), String> {
     let mut cmd = std::process::Command::new("xdg-open");
     cmd.arg(&url)
         .spawn()
-        .map_err(|e| format!("打开链接失败：{e}"))?;
+        .map_err(|e| format!("{}：{e}", crate::i18n::pick("打开链接失败", "Failed to open link")))?;
     Ok(())
 }

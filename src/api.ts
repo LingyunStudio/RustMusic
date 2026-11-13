@@ -292,6 +292,10 @@ export const api = {
     invoke<void>("set_wasapi_exclusive", { enabled }),
   setCloseAction: (action: string) => invoke<void>("set_close_action", { action }),
   setAutoUpdate: (enabled: boolean) => invoke<void>("set_auto_update", { enabled }),
+  setLanguage: (lang: import("./types").LanguagePref, systemHint?: "zh" | "en") =>
+    invoke<import("./types").LanguagePref>("set_language", { lang, systemHint }),
+  syncSystemLang: (hint: "zh" | "en") =>
+    invoke<void>("sync_system_lang", { hint }),
   // ---------- 自动更新（GitHub Release） ----------
   /** 前端就绪后触发一次启动自动检查（结果通过 update://available 事件推送） */
   autoCheckUpdate: () => invoke<void>("auto_check_update"),

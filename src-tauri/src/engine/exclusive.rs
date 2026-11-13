@@ -61,7 +61,11 @@ impl Engine {
                         eprintln!("[engine] 独占会话协商超时且未退出，保留控制句柄");
                         self.shared_broken.store(true, Ordering::Relaxed);
                     }
-                    return Err("独占模式初始化超时".into());
+                    return Err(crate::i18n::pick(
+                        "独占模式初始化超时",
+                        "Exclusive mode initialization timed out",
+                    )
+                    .into());
                 }
             }
             self.shared_broken.store(true, Ordering::Relaxed);

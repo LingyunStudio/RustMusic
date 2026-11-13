@@ -137,6 +137,8 @@ export interface Store {
   qualities: { netease: string; qq: string; kugou: string };
   /** 关闭主窗口行为：tray = 最小化到托盘（默认）；exit = 直接退出应用 */
   closeAction: "tray" | "exit";
+  /** 界面语言：auto = 自动检测系统语言（默认）；zh = 简体中文；en = English */
+  language: import("../types").LanguagePref;
   /** 启动时自动检查 GitHub 更新（默认开启） */
   autoUpdate: boolean;
   /** WASAPI 独占模式（默认关闭；切换后下一首生效） */
@@ -385,6 +387,7 @@ export interface Store {
   setQuality(q: string): void;
   setSourceQuality(kind: "netease" | "qq" | "kugou", q: string): void;
   setCloseAction(a: "tray" | "exit"): void;
+  setLanguage(lang: import("../types").LanguagePref): void;
   setAutoUpdate(enabled: boolean): void;
   setWasapiExclusive(enabled: boolean): void;
   setCacheLimit(bytes: number): void;

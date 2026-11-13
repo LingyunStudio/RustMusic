@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import { useDragList } from "../hooks/useDragList";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { ConfirmModal, InputModal } from "../components/Dialogs";
@@ -99,6 +100,7 @@ type DetailRow =
     };
 
 export default function PlaylistDetail({ id }: { id: number }) {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
   const isSkeuo = uiTheme === "skeuo";
@@ -147,9 +149,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
     try {
       const { save } = await import("@tauri-apps/plugin-dialog");
       const path = await save({
-        title: "导出歌单为 M3U",
+        title: tr("导出歌单为 M3U", "Export Playlist as M3U"),
         defaultPath: `${pl.name}.m3u8`,
-        filters: [{ name: "M3U 歌单", extensions: ["m3u8", "m3u"] }],
+        filters: [{ name: tr("M3U 歌单", "M3U Playlist"), extensions: ["m3u8", "m3u"] }],
       });
       if (path) await exportM3u(pl.id, path);
     } catch (e) {
@@ -162,13 +164,14 @@ export default function PlaylistDetail({ id }: { id: number }) {
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const picked = await open({
-        title: "导入 M3U 歌单",
+        title: tr("导入 M3U 歌单", "Import M3U Playlist"),
         multiple: false,
-        filters: [{ name: "M3U 歌单", extensions: ["m3u8", "m3u"] }],
+        filters: [{ name: tr("M3U 歌单", "M3U Playlist"), extensions: ["m3u8", "m3u"] }],
       });
       if (!picked || typeof picked !== "string") return;
-      const stem = picked.split(/[\\/]/).pop() ?? "导入歌单";
-      const name = stem.replace(/\.(m3u8?|M3U8?)$/, "") || "导入歌单";
+      const fallbackName = tr("导入歌单", "Imported Playlist");
+      const stem = picked.split(/[\\/]/).pop() ?? fallbackName;
+      const name = stem.replace(/\.(m3u8?|M3U8?)$/, "") || fallbackName;
       await importM3u(name, picked);
     } catch (e) {
       toast(String(e), "error");
@@ -276,7 +279,12 @@ export default function PlaylistDetail({ id }: { id: number }) {
       const item = entryToQueueItem(r.entry);
       if (item) addToQueue(item);
     }
-    toast(`已将 ${selectedRows.length} 首歌曲加入播放队列`);
+    toast(
+      tr(
+        `已将 ${selectedRows.length} 首歌曲加入播放队列`,
+        `Added ${selectedRows.length} ${selectedRows.length === 1 ? "track" : "tracks"} to queue`
+      )
+    );
   };
 
   const handleBatchRemove = async () => {
@@ -372,7 +380,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   if (!pl) {
     return (
       <div className="flex-1 flex items-center justify-center text-[var(--ink-2)]">
-        播放列表不存在
+        {tr("播放列表不存在", "Playlist not found")}
       </div>
     );
   }
@@ -400,33 +408,42 @@ export default function PlaylistDetail({ id }: { id: number }) {
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-semibold text-[var(--ink-2)] tracking-wider mb-1 flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-          播放列表
+          {tr("播放列表", "Playlist")}
         </div>
         <h1 className="text-[24px] font-bold truncate leading-tight text-[var(--ink)]">{pl.name}</h1>
         {/* 改名后保留原始导入名，来源一目了然（重导入也按它兜底认出） */}
         {pl.originName && pl.originName !== pl.name && (
           <div className="text-[11.5px] text-[var(--ink-3)] mt-1 truncate">
-            导入名「{pl.originName}」
+            {tr(`导入名「${pl.originName}」`, `Imported as "${pl.originName}"`)}
             {pl.remoteKind && (
               <span className="ml-1">
-                · 来源{pl.remoteKind === "netease" ? "网易云" : "QQ 音乐"}
+                ·{" "}
+                {tr(
+                  `来源${pl.remoteKind === "netease" ? "网易云" : "QQ 音乐"}`,
+                  `from ${pl.remoteKind === "netease" ? "NetEase" : "QQ Music"}`,
+                )}
               </span>
             )}
           </div>
         )}
         <div className={`text-[12.5px] text-[var(--ink-2)] ${isSkeuo ? "mt-1" : "mt-1.5"}`}>
-          {list.length} 首曲目
+          {tr(
+            `${list.length} 首曲目`,
+            `${list.length} ${list.length === 1 ? "track" : "tracks"}`,
+          )}
           {list.length > 0 && !windowed && (
-            <span className="text-[var(--ink-3)] ml-2">· 长按歌曲可拖动调序</span>
+            <span className="text-[var(--ink-3)] ml-2">
+              · {tr("长按歌曲可拖动调序", "Long-press a track to drag and reorder")}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2 mt-3">
-          <button className="btn-primary" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
+          <button className="btn-primary shrink-0 whitespace-nowrap" onClick={() => playEntries(list.map((r) => r.entry), 0)}>
             <Play size={13} className="fill-current" />
-            播放全部
+            {tr("播放全部", "Play All")}
           </button>
           <button
-            className="btn-secondary"
+            className="btn-secondary shrink-0 whitespace-nowrap"
             onClick={() =>
               playEntries(
                 list.map((r) => r.entry),
@@ -435,10 +452,10 @@ export default function PlaylistDetail({ id }: { id: number }) {
             }
           >
             <Shuffle size={13} />
-            随机
+            {tr("随机", "Shuffle")}
           </button>
           <button
-            className={`btn-secondary ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
+            className={`btn-secondary shrink-0 whitespace-nowrap ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
             onClick={() => {
               setBatchMode((v) => !v);
               setSel(new Set());
@@ -446,7 +463,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
             disabled={list.length === 0}
           >
             <ListChecks size={13} />
-            {batchMode ? "退出批量" : "批量管理"}
+            {batchMode ? tr("退出批量", "Done") : tr("批量管理", "Batch Edit")}
           </button>
 
           {/* 更多管理操作下拉（重命名、导出/导入 M3U、删除） */}
@@ -456,7 +473,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 moreOpen ? "!text-[var(--accent)] !border-[var(--accent)]" : ""
               }`}
               onClick={() => setMoreOpen((v) => !v)}
-              title="更多歌单操作"
+              title={tr("更多歌单操作", "More playlist actions")}
             >
               <MoreHorizontal size={15} />
             </button>
@@ -466,19 +483,19 @@ export default function PlaylistDetail({ id }: { id: number }) {
                   className="fixed inset-0 z-40"
                   onClick={() => setMoreOpen(false)}
                 />
-                <div className="absolute left-0 top-full mt-1.5 z-50 w-[150px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu border border-[var(--line)]">
+                <div className="absolute left-0 top-full mt-1.5 z-50 min-w-[170px] w-max glass-strong rounded-xl p-1.5 shadow-2xl anim-menu border border-[var(--line)]">
                   <button
-                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left whitespace-nowrap"
                     onClick={() => {
                       setMoreOpen(false);
                       setRenameOpen(true);
                     }}
                   >
                     <Pencil size={13} />
-                    重命名
+                    {tr("重命名", "Rename")}
                   </button>
                   <button
-                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left disabled:opacity-40"
+                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left disabled:opacity-40 whitespace-nowrap"
                     disabled={!pl?.entries.length}
                     onClick={() => {
                       setMoreOpen(false);
@@ -486,28 +503,28 @@ export default function PlaylistDetail({ id }: { id: number }) {
                     }}
                   >
                     <FileDown size={13} />
-                    导出 M3U
+                    {tr("导出 M3U", "Export M3U")}
                   </button>
                   <button
-                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left whitespace-nowrap"
                     onClick={() => {
                       setMoreOpen(false);
                       doImportM3u();
                     }}
                   >
                     <FileUp size={13} />
-                    导入 M3U
+                    {tr("导入 M3U", "Import M3U")}
                   </button>
                   <div className="my-1 border-t border-[var(--line)]" />
                   <button
-                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)] text-left"
+                    className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2 text-[12.5px] !text-[#e8564a] hover:!bg-[rgba(232,86,74,0.12)] text-left whitespace-nowrap"
                     onClick={() => {
                       setMoreOpen(false);
                       setConfirmDel(true);
                     }}
                   >
                     <Trash2 size={13} />
-                    删除歌单
+                    {tr("删除歌单", "Delete Playlist")}
                   </button>
                 </div>
               </>
@@ -515,7 +532,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           </div>
 
           {/* 本页搜索框：靠右对齐，与左侧主操作保持同一行 */}
-          <div className="relative ml-auto w-[220px] max-w-full">
+          <div className="relative ml-auto w-[240px] max-w-full">
             <Search
               size={13}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
@@ -525,7 +542,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="在歌单内搜索… (Ctrl+F)"
+              placeholder={tr("在歌单内搜索… (Ctrl+F)", "Search in playlist… (Ctrl+F)")}
               className={
                 isLiquid
                   ? "w-full h-8 rounded-xl liquid-input pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
@@ -536,7 +553,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               <button
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
                 onClick={() => setSearch("")}
-                title="清除筛选"
+                title={tr("清除筛选", "Clear filter")}
               >
                 <X size={12} />
               </button>
@@ -551,29 +568,31 @@ export default function PlaylistDetail({ id }: { id: number }) {
     <div className="mb-2 px-4 py-2 glass rounded-2xl flex items-center justify-between gap-3 text-[12.5px] anim-fade-in shrink-0">
       <div className="flex items-center gap-2.5">
         <span className="text-[var(--ink-2)] font-medium">
-          已选 <span className="text-[var(--accent-strong)] font-semibold">{sel.size}</span> / {list.length} 首
+          {tr("已选 ", "Selected ")}
+          <span className="text-[var(--accent-strong)] font-semibold">{sel.size}</span> / {list.length}{" "}
+          {tr("首", list.length === 1 ? "track" : "tracks")}
         </span>
         <button
           className="btn-secondary !py-1 !px-2.5 !text-[12px]"
           onClick={() => setSel(new Set(list.map((r) => r.entry.rowid)))}
-          title="全选当前歌单歌曲（Ctrl+A）"
+          title={tr("全选当前歌单歌曲（Ctrl+A）", "Select all tracks in playlist (Ctrl+A)")}
         >
-          全选
+          {tr("全选", "Select All")}
         </button>
         <button
           className="btn-secondary !py-1 !px-2.5 !text-[12px]"
           onClick={() => setSel(new Set())}
           disabled={sel.size === 0}
         >
-          清除
+          {tr("清除", "Clear")}
         </button>
         <button
           className="btn-danger !py-1 !px-2.5 !text-[12px]"
           onClick={() => setConfirmBatchRemove(true)}
           disabled={sel.size === 0}
-          title="从当前歌单移除勾选歌曲"
+          title={tr("从当前歌单移除勾选歌曲", "Remove selected tracks from playlist")}
         >
-          移除
+          {tr("移除", "Remove")}
         </button>
       </div>
       <button
@@ -582,7 +601,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           setBatchMode(false);
           setSel(new Set());
         }}
-        title="退出批量管理（ESC）"
+        title={tr("退出批量管理（ESC）", "Exit batch edit (ESC)")}
       >
         <X size={14} />
       </button>
@@ -602,18 +621,18 @@ export default function PlaylistDetail({ id }: { id: number }) {
         {list.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-[13px] text-[var(--ink-2)]">
               {search
-                ? "没有匹配筛选的歌曲（点右侧 ✕ 清除筛选）"
-                : "列表里还没有歌曲（可在在线曲库右键添加）"}
+                ? tr("没有匹配筛选的歌曲（点右侧 ✕ 清除筛选）", "No matching tracks (click ✕ on the right to clear)")
+                : tr("列表里还没有歌曲（可在在线曲库右键添加）", "No tracks yet (right-click any online track to add)")}
             </div>
           ) : (
             <>
               {/* 表头：清晰区分序号、歌曲、专辑、时长与操作 */}
               <div className="grid grid-cols-[52px_minmax(200px,3fr)_minmax(130px,2fr)_104px_116px] items-center gap-4 h-9 px-6 border-b border-[var(--line)] text-[11px] font-semibold text-[var(--ink-3)] tracking-wider select-none shrink-0">
                 <span className="text-center">#</span>
-                <span className="pl-1">歌曲</span>
-                <span>专辑</span>
-                <span className="text-right">时长</span>
-                <span className="text-right pr-2">操作</span>
+                <span className="pl-1">{tr("歌曲", "TITLE")}</span>
+                <span>{tr("专辑", "ALBUM")}</span>
+                <span className="text-right">{tr("时长", "DURATION")}</span>
+                <span className="text-right pr-2">{tr("操作", "ACTIONS")}</span>
               </div>
               <div
                 ref={win.containerRef}
@@ -660,7 +679,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                                     : "hover:bg-[var(--shade-hover)]"
                               } ${dead ? "opacity-45" : ""}`
                       }
-                    title={dead ? `无法播放：${unavailable[`${r.kind}:${r.id}`]}` : undefined}
+                    title={dead ? tr(`无法播放：${unavailable[`${r.kind}:${r.id}`]}`, `Unavailable: ${unavailable[`${r.kind}:${r.id}`]}`) : undefined}
                     onClick={() => {
                       if (batchMode) toggleSel(r.entry.rowid);
                     }}
@@ -712,7 +731,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                                 playEntries(list.map((x) => x.entry), i);
                               }
                             }}
-                            title={active ? (playing ? "暂停" : "播放") : "播放"}
+                            title={active ? (playing ? tr("暂停", "Pause") : tr("播放", "Play")) : tr("播放", "Play")}
                           >
                             {active && playing ? (
                               <Pause size={14} className="fill-current" />
@@ -745,14 +764,14 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1">
                               <Cloud size={9} />
                               {r.kind === "netease"
-                                ? "网易云"
+                                ? tr("网易云", "NetEase")
                                 : r.kind === "kugou"
-                                  ? "酷狗"
+                                  ? tr("酷狗", "Kugou")
                                   : r.kind === "bilibili"
-                                    ? "B站"
+                                    ? tr("B站", "Bilibili")
                                     : r.kind === "navidrome"
                                       ? "Navidrome"
-                                      : "QQ音乐"}
+                                      : tr("QQ音乐", "QQ Music")}
                             </span>
                           )}
                           {r.kind !== "track" && r.entry.vip && !dead && (
@@ -763,7 +782,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                           {dead && (
                             <span className="text-[9.5px] px-1.5 py-0.5 rounded bg-[var(--shade-strong)] text-[var(--ink-3)] font-medium shrink-0 flex items-center gap-1" title={unavailable[`${r.kind}:${r.id}`]}>
                               <Ban size={9} />
-                              无版权
+                              {tr("无版权", "Unavailable")}
                             </span>
                           )}
                         </div>
@@ -776,11 +795,18 @@ export default function PlaylistDetail({ id }: { id: number }) {
                               return;
                             }
                             ev.stopPropagation();
-                            openDetailPage("artist", r.artist || "未知艺术家", r.kind === "netease" || r.kind === "qq" || r.kind === "kugou" ? r.kind : undefined);
+                            openDetailPage("artist", r.artist || tr("未知艺术家", "Unknown Artist"), r.kind === "netease" || r.kind === "qq" || r.kind === "kugou" ? r.kind : undefined);
                           }}
-                          title={batchMode ? undefined : `查看歌手：${r.artist || "未知艺术家"}`}
+                          title={
+                            batchMode
+                              ? undefined
+                              : tr(
+                                  `查看歌手：${r.artist || "未知艺术家"}`,
+                                  `View artist: ${r.artist || "Unknown Artist"}`,
+                                )
+                          }
                         >
-                          {r.artist || "未知艺术家"}
+                          {r.artist || tr("未知艺术家", "Unknown Artist")}
                         </button>
                       </div>
                     </div>
@@ -794,11 +820,18 @@ export default function PlaylistDetail({ id }: { id: number }) {
                           return;
                         }
                         ev.stopPropagation();
-                        openDetailPage("album", r.album || "未知专辑", r.kind === "netease" || r.kind === "qq" || r.kind === "kugou" ? r.kind : undefined);
+                        openDetailPage("album", r.album || tr("未知专辑", "Unknown Album"), r.kind === "netease" || r.kind === "qq" || r.kind === "kugou" ? r.kind : undefined);
                       }}
-                      title={batchMode ? undefined : `查看专辑：${r.album || "未知专辑"}`}
+                      title={
+                        batchMode
+                          ? undefined
+                          : tr(
+                              `查看专辑：${r.album || "未知专辑"}`,
+                              `View album: ${r.album || "Unknown Album"}`,
+                            )
+                      }
                     >
-                      {r.album || "未知专辑"}
+                      {r.album || tr("未知专辑", "Unknown Album")}
                     </button>
 
                     <div className="text-right text-[12.5px] text-[var(--ink-2)] tabular-nums">
@@ -827,9 +860,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
                         title={
                           r.kind === "track"
                             ? r.liked
-                              ? "取消喜欢"
-                              : "喜欢"
-                            : r.liked ? "取消喜欢" : "收藏到“我喜欢”"
+                              ? tr("取消喜欢", "Remove Favorite")
+                              : tr("喜欢", "Favorite")
+                            : r.liked
+                              ? tr("取消喜欢", "Remove Favorite")
+                              : tr("收藏到“我喜欢”", "Add to Favorites")
                         }
                       >
                         <Heart
@@ -850,7 +885,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                           const item = entryToQueueItem(r.entry);
                           if (item) playNext(item);
                         }}
-                        title="下一首播放"
+                        title={tr("下一首播放", "Play Next")}
                       >
                         <Play
                           size={14}
@@ -868,12 +903,12 @@ export default function PlaylistDetail({ id }: { id: number }) {
                             ev.currentTarget as HTMLElement
                           ).getBoundingClientRect();
                           setMenu({
-                            x: rect.right - 200,
+                            x: rect.right - 215,
                             y: rect.bottom + 4,
                             e: r.entry,
                           });
                         }}
-                        title={isSkeuo ? "更多选项" : undefined}
+                        title={isSkeuo ? tr("更多选项", "More Options") : undefined}
                       >
                         <MoreHorizontal
                           size={16}
@@ -907,36 +942,45 @@ export default function PlaylistDetail({ id }: { id: number }) {
 
       <ConfirmModal
         open={confirmDel}
-        title="删除播放列表"
+        title={tr("删除播放列表", "Delete Playlist")}
         danger
-        confirmText="删除"
+        confirmText={tr("删除", "Delete")}
         onClose={() => setConfirmDel(false)}
         onConfirm={() => deletePlaylist(pl.id)}
       >
-        确定删除播放列表「{pl.name}」？列表中的曲目不会被删除。
+        {tr(
+          `确定删除播放列表「${pl.name}」？列表中的曲目不会被删除。`,
+          `Delete playlist "${pl.name}"? Tracks inside will not be deleted.`,
+        )}
       </ConfirmModal>
 
       <ConfirmModal
         open={confirmBatchRemove}
-        title="批量从歌单移除"
+        title={tr("批量从歌单移除", "Remove Tracks from Playlist")}
         danger
-        confirmText={`确认移除 (${sel.size} 首)`}
+        confirmText={tr(`确认移除 (${sel.size} 首)`, `Remove (${sel.size})`)}
         onClose={() => setConfirmBatchRemove(false)}
         onConfirm={handleBatchRemove}
       >
         <p className="text-[13px] text-[var(--ink)] font-medium mb-1.5">
-          确定从歌单「{pl.name}」中移除选中的 {sel.size} 首歌曲？
+          {tr(
+            `确定从歌单「${pl.name}」中移除选中的 ${sel.size} 首歌曲？`,
+            `Remove ${sel.size} selected ${sel.size === 1 ? "track" : "tracks"} from "${pl.name}"?`,
+          )}
         </p>
         <p className="text-[12px] text-[var(--ink-3)]">
-          注意：仅从当前歌单中移除该歌曲记录，不会删除硬盘上的本地音乐文件。
+          {tr(
+            "注意：仅从当前歌单中移除该歌曲记录，不会删除硬盘上的本地音乐文件。",
+            "Note: This only removes entries from the playlist; local files on disk will not be deleted.",
+          )}
         </p>
       </ConfirmModal>
 
       <InputModal
         open={renameOpen}
-        title="重命名播放列表"
+        title={tr("重命名播放列表", "Rename Playlist")}
         initialValue={pl.name}
-        confirmText="重命名"
+        confirmText={tr("重命名", "Rename")}
         onClose={() => setRenameOpen(false)}
         onConfirm={(name) => void renamePlaylist(pl.id, name)}
       />
@@ -945,9 +989,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
       {menu &&
         createPortal(
         <div
-          className={`fixed z-[75] w-[200px] glass-strong ${isLiquid ? "!rounded-2xl" : "rounded-xl"} p-1.5 shadow-2xl anim-menu`}
+          className={`fixed z-[75] w-[215px] glass-strong ${isLiquid ? "!rounded-2xl" : "rounded-xl"} p-1.5 shadow-2xl anim-menu`}
           style={(() => {
-            const p = clampMenuPos(menu.x, menu.y, 200, 240);
+            const p = clampMenuPos(menu.x, menu.y, 215, 240);
             return { left: p.x, top: p.y };
           })()}
           onMouseDown={(ev) => ev.stopPropagation()}
@@ -964,7 +1008,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               setMenu(null);
             }}
           >
-            <Play size={13} /> 播放
+            <Play size={13} /> {tr("播放", "Play")}
           </button>
           <button
             className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -977,7 +1021,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               setMenu(null);
             }}
           >
-            <Play size={13} /> 下一首播放
+            <Play size={13} /> {tr("下一首播放", "Play Next")}
           </button>
           {menu.e.kind !== "local" && (
             <button
@@ -998,7 +1042,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
                 setMenu(null);
               }}
             >
-              <Play size={13} /> 下载到本地
+              <Play size={13} /> {tr("下载到本地", "Download to Library")}
             </button>
           )}
           <button
@@ -1010,7 +1054,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
               setMenu(null);
             }}
           >
-            <Trash2 size={13} /> 从列表移除
+            <Trash2 size={13} /> {tr("从列表移除", "Remove from Playlist")}
           </button>
         </div>,
         document.body

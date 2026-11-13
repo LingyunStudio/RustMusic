@@ -1,6 +1,7 @@
 //! 「添加到播放列表」弹窗：单行右键 / 批量多选共用（在线条目）。
 import { useState } from "react";
 import { useStore } from "../../store";
+import { useI18n } from "../../i18n";
 import Modal from "../../components/Modal";
 import type { OnlineRow } from "./shared";
 
@@ -11,6 +12,7 @@ export function PlaylistPickerModal({
   rows: OnlineRow[] | null;
   onClose: () => void;
 }) {
+  const { tr } = useI18n();
   const playlists = useStore((s) => s.playlists);
   const createPlaylist = useStore((s) => s.createPlaylist);
   const addOnlineToPlaylist = useStore((s) => s.addOnlineToPlaylist);
@@ -26,8 +28,8 @@ export function PlaylistPickerModal({
       onClose={onClose}
       title={
         rows && rows.length > 1
-          ? `添加 ${rows.length} 首到播放列表`
-          : "添加到播放列表"
+          ? tr(`添加 ${rows.length} 首到播放列表`, `Add ${rows.length} Tracks to Playlist`)
+          : tr("添加到播放列表", "Add to Playlist")
       }
       width={380}
     >
@@ -47,13 +49,13 @@ export function PlaylistPickerModal({
           >
             <span className="truncate">{p.name}</span>
             <span className="text-[11px] text-[var(--ink-2)]">
-              {p.entries.length} 首
+              {tr(`${p.entries.length} 首`, `${p.entries.length} ${p.entries.length === 1 ? "track" : "tracks"}`)}
             </span>
           </button>
         ))}
         {!playlists.length && (
           <div className="text-[12.5px] text-[var(--ink-2)] py-2">
-            还没有播放列表，在下方创建
+            {tr("还没有播放列表，在下方创建", "No playlists yet. Create one below.")}
           </div>
         )}
       </div>
@@ -62,7 +64,7 @@ export function PlaylistPickerModal({
           type="text"
           value={newPlName}
           onChange={(e) => setNewPlName(e.target.value)}
-          placeholder="新播放列表名称"
+          placeholder={tr("新播放列表名称", "New playlist name")}
           className={
             isLiquid
               ? "liquid-input flex-1 h-9 rounded-lg px-3 text-[13px]"
@@ -70,7 +72,7 @@ export function PlaylistPickerModal({
           }
         />
         <button
-          className="btn-secondary"
+          className="btn-secondary shrink-0 whitespace-nowrap"
           disabled={creatingPl}
           onClick={async () => {
             if (creatingPl || !newPlName.trim() || !rows?.length) return;
@@ -89,7 +91,7 @@ export function PlaylistPickerModal({
             onClose();
           }}
         >
-          创建并添加
+          {tr("创建并添加", "Create & Add")}
         </button>
       </div>
     </Modal>

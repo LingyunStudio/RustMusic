@@ -41,7 +41,8 @@ pub async fn get_lyrics(
 ) -> Result<LyricsPayload, String> {
     let (path, lrc) = {
         let conn = state.db.lock();
-        let path = db::get_track_path(&conn, track_id).ok_or("曲目不存在")?;
+        let path = db::get_track_path(&conn, track_id)
+            .ok_or_else(|| crate::i18n::pick("曲目不存在", "Track not found"))?;
         let lrc = db::get_lrc_path(&conn, track_id);
         (path, lrc)
     };

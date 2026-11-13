@@ -53,7 +53,12 @@ impl SymphoniaSource {
 
     /// 打开本地文件并跳到指定位置：按包时间戳跳过（不解码），seek 瞬时完成。
     pub fn open_at(path: &str, skip_ms: u64) -> Result<Self, String> {
-        let file = File::open(path).map_err(|e| format!("打开音频文件失败: {e}"))?;
+        let file = File::open(path).map_err(|e| {
+            crate::i18n::pick(
+                format!("打开音频文件失败: {e}"),
+                format!("Failed to open audio file: {e}"),
+            )
+        })?;
         let ext = path.rsplit('.').next().unwrap_or("").to_string();
         Self::open_source(Box::new(file), &ext, skip_ms)
     }
@@ -64,8 +69,12 @@ impl SymphoniaSource {
         shared: std::sync::Arc<crate::streaming::StreamingDownload>,
         skip_ms: u64,
     ) -> Result<Self, String> {
-        let file = crate::streaming::StreamingFile::open(shared)
-            .map_err(|e| format!("打开下载缓存失败: {e}"))?;
+        let file = crate::streaming::StreamingFile::open(shared).map_err(|e| {
+            crate::i18n::pick(
+                format!("打开下载缓存失败: {e}"),
+                format!("Failed to open download cache: {e}"),
+            )
+        })?;
         Self::open_source(Box::new(file), "", skip_ms)
     }
 
@@ -86,13 +95,23 @@ impl SymphoniaSource {
                 },
                 &MetadataOptions::default(),
             )
-            .map_err(|e| format!("音频容器解析失败: {e}"))?;
+            .map_err(|e| {
+                crate::i18n::pick(
+                    format!("音频容器解析失败: {e}"),
+                    format!("Failed to parse audio container: {e}"),
+                )
+            })?;
         let format = probed.format;
         let track = format
             .tracks()
             .iter()
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .ok_or("音频文件中没有可解码的轨道")?
+            .ok_or_else(|| {
+                crate::i18n::pick(
+                    "音频文件中没有可解码的轨道",
+                    "No decodable audio track in file",
+                )
+            })?
             .clone();
         let track_id = track.id;
         let params = &track.codec_params;
@@ -109,7 +128,12 @@ impl SymphoniaSource {
         });
         let decoder = symphonia::default::get_codecs()
             .make(params, &DecoderOptions::default())
-            .map_err(|e| format!("音频解码器创建失败: {e}"))?;
+            .map_err(|e| {
+                crate::i18n::pick(
+                    format!("音频解码器创建失败: {e}"),
+                    format!("Failed to create audio decoder: {e}"),
+                )
+            })?;
         let mut src = Self {
             format,
             decoder,

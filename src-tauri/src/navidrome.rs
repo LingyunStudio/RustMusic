@@ -19,15 +19,24 @@ fn keyring_entry(server: &str, username: &str) -> Result<keyring::Entry, String>
     // 键统一用归一化后的服务器名（补 scheme、去尾斜杠），
     // 避免"存的是 http://…、取的是原始输入"导致键对不上
     let server = norm_base(server);
-    keyring::Entry::new("RustMusic Navidrome", &format!("{server}|{username}"))
-        .map_err(|e| format!("凭据管理器不可用: {e}"))
+    keyring::Entry::new("RustMusic Navidrome", &format!("{server}|{username}")).map_err(|e| {
+        crate::i18n::pick(
+            format!("凭据管理器不可用: {e}"),
+            format!("Credential manager unavailable: {e}"),
+        )
+    })
 }
 
 /// 密码存入 Windows 凭据管理器
 pub fn save_password(server: &str, username: &str, password: &str) -> Result<(), String> {
     keyring_entry(server, username)?
         .set_password(password)
-        .map_err(|e| format!("凭据保存失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("凭据保存失败: {e}"),
+                format!("Failed to save credentials: {e}"),
+            )
+        })?;
     pw_cache_invalidate(server, username);
     Ok(())
 }
@@ -37,7 +46,10 @@ pub fn delete_password(server: &str, username: &str) -> Result<(), String> {
     let r = match keyring_entry(server, username)?.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("凭据删除失败: {e}")),
+        Err(e) => Err(crate::i18n::pick(
+            format!("凭据删除失败: {e}"),
+            format!("Failed to delete credentials: {e}"),
+        )),
     };
     pw_cache_invalidate(server, username);
     r
@@ -67,7 +79,13 @@ fn get_password(server: &str, username: &str) -> Result<String, String> {
     }
     let pw = keyring_entry(server, username)?
         .get_password()
-        .map_err(|_| "未找到保存的密码，请重新保存连接".to_string())?;
+        .map_err(|_| {
+            crate::i18n::pick(
+                "未找到保存的密码，请重新保存连接",
+                "Saved password not found; please re-save connection",
+            )
+            .to_string()
+        })?;
     if let Ok(mut m) = pw_cache().lock() {
         m.insert(key, pw.clone());
     }
@@ -131,15 +149,24 @@ fn get_json(
         "{base}/rest/{endpoint}?{}&{extra}",
         auth_query(server, username)?
     );
-    let resp = ureq::get(&url)
-        .timeout(TIMEOUT)
-        .call()
-        .map_err(|e| format!("连接 Navidrome 服务器失败: {e}"))?;
-    let text = resp
-        .into_string()
-        .map_err(|e| format!("Navidrome 响应读取失败: {e}"))?;
-    let v: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("Navidrome 响应解析失败: {e}"))?;
+    let resp = ureq::get(&url).timeout(TIMEOUT).call().map_err(|e| {
+        crate::i18n::pick(
+            format!("连接 Navidrome 服务器失败: {e}"),
+            format!("Failed to connect to Navidrome server: {e}"),
+        )
+    })?;
+    let text = resp.into_string().map_err(|e| {
+        crate::i18n::pick(
+            format!("Navidrome 响应读取失败: {e}"),
+            format!("Failed to read Navidrome response: {e}"),
+        )
+    })?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        crate::i18n::pick(
+            format!("Navidrome 响应解析失败: {e}"),
+            format!("Failed to parse Navidrome response: {e}"),
+        )
+    })?;
     let status = v
         .pointer("/subsonic-response/status")
         .and_then(|s| s.as_str());
@@ -147,8 +174,11 @@ fn get_json(
         let msg = v
             .pointer("/subsonic-response/error/message")
             .and_then(|m| m.as_str())
-            .unwrap_or("未知错误");
-        return Err(format!("Navidrome 错误: {msg}"));
+            .unwrap_or_else(|| crate::i18n::pick("未知错误", "Unknown error"));
+        return Err(crate::i18n::pick(
+            format!("Navidrome 错误: {msg}"),
+            format!("Navidrome error: {msg}"),
+        ));
     }
     Ok(v)
 }
@@ -257,10 +287,19 @@ pub fn ping(server: &str, username: &str, password: &str) -> Result<(), String> 
     let resp = ureq::get(&url)
         .timeout(TIMEOUT)
         .call()
-        .map_err(|e| format!("无法连接服务器: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("无法连接服务器: {e}"),
+                format!("Unable to connect to server: {e}"),
+            )
+        })?;
     let text = resp.into_string().map_err(|e| e.to_string())?;
-    let v: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("响应解析失败: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        crate::i18n::pick(
+            format!("响应解析失败: {e}"),
+            format!("Failed to parse response: {e}"),
+        )
+    })?;
     if v.pointer("/subsonic-response/status")
         .and_then(|s| s.as_str())
         != Some("ok")
@@ -268,7 +307,12 @@ pub fn ping(server: &str, username: &str, password: &str) -> Result<(), String> 
         let msg = v
             .pointer("/subsonic-response/error/message")
             .and_then(|m| m.as_str())
-            .unwrap_or("认证失败或服务器错误");
+            .unwrap_or_else(|| {
+                crate::i18n::pick(
+                    "认证失败或服务器错误",
+                    "Authentication failed or server error",
+                )
+            });
         return Err(msg.to_string());
     }
     Ok(())
@@ -320,7 +364,7 @@ pub fn album_songs(
     let v = get_json(server, username, "getAlbum", &extra)?;
     let album = v
         .pointer("/subsonic-response/album")
-        .ok_or_else(|| "专辑不存在".to_string())?;
+        .ok_or_else(|| crate::i18n::pick("专辑不存在", "Album not found").to_string())?;
     let empty = Vec::new();
     let songs = album
         .get("song")

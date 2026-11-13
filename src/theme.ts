@@ -1,30 +1,36 @@
 /** 主题系统：浅色/暗色 + 强调色选择，localStorage 持久化 */
+import { tr } from "./i18n";
 
 export interface AccentColor {
   key: string;
   label: string;
+  labelEn: string;
   base: string; // 主色
   strong: string; // 亮一档（浅色模式可作主色）
   onLight: string; // 浅色模式下按钮文字色
 }
 
 export const ACCENTS: AccentColor[] = [
-  { key: "amber", label: "琥珀", base: "#f0a24a", strong: "#ffc470", onLight: "#fff" },
-  { key: "tangerine", label: "橙黄", base: "#e8823f", strong: "#ff9d5c", onLight: "#fff" },
-  { key: "coral", label: "珊瑚", base: "#e8674a", strong: "#ff8f6e", onLight: "#fff" },
-  { key: "rose", label: "玫红", base: "#d94f6e", strong: "#f4758f", onLight: "#fff" },
-  { key: "crimson", label: "绛紫", base: "#b04a8f", strong: "#cd6ba9", onLight: "#fff" },
-  { key: "violet", label: "紫罗兰", base: "#8e6fd8", strong: "#ab93ea", onLight: "#fff" },
-  { key: "iris", label: "鸢尾", base: "#6d6ee0", strong: "#8f90ea", onLight: "#fff" },
-  { key: "ocean", label: "海蓝", base: "#3f8fd4", strong: "#6bace8", onLight: "#fff" },
-  { key: "sky", label: "天青", base: "#3ba6c9", strong: "#63c0dd", onLight: "#fff" },
-  { key: "teal", label: "青碧", base: "#3aa896", strong: "#5fc0af", onLight: "#fff" },
-  { key: "jade", label: "翡翠", base: "#2f9e7f", strong: "#52b89b", onLight: "#fff" },
-  { key: "moss", label: "苔绿", base: "#7ba85f", strong: "#9cc285", onLight: "#fff" },
-  { key: "olive", label: "橄榄", base: "#8f9a4d", strong: "#adb866", onLight: "#fff" },
-  { key: "graphite", label: "石墨", base: "#6b7280", strong: "#8b95a3", onLight: "#fff" },
-  { key: "wine", label: "酒红", base: "#a83f55", strong: "#c65d72", onLight: "#fff" },
+  { key: "amber", label: "琥珀", labelEn: "Amber", base: "#f0a24a", strong: "#ffc470", onLight: "#fff" },
+  { key: "tangerine", label: "橙黄", labelEn: "Tangerine", base: "#e8823f", strong: "#ff9d5c", onLight: "#fff" },
+  { key: "coral", label: "珊瑚", labelEn: "Coral", base: "#e8674a", strong: "#ff8f6e", onLight: "#fff" },
+  { key: "rose", label: "玫红", labelEn: "Rose", base: "#d94f6e", strong: "#f4758f", onLight: "#fff" },
+  { key: "crimson", label: "绛紫", labelEn: "Crimson", base: "#b04a8f", strong: "#cd6ba9", onLight: "#fff" },
+  { key: "violet", label: "紫罗兰", labelEn: "Violet", base: "#8e6fd8", strong: "#ab93ea", onLight: "#fff" },
+  { key: "iris", label: "鸢尾", labelEn: "Iris", base: "#6d6ee0", strong: "#8f90ea", onLight: "#fff" },
+  { key: "ocean", label: "海蓝", labelEn: "Ocean", base: "#3f8fd4", strong: "#6bace8", onLight: "#fff" },
+  { key: "sky", label: "天青", labelEn: "Sky", base: "#3ba6c9", strong: "#63c0dd", onLight: "#fff" },
+  { key: "teal", label: "青碧", labelEn: "Teal", base: "#3aa896", strong: "#5fc0af", onLight: "#fff" },
+  { key: "jade", label: "翡翠", labelEn: "Jade", base: "#2f9e7f", strong: "#52b89b", onLight: "#fff" },
+  { key: "moss", label: "苔绿", labelEn: "Moss", base: "#7ba85f", strong: "#9cc285", onLight: "#fff" },
+  { key: "olive", label: "橄榄", labelEn: "Olive", base: "#8f9a4d", strong: "#adb866", onLight: "#fff" },
+  { key: "graphite", label: "石墨", labelEn: "Graphite", base: "#6b7280", strong: "#8b95a3", onLight: "#fff" },
+  { key: "wine", label: "酒红", labelEn: "Wine", base: "#a83f55", strong: "#c65d72", onLight: "#fff" },
 ];
+
+export function accentLabel(a: AccentColor): string {
+  return tr(a.label, a.labelEn);
+}
 
 const CUSTOM_KEY_PREFIX = "custom:";
 const CUSTOM_HEX_KEY = "rustmusic.accent.custom";
@@ -122,11 +128,15 @@ const ACCENT_KEY = "rustmusic.accent";
 
 export type UiTheme = "standard" | "skeuo" | "liquid";
 
-export const UI_THEMES: { key: UiTheme; label: string }[] = [
-  { key: "standard", label: "标准" },
-  { key: "skeuo", label: "拟物" },
-  { key: "liquid", label: "液态玻璃" },
+export const UI_THEMES: { key: UiTheme; label: string; labelEn: string }[] = [
+  { key: "standard", label: "标准", labelEn: "Standard" },
+  { key: "skeuo", label: "拟物", labelEn: "Skeuomorphic" },
+  { key: "liquid", label: "液态玻璃", labelEn: "Liquid Glass" },
 ];
+
+export function uiThemeLabel(u: { label: string; labelEn: string }): string {
+  return tr(u.label, u.labelEn);
+}
 
 const UI_KEY = "rustmusic.uiTheme";
 

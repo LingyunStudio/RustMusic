@@ -15,7 +15,12 @@ pub async fn check_update(app: AppHandle) -> Result<Option<updater::UpdateInfo>,
         updater::fetch_latest(&current)
     })
     .await
-    .map_err(|e| format!("检查更新任务失败：{e}"))?
+    .map_err(|e| {
+        crate::i18n::pick(
+            format!("检查更新任务失败：{e}"),
+            format!("Update check failed: {e}"),
+        )
+    })?
 }
 
 /// 前端就绪后触发一次启动自动检查（后台线程执行，结果通过
@@ -64,7 +69,12 @@ pub async fn download_update(
         updater::download(&app, &url, &name, size, digest.as_deref(), sig_url.as_deref())
     })
     .await
-    .map_err(|e| format!("下载任务失败：{e}"))?
+    .map_err(|e| {
+        crate::i18n::pick(
+            format!("下载任务失败：{e}"),
+            format!("Download task failed: {e}"),
+        )
+    })?
     .map(|p| p.to_string_lossy().to_string())
 }
 

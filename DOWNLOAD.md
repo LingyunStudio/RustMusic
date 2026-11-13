@@ -1,3 +1,5 @@
+**语言 / Language**: [简体中文](DOWNLOAD.md) | [English](DOWNLOAD.en.md)
+
 # RustMusic 下载文件选择指南
 
 前往 [Releases 页面](https://github.com/LingyunStudio/RustMusic/releases/latest) 后，底部的 **Assets** 会列出各平台安装包及附加文件。请按自己的操作系统和芯片架构挑选对应的一个安装包下载即可。

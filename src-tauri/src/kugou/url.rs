@@ -10,7 +10,12 @@ fn song_url_free(hash: &str, vip: bool) -> Result<(String, String), String> {
         "https://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash={}",
         form_encode(hash)
     );
-    let v = get_json(&url, "https://m.kugou.com/", UA, "酷狗歌曲信息")?;
+    let v = get_json(
+        &url,
+        "https://m.kugou.com/",
+        UA,
+        crate::i18n::pick("酷狗歌曲信息", "KuGou track info"),
+    )?;
     let play_url = v
         .get("url")
         .and_then(|u| u.as_str())
@@ -20,9 +25,17 @@ fn song_url_free(hash: &str, vip: bool) -> Result<(String, String), String> {
         let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("");
         let privilege = v.get("privilege").and_then(|p| p.as_i64()).unwrap_or(0);
         return Err(if err.contains("付费") || privilege == 10 || vip {
-            "该曲目需要酷狗 VIP 或付费购买（扫码登录后按会员权益播放）".into()
+            crate::i18n::pick(
+                "该曲目需要酷狗 VIP 或付费购买（扫码登录后按会员权益播放）",
+                "This track requires KuGou VIP or purchase (sign in via QR to play with membership)",
+            )
+            .into()
         } else {
-            "该歌曲在酷狗暂无可播放链接（可能已下架）".into()
+            crate::i18n::pick(
+                "该歌曲在酷狗暂无可播放链接（可能已下架）",
+                "No playable stream on KuGou (may have been removed)",
+            )
+            .into()
         });
     }
     let ext = url_ext(&play_url);
@@ -491,7 +504,7 @@ fn song_url_v5(
         res
     };
 
-    let mut last_err = String::from("无可用链接");
+    let mut last_err = crate::i18n::pick("无可用链接", "No available URL").to_string();
     for (q, h, tier) in ladder.iter() {
         if h.is_empty() {
             continue;
@@ -517,7 +530,11 @@ fn song_url_v5(
                             return Ok(ok);
                         }
                     }
-                    last_err = "本次请求需要验证（设备风控）".into();
+                    last_err = crate::i18n::pick(
+                        "本次请求需要验证（设备风控）",
+                        "Verification required for this request (rate/device limit)",
+                    )
+                    .into();
                 } else {
                     last_err = e;
                 }
@@ -582,8 +599,9 @@ pub fn song_url(
             // “没会员”与“登录态失效”（匿名通道的错误分不出二者）
             if !v5_err.is_empty() && vip {
                 let brief: String = v5_err.chars().take(120).collect();
-                return Err(format!(
-                    "{e}；登录通道：{brief}（登录态可能已过期或权益不足，可尝试重新扫码登录）"
+                return Err(crate::i18n::pick(
+                    format!("{e}；登录通道：{brief}（登录态可能已过期或权益不足，可尝试重新扫码登录）"),
+                    format!("{e}; signed-in channel: {brief} (session may have expired or lacks membership; try signing in again)"),
                 ));
             }
             Err(e)

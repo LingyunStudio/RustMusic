@@ -1,6 +1,7 @@
 //! 媒体库域：曲目/文件夹/在线音源列表数据与刷新、扫描、喜欢（本地曲目）。
 import type { StateCreator } from "zustand";
 import { api } from "../api";
+import { tr } from "../i18n";
 import type { Store } from "./contract";
 import { jsonEq } from "./util";
 
@@ -63,7 +64,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
     api.likeTrack(id, liked).catch(() => {
       // 失败回滚，避免 UI 与数据库状态不一致（重启后状态跳回）
       apply(!liked);
-      get().toast("喜欢状态同步失败", "error");
+      get().toast(tr("喜欢状态同步失败", "Failed to sync favorite state"), "error");
     });
   },
   // ---------- 媒体库 ----------
@@ -71,11 +72,15 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
   async addFolderByDialog() {
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ directory: true, multiple: false, title: "选择音乐文件夹" });
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: tr("选择音乐文件夹", "Select Music Folder"),
+      });
       if (!selected || typeof selected !== "string") return;
       await api.addFolder(selected);
       await get().refreshFolders();
-      get().toast("文件夹已添加，正在扫描…", "success");
+      get().toast(tr("文件夹已添加，正在扫描…", "Folder added, scanning…"), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -85,7 +90,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
     try {
       await api.removeFolder(id);
       await get().refreshFolders();
-      get().toast("文件夹已移除，正在重新扫描…", "info");
+      get().toast(tr("文件夹已移除，正在重新扫描…", "Folder removed, rescanning…"), "info");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -139,9 +144,9 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
         });
       }
       get().refreshPlaylists().catch(() => {});
-      get().toast("歌曲已从硬盘删除", "success");
+      get().toast(tr("歌曲已从硬盘删除", "Deleted track from disk"), "success");
     } catch (e) {
-      get().toast(`删除失败：${e}`, "error");
+      get().toast(tr(`删除失败：${e}`, `Delete failed: ${e}`), "error");
     }
   },
 
@@ -190,9 +195,15 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
         });
       }
       get().refreshPlaylists().catch(() => {});
-      get().toast(`已从硬盘删除 ${count} 首歌曲`, "success");
+      get().toast(
+        tr(
+          `已从硬盘删除 ${count} 首歌曲`,
+          `Deleted ${count} track${count === 1 ? "" : "s"} from disk`
+        ),
+        "success"
+      );
     } catch (e) {
-      get().toast(`删除失败：${e}`, "error");
+      get().toast(tr(`删除失败：${e}`, `Delete failed: ${e}`), "error");
     }
   },
   // ---------- 在线音源 ----------
@@ -201,7 +212,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
     try {
       await api.addSource(url, title);
       await get().refreshSources();
-      get().toast("音源已添加", "success");
+      get().toast(tr("音源已添加", "Source added"), "success");
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -223,11 +234,13 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
       await get().refreshSources();
       if (n > 0) {
         get().toast(
-          n > 1 ? `已解析并添加 ${n} 个分P` : "已添加 B 站视频音频",
+          n > 1
+            ? tr(`已解析并添加 ${n} 个分P`, `Parsed and added ${n} parts`)
+            : tr("已添加 B 站视频音频", "Added Bilibili video audio"),
           "success"
         );
       } else {
-        get().toast("该视频已在在线音源列表中", "info");
+        get().toast(tr("该视频已在在线音源列表中", "Video already exists in online sources"), "info");
       }
     } catch (e) {
       get().toast(String(e), "error");

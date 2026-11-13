@@ -16,6 +16,7 @@ import {
   History,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { useLocatePill } from "../hooks/useLocatePill";
@@ -38,6 +39,7 @@ import {
 
 
 export default function OnlineLibraryView({ source }: { source: Source }) {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
   const isSkeuo = uiTheme === "skeuo";
@@ -150,7 +152,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         ? qqNickname
         : kugouNickname;
   const sourceName =
-    source === "netease" ? "网易云" : source === "qq" ? "QQ 音乐" : "酷狗";
+    source === "netease"
+      ? tr("网易云", "NetEase")
+      : source === "qq"
+        ? tr("QQ 音乐", "QQ Music")
+        : tr("酷狗", "Kugou");
   // 推荐入口（榜单/随便听听）三源都接了：酷狗为匿名接口
   const recommendable = true;
 
@@ -309,7 +315,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 origin: "top" as const,
                 title: t.name,
                 cover: t.cover,
-                subtitle: `${sourceName}官方榜单`,
+                subtitle: tr(`${sourceName}官方榜单`, `${sourceName} Top Charts`),
                 // 网易云榜单 ID 即歌单 ID，可整单收藏
                 playlistId: t.id,
                 topId: t.id,
@@ -326,7 +332,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   origin: "top" as const,
                   title: t.name,
                   cover: t.cover,
-                  subtitle: `${sourceName}官方榜单`,
+                  subtitle: tr(`${sourceName}官方榜单`, `${sourceName} Top Charts`),
                   topId: t.id,
                   recPage: page,
                   recHasMore: r.hasMore,
@@ -340,7 +346,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   origin: "top" as const,
                   title: t.name,
                   cover: t.cover,
-                  subtitle: `${sourceName}官方榜单`,
+                  subtitle: tr(`${sourceName}官方榜单`, `${sourceName} Top Charts`),
                   topId: t.id,
                   recPage: page,
                   recHasMore: r.hasMore,
@@ -379,7 +385,13 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   ) => {
     if (recLoading) return;
     if (!neteaseLoggedIn) {
-      toast("请先扫码登录网易云账号", "error");
+      toast(
+        tr(
+          "请先扫码登录网易云账号",
+          "Please sign in to NetEase Cloud Music via QR code first"
+        ),
+        "error"
+      );
       return;
     }
     setRecLoading(true);
@@ -389,16 +401,16 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         kind === "daily"
           ? {
               origin: "daily",
-              title: "每日推荐",
+              title: tr("每日推荐", "Daily Mix"),
               cover: "",
-              subtitle: "根据你的听歌口味生成",
+              subtitle: tr("根据你的听歌口味生成", "Curated from your listening taste"),
               netease: r.songs,
             }
           : {
               origin: "fm",
-              title: "私人 FM",
+              title: tr("私人 FM", "Personal FM"),
               cover: "",
-              subtitle: "换个批次继续听",
+              subtitle: tr("换个批次继续听", "Refresh for another batch"),
               netease: r.songs,
             };
       cacheRecSongs(next);
@@ -740,7 +752,13 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   const batchQueue = () => {
     for (const row of selectedRows) menuAction(row, "queue");
-    toast(`已把 ${selectedRows.length} 首加入队列`, "success");
+    toast(
+      tr(
+        `已把 ${selectedRows.length} 首加入队列`,
+        `Added ${selectedRows.length} ${selectedRows.length === 1 ? "track" : "tracks"} to queue`,
+      ),
+      "success",
+    );
     setSel(new Set());
     setBatchMode(false);
   };
@@ -762,7 +780,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           mediaMid: row.mediaMid,
         });
       } catch (e) {
-        toast(`下载「${row.name}」失败：${String(e)}`, "error");
+        toast(tr(`下载「${row.name}」失败：${String(e)}`, `Failed to download "${row.name}": ${String(e)}`), "error");
       }
     }
   };
@@ -786,13 +804,15 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           <div className="min-w-0 anim-rise shrink-0">
             <div className="flex items-center gap-2 text-[11px] text-[var(--ink-3)] tracking-[0.24em] mb-2">
               <Cloud size={13} />
-              在线曲库
+              {tr("在线曲库", "Online Music")}
             </div>
             <h1 className="text-[30px] font-extrabold leading-none tracking-tight text-[var(--ink)]">
-              搜一下，就能听
+              {tr("搜一下，就能听", "Search & Stream")}
             </h1>
             <div className="flex items-center gap-3 mt-3 text-[12.5px] text-[var(--ink-2)]">
-              <span className="tabular-nums">{rows.length} 条结果</span>
+              <span className="tabular-nums">
+                {tr(`${rows.length} 条结果`, `${rows.length} ${rows.length === 1 ? "result" : "results"}`)}
+              </span>
             </div>
           </div>
 
@@ -802,7 +822,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               <button
                 className="btn-ghost w-10 h-10 shrink-0"
                 onClick={goBack}
-                title="返回上一页"
+                title={tr("返回上一页", "Back")}
               >
                 <ArrowLeft size={16} />
               </button>
@@ -819,10 +839,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder={
                   source === "netease"
-                    ? "搜索网易云曲库…"
+                    ? tr("搜索网易云曲库…", "Search NetEase Cloud Music…")
                     : source === "qq"
-                      ? "搜索 QQ 音乐曲库…"
-                      : "搜索酷狗曲库…"
+                      ? tr("搜索 QQ 音乐曲库…", "Search QQ Music…")
+                      : tr("搜索酷狗曲库…", "Search Kugou Music…")
                 }
                 className={
                   isLiquid
@@ -832,7 +852,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               />
             </div>
             <button
-              className="btn-primary h-10"
+              className="btn-primary h-10 shrink-0 whitespace-nowrap"
               onClick={() => submit()}
               disabled={searching}
             >
@@ -841,17 +861,21 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               ) : (
                 <Search size={13} />
               )}
-              搜索
+              {tr("搜索", "Search")}
             </button>
             <button
-              className={`btn-ghost w-10 h-10 ${
+              className={`btn-ghost w-10 h-10 shrink-0 ${
                 batchMode ? "text-[var(--accent)]" : ""
               }`}
               onClick={() => {
                 setBatchMode(!batchMode);
                 setSel(new Set());
               }}
-              title={batchMode ? "退出多选" : "批量选择：加入播放列表 / 队列 / 下载"}
+              title={
+                batchMode
+                  ? tr("退出多选", "Exit Selection")
+                  : tr("批量选择：加入播放列表 / 队列 / 下载", "Batch Select: Add to Playlist / Queue / Download")
+              }
             >
               <ListChecks size={17} />
             </button>
@@ -864,14 +888,14 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 <span
                   className="chip text-[var(--accent-strong)]"
                   style={{ background: "rgba(240,162,74,0.12)" }}
-                  title={`已登录${sourceName}账号`}
+                  title={tr(`已登录${sourceName}账号`, `Signed in to ${sourceName}`)}
                 >
                   <ShieldCheck size={13} />
-                  {nickname || "已登录"}
+                  {nickname || tr("已登录", "Signed in")}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
-                    className="btn-secondary !py-1.5 !px-3"
+                    className="btn-secondary !py-1.5 !px-3 whitespace-nowrap"
                     onClick={async () => {
                       setImportList(null);
                       setImportOpen(true);
@@ -889,10 +913,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                       }
                     }}
                   >
-                    导入歌单
+                    {tr("导入歌单", "Import Playlists")}
                   </button>
                   <button
-                    className="btn-secondary !py-1.5 !px-3"
+                    className="btn-secondary !py-1.5 !px-3 whitespace-nowrap"
                     onClick={() =>
                       source === "netease"
                         ? neteaseLogout()
@@ -901,16 +925,16 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                           : kugouLogout()
                     }
                   >
-                    退出
+                    {tr("退出", "Sign Out")}
                   </button>
                 </div>
               </>
             ) : (
               <button
-                className="btn-secondary !py-1.5 !px-3"
+                className="btn-secondary !py-1.5 !px-3 whitespace-nowrap"
                 onClick={() => setQrSource(source)}
               >
-                扫码登录
+                {tr("扫码登录", "QR Sign In")}
               </button>
             )}
           </div>
@@ -946,15 +970,32 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
               )}
               <div className="min-w-0 flex-1">
                 <div className="text-[15px] font-bold text-[var(--ink)] truncate">
-                  {rec.title}
+                  {rec.origin === "daily"
+                    ? tr("每日推荐", "Daily Mix")
+                    : rec.origin === "fm"
+                      ? tr("私人 FM", "Personal FM")
+                      : rec.title}
                 </div>
                 <div className="text-[12px] text-[var(--ink-3)] truncate mt-1">
-                  {rec.subtitle ? `${rec.subtitle} · ` : ""}
-                  {rows.length} 首 · 双击播放，配合底部随机播放打乱顺序
+                  {(() => {
+                    const sub =
+                      rec.origin === "daily"
+                        ? tr("根据你的听歌口味生成", "Curated from your listening taste")
+                        : rec.origin === "fm"
+                          ? tr("换个批次继续听", "Refresh for another batch")
+                          : rec.origin === "top"
+                            ? tr(`${sourceName}官方榜单`, `${sourceName} Top Charts`)
+                            : rec.subtitle;
+                    return sub ? `${sub} · ` : "";
+                  })()}
+                  {tr(
+                    `${rows.length} 首 · 双击播放，配合底部随机播放打乱顺序`,
+                    `${rows.length} ${rows.length === 1 ? "track" : "tracks"} · Double-click to play; pair with Shuffle for mixed order`,
+                  )}
                 </div>
               </div>
               <button
-                className="btn-secondary !py-1.5 !px-3 shrink-0"
+                className="btn-secondary !py-1.5 !px-3 shrink-0 whitespace-nowrap"
                 onClick={() =>
                   rec.origin === "daily"
                     ? loadNeteaseFeed("daily", api.neteaseDailyRecommend)
@@ -965,10 +1006,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 disabled={recLoading}
                 title={
                   rec.origin === "daily"
-                    ? "刷新每日推荐"
+                    ? tr("刷新每日推荐", "Refresh Daily Mix")
                     : rec.origin === "fm"
-                      ? "换一批 FM 歌曲"
-                      : "随机换一个推荐歌单"
+                      ? tr("换一批 FM 歌曲", "Load another Personal FM batch")
+                      : tr("随机换一个推荐歌单", "Pick another random playlist")
                 }
               >
                 {recLoading ? (
@@ -976,16 +1017,19 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 ) : (
                   <Shuffle size={13} />
                 )}
-                换一批
+                {tr("换一批", "Refresh")}
               </button>
               {rec.playlistId != null && (
                 <button
-                  className="btn-secondary !py-1.5 !px-3 shrink-0"
+                  className="btn-secondary !py-1.5 !px-3 shrink-0 whitespace-nowrap"
                   onClick={saveRecPlaylist}
-                  title="收藏这个歌单到本地播放列表（与已有列表合并去重）"
+                  title={tr(
+                    "收藏这个歌单到本地播放列表（与已有列表合并去重）",
+                    "Save this playlist locally (merges duplicates if it exists)",
+                  )}
                 >
                   <ListPlus size={13} />
-                  收藏歌单
+                  {tr("收藏歌单", "Save Playlist")}
                 </button>
               )}
               <button
@@ -994,7 +1038,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   setRec(null);
                   setSel(new Set());
                 }}
-                title="退出推荐"
+                title={tr("退出推荐", "Close recommendations")}
               >
                 <X size={15} />
               </button>
@@ -1004,16 +1048,16 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           {batchMode && (
             <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[var(--line)] shrink-0 flex-wrap">
               <span className="text-[12.5px] text-[var(--ink-2)] mr-1">
-                已选 {sel.size} 首
+                {tr(`已选 ${sel.size} 首`, `${sel.size} selected`)}
               </span>
               <button
                 className="btn-secondary !py-1.5 !px-3"
                 disabled={!rows.length}
                 onClick={() => setSel(new Set(rows.map(selKeyOf)))}
-                title="全选当前列表（Ctrl+A）"
+                title={tr("全选当前列表（Ctrl+A）", "Select all in current list (Ctrl+A)")}
               >
                 <ListChecks size={13} />
-                全选
+                {tr("全选", "Select All")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -1021,7 +1065,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 onClick={batchAddToPlaylist}
               >
                 <ListPlus size={13} />
-                加入播放列表
+                {tr("加入播放列表", "Add to Playlist")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -1029,7 +1073,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 onClick={batchQueue}
               >
                 <Play size={13} />
-                加入队列
+                {tr("加入队列", "Add to Queue")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -1037,17 +1081,20 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 onClick={batchDownload}
               >
                 <Download size={13} />
-                下载到本地
+                {tr("下载到本地", "Download to Library")}
               </button>
               <button
                 className="btn-ghost !py-1.5 !px-3 text-[12.5px]"
                 onClick={() => setSel(new Set())}
                 disabled={!sel.size}
               >
-                清除选择
+                {tr("清除选择", "Clear")}
               </button>
               <span className="text-[11px] text-[var(--ink-3)] ml-auto">
-                点击行勾选 / 取消，再点右上角图标退出
+                {tr(
+                  "点击行勾选 / 取消，再点右上角图标退出",
+                  "Click rows to select/deselect, click top-right icon to exit",
+                )}
               </span>
             </div>
           )}
@@ -1059,11 +1106,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   : "grid grid-cols-[56px_minmax(200px,460px)_minmax(180px,300px)_92px_136px] items-center gap-4 h-10 px-5 border-b border-[var(--line)] text-[10.5px] text-[var(--ink-3)] tracking-[0.18em]"
               }
             >
-              <span className="text-center">序号</span>
-              <span>歌曲</span>
-              <span>专辑</span>
-              <span className="text-right">时长</span>
-              <span className="text-right">操作</span>
+              <span className="text-center">{tr("序号", "#")}</span>
+              <span>{tr("歌曲", "TITLE")}</span>
+              <span>{tr("专辑", "ALBUM")}</span>
+              <span className="text-right">{tr("时长", "DURATION")}</span>
+              <span className="text-right">{tr("操作", "ACTIONS")}</span>
             </div>
           )}
           <div
@@ -1074,12 +1121,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             {searching && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
-                正在搜索…
+                {tr("正在搜索…", "Searching…")}
               </div>
             )}
             {!searching && searched && rows.length === 0 && (
               <div className="text-center text-[var(--ink-3)] text-[13px] pt-16">
-                没有找到相关歌曲
+                {tr("没有找到相关歌曲", "No matching tracks found")}
               </div>
             )}
             {!searched && !searching && !rec && (
@@ -1105,11 +1152,13 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   </div>
                 </div>
                 <div className="text-[13.5px] text-[var(--ink-2)]">
-                  搜索在线曲库，双击即可播放
+                  {tr("搜索在线曲库，双击即可播放", "Search online tracks and double-click to play")}
                 </div>
                 <div className="text-[11.5px] text-[var(--ink-3)] max-w-[440px] text-center leading-relaxed">
-                  {sourceName}
-                  免费曲目可直接播放；扫码登录自己的账号后按账号权益播放（含会员曲目）。请支持正版。
+                  {tr(
+                    `${sourceName}免费曲目可直接播放；扫码登录自己的账号后按账号权益播放（含会员曲目）。请支持正版。`,
+                    `Free tracks on ${sourceName} play right away. Sign in with your own account via QR code to stream VIP tracks according to your subscription. Please support licensed music.`,
+                  )}
                 </div>
                 {recommendable && (
                   <>
@@ -1124,7 +1173,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                         ) : (
                           <Shuffle size={13} />
                         )}
-                        随便听听
+                        {tr("随便听听", "Discover")}
                       </button>
                       {source === "netease" && neteaseLoggedIn && (
                         <>
@@ -1134,9 +1183,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                               loadNeteaseFeed("daily", api.neteaseDailyRecommend)
                             }
                             disabled={recLoading}
-                            title="根据你的听歌口味每天更新（需登录）"
+                            title={tr(
+                              "根据你的听歌口味每天更新（需登录）",
+                              "Updated daily based on your listening taste (sign-in required)",
+                            )}
                           >
-                            每日推荐
+                            {tr("每日推荐", "Daily Mix")}
                           </button>
                           <button
                             className="btn-secondary h-9 !px-4"
@@ -1144,9 +1196,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                               loadNeteaseFeed("fm", api.neteasePersonalFm)
                             }
                             disabled={recLoading}
-                            title="私人 FM，按批次换歌（需登录）"
+                            title={tr(
+                              "私人 FM，按批次换歌（需登录）",
+                              "Personal FM radio in batches (sign-in required)",
+                            )}
                           >
-                            私人 FM
+                            {tr("私人 FM", "Personal FM")}
                           </button>
                         </>
                       )}
@@ -1160,7 +1215,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                             style={{ background: "var(--shade)" }}
                             disabled={recLoading}
                             onClick={() => loadToplist(t)}
-                            title={`查看${sourceName}${t.name}`}
+                            title={tr(`查看${sourceName}${t.name}`, `View ${sourceName} ${t.name}`)}
                           >
                             {t.name}
                           </button>
@@ -1173,7 +1228,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   <div className="flex flex-wrap justify-center items-center gap-1.5 max-w-[620px] mt-1">
                     <span className="flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
                       <History size={12} />
-                      最近搜索
+                      {tr("最近搜索", "Recent")}
                     </span>
                     {searchHistory.slice(0, 8).map((h) => (
                       <button
@@ -1184,7 +1239,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                           setKw(h);
                           submit(h);
                         }}
-                        title={`搜索「${h}」`}
+                        title={tr(`搜索「${h}」`, `Search "${h}"`)}
                       >
                         <span className="truncate">{h}</span>
                       </button>
@@ -1196,7 +1251,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
             {rec && rows.length === 0 && recLoading && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
-                正在挑选推荐内容…
+                {tr("正在挑选推荐内容…", "Picking recommendations…")}
               </div>
             )}
 
@@ -1229,7 +1284,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   }
                   onMore={(e) => {
                     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setMenu({ x: r.right - 200, y: r.bottom + 4, row: t });
+                    setMenu({ x: r.right - 215, y: r.bottom + 4, row: t });
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -1254,7 +1309,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   }
                 >
                   {recLoading ? <Loader2 size={13} className="animate-spin" /> : null}
-                  加载更多
+                  {tr("加载更多", "Load More")}
                 </button>
               </div>
             )}
@@ -1272,7 +1327,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                   }
                 >
                   {searching ? <Loader2 size={13} className="animate-spin" /> : null}
-                  加载更多
+                  {tr("加载更多", "Load More")}
                 </button>
               </div>
             )}

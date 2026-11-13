@@ -36,11 +36,12 @@ fn musicu_plain(payload: &serde_json::Value) -> Result<serde_json::Value, String
         .set("User-Agent", UA)
         .timeout(TIMEOUT)
         .send_string(&body)
-        .map_err(|e| format!("QQ 音乐接口请求失败: {e}"))?;
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("QQ 音乐接口请求失败", "QQ Music API request failed")))?;
     let text = resp
         .into_string()
-        .map_err(|e| format!("QQ 音乐响应读取失败: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("QQ 音乐响应解析失败: {e}"))
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("QQ 音乐响应读取失败", "Failed to read QQ Music response")))?;
+    serde_json::from_str(&text)
+        .map_err(|e| format!("{}: {e}", crate::i18n::pick("QQ 音乐响应解析失败", "Failed to parse QQ Music response")))
 }
 
 fn require_module_ok(resp: &serde_json::Value, what: &str) -> Result<(), String> {
@@ -49,7 +50,11 @@ fn require_module_ok(resp: &serde_json::Value, what: &str) -> Result<(), String>
         .and_then(|c| c.as_i64())
         .unwrap_or(-1);
     if code != 0 {
-        return Err(format!("获取{what}失败（code {code}）"));
+        return Err(if crate::i18n::is_en() {
+            format!("Failed to fetch {what} (code {code})")
+        } else {
+            format!("获取{what}失败（code {code}）")
+        });
     }
     Ok(())
 }
@@ -65,7 +70,7 @@ pub fn toplists() -> Result<Vec<QqToplist>, String> {
         }
     });
     let resp = musicu_plain(&payload)?;
-    require_module_ok(&resp, "榜单列表")?;
+    require_module_ok(&resp, crate::i18n::pick("榜单列表", "charts"))?;
     let mut out = Vec::new();
     if let Some(groups) = resp.pointer("/req_1/data/group").and_then(|v| v.as_array()) {
         for g in groups {
@@ -118,7 +123,7 @@ pub fn toplist_tracks(top_id: i64, page: i64) -> Result<Vec<QqSong>, String> {
         }
     });
     let resp = musicu_plain(&payload)?;
-    require_module_ok(&resp, "榜单详情")?;
+    require_module_ok(&resp, crate::i18n::pick("榜单详情", "chart details"))?;
     let songs = resp
         .pointer("/req_1/data/songInfoList")
         .and_then(|v| v.as_array())
@@ -155,7 +160,7 @@ pub fn public_playlist_tracks(disstid: i64) -> Result<QqPublicPlaylist, String> 
             }
         });
         let resp = musicu_plain(&payload)?;
-        require_module_ok(&resp, "歌单详情")?;
+        require_module_ok(&resp, crate::i18n::pick("歌单详情", "playlist details"))?;
         if name.is_empty() {
             let dir = resp.pointer("/req_1/data/dirinfo");
             name = dir
@@ -211,13 +216,19 @@ fn plaza_page(sin: i64, ein: i64) -> Result<(i64, Vec<QqPublicPlaylist>), String
         chrono_now_ms()
     );
     let text = plain_get(&url, "https://y.qq.com/")?;
-    let resp: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("歌单广场解析失败: {e}"))?;
+    let resp: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+        format!(
+            "{}: {e}",
+            crate::i18n::pick("歌单广场解析失败", "Failed to parse playlist plaza")
+        )
+    })?;
     if resp.get("code").and_then(|c| c.as_i64()) != Some(0) {
-        return Err(format!(
-            "歌单广场请求失败（code {}）",
-            resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1)
-        ));
+        let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        return Err(if crate::i18n::is_en() {
+            format!("Playlist plaza request failed (code {code})")
+        } else {
+            format!("歌单广场请求失败（code {code}）")
+        });
     }
     let sum = resp
         .pointer("/data/sum")
@@ -266,9 +277,9 @@ pub fn random_playlist() -> Result<QqPublicPlaylist, String> {
     use rand::Rng;
     let (sum, _) = plaza_page(0, 0)?;
     if sum <= 0 {
-        return Err("歌单广场暂无数据".into());
+        return Err(crate::i18n::pick("歌单广场暂无数据", "Playlist plaza is currently empty").into());
     }
-    let mut last_err = String::from("未能抽中可用歌单");
+    let mut last_err = crate::i18n::pick("未能抽中可用歌单", "No usable playlist found").to_string();
     for _ in 0..4 {
         let mut rng = rand::thread_rng();
         let sin = rng.gen_range(0..sum);
@@ -288,10 +299,13 @@ pub fn random_playlist() -> Result<QqPublicPlaylist, String> {
                 if !pl.songs.is_empty() {
                     return Ok(pl);
                 }
-                last_err = "抽中的歌单暂无曲目".into();
+                last_err = crate::i18n::pick("抽中的歌单暂无曲目", "Selected playlist has no tracks").into();
             }
             Err(e) => last_err = e,
         }
     }
-    Err(format!("随机歌单获取失败：{last_err}"))
+    Err(crate::i18n::pick(
+        format!("随机歌单获取失败：{last_err}"),
+        format!("Failed to load random playlist: {last_err}"),
+    ))
 }

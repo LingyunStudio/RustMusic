@@ -25,10 +25,18 @@ pub async fn add_source(
 ) -> Result<i64, String> {
     let url = url.trim().to_string();
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("音源地址必须以 http:// 或 https:// 开头".into());
+        return Err(crate::i18n::pick(
+            "音源地址必须以 http:// 或 https:// 开头",
+            "Source URL must start with http:// or https://",
+        )
+        .into());
     }
     if url.contains(".m3u8") {
-        return Err("暂不支持 m3u8/HLS，请使用音频文件直链".into());
+        return Err(crate::i18n::pick(
+            "暂不支持 m3u8/HLS，请使用音频文件直链",
+            "m3u8/HLS streams are not supported yet; use a direct audio URL",
+        )
+        .into());
     }
     let conn = state.db.lock();
     if let Some(item) = db::get_source_by_url(&conn, &url) {
@@ -86,7 +94,7 @@ fn play_source_task(app: &AppHandle, id: i64) -> Result<(), String> {
     }
     let item = {
         let conn = state.db.lock();
-        db::get_source(&conn, id).ok_or("音源不存在")?
+        db::get_source(&conn, id).ok_or_else(|| crate::i18n::pick("音源不存在", "Source not found"))?
     };
     let info = TrackInfo {
         id: None,
@@ -96,12 +104,12 @@ fn play_source_task(app: &AppHandle, id: i64) -> Result<(), String> {
             item.url
                 .split('/')
                 .next_back()
-                .unwrap_or("在线音源")
+                .unwrap_or_else(|| crate::i18n::pick("在线音源", "Online Source"))
                 .to_string()
         } else {
             item.title.clone()
         },
-        artist: "在线音源".into(),
+        artist: crate::i18n::pick("在线音源", "Online Source").into(),
         album: String::new(),
         cover: String::new(),
         duration_ms: 0,

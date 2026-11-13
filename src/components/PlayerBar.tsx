@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
+import { formatQualityLabel, useI18n } from "../i18n";
 import CoverImg from "./CoverImg";
 import Slider from "./Slider";
 import { fmtTime } from "../utils";
@@ -28,6 +29,7 @@ const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 /** 左侧文案：未打开播放页时显示当前歌词行（随 pos 换行，溢出走 marquee），否则曲名。
  *  pos 是 250ms 一帧的高频更新——隔离在这个小组件里，播放条主体不再每帧重渲染 */
 function TrackTitleLyric() {
+  const { tr } = useI18n();
   const pos = useStore((s) => s.pos);
   const lyrics = useStore((s) => s.lyrics);
   const current = useStore((s) => s.current);
@@ -86,7 +88,7 @@ function TrackTitleLyric() {
         lyricOverflow ? "marquee-wrap" : ""
       }`}
       onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
-      title="点击展开播放页"
+      title={tr("点击展开播放页", "Click to open Now Playing")}
     >
       {lyricOverflow ? (
         <span
@@ -200,6 +202,7 @@ function VolumePopover({
   onClose: () => void;
   uiTheme: string;
 }) {
+  const { tr } = useI18n();
   const H = 140;
   const y = (1 - volume) * H;
   const isSkeuo = uiTheme === "skeuo";
@@ -218,33 +221,33 @@ function VolumePopover({
         className={`absolute ${
           isLiquid ? "bottom-[52px]" : "bottom-[48px]"
         } right-0 z-[61] ${
-          isLiquid || isSkeuo ? "w-12 p-2.5 gap-2" : "w-11 p-2 gap-1.5"
+          isLiquid || isSkeuo ? "w-14 p-2.5 gap-2" : "w-13 p-2 gap-1.5"
         } rounded-2xl flex flex-col items-center glass-strong`}
         style={isLiquid ? undefined : { boxShadow: "var(--bar-shadow)" }}
       >
         {isSkeuo ? (
           <button
-            className="btn-ghost !w-8 !h-6 !text-[10px] !font-bold"
+            className="btn-ghost !w-auto !min-w-[32px] !h-6 !px-1.5 !text-[10px] !font-bold whitespace-nowrap"
             onClick={onToggleMute}
-            title={muted ? "取消静音" : "静音"}
+            title={muted ? tr("取消静音", "Unmute") : tr("静音", "Mute")}
           >
-            {muted ? "有声" : "静音"}
+            {muted ? tr("有声", "Unmute") : tr("静音", "Mute")}
           </button>
         ) : isLiquid ? (
           <button
-            className="liquid-pill !py-0.5 !px-2 text-[10px] font-semibold text-[var(--ink)]"
+            className="liquid-pill !py-0.5 !px-2 text-[10px] font-semibold text-[var(--ink)] whitespace-nowrap"
             onClick={onToggleMute}
-            title={muted ? "取消静音" : "静音"}
+            title={muted ? tr("取消静音", "Unmute") : tr("静音", "Mute")}
           >
-            {muted ? "有声" : "静音"}
+            {muted ? tr("有声", "Unmute") : tr("静音", "Mute")}
           </button>
         ) : (
           <button
-            className="w-7 h-6 rounded-lg flex items-center justify-center text-[10px] font-semibold text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] transition-colors"
+            className="min-w-[28px] h-6 px-1.5 rounded-lg flex items-center justify-center text-[10px] font-semibold text-[var(--ink-2)] hover:bg-[var(--shade-strong)] hover:text-[var(--ink)] transition-colors whitespace-nowrap"
             onClick={onToggleMute}
-            title={muted ? "取消静音" : "静音"}
+            title={muted ? tr("取消静音", "Unmute") : tr("静音", "Mute")}
           >
-            {muted ? "有声" : "静音"}
+            {muted ? tr("有声", "Unmute") : tr("静音", "Mute")}
           </button>
         )}
 
@@ -340,6 +343,7 @@ function SleepPopover({
   onClose: () => void;
   uiTheme: string;
 }) {
+  const { tr } = useI18n();
   const isLiquid = uiTheme === "liquid";
   const remainMin = sleepAt
     ? Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))
@@ -356,19 +360,19 @@ function SleepPopover({
       <div className="fixed inset-0 z-[60]" onClick={onClose} />
       <div
         className={`absolute ${
-          isLiquid ? "bottom-[52px] w-[172px] p-2" : "bottom-[48px] w-[168px] p-1.5"
+          isLiquid ? "bottom-[52px] min-w-[200px] p-2" : "bottom-[48px] min-w-[196px] p-1.5"
         } right-0 z-[61] rounded-2xl flex flex-col glass-strong`}
         style={isLiquid ? undefined : { boxShadow: "var(--bar-shadow)" }}
       >
         {remainMin != null && (
-          <div className="px-2.5 py-1 text-[11px] text-[var(--accent-strong)] font-semibold">
-            剩余约 {remainMin} 分钟
+          <div className="px-2.5 py-1 text-[11px] text-[var(--accent-strong)] font-semibold whitespace-nowrap">
+            {tr(`剩余约 ${remainMin} 分钟`, `About ${remainMin} min left`)}
           </div>
         )}
         {[15, 30, 45, 60, 90].map((m) => (
           <button
             key={m}
-            className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left ${
+            className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left whitespace-nowrap ${
               isLiquid ? "transition-colors" : ""
             }`}
             onClick={() => {
@@ -376,12 +380,12 @@ function SleepPopover({
               onClose();
             }}
           >
-            {m} 分钟后停止
+            {tr(`${m} 分钟后停止`, `Stop in ${m} min`)}
           </button>
         ))}
         <div className="my-1 h-px bg-[var(--line)]" />
         <button
-          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left ${
+          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left whitespace-nowrap ${
             isLiquid ? "transition-colors " : ""
           }${
             stopAfterTrack ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
@@ -391,10 +395,10 @@ function SleepPopover({
             onClose();
           }}
         >
-          播完当前歌曲后停止
+          {tr("播完当前歌曲后停止", "Stop after current track")}
         </button>
         <button
-          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left ${
+          className={`w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] hover:bg-[var(--shade-strong)] text-left whitespace-nowrap ${
             isLiquid ? "transition-colors " : ""
           }${
             stopAfterQueue ? "text-[var(--accent-strong)] font-semibold" : "text-[var(--ink)]"
@@ -404,7 +408,7 @@ function SleepPopover({
             onClose();
           }}
         >
-          播完当前列表后停止
+          {tr("播完当前列表后停止", "Stop after current queue")}
         </button>
         <div className="flex items-center gap-1 px-1 pt-1.5">
           <input
@@ -414,7 +418,7 @@ function SleepPopover({
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && applyCustom()}
-            placeholder="自定义(分钟)"
+            placeholder={tr("自定义(分钟)", "Custom (min)")}
             className={
               isLiquid
                 ? "w-full min-w-0 h-7 rounded-lg liquid-input px-2 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none"
@@ -425,21 +429,21 @@ function SleepPopover({
             className="btn-secondary !py-1 !px-2 text-[11px] shrink-0 disabled:opacity-50"
             onClick={applyCustom}
             disabled={!custom.trim() || !isFinite(Number(custom)) || Number(custom) <= 0}
-            title="按输入的分钟数定时"
+            title={tr("按输入的分钟数定时", "Set custom timer (min)")}
           >
-            确定
+            {tr("确定", "Set")}
           </button>
         </div>
         {(sleepAt != null || stopAfterTrack || stopAfterQueue) && (
           <button
-            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left"
+            className="w-full h-8 px-2.5 rounded-lg flex items-center text-[12.5px] text-[#e0533f] hover:bg-[var(--shade-strong)] text-left whitespace-nowrap"
             onClick={() => {
               onSet(null);
               onMode(null);
               onClose();
             }}
           >
-            取消定时
+            {tr("取消定时", "Cancel Timer")}
           </button>
         )}
       </div>
@@ -448,6 +452,7 @@ function SleepPopover({
 }
 
 export default function PlayerBar({ centered = false }: { centered?: boolean }) {
+  const { tr } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isSkeuo = uiTheme === "skeuo";
   const isLiquid = uiTheme === "liquid";
@@ -507,11 +512,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
     >
       {download && (
         <button
-          className="absolute right-8 top-1 z-10 btn-ghost !w-6 !h-6 text-[10px] text-[var(--ink-3)] hover:text-[var(--ink)]"
+          className="absolute right-8 top-1 z-10 btn-ghost !w-auto !px-2 !h-6 text-[10px] whitespace-nowrap text-[var(--ink-3)] hover:text-[var(--ink)]"
           onClick={() => useStore.getState().cancelDownloadQueue()}
-          title="取消排队中的批量下载（正在执行的当前这一个不受影响）"
+          title={tr("取消排队中的批量下载（正在执行的当前这一个不受影响）", "Cancel queued batch downloads (active download continues)")}
         >
-          取消排队
+          {tr("取消排队", "Cancel queue")}
         </button>
       )}
       {download && (
@@ -563,7 +568,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 <button
                   className="group relative shrink-0 rounded-[8px] overflow-hidden border border-[var(--sk-cover-border)] shadow-[var(--sk-cover-shadow)]"
                   onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
-                  title={nowPlayingOpen ? "收起播放页" : "展开播放页"}
+                  title={
+                    nowPlayingOpen
+                      ? tr("收起播放页", "Collapse Now Playing")
+                      : tr("展开播放页", "Expand Now Playing")
+                  }
                 >
                   <CoverImg
                     src={current.cover}
@@ -586,9 +595,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                     {current.quality && (
                       <span
                         className="shrink-0 text-[9px] font-bold px-1.5 py-px rounded-full bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] text-[var(--accent-strong)]"
-                        title="当前播放音质"
+                        title={tr("当前播放音质", "Current audio quality")}
                       >
-                        {current.quality}
+                        {formatQualityLabel(current.quality)}
                       </span>
                     )}
                   </div>
@@ -598,7 +607,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   <button
                     className="btn-ghost !w-7 !h-7 shrink-0"
                     onClick={() => toggleLike(current.id!)}
-                    title={current.liked ? "取消喜欢" : "喜欢"}
+                    title={current.liked ? tr("取消喜欢", "Unlike") : tr("喜欢", "Like")}
                   >
                     <Heart
                       size={15}
@@ -610,7 +619,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   <button
                     className="btn-ghost !w-7 !h-7 shrink-0"
                     onClick={() => neteaseToggleLike(current.nid!)}
-                    title={neteaseLiked[current.nid] ? "取消收藏" : "收藏到“我喜欢”"}
+                    title={
+                      neteaseLiked[current.nid]
+                        ? tr("取消收藏", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={15}
@@ -637,7 +650,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         vip: entry?.vip ?? false,
                       });
                     }}
-                    title={savedOnline[`qq-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`qq-${current.qid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={15}
@@ -659,7 +676,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         durationMs: current.durationMs,
                       });
                     }}
-                    title={savedOnline[`bilibili-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`bilibili-${current.qid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={15}
@@ -681,7 +702,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         durationMs: current.durationMs,
                       });
                     }}
-                    title={savedOnline[`navidrome-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`navidrome-${current.qid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={15}
@@ -708,7 +733,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         vip: entry?.vip ?? false,
                       });
                     }}
-                    title={savedOnline[`kugou-${current.kgid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`kugou-${current.kgid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={15}
@@ -733,7 +762,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 <button
                   className="group relative shrink-0"
                   onClick={() => setNowPlayingOpen(!nowPlayingOpen)}
-                  title={nowPlayingOpen ? "收起播放页" : "展开播放页"}
+                  title={
+                    nowPlayingOpen
+                      ? tr("收起播放页", "Collapse Now Playing")
+                      : tr("展开播放页", "Expand Now Playing")
+                  }
                 >
                   <CoverImg
                     src={current.cover}
@@ -769,9 +802,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                             : "shrink-0 text-[9.5px] font-semibold px-1.5 py-px rounded text-[var(--accent-strong)]"
                         }
                         style={{ background: "var(--accent-weak)" }}
-                        title="当前播放音质"
+                        title={tr("当前播放音质", "Current audio quality")}
                       >
-                        {current.quality}
+                        {formatQualityLabel(current.quality)}
                       </span>
                     )}
                   </div>
@@ -780,7 +813,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   <button
                     className="btn-ghost w-8 h-8 shrink-0"
                     onClick={() => toggleLike(current.id!)}
-                    title={current.liked ? "取消喜欢" : "喜欢"}
+                    title={current.liked ? tr("取消喜欢", "Unlike") : tr("喜欢", "Like")}
                   >
                     <Heart
                       size={16}
@@ -792,7 +825,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   <button
                     className="btn-ghost w-8 h-8 shrink-0"
                     onClick={() => neteaseToggleLike(current.nid!)}
-                    title={neteaseLiked[current.nid] ? "取消收藏" : "收藏到“我喜欢”"}
+                    title={
+                      neteaseLiked[current.nid]
+                        ? tr("取消收藏", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={16}
@@ -819,7 +856,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         vip: entry?.vip ?? false,
                       });
                     }}
-                    title={savedOnline[`qq-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`qq-${current.qid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={16}
@@ -841,7 +882,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         durationMs: current.durationMs,
                       });
                     }}
-                    title={savedOnline[`bilibili-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`bilibili-${current.qid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={16}
@@ -863,7 +908,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         durationMs: current.durationMs,
                       });
                     }}
-                    title={savedOnline[`navidrome-${current.qid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`navidrome-${current.qid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={16}
@@ -890,7 +939,11 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                         vip: entry?.vip ?? false,
                       });
                     }}
-                    title={savedOnline[`kugou-${current.kgid}`] ? "取消喜欢" : "收藏到“我喜欢”"}
+                    title={
+                      savedOnline[`kugou-${current.kgid}`]
+                        ? tr("取消喜欢", "Unlike")
+                        : tr("收藏到“我喜欢”", "Add to Liked")
+                    }
                   >
                     <Heart
                       size={16}
@@ -910,7 +963,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 >
                   <Play size={18} className="text-[var(--ink-3)]" />
                 </div>
-                <div className="text-[13px] text-[var(--ink-3)]">未在播放</div>
+                <div className="text-[13px] text-[var(--ink-3)]">{tr("未在播放", "Not Playing")}</div>
               </>
             )}
           </div>
@@ -922,14 +975,14 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
             <button
               className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} ${shuffle ? "!text-[var(--accent)]" : ""}`}
               onClick={toggleShuffle}
-              title="随机播放"
+              title={tr("随机播放", "Shuffle")}
             >
               <Shuffle size={15} />
             </button>
             <button
               className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"}`}
               onClick={prev}
-              title="上一首"
+              title={tr("上一首", "Previous")}
             >
               <SkipBack size={16} className="fill-current" />
             </button>
@@ -937,7 +990,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} disabled:opacity-40`}
               disabled={!current}
               onClick={() => seekBackward(5000)}
-              title="快退 5 秒（←）"
+              title={tr("快退 5 秒（←）", "Rewind 5s (←)")}
             >
               <Rewind size={16} className="fill-current" />
             </button>
@@ -950,7 +1003,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   boxShadow: "var(--sk-raised-shadow), 0 0 12px var(--accent-soft)",
                 }}
                 onClick={togglePlay}
-                title="播放 / 暂停（空格）"
+                title={tr("播放 / 暂停（空格）", "Play / Pause (Space)")}
               >
                 {playing ? (
                   <Pause size={18} className="fill-current" />
@@ -962,7 +1015,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               <button
                 className="w-[42px] h-[42px] play-btn shrink-0"
                 onClick={togglePlay}
-                title="播放 / 暂停（空格）"
+                title={tr("播放 / 暂停（空格）", "Play / Pause (Space)")}
               >
                 {playing ? (
                   <Pause size={18} className="fill-current" />
@@ -978,7 +1031,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                   boxShadow: "0 6px 20px -4px var(--accent-soft)",
                 }}
                 onClick={togglePlay}
-                title="播放 / 暂停（空格）"
+                title={tr("播放 / 暂停（空格）", "Play / Pause (Space)")}
               >
                 {playing ? (
                   <Pause size={17} className="fill-current" />
@@ -991,14 +1044,14 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} disabled:opacity-40`}
               disabled={!current}
               onClick={() => seekForward(5000)}
-              title="快进 5 秒（→）"
+              title={tr("快进 5 秒（→）", "Forward 5s (→)")}
             >
               <FastForward size={16} className="fill-current" />
             </button>
             <button
               className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"}`}
               onClick={() => next(false)}
-              title="下一首"
+              title={tr("下一首", "Next")}
             >
               <SkipForward size={16} className="fill-current" />
             </button>
@@ -1009,7 +1062,13 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               onClick={() =>
                 setRepeat(repeat === "off" ? "all" : repeat === "all" ? "one" : "off")
               }
-              title={repeat === "off" ? "列表循环" : repeat === "all" ? "单曲循环" : "关闭循环"}
+              title={
+                repeat === "off"
+                  ? tr("列表循环", "Repeat All")
+                  : repeat === "all"
+                    ? tr("单曲循环", "Repeat One")
+                    : tr("关闭循环", "Repeat Off")
+              }
             >
               {repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
               {isSkeuo && repeat !== "off" && (
@@ -1036,12 +1095,12 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
             title={
               desktopLyricsOn
                 ? desktopLyricsLock
-                  ? "桌面歌词：已锁定（点击解锁）"
-                  : "桌面歌词：点击关闭（快捷键 L）"
-                : "打开桌面歌词（快捷键 L）"
+                  ? tr("桌面歌词：已锁定（点击解锁）", "Desktop Lyrics: Locked (click to unlock)")
+                  : tr("桌面歌词：点击关闭（快捷键 L）", "Desktop Lyrics: Click to close (L)")
+                : tr("打开桌面歌词（快捷键 L）", "Open Desktop Lyrics (L)")
             }
           >
-            词
+            {tr("词", "Lyr")}
           </button>
           <button
             className={`btn-ghost relative ${isSkeuo ? "w-[34px] h-[34px] text-[11px]" : "w-9 h-9 text-[11.5px]"} font-bold tabular-nums`}
@@ -1053,7 +1112,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 setSpeed(SPEEDS.find((s) => s > speed) ?? SPEEDS[0]);
               }
             }}
-            title="播放速度"
+            title={tr("播放速度", "Playback speed")}
           >
             <span className={isSkeuo && speed !== 1 ? "text-[var(--accent-strong)]" : !isSkeuo && speed !== 1 ? "!text-[var(--accent)]" : ""}>
               {speed}x
@@ -1078,7 +1137,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               onWheel={(e) => {
                 setVolume(Math.min(1, Math.max(0, volume + (e.deltaY < 0 ? 0.05 : -0.05))));
               }}
-              title="音量（滚轮调节）"
+              title={tr("音量（滚轮调节）", "Volume (scroll wheel)")}
             >
               <VolIcon size={15} />
             </button>
@@ -1114,12 +1173,15 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               onClick={() => setSleepOpen((v) => !v)}
               title={
                 sleepAt != null
-                  ? `定时停止：剩余约 ${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))} 分钟`
+                  ? tr(
+                      `定时停止：剩余约 ${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))} 分钟`,
+                      `Sleep timer: ~${Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))} min left`
+                    )
                   : sleepStopAfterTrack
-                    ? "定时停止：播完当前歌曲后停止"
+                    ? tr("定时停止：播完当前歌曲后停止", "Sleep timer: Stop after current track")
                     : sleepStopAfterQueue
-                      ? "定时停止：播完当前列表后停止"
-                      : "定时停止播放"
+                      ? tr("定时停止：播完当前列表后停止", "Sleep timer: Stop after current queue")
+                      : tr("定时停止播放", "Sleep Timer")
               }
             >
               <Timer size={15} />
@@ -1143,7 +1205,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           <button
             className={`btn-ghost relative ${isSkeuo ? "w-[34px] h-[34px]" : "w-9 h-9"} ${miniPlayer ? "!text-[var(--accent)]" : ""}`}
             onClick={() => setMiniPlayer(!miniPlayer)}
-            title="极简小窗模式"
+            title={tr("极简小窗模式", "Mini Player")}
           >
             <PictureInPicture2 size={isSkeuo ? 15 : 16} />
           </button>
@@ -1157,7 +1219,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 : ""
             }`}
             onClick={() => setQueueOpen(!queueOpen)}
-            title="播放队列"
+            title={tr("播放队列", "Play Queue")}
           >
             <ListMusic size={16} />
             {queue.length > 1 && (

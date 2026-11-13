@@ -158,6 +158,8 @@ pub struct SettingsPayload {
     pub auto_update: bool,
     /// WASAPI 独占模式（默认关闭；切换后下一首生效）
     pub wasapi_exclusive: bool,
+    /// 界面语言：auto（自动检测系统语言）| zh | en
+    pub language: String,
 }
 
 #[derive(Serialize, Clone, Debug)]

@@ -16,7 +16,11 @@ pub struct KgUserPlaylist {
 /// 账号下全部自建/收藏歌单（cloudlist 服务，普通网关签名即可）
 pub fn user_playlists(token: &str, userid: &str) -> Result<Vec<KgUserPlaylist>, String> {
     if token.is_empty() || userid.is_empty() {
-        return Err("请先扫码登录酷狗账号".into());
+        return Err(crate::i18n::pick(
+            "请先扫码登录酷狗账号",
+            "Please scan QR code to sign in to KuGou first",
+        )
+        .into());
     }
     let mut out = Vec::new();
     let pagesize = 50i64;
@@ -43,7 +47,12 @@ pub fn user_playlists(token: &str, userid: &str) -> Result<Vec<KgUserPlaylist>, 
             Some(&body),
             &[],
         )
-        .map_err(|e| format!("获取用户歌单失败: {e}"))?;
+        .map_err(|e| {
+            crate::i18n::pick(
+                format!("获取用户歌单失败: {e}"),
+                format!("Failed to fetch user playlists: {e}"),
+            )
+        })?;
         let list = v
             .pointer("/data/info")
             .and_then(|x| x.as_array())
@@ -124,12 +133,12 @@ pub fn qr_create() -> Result<(String, String), String> {
         &format!("https://login-user.kugou.com/v2/qrcode?{query}"),
         "https://h5.kugou.com/",
         UA,
-        "酷狗登录二维码",
+        crate::i18n::pick("酷狗登录二维码", "Kugou login QR code"),
     )?;
     let key = v
         .pointer("/data/qrcode")
         .and_then(|s| s.as_str())
-        .ok_or("未获取到二维码标识")?
+        .ok_or(crate::i18n::pick("未获取到二维码标识", "QR code key not returned"))?
         .to_string();
     // 接口直接返回二维码图片（dataURL）；缺失时前端按 key 自行提示刷新
     let img = v
@@ -164,7 +173,7 @@ pub fn qr_check(key: &str) -> Result<KgQrCheck, String> {
         &format!("https://login-user.kugou.com/v2/get_userinfo_qrcode?{query}"),
         "https://h5.kugou.com/",
         UA,
-        "酷狗扫码状态",
+        crate::i18n::pick("酷狗扫码状态", "Kugou QR status"),
     )?;
     let status_code = v
         .pointer("/data/status")
@@ -189,7 +198,11 @@ pub fn qr_check(key: &str) -> Result<KgQrCheck, String> {
         let token = get_str("token");
         let userid = get_str("userid");
         if token.is_none() || userid.is_none() {
-            return Err("登录响应缺少凭证（token/userid）".into());
+            return Err(crate::i18n::pick(
+                "登录响应缺少凭证（token/userid）",
+                "Login response missing credentials (token/userid)",
+            )
+            .into());
         }
         return Ok(KgQrCheck {
             status: "success".into(),

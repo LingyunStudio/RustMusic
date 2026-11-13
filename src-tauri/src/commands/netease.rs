@@ -89,7 +89,13 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
     let quality = super::resolve_quality("netease", &quality);
     let (url, br, ext, delivered_level) =
         crate::netease::song_url(track.id, music_u.as_deref(), &quality)?
-            .ok_or_else(|| "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）".to_string())?;
+            .ok_or_else(|| {
+                crate::i18n::pick(
+                    "该歌曲暂无可播放链接（可能需要登录，或需要有效 VIP 权益）",
+                    "No playable stream URL (login or active VIP membership may be required)",
+                )
+                .to_string()
+            })?;
     // 标签优先用服务端上报的实际交付档位（权益不足会降级：选"超清母带"
     // 可能实际交付无损 flac——此前只查扩展名，flac==flac 就漏报了）
     let quality_label = netease_level_label(&delivered_level)
@@ -107,7 +113,10 @@ fn netease_play_task(app: &AppHandle, track: NeteasePlayReq) -> Result<(), Strin
             "网易云",
             &quality,
             &quality_label,
-            "账号权益未含该音质或该曲无更高音质",
+            crate::i18n::pick(
+                "账号权益未含该音质或该曲无更高音质",
+                "membership doesn't include this quality or no higher tier exists",
+            ),
         );
     }
     let info = TrackInfo {
@@ -155,8 +164,12 @@ pub async fn netease_qr_check(
     if r.status == "success" {
         if let Some(music_u) = &r.music_u {
             let conn = state.db.lock();
-            crate::credentials::set("netease_music_u", &music_u)
-                .map_err(|e| format!("登录成功但凭据保存失败: {e}"))?;
+            crate::credentials::set("netease_music_u", &music_u).map_err(|e| {
+                crate::i18n::pick(
+                    format!("登录成功但凭据保存失败: {e}"),
+                    format!("Signed in, but failed to save credentials: {e}"),
+                )
+            })?;
             if let Some(nick) = &r.nickname {
                 db::set_setting(&conn, "netease_nickname", nick);
             }
@@ -183,13 +196,16 @@ pub async fn netease_like_list(state: State<'_, AppState>) -> Result<Vec<i64>, S
     if uid.is_empty() || music_u.is_empty() {
         return Ok(vec![]);
     }
-    let uid: i64 = uid.parse().map_err(|_| "账号 ID 无效".to_string())?;
+    let uid: i64 = uid
+        .parse()
+        .map_err(|_| crate::i18n::pick("账号 ID 无效", "Invalid account ID").to_string())?;
     super::blocking(move || crate::netease::like_list(uid, &music_u)).await
 }
 
 #[tauri::command]
 pub async fn netease_like(state: State<'_, AppState>, id: i64, like: bool) -> Result<(), String> {
-    let music_u = netease_cookie(&state).ok_or("未登录网易云账号")?;
+    let music_u = netease_cookie(&state)
+        .ok_or_else(|| crate::i18n::pick("未登录网易云账号", "Not signed in to NetEase Cloud"))?;
     super::blocking(move || crate::netease::like(id, like, &music_u)).await
 }
 
@@ -293,14 +309,18 @@ pub async fn netease_random_playlist(
 pub async fn netease_daily_recommend(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
+    let music_u = netease_cookie(&state).ok_or_else(|| {
+        crate::i18n::pick("请先登录网易云账号", "Please sign in to NetEase Cloud first")
+    })?;
     let songs = super::blocking(move || crate::netease::daily_recommend(&music_u)).await?;
     Ok(json!({ "songs": songs }))
 }
 
 #[tauri::command]
 pub async fn netease_personal_fm(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let music_u = netease_cookie(&state).ok_or("请先登录网易云账号")?;
+    let music_u = netease_cookie(&state).ok_or_else(|| {
+        crate::i18n::pick("请先登录网易云账号", "Please sign in to NetEase Cloud first")
+    })?;
     let songs = super::blocking(move || crate::netease::personal_fm(&music_u)).await?;
     Ok(json!({ "songs": songs }))
 }
@@ -325,7 +345,7 @@ fn netease_user_playlists_task(
         )
     };
     if music_u.is_empty() {
-        return Err("未登录网易云账号".into());
+        return Err(crate::i18n::pick("未登录网易云账号", "Not signed in to NetEase Cloud").into());
     }
     // 每次都以登录态解析 uid：旧 uid 只作解析失败时的兜底——
     // 登出换账号后残留的旧 uid 曾被优先沿用，查到的是上一个账号的歌单。
@@ -340,7 +360,8 @@ fn netease_user_playlists_task(
             if uid.is_empty() {
                 return Err(e);
             }
-            uid.parse().map_err(|_| "账号 ID 无效".to_string())?
+            uid.parse()
+                .map_err(|_| crate::i18n::pick("账号 ID 无效", "Invalid account ID").to_string())?
         }
     };
     crate::netease::user_playlists(uid, &music_u)
@@ -369,7 +390,7 @@ fn netease_import_playlist_task(
     let state = app.state::<AppState>();
     let music_u = crate::credentials::get("netease_music_u").unwrap_or_default();
     if music_u.is_empty() {
-        return Err("未登录网易云账号".into());
+        return Err(crate::i18n::pick("未登录网易云账号", "Not signed in to NetEase Cloud").into());
     }
     let songs = crate::netease::playlist_tracks(remote_pid, &music_u)?;
     let rows: Vec<super::playlists::OnlineTrackRow> = songs

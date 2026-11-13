@@ -209,24 +209,45 @@ pub fn fetch_latest(current_version: &str) -> Result<Option<UpdateInfo>, String>
         .timeout(Duration::from_secs(12))
         .call()
         .map_err(|e| match e {
-            ureq::Error::Status(404, _) => "仓库还没有发布版本".to_string(),
-            ureq::Error::Status(code, _) => format!("GitHub 返回状态 {code}"),
-            other => format!("无法连接 GitHub：{other}"),
+            ureq::Error::Status(404, _) => crate::i18n::pick(
+                "仓库还没有发布版本",
+                "No releases published in repository yet",
+            )
+            .to_string(),
+            ureq::Error::Status(code, _) => crate::i18n::pick(
+                format!("GitHub 返回状态 {code}"),
+                format!("GitHub returned status {code}"),
+            ),
+            other => crate::i18n::pick(
+                format!("无法连接 GitHub：{other}"),
+                format!("Failed to connect to GitHub: {other}"),
+            ),
         })?;
-    let release: serde_json::Value = resp
-        .into_json()
-        .map_err(|e| format!("解析发布信息失败：{e}"))?;
+    let release: serde_json::Value = resp.into_json().map_err(|e| {
+        crate::i18n::pick(
+            format!("解析发布信息失败：{e}"),
+            format!("Failed to parse release info: {e}"),
+        )
+    })?;
 
     let tag = release["tag_name"].as_str().unwrap_or_default();
     if tag.is_empty() {
-        return Err("仓库还没有发布版本".into());
+        return Err(crate::i18n::pick(
+            "仓库还没有发布版本",
+            "No releases published in repository yet",
+        )
+        .into());
     }
     if !is_newer(tag, current_version) {
         return Ok(None);
     }
-    let assets = release["assets"]
-        .as_array()
-        .ok_or_else(|| "发布信息缺少附件".to_string())?;
+    let assets = release["assets"].as_array().ok_or_else(|| {
+        crate::i18n::pick(
+            "发布信息缺少附件",
+            "Release info is missing assets",
+        )
+        .to_string()
+    })?;
     let asset = pick_platform_asset(&assets);
     // 没有本平台附件也照常提示新版本，前端会引导去发布页手动下载
     let can_install = asset.is_some() && can_install_in_app();
@@ -284,13 +305,29 @@ const UPDATE_PUBKEY: &str = "cd75f7f605c81473c5096f4da54436782bb9531f678984637ab
 fn verify_signature(file: &std::path::Path, sig_hex: &str, pubkey_hex: &str) -> Result<(), String> {
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
     let mut pk = [0u8; 32];
-    hex::decode_to_slice(pubkey_hex, &mut pk).map_err(|_| "内置公钥格式错误".to_string())?;
-    let vk = VerifyingKey::from_bytes(&pk).map_err(|_| "内置公钥无效".to_string())?;
-    let sig_bytes = hex::decode(sig_hex.trim()).map_err(|_| "签名格式错误".to_string())?;
-    let sig = Signature::from_slice(&sig_bytes).map_err(|_| "签名格式错误".to_string())?;
-    let data = std::fs::read(file).map_err(|e| format!("读取安装包失败: {e}"))?;
-    vk.verify(&data, &sig)
-        .map_err(|_| "更新包签名校验失败，已删除下载文件".to_string())
+    hex::decode_to_slice(pubkey_hex, &mut pk).map_err(|_| {
+        crate::i18n::pick("内置公钥格式错误", "Invalid built-in public key format").to_string()
+    })?;
+    let vk = VerifyingKey::from_bytes(&pk).map_err(|_| {
+        crate::i18n::pick("内置公钥无效", "Invalid built-in public key").to_string()
+    })?;
+    let sig_bytes = hex::decode(sig_hex.trim())
+        .map_err(|_| crate::i18n::pick("签名格式错误", "Invalid signature format").to_string())?;
+    let sig = Signature::from_slice(&sig_bytes)
+        .map_err(|_| crate::i18n::pick("签名格式错误", "Invalid signature format").to_string())?;
+    let data = std::fs::read(file).map_err(|e| {
+        crate::i18n::pick(
+            format!("读取安装包失败: {e}"),
+            format!("Failed to read installer package: {e}"),
+        )
+    })?;
+    vk.verify(&data, &sig).map_err(|_| {
+        crate::i18n::pick(
+            "更新包签名校验失败，已删除下载文件",
+            "Update signature verification failed; downloaded file deleted",
+        )
+        .to_string()
+    })
 }
 
 /// 返回下载文件的完整路径。校验链：大小一致 → SHA-256（GitHub 附件
@@ -312,7 +349,11 @@ pub fn download(
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '(' | ')'))
         .collect();
     if safe_name.is_empty() {
-        return Err("安装包文件名无效".into());
+        return Err(crate::i18n::pick(
+            "安装包文件名无效",
+            "Invalid installer filename",
+        )
+        .into());
     }
     // 临时文件名带进程号：固定可预测的路径可能被其它用户预创建/替换
     //（SHA-256 校验是第二道防线，不能当第一道）
@@ -324,8 +365,14 @@ pub fn download(
         .timeout(DOWNLOAD_TIMEOUT)
         .call()
         .map_err(|e| match e {
-            ureq::Error::Status(code, _) => format!("下载失败（HTTP {code}）"),
-            other => format!("下载失败：{other}"),
+            ureq::Error::Status(code, _) => crate::i18n::pick(
+                format!("下载失败（HTTP {code}）"),
+                format!("Download failed (HTTP {code})"),
+            ),
+            other => crate::i18n::pick(
+                format!("下载失败：{other}"),
+                format!("Download failed: {other}"),
+            ),
         })?;
     let total = resp
         .header("Content-Length")
@@ -333,7 +380,12 @@ pub fn download(
         .unwrap_or(expected_size);
 
     let mut reader = resp.into_reader();
-    let mut file = std::fs::File::create(&path).map_err(|e| format!("无法写入下载目录：{e}"))?;
+    let mut file = std::fs::File::create(&path).map_err(|e| {
+        crate::i18n::pick(
+            format!("无法写入下载目录：{e}"),
+            format!("Cannot write to download directory: {e}"),
+        )
+    })?;
 
     let mut buf = [0u8; 64 * 1024];
     let mut received: u64 = 0;
@@ -343,14 +395,18 @@ pub fn download(
         if DOWNLOAD_CANCEL.load(Ordering::Relaxed) {
             drop(file);
             let _ = std::fs::remove_file(&path);
-            return Err("已取消下载".into());
+            return Err(crate::i18n::pick("已取消下载", "Download canceled").into());
         }
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
                 hasher.update(&buf[..n]);
-                file.write_all(&buf[..n])
-                    .map_err(|e| format!("写入安装包失败：{e}"))?;
+                file.write_all(&buf[..n]).map_err(|e| {
+                    crate::i18n::pick(
+                        format!("写入安装包失败：{e}"),
+                        format!("Failed to write installer: {e}"),
+                    )
+                })?;
                 received += n as u64;
                 if last_emit.elapsed() >= Duration::from_millis(120) {
                     last_emit = Instant::now();
@@ -363,16 +419,24 @@ pub fn download(
             Err(e) => {
                 drop(file);
                 let _ = std::fs::remove_file(&path);
-                return Err(format!("下载中断：{e}"));
+                return Err(crate::i18n::pick(
+                    format!("下载中断：{e}"),
+                    format!("Download interrupted: {e}"),
+                ));
             }
         }
     }
-    file.flush().map_err(|e| format!("写入安装包失败：{e}"))?;
+    file.flush().map_err(|e| {
+        crate::i18n::pick(
+            format!("写入安装包失败：{e}"),
+            format!("Failed to write installer: {e}"),
+        )
+    })?;
     drop(file);
 
     if total > 0 && received != total {
         let _ = std::fs::remove_file(&path);
-        return Err("下载不完整，请重试".into());
+        return Err(crate::i18n::pick("下载不完整，请重试", "Incomplete download, please retry").into());
     }
     if let Some(d) = expected_digest {
         let expected = d.trim().to_lowercase();
@@ -380,7 +444,11 @@ pub fn download(
         let actual = hex::encode(hasher.finalize());
         if !expected.is_empty() && actual != expected {
             let _ = std::fs::remove_file(&path);
-            return Err("安装包校验失败（SHA-256 不符），已删除下载文件".into());
+            return Err(crate::i18n::pick(
+                "安装包校验失败（SHA-256 不符），已删除下载文件",
+                "Package verification failed (SHA-256 mismatch); file deleted",
+            )
+            .into());
         }
     }
     // 签名校验：正常发布必有 <安装包>.sig 附件（build.ps1 自动签名）；
@@ -392,9 +460,19 @@ pub fn download(
                 .set("User-Agent", UA)
                 .timeout(Duration::from_secs(20))
                 .call()
-                .map_err(|e| format!("下载更新包签名失败：{e}"))?
+                .map_err(|e| {
+                    crate::i18n::pick(
+                        format!("下载更新包签名失败：{e}"),
+                        format!("Failed to download update signature: {e}"),
+                    )
+                })?
                 .into_string()
-                .map_err(|e| format!("读取更新包签名失败：{e}"))?;
+                .map_err(|e| {
+                    crate::i18n::pick(
+                        format!("读取更新包签名失败：{e}"),
+                        format!("Failed to read update signature: {e}"),
+                    )
+                })?;
             if let Err(e) = verify_signature(&path, &sig, UPDATE_PUBKEY) {
                 let _ = std::fs::remove_file(&path);
                 return Err(e);
@@ -402,7 +480,11 @@ pub fn download(
         }
         None => {
             let _ = std::fs::remove_file(&path);
-            return Err("更新包未签名，已取消安装；请前往发布页手动下载".into());
+            return Err(crate::i18n::pick(
+                "更新包未签名，已取消安装；请前往发布页手动下载",
+                "Update package is unsigned, install canceled; please download manually from releases",
+            )
+            .into());
         }
     }
     Ok(path)
@@ -448,10 +530,21 @@ fn build_update_script(setup: &str, dir: &str, exe: &str) -> String {
 /// 3. 安装进程结束后重启应用，最后清理临时文件。用户取消 UAC 时也会重启旧版本。
 #[cfg(windows)]
 pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| format!("获取程序路径失败：{e}"))?;
-    let dir = exe.parent().ok_or_else(|| "获取安装目录失败".to_string())?;
+    let exe = std::env::current_exe().map_err(|e| {
+        crate::i18n::pick(
+            format!("获取程序路径失败：{e}"),
+            format!("Failed to get executable path: {e}"),
+        )
+    })?;
+    let dir = exe.parent().ok_or_else(|| {
+        crate::i18n::pick("获取安装目录失败", "Failed to get install directory").to_string()
+    })?;
     if !setup.is_file() {
-        return Err("安装包不存在，请重新下载".into());
+        return Err(crate::i18n::pick(
+            "安装包不存在，请重新下载",
+            "Installer file not found; please download again",
+        )
+        .into());
     }
 
     let script = build_update_script(
@@ -462,8 +555,12 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
 
     let script_path =
         std::env::temp_dir().join(format!("rustmusic-update-{}.ps1", std::process::id()));
-    std::fs::write(&script_path, format!("\u{feff}{script}"))
-        .map_err(|e| format!("写入更新脚本失败：{e}"))?;
+    std::fs::write(&script_path, format!("\u{feff}{script}")).map_err(|e| {
+        crate::i18n::pick(
+            format!("写入更新脚本失败：{e}"),
+            format!("Failed to write update script: {e}"),
+        )
+    })?;
 
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -481,7 +578,10 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
         .spawn()
     {
         let _ = std::fs::remove_file(&script_path);
-        return Err(format!("启动更新程序失败：{e}"));
+        return Err(crate::i18n::pick(
+            format!("启动更新程序失败：{e}"),
+            format!("Failed to launch updater: {e}"),
+        ));
     }
 
     // 助手已分离接管后续流程，稍后退出本进程（给前端留出展示状态的时间）
@@ -504,15 +604,31 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
     use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 
     let Some(appimage) = running_appimage() else {
-        return Err("当前安装方式（deb）不支持应用内自动更新，请到 GitHub 发布页下载新版本".into());
+        return Err(crate::i18n::pick(
+            "当前安装方式（deb）不支持应用内自动更新，请到 GitHub 发布页下载新版本",
+            "In-app updates are not supported for .deb packages; please download the new release from GitHub",
+        )
+        .into());
     };
     if !setup.is_file() {
-        return Err("安装包不存在，请重新下载".into());
+        return Err(crate::i18n::pick(
+            "安装包不存在，请重新下载",
+            "Installer file not found; please download again",
+        )
+        .into());
     }
-    std::fs::set_permissions(setup, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| format!("设置安装包执行权限失败：{e}"))?;
-    std::fs::rename(setup, &appimage)
-        .map_err(|e| format!("替换 AppImage 失败（所在目录可能不可写）：{e}"))?;
+    std::fs::set_permissions(setup, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
+        crate::i18n::pick(
+            format!("设置安装包执行权限失败：{e}"),
+            format!("Failed to set installer permissions: {e}"),
+        )
+    })?;
+    std::fs::rename(setup, &appimage).map_err(|e| {
+        crate::i18n::pick(
+            format!("替换 AppImage 失败（所在目录可能不可写）：{e}"),
+            format!("Failed to replace AppImage (directory may be read-only): {e}"),
+        )
+    })?;
 
     // 分离助手：独立进程组（不随终端 SIGHUP 退出），等旧进程结束后 exec 新版本，
     // 避免新旧实例短暂并行争抢数据库/音频设备
@@ -536,7 +652,10 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
     }
     if let Err(e) = cmd.spawn() {
         // 磁盘上已是新版本，只是没能自动拉起：提示手动重启即可
-        return Err(format!("更新已写入，自动重启失败，请手动重新启动应用：{e}"));
+        return Err(crate::i18n::pick(
+            format!("更新已写入，自动重启失败，请手动重新启动应用：{e}"),
+            format!("Update written, but auto-restart failed; please restart the app manually: {e}"),
+        ));
     }
 
     // 助手已分离接管重启，稍后退出本进程（给前端留出展示状态的时间）
@@ -551,7 +670,11 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
 /// 其它平台（如 macOS）：应用内自动安装不可用，前端引导前往发布页
 #[cfg(not(any(windows, target_os = "linux")))]
 pub fn install_and_restart(_app: &AppHandle, _setup: &Path) -> Result<(), String> {
-    Err("当前平台暂不支持应用内自动安装，请到 GitHub 发布页下载新版本".into())
+    Err(crate::i18n::pick(
+        "当前平台暂不支持应用内自动安装，请到 GitHub 发布页下载新版本",
+        "In-app updates are not supported on this platform; please download from GitHub releases",
+    )
+    .into())
 }
 
 #[cfg(test)]

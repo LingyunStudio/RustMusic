@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import { api } from "../api";
 import TrackList, { type SortKey } from "../components/TrackList";
 import Modal from "../components/Modal";
@@ -30,22 +31,44 @@ type MergedRowList = (
   | { type: "online"; e: PlaylistEntryMeta }
 )[];
 
-const SORTS: { key: SortKey; label: string }[] = [
-  { key: "manual", label: "手动排序" },
-  { key: "added", label: "添加时间" },
-  { key: "title", label: "标题" },
-  { key: "artist", label: "艺术家" },
-  { key: "album", label: "专辑" },
-  { key: "duration", label: "时长" },
+const SORTS: { key: SortKey; zh: string; en: string }[] = [
+  { key: "manual", zh: "手动排序", en: "Manual" },
+  { key: "added", zh: "添加时间", en: "Date Added" },
+  { key: "title", zh: "标题", en: "Title" },
+  { key: "artist", zh: "艺术家", en: "Artist" },
+  { key: "album", zh: "专辑", en: "Album" },
+  { key: "duration", zh: "时长", en: "Duration" },
 ];
 
-const META: Record<Mode, { title: string; sub: string; icon: typeof Library }> = {
-  library: { title: "资料库", sub: "你的全部音乐", icon: Library },
-  liked: { title: "我喜欢", sub: "收藏的心动之歌", icon: Heart },
-  recent: { title: "最近播放", sub: "刚刚听过的旋律", icon: Clock3 },
+const META: Record<
+  Mode,
+  { zhTitle: string; enTitle: string; zhSub: string; enSub: string; icon: typeof Library }
+> = {
+  library: {
+    zhTitle: "资料库",
+    enTitle: "Library",
+    zhSub: "你的全部音乐",
+    enSub: "All your music",
+    icon: Library,
+  },
+  liked: {
+    zhTitle: "我喜欢",
+    enTitle: "Liked",
+    zhSub: "收藏的心动之歌",
+    enSub: "Your favorite tracks",
+    icon: Heart,
+  },
+  recent: {
+    zhTitle: "最近播放",
+    enTitle: "Recently Played",
+    zhSub: "刚刚听过的旋律",
+    enSub: "Music you heard lately",
+    icon: Clock3,
+  },
 };
 
 export default function LibraryView({ mode }: { mode: Mode }) {
+  const { tr, lang } = useI18n();
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
   const isSkeuo = uiTheme === "skeuo";
@@ -204,7 +227,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     // 数字键永远升序、方向切换失效）；手动排序统一升序
     const d =
       typeof ka === "string" || typeof kb === "string"
-        ? String(ka).localeCompare(String(kb), "zh")
+        ? String(ka).localeCompare(String(kb), lang === "en" ? "en" : "zh-CN")
         : (ka as number) - (kb as number);
     if (d !== 0) return d;
     // 并列项：本地在前，保持稳定
@@ -226,7 +249,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     rows.sort((a, b) => (sortKey === "manual" ? 1 : dir) * rowCmp(a, b));
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, sortKey, dir, filtered, onlineRecentEntries, onlineLikedEntries, manualMap]);
+  }, [mode, sortKey, dir, filtered, onlineRecentEntries, onlineLikedEntries, manualMap, lang]);
 
   // 资料库视图的本地排序结果（mergedRows 不覆盖时 TrackList 需要 tracks 已排序）
   const sortedTracks = useMemo(() => {
@@ -234,9 +257,12 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     const m = sortKey === "manual" ? 1 : dir;
     return [...filtered].sort((a, b) => m * rowCmp({ type: "local", t: a }, { type: "local", t: b }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, mode, sortKey, dir, manualMap]);
+  }, [filtered, mode, sortKey, dir, manualMap, lang]);
 
-  const { title, sub, icon: Icon } = META[mode];
+  const meta = META[mode];
+  const title = tr(meta.zhTitle, meta.enTitle);
+  const sub = tr(meta.zhSub, meta.enSub);
+  const Icon = meta.icon;
   // “最近播放”追加在线曲目；“我喜欢”追加在线喜欢
   const onlineEntries = mode === "recent" ? onlineRecentEntries : onlineLikedEntries;
   // 归并模式（时间排序）下整页可播放序列：本地曲目转 local 伪条目，统一走 playEntries
@@ -264,10 +290,12 @@ export default function LibraryView({ mode }: { mode: Mode }) {
     filtered.reduce((a, t) => a + t.duration, 0) +
       onlineEntries.reduce((a, e) => a + e.duration, 0)
   );
+  const hrs = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
   const totalDesc =
     totalSecs >= 3600
-      ? `${Math.floor(totalSecs / 3600)} 小时 ${Math.floor((totalSecs % 3600) / 60)} 分钟`
-      : `${Math.floor(totalSecs / 60)} 分钟`;
+      ? tr(`${hrs} 小时 ${mins} 分钟`, `${hrs} hr ${mins} min`)
+      : tr(`${Math.floor(totalSecs / 60)} 分钟`, `${Math.floor(totalSecs / 60)} min`);
   const totalCount = filtered.length + onlineEntries.length;
   // 播放全部 / 随机：归并模式播完整交叉序列，否则只播本地曲目
   const playAll = (random: boolean) => {
@@ -376,7 +404,13 @@ export default function LibraryView({ mode }: { mode: Mode }) {
           id: r.e.onlineId ?? "",
         });
     }
-    toast(`已把 ${selectedBatch.length} 首加入队列`, "success");
+    toast(
+      tr(
+        `已把 ${selectedBatch.length} 首加入队列`,
+        `Added ${selectedBatch.length} ${selectedBatch.length === 1 ? "track" : "tracks"} to queue`,
+      ),
+      "success",
+    );
     setSel(new Set());
     setBatchMode(false);
   };
@@ -384,7 +418,10 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   const batchDownload = async () => {
     const list = selectedBatch.filter((r) => r.type === "online");
     if (!list.length) {
-      toast("所选曲目都是本地文件，无需下载", "info");
+      toast(
+        tr("所选曲目都是本地文件，无需下载", "All selected tracks are local files"),
+        "info",
+      );
       return;
     }
     setSel(new Set());
@@ -406,7 +443,13 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       if (!okFlag) failed++;
     }
     if (failed > 0) {
-      toast(`批量下载完成，${failed}/${list.length} 首失败`, "error");
+      toast(
+        tr(
+          `批量下载完成，${failed}/${list.length} 首失败`,
+          `Batch download finished: ${failed}/${list.length} failed`,
+        ),
+        "error",
+      );
     }
   };
 
@@ -504,7 +547,8 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               {sub}
               {mode === "library" && scan.active && (
                 <span className="text-[var(--accent)] tracking-normal flex items-center gap-1.5 ml-1">
-                  · <LoaderSpin /> 扫描中 {scan.total ? `${scan.done}/${scan.total}` : ""}
+                  · <LoaderSpin /> {tr("扫描中", "Scanning")}{" "}
+                  {scan.total ? `${scan.done}/${scan.total}` : ""}
                 </span>
               )}
             </div>
@@ -513,7 +557,12 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 {title}
               </h1>
               <div className="flex items-center gap-2 text-[12px] text-[var(--ink-2)]">
-                <span className="tabular-nums">{totalCount} 首</span>
+                <span className="tabular-nums">
+                  {tr(
+                    `${totalCount} 首`,
+                    `${totalCount} ${totalCount === 1 ? "track" : "tracks"}`
+                  )}
+                </span>
                 {totalSecs > 0 && (
                   <>
                     <span className="w-1 h-1 rounded-full bg-[var(--ink-3)]" />
@@ -524,7 +573,10 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             </div>
             {mode === "library" && !folders.length && !scan.active && (
               <p className="text-[12px] text-[var(--ink-3)] mt-2">
-                添加音乐文件夹，或直接把文件 / 文件夹拖进窗口
+                {tr(
+                  "添加音乐文件夹，或直接把文件 / 文件夹拖进窗口",
+                  "Add a music folder, or drag and drop audio files / folders here"
+                )}
               </p>
             )}
           </div>
@@ -536,26 +588,33 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             <>
               <button className="btn-primary shrink-0 !px-3 !py-1.5 !text-[12px]" onClick={() => playAll(false)}>
                 <Play size={13} className="fill-current" />
-                播放全部
+                {tr("播放全部", "Play All")}
               </button>
               <button
                 className="btn-secondary shrink-0 !px-2.5 !py-1.5 !text-[12px]"
                 onClick={() => playAll(true)}
               >
                 <Shuffle size={13} />
-                随机
+                {tr("随机", "Shuffle")}
               </button>
               <button
                 className={`btn-secondary shrink-0 !px-2.5 !py-1.5 !text-[12px] ${batchMode ? "!text-[var(--accent)] !border-[var(--accent)]" : ""}`}
                 disabled={manualActive}
-                title={manualActive ? "手动排序模式下不可多选" : "批量选择：加入播放列表 / 队列 / 下载"}
+                title={
+                  manualActive
+                    ? tr("手动排序模式下不可多选", "Batch select disabled in Manual sort")
+                    : tr(
+                        "批量选择：加入播放列表 / 队列 / 下载",
+                        "Batch select: add to playlist, queue, or download"
+                      )
+                }
                 onClick={() => {
                   setBatchMode(!batchMode);
                   setSel(new Set());
                 }}
               >
                 <ListChecks size={13} />
-                {batchMode ? "退出批量" : "批量管理"}
+                {batchMode ? tr("退出批量", "Exit Batch") : tr("批量管理", "Batch")}
               </button>
 
               <div className="w-px h-4 bg-[var(--line)] mx-0.5 shrink-0" />
@@ -564,7 +623,9 @@ export default function LibraryView({ mode }: { mode: Mode }) {
 
           {/* 排序标签 */}
           <div className="flex items-center gap-1 shrink-0 flex-nowrap">
-            <span className="text-[11px] text-[var(--ink-3)] mr-0.5 shrink-0">排序</span>
+            <span className="text-[11px] text-[var(--ink-3)] mr-0.5 shrink-0">
+              {tr("排序", "Sort")}
+            </span>
             {SORTS.filter((s) => s.key !== "manual" || mode !== "recent").map((s) => (
               <button
                 key={s.key}
@@ -580,7 +641,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 }`}
               >
                 {s.key === "manual" && <MoveVertical size={11} className="mr-0.5 -ml-0.5 inline" />}
-                {s.label}
+                {tr(s.zh, s.en)}
                 {sortKey === s.key && s.key !== "manual" && (
                   <span className="ml-0.5">{dir === 1 ? "↑" : "↓"}</span>
                 )}
@@ -588,7 +649,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             ))}
             {manualActive && (
               <span className="text-[10px] text-[var(--ink-3)] ml-0.5 shrink-0">
-                可拖动调序
+                {tr("可拖动调序", "Drag to reorder")}
               </span>
             )}
           </div>
@@ -604,7 +665,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索歌曲、专辑… (Ctrl+F)"
+              placeholder={tr("搜索歌曲、专辑… (Ctrl+F)", "Search tracks, albums… (Ctrl+F)")}
               className={
                 isLiquid
                   ? "w-full h-8 rounded-xl liquid-input pl-8 pr-7 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
@@ -615,7 +676,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               <button
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]"
                 onClick={() => setSearch("")}
-                title="清除搜索"
+                title={tr("清除搜索", "Clear search")}
               >
                 <X size={12} />
               </button>
@@ -643,26 +704,26 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             }
           >
             <span className="text-center">#</span>
-            <span className="pl-1">歌曲</span>
-            <span>专辑</span>
-            <span className="text-right">时长</span>
-            <span className="text-right pr-2">操作</span>
+            <span className="pl-1">{tr("歌曲", "TITLE")}</span>
+            <span>{tr("专辑", "ALBUM")}</span>
+            <span className="text-right">{tr("时长", "TIME")}</span>
+            <span className="text-right pr-2">{tr("操作", "ACTIONS")}</span>
           </div>
         )}
           {/* 批量操作栏：多选模式下显示 */}
           {batchMode && (
             <div className="flex items-center gap-2 px-5 py-2.5 border-b border-[var(--line)] shrink-0 flex-wrap">
               <span className="text-[12.5px] text-[var(--ink-2)] mr-1">
-                已选 {sel.size} 首
+                {tr(`已选 ${sel.size} 首`, `${sel.size} selected`)}
               </span>
               <button
                 className="btn-secondary !py-1.5 !px-3"
                 disabled={!batchRows.length}
                 onClick={() => setSel(new Set(batchRows.map((r) => r.key)))}
-                title="全选当前列表（Ctrl+A）"
+                title={tr("全选当前列表（Ctrl+A）", "Select all in view (Ctrl+A)")}
               >
                 <ListChecks size={13} />
-                全选
+                {tr("全选", "Select All")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -678,14 +739,20 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                   }));
                   try {
                     await api.likeTracks(ids, true);
-                    toast(`已喜欢 ${ids.length} 首歌曲`, "success");
+                    toast(
+                      tr(
+                        `已喜欢 ${ids.length} 首歌曲`,
+                        `Liked ${ids.length} ${ids.length === 1 ? "track" : "tracks"}`
+                      ),
+                      "success"
+                    );
                   } catch (e) {
                     toast(String(e), "error");
                   }
                 }}
               >
                 <Heart size={13} />
-                喜欢
+                {tr("喜欢", "Like")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -693,7 +760,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 onClick={() => setPickerOpen(true)}
               >
                 <ListPlus size={13} />
-                加入播放列表
+                {tr("加入播放列表", "Add to Playlist")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -701,7 +768,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 onClick={batchQueue}
               >
                 <Play size={13} />
-                加入队列
+                {tr("加入队列", "Add to Queue")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
@@ -709,17 +776,17 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 onClick={batchDownload}
               >
                 <Download size={13} />
-                下载到本地
+                {tr("下载到本地", "Download")}
               </button>
               {mode === "library" && (
                 <button
                   className="btn-secondary !py-1.5 !px-3 !text-[#e0533f] hover:!bg-[#e0533f]/10"
                   disabled={!selectedLocalTracks.length}
                   onClick={() => setBatchDeleteOpen(true)}
-                  title="从硬盘上永久删除选中的歌曲文件"
+                  title={tr("从硬盘上永久删除选中的歌曲文件", "Permanently delete selected files from disk")}
                 >
                   <Trash2 size={13} />
-                  从硬盘删除
+                  {tr("从硬盘删除", "Delete")}
                 </button>
               )}
               <button
@@ -727,10 +794,13 @@ export default function LibraryView({ mode }: { mode: Mode }) {
                 onClick={() => setSel(new Set())}
                 disabled={!sel.size}
               >
-                清除选择
+                {tr("清除选择", "Clear")}
               </button>
               <span className="text-[11px] text-[var(--ink-3)] ml-auto">
-                点击行勾选 / 取消，再点"批量选择"退出
+                {tr(
+                  '点击行勾选 / 取消，再点"批量选择"退出',
+                  'Click rows to select/deselect, then click "Exit Batch"'
+                )}
               </span>
             </div>
           )}
@@ -753,17 +823,17 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             onDeleteTrack={mode === "library" ? (t) => setDeleteTarget(t) : undefined}
             emptyHint={
               mode === "library"
-                ? "资料库还是空的"
+                ? tr("资料库还是空的", "Your library is empty")
                 : mode === "liked"
-                  ? "还没有喜欢的音乐"
-                  : "还没有播放记录"
+                  ? tr("还没有喜欢的音乐", "No liked songs yet")
+                  : tr("还没有播放记录", "No playback history yet")
             }
             emptyAction={
               mode === "library"
-                ? { label: "添加音乐文件夹", onClick: addFolderByDialog }
+                ? { label: tr("添加音乐文件夹", "Add Music Folder"), onClick: addFolderByDialog }
                 : mode === "liked"
                   ? {
-                      label: "去资料库逛逛",
+                      label: tr("去资料库逛逛", "Browse Library"),
                       onClick: () => useStore.getState().setView("library"),
                     }
                   : undefined
@@ -777,8 +847,8 @@ export default function LibraryView({ mode }: { mode: Mode }) {
         onClose={() => setPickerOpen(false)}
         title={
           selectedBatch.length > 1
-            ? `添加 ${selectedBatch.length} 首到播放列表`
-            : "添加到播放列表"
+            ? tr(`添加 ${selectedBatch.length} 首到播放列表`, `Add ${selectedBatch.length} Tracks to Playlist`)
+            : tr("添加到播放列表", "Add to Playlist")
         }
         width={380}
       >
@@ -791,13 +861,16 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             >
               <span className="truncate">{p.name}</span>
               <span className="text-[11px] text-[var(--ink-2)]">
-                {p.entries.length} 首
+                {tr(
+                  `${p.entries.length} 首`,
+                  `${p.entries.length} ${p.entries.length === 1 ? "track" : "tracks"}`
+                )}
               </span>
             </button>
           ))}
           {!playlists.length && (
             <div className="text-[12.5px] text-[var(--ink-2)] py-2">
-              还没有播放列表，在下方创建
+              {tr("还没有播放列表，在下方创建", "No playlists yet. Create one below.")}
             </div>
           )}
         </div>
@@ -806,7 +879,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             type="text"
             value={newPlName}
             onChange={(e) => setNewPlName(e.target.value)}
-            placeholder="新播放列表名称"
+            placeholder={tr("新播放列表名称", "New playlist name")}
             className={
               isLiquid
                 ? "liquid-input flex-1 h-9 rounded-lg px-3 text-[13px]"
@@ -828,7 +901,7 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               setNewPlName("");
             }}
           >
-            创建并添加
+            {tr("创建并添加", "Create & Add")}
           </button>
         </div>
       </Modal>
@@ -836,8 +909,8 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       {/* 单曲从硬盘删除确认弹窗 */}
       <ConfirmModal
         open={!!deleteTarget}
-        title="从硬盘删除歌曲"
-        confirmText="确认删除"
+        title={tr("从硬盘删除歌曲", "Delete Song from Disk")}
+        confirmText={tr("确认删除", "Delete")}
         danger
         onClose={() => setDeleteTarget(null)}
         onConfirm={async () => {
@@ -849,7 +922,10 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       >
         <div className="space-y-2">
           <p className="text-[13px] text-[var(--ink)] font-medium">
-            确定要从硬盘上删除歌曲「{deleteTarget?.title}」吗？
+            {tr(
+              `确定要从硬盘上删除歌曲「${deleteTarget?.title}」吗？`,
+              `Permanently delete "${deleteTarget?.title}" from disk?`
+            )}
           </p>
           {deleteTarget?.path && (
             <div className="text-[11.5px] text-[var(--ink-2)] break-all font-mono bg-[var(--shade)] p-2 rounded-lg border border-[var(--line)]">
@@ -857,7 +933,10 @@ export default function LibraryView({ mode }: { mode: Mode }) {
             </div>
           )}
           <p className="text-[12px] text-[#e0533f]">
-            注意：此操作将直接将文件从硬盘永久删除，无法撤销！
+            {tr(
+              "注意：此操作将直接将文件从硬盘永久删除，无法撤销！",
+              "Warning: This will permanently delete the file from disk and cannot be undone!"
+            )}
           </p>
         </div>
       </ConfirmModal>
@@ -865,8 +944,11 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       {/* 批量从硬盘删除确认弹窗 */}
       <ConfirmModal
         open={batchDeleteOpen}
-        title="批量从硬盘删除歌曲"
-        confirmText={`确认删除 (${selectedLocalTracks.length} 首)`}
+        title={tr("批量从硬盘删除歌曲", "Delete Songs from Disk")}
+        confirmText={tr(
+          `确认删除 (${selectedLocalTracks.length} 首)`,
+          `Delete (${selectedLocalTracks.length})`
+        )}
         danger
         onClose={() => setBatchDeleteOpen(false)}
         onConfirm={async () => {
@@ -881,10 +963,16 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       >
         <div className="space-y-2">
           <p className="text-[13px] text-[var(--ink)] font-medium">
-            确定要从硬盘上永久删除选中的 {selectedLocalTracks.length} 首歌曲吗？
+            {tr(
+              `确定要从硬盘上永久删除选中的 ${selectedLocalTracks.length} 首歌曲吗？`,
+              `Permanently delete ${selectedLocalTracks.length} selected ${selectedLocalTracks.length === 1 ? "song" : "songs"} from disk?`
+            )}
           </p>
           <p className="text-[12px] text-[#e0533f]">
-            注意：此操作将直接将这些音频文件从硬盘永久删除，无法撤销！
+            {tr(
+              "注意：此操作将直接将这些音频文件从硬盘永久删除，无法撤销！",
+              "Warning: These audio files will be permanently deleted from disk and cannot be undone!"
+            )}
           </p>
         </div>
       </ConfirmModal>

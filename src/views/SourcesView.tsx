@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import { api } from "../api";
 import NavidromePanel from "./NavidromePanel";
 import { UpFollowRow } from "./online/BiliFollowRow";
@@ -34,23 +35,24 @@ import type { BiliCollection, BiliFollow, BiliSpaceItem, QueueItem, SourcesResul
 import { useLocatePillEl } from "../hooks/useLocatePillEl";
 import LocateCurrentPill from "../components/LocateCurrentPill";
 
-const ORDERS: { key: "pubdate" | "click" | "stow"; label: string }[] = [
-  { key: "pubdate", label: "最新发布" },
-  { key: "click", label: "最多播放" },
-  { key: "stow", label: "最多收藏" },
+const ORDERS: { key: "pubdate" | "click" | "stow"; zh: string; en: string }[] = [
+  { key: "pubdate", zh: "最新发布", en: "Newest" },
+  { key: "click", zh: "最多播放", en: "Most Played" },
+  { key: "stow", zh: "最多收藏", en: "Most Favorited" },
 ];
 
 type SourceTab = "bilibili" | "navidrome" | "other" | "downloads";
 
-const TABS: { key: SourceTab; label: string }[] = [
-  { key: "bilibili", label: "Bilibili" },
-  { key: "navidrome", label: "Navidrome" },
-  { key: "other", label: "其它" },
-  { key: "downloads", label: "已下载" },
+const TABS: { key: SourceTab; zh: string; en: string }[] = [
+  { key: "bilibili", zh: "Bilibili", en: "Bilibili" },
+  { key: "navidrome", zh: "Navidrome", en: "Navidrome" },
+  { key: "other", zh: "其它", en: "Other" },
+  { key: "downloads", zh: "已下载", en: "Downloads" },
 ];
 
 /** 下载历史：已下载到本地的在线曲目（后端 downloaded 标记） */
 function DownloadsPanel() {
+  const { tr } = useI18n();
   const [rows, setRows] = useState<import("../types").PlaylistEntryMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const playEntries = useStore((s) => s.playEntries);
@@ -67,45 +69,55 @@ function DownloadsPanel() {
   const isLiquid = uiTheme === "liquid";
   const isSkeuo = uiTheme === "skeuo";
   const kindLabel: Record<string, string> = {
-    netease: "网易云",
-    qq: "QQ音乐",
-    kugou: "酷狗",
-    bilibili: "B站",
+    netease: tr("网易云", "NetEase"),
+    qq: tr("QQ音乐", "QQ Music"),
+    kugou: tr("酷狗", "Kugou"),
+    bilibili: tr("B站", "Bilibili"),
     navidrome: "Navidrome",
   };
   return (
     <div className={`${isLiquid ? "" : "glass rounded-3xl "}flex-1 min-h-0 flex flex-col overflow-hidden anim-fade`}>
       <div className={`${isLiquid ? "px-5 pt-4" : "px-6 pt-5"} pb-3 flex items-center justify-between shrink-0`}>
         <div>
-          <div className="text-[15px] font-semibold">下载历史</div>
+          <div className="text-[15px] font-semibold">{tr("下载历史", "Download History")}</div>
           <div className="text-[11.5px] text-[var(--ink-3)] mt-1">
-            已下载到保存目录并入库的在线曲目（{rows.length} 首）
+            {tr(
+              `已下载到保存目录并入库的在线曲目（${rows.length} 首）`,
+              `Online tracks saved to your download folder and added to library (${rows.length})`,
+            )}
           </div>
         </div>
         <button className="btn-secondary" onClick={refresh}>
-          刷新
+          {tr("刷新", "Refresh")}
         </button>
       </div>
       <div className={`flex-1 min-h-0 overflow-y-auto ${isLiquid ? "px-5" : "px-3"} pb-4`}>
         {loading && (
-          <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">加载中…</div>
+          <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">
+            {tr("加载中…", "Loading…")}
+          </div>
         )}
         {!loading && !rows.length && (
           <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">
-            还没有下载过在线曲目（列表右键 → 下载到本地）
+            {tr(
+              "还没有下载过在线曲目（列表右键 → 下载到本地）",
+              "No downloaded online tracks yet (Right-click a track → Download to Library)",
+            )}
           </div>
         )}
         {rows.map((r, i) => (
           <div
             key={`${r.kind}-${r.onlineId}-${i}`}
-            className="group grid grid-cols-[36px_minmax(0,1fr)_150px_80px_110px] items-center gap-4 h-[56px] px-3 rounded-[13px] hover:bg-[var(--shade-hover)] transition-colors"
+            className="group grid grid-cols-[36px_minmax(0,1fr)_140px_76px_135px] items-center gap-4 h-[56px] px-3 rounded-[13px] hover:bg-[var(--shade-hover)] transition-colors"
             onDoubleClick={() => playEntries(rows, i)}
           >
             <span className="text-[12px] text-[var(--ink-3)] tabular-nums text-center">
               {String(i + 1).padStart(2, "0")}
             </span>
             <div className="min-w-0">
-              <div className="text-[13px] text-[var(--ink)] truncate">{r.title || "未知曲目"}</div>
+              <div className="text-[13px] text-[var(--ink)] truncate">
+                {r.title || tr("未知曲目", "Unknown Track")}
+              </div>
               <div className="text-[11.5px] text-[var(--ink-3)] truncate">{r.artist}</div>
             </div>
             <div className="text-[11px] px-2 py-0.5 rounded bg-[var(--shade)] text-[var(--ink-2)] w-fit">
@@ -114,7 +126,9 @@ function DownloadsPanel() {
             <div className="text-[12px] text-[var(--ink-2)] tabular-nums text-right">
               {fmtTime(r.duration * 1000)}
             </div>
-            <div className="text-right pr-1 text-[11px] text-[var(--ink-3)]">双击播放</div>
+            <div className="text-right pr-1 text-[11px] text-[var(--ink-3)]">
+              {tr("双击播放", "Double-click to play")}
+            </div>
           </div>
         ))}
       </div>
@@ -122,13 +136,20 @@ function DownloadsPanel() {
   );
 }
 
-function fmtPlay(n: number): string {
+function fmtPlay(n: number, lang: "zh" | "en"): string {
+  if (lang === "en") {
+    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return String(n);
+  }
   if (n >= 10000_0000) return `${(n / 10000_0000).toFixed(1)}亿`;
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
   return String(n);
 }
 
 export default function SourcesView() {
+  const { tr } = useI18n();
   const playSourceId = useStore((s) => s.playSourceId);
   const playBilibiliList = useStore((s) => s.playBilibiliList);
   const playNext = useStore((s) => s.playNext);
@@ -232,7 +253,7 @@ export default function SourcesView() {
     id: r.rid,
     name: r.title,
     artist: r.artist,
-    album: "哔哩哔哩",
+    album: tr("哔哩哔哩", "Bilibili"),
     cover: r.cover,
     durationMs: r.durationMs,
     mediaMid: "",
@@ -247,7 +268,7 @@ export default function SourcesView() {
       onlineId: r.rid,
       title: r.title,
       artist: r.artist,
-      album: "哔哩哔哩",
+      album: tr("哔哩哔哩", "Bilibili"),
       cover: r.cover,
       duration: r.durationMs / 1000,
       mediaMid: "",
@@ -302,7 +323,7 @@ export default function SourcesView() {
         await openSpace(input);
       } else {
         const rows = await useStore.getState().biliVideoInfo(input);
-        if (!rows.length) throw new Error("未解析到视频");
+        if (!rows.length) throw new Error(tr("未解析到视频", "No video found"));
         replaceResult({ type: "video", rows });
       }
     } catch (e) {
@@ -471,7 +492,7 @@ export default function SourcesView() {
       replaceResult({
         type: "space",
         mid: "fav",
-        name: name || "我的收藏夹",
+        name: name || tr("我的收藏夹", "My Favorites"),
         face,
         fans: "",
         total,
@@ -548,14 +569,21 @@ export default function SourcesView() {
             biliSetLogin(true, nickname ?? "");
             useStore
               .getState()
-              .toast(`B 站登录成功${nickname ? `：${nickname}` : ""}`, "success");
+              .toast(
+                nickname
+                  ? tr(`B 站登录成功：${nickname}`, `Signed in to Bilibili: ${nickname}`)
+                  : tr("B 站登录成功", "Signed in to Bilibili"),
+                "success",
+              );
             setQr(null);
             return;
           }
           if (status === "scanned") scanned = true;
           if (status === "expired") {
             if (scanned) {
-              useStore.getState().toast("确认超时，已刷新二维码", "info");
+              useStore
+                .getState()
+                .toast(tr("确认超时，已刷新二维码", "Confirmation timed out; QR code refreshed"), "info");
             }
             break;
           }
@@ -587,17 +615,33 @@ export default function SourcesView() {
   const batchLike = () => {
     const targets = selRows.filter((r) => !rowLiked(r));
     if (!targets.length) {
-      useStore.getState().toast("所选都已收藏过", "info");
+      useStore.getState().toast(tr("所选都已收藏过", "All selected items are already favorited"), "info");
       return;
     }
     for (const r of targets) toggleLikeOnline(toOnlineRow(r));
-    useStore.getState().toast(`正在收藏 ${targets.length} 首…`, "success");
+    useStore
+      .getState()
+      .toast(
+        tr(
+          `正在收藏 ${targets.length} 首…`,
+          `Favoriting ${targets.length} ${targets.length === 1 ? "track" : "tracks"}…`,
+        ),
+        "success",
+      );
   };
 
   const batchDownload = () => {
     if (!selRows.length) return;
     for (const r of selRows) downloadOnline(toOnlineRow(r));
-    useStore.getState().toast(`开始下载 ${selRows.length} 首…`, "info");
+    useStore
+      .getState()
+      .toast(
+        tr(
+          `开始下载 ${selRows.length} 首…`,
+          `Downloading ${selRows.length} ${selRows.length === 1 ? "track" : "tracks"}…`,
+        ),
+        "info",
+      );
   };
 
   /** 渲染一张结果卡片（16:9 封面网格） */
@@ -700,7 +744,7 @@ export default function SourcesView() {
               }`}
               onClick={() => setTab(t.key)}
             >
-              {t.label}
+              {tr(t.zh, t.en)}
             </button>
           ))}
         </div>
@@ -720,7 +764,10 @@ export default function SourcesView() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && bili.trim() && !biliBusy) submitBili();
                   }}
-                  placeholder="B站视频链接 / BV号，或 UP 主空间链接 / UID"
+                  placeholder={tr(
+                    "B站视频链接 / BV号，或 UP 主空间链接 / UID",
+                    "Bilibili video URL / BV ID, or creator space URL / UID",
+                  )}
                   className={
                     isLiquid
                       ? "w-full h-9 rounded-xl liquid-input pl-8 pr-3 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ink-3)] outline-none focus:border-[var(--accent)]"
@@ -729,42 +776,51 @@ export default function SourcesView() {
                 />
               </div>
               <button
-                className="btn-primary"
+                className="btn-primary shrink-0 whitespace-nowrap"
                 disabled={!bili.trim() || biliBusy}
                 style={{ opacity: bili.trim() && !biliBusy ? 1 : 0.45 }}
                 onClick={submitBili}
               >
                 <Tv size={14} />
-                解析
+                {tr("解析", "Parse")}
               </button>
               <button
-                className="btn-secondary h-9 px-3 text-[12px] shrink-0 flex items-center gap-1.5"
+                className="btn-secondary h-9 px-3 text-[12px] shrink-0 flex items-center gap-1.5 whitespace-nowrap"
                 disabled={favLoading}
                 onClick={openFavs}
-                title="查看登录用户创建的收藏夹"
+                title={tr("查看登录用户创建的收藏夹", "Browse your Bilibili favorite folders")}
               >
                 {favLoading ? (
                   <Loader2 size={13} className="animate-spin" />
                 ) : (
                   <Folder size={13} />
                 )}
-                我的收藏夹
+                {tr("我的收藏夹", "Favorites")}
               </button>
               <button
-                className="btn-secondary h-9 px-3 text-[12px] shrink-0 flex items-center gap-1.5"
+                className="btn-secondary h-9 px-3 text-[12px] shrink-0 flex items-center gap-1.5 whitespace-nowrap"
                 onClick={() => (biliLoggedIn ? undefined : startBiliLogin())}
-                title={biliLoggedIn ? "" : "登录 B 站后可显示视频字幕（作歌词）、按收藏排序"}
+                title={
+                  biliLoggedIn
+                    ? ""
+                    : tr(
+                        "登录 B 站后可显示视频字幕（作歌词）、按收藏排序",
+                        "Sign in to Bilibili to load video subtitles as lyrics and sort by favorites",
+                      )
+                }
               >
                 <Tv size={13} className={biliLoggedIn ? "text-[#fb7299]" : ""} />
-                {biliLoggedIn ? biliNickname || "已登录" : "B站登录"}
+                {biliLoggedIn
+                  ? biliNickname || tr("已登录", "Signed in")
+                  : tr("B站登录", "Sign In")}
               </button>
               {biliLoggedIn && (
                 <button
-                  className="btn-secondary h-9 px-3 text-[12px] shrink-0 flex items-center gap-1.5"
+                  className="btn-secondary h-9 px-3 text-[12px] shrink-0 flex items-center gap-1.5 whitespace-nowrap"
                   onClick={() => biliLogout()}
-                  title="退出 B 站登录"
+                  title={tr("退出 B 站登录", "Sign out of Bilibili")}
                 >
-                  退出
+                  {tr("退出", "Sign Out")}
                 </button>
               )}
             </div>
@@ -794,7 +850,10 @@ export default function SourcesView() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && canAdd) submitDirect();
                 }}
-                placeholder="https://example.com/song.mp3（添加后立即播放）"
+                placeholder={tr(
+                  "https://example.com/song.mp3（添加后立即播放）",
+                  "https://example.com/song.mp3 (plays immediately)",
+                )}
                 className={
                   isLiquid
                     ? "liquid-input w-full h-9 rounded-lg pl-8 pr-3 text-[12.5px]"
@@ -809,7 +868,7 @@ export default function SourcesView() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && canAdd) submitDirect();
               }}
-              placeholder="名称（可选）"
+              placeholder={tr("名称（可选）", "Title (optional)")}
               className={
                 isLiquid
                   ? "liquid-input w-[160px] h-9 rounded-lg px-3 text-[12.5px]"
@@ -817,13 +876,13 @@ export default function SourcesView() {
               }
             />
             <button
-              className="btn-primary"
+              className="btn-primary shrink-0 whitespace-nowrap"
               disabled={!canAdd}
               style={{ opacity: canAdd ? 1 : 0.45 }}
               onClick={submitDirect}
             >
               <Plus size={14} />
-              添加
+              {tr("添加", "Add")}
             </button>
           </div>
         )}
@@ -834,45 +893,45 @@ export default function SourcesView() {
         <div className="mx-5 mb-2 h-10 px-3 rounded-xl glass-strong flex items-center gap-1.5 shrink-0">
           <Square size={13} className="text-[var(--accent)] shrink-0" />
           <span className="text-[12px] text-[var(--ink)] mr-1 shrink-0">
-            已选 {selRows.length}
+            {tr(`已选 ${selRows.length}`, `${selRows.length} selected`)}
           </span>
-          <button className="btn-ghost h-7 px-2.5 text-[11.5px]" onClick={selectAll}>
+          <button className="btn-ghost h-7 px-2.5 text-[11.5px] whitespace-nowrap" onClick={selectAll}>
             {selRows.length === visibleRows.length && visibleRows.length > 0
-              ? "全不选"
-              : "全选"}
+              ? tr("全不选", "Select None")
+              : tr("全选", "Select All")}
           </button>
           <button
-            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1"
+            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1 whitespace-nowrap"
             disabled={!selRows.length}
             onClick={batchLike}
           >
-            <Heart size={12} /> 收藏
+            <Heart size={12} /> {tr("收藏", "Favorite")}
           </button>
           <button
-            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1"
+            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1 whitespace-nowrap"
             disabled={!selRows.length}
             onClick={batchDownload}
           >
-            <Download size={12} /> 下载
+            <Download size={12} /> {tr("下载", "Download")}
           </button>
           <button
-            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1"
+            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1 whitespace-nowrap"
             disabled={!selRows.length}
             onClick={() => {
               if (selRows.length) setPickerRows(selRows);
             }}
           >
-            <ListMusic size={12} /> 加歌单
+            <ListMusic size={12} /> {tr("加歌单", "Add to Playlist")}
           </button>
           <div className="flex-1" />
           <button
-            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1"
+            className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1 whitespace-nowrap"
             onClick={() => {
               setSelMode(false);
               setSelKeys(new Set());
             }}
           >
-            <X size={12} /> 完成
+            <X size={12} /> {tr("完成", "Done")}
           </button>
         </div>
       )}
@@ -908,7 +967,12 @@ export default function SourcesView() {
               )}
             </div>
             <div className="text-[13.5px]">
-              {tab === "other" ? "粘贴音频文件直链开始" : "粘贴 B 站视频或 UP 主空间链接开始"}
+              {tab === "other"
+                ? tr("粘贴音频文件直链开始", "Paste a direct audio URL to get started")
+                : tr(
+                    "粘贴 B 站视频或 UP 主空间链接开始",
+                    "Paste a Bilibili video or creator space URL to get started",
+                  )}
             </div>
           </div>
         ) : (
@@ -930,13 +994,19 @@ export default function SourcesView() {
                     <div className="text-[11.5px] text-[var(--ink-2)] flex items-center gap-1.5 mt-0.5">
                       <Users size={10} />
                       {space.mid === "fav"
-                        ? `共 ${space.total} 个视频`
-                        : `${space.fans} · 共 ${space.total} 个视频`}
+                        ? tr(
+                            `共 ${space.total} 个视频`,
+                            `${space.total} ${space.total === 1 ? "video" : "videos"}`,
+                          )
+                        : tr(
+                            `${space.fans} · 共 ${space.total} 个视频`,
+                            `${space.fans} · ${space.total} ${space.total === 1 ? "video" : "videos"}`,
+                          )}
                     </div>
                   </div>
                   {!selMode && space.mid !== "fav" && (
                     <button
-                      className={`btn-ghost h-8 px-3 text-[12px] shrink-0 flex items-center gap-1.5 ${
+                      className={`btn-ghost h-8 px-3 text-[12px] shrink-0 flex items-center gap-1.5 whitespace-nowrap ${
                         spaceFollowed ? "text-[#fb7299]" : ""
                       }`}
                       onClick={() =>
@@ -946,31 +1016,35 @@ export default function SourcesView() {
                           face: space.face,
                         })
                       }
-                      title={spaceFollowed ? "取消收藏该 UP 主" : "收藏该 UP 主（显示在顶部横排）"}
+                      title={
+                        spaceFollowed
+                          ? tr("取消收藏该 UP 主", "Unfollow creator")
+                          : tr("收藏该 UP 主（显示在顶部横排）", "Follow creator (pins to top bar)")
+                      }
                     >
                       <Star size={12} className={spaceFollowed ? "fill-current" : ""} />
-                      {spaceFollowed ? "已收藏" : "收藏UP主"}
+                      {spaceFollowed ? tr("已收藏", "Following") : tr("收藏UP主", "Follow")}
                     </button>
                   )}
                   {!selMode && (
                     <button
-                      className="btn-ghost h-8 px-3 text-[12px] shrink-0 flex items-center gap-1.5"
+                      className="btn-ghost h-8 px-3 text-[12px] shrink-0 flex items-center gap-1.5 whitespace-nowrap"
                       onClick={() => {
                         setSelMode(true);
                         setSelKeys(new Set());
                       }}
                     >
-                      <Square size={12} /> 多选
+                      <Square size={12} /> {tr("多选", "Select")}
                     </button>
                   )}
                   <button
-                    className="btn-ghost h-8 px-3 text-[12px] shrink-0"
+                    className="btn-ghost h-8 px-3 text-[12px] shrink-0 whitespace-nowrap"
                     onClick={() => {
                       replaceResult(null);
                       setSelMode(false);
                     }}
                   >
-                    关闭
+                    {tr("关闭", "Close")}
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -986,7 +1060,7 @@ export default function SourcesView() {
                         }`}
                         onClick={() => changeOrder(o.key)}
                       >
-                        {o.label}
+                        {tr(o.zh, o.en)}
                       </button>
                     ))}
                   {space.collections.map((c) => (
@@ -997,7 +1071,7 @@ export default function SourcesView() {
                           ? "bg-[var(--accent-weak)] text-[var(--accent-strong)] font-semibold"
                           : "text-[var(--ink-2)] hover:bg-[var(--shade)]"
                       }`}
-                      title={`${c.title}（${c.total}个）`}
+                      title={`${c.title} (${c.total})`}
                       onClick={() => openCollection(c)}
                     >
                       <ListMusic size={10} className="inline mr-1 -mt-px" />
@@ -1011,7 +1085,12 @@ export default function SourcesView() {
                     <span className="text-[var(--ink)] font-medium">
                       {space.activeCollection.title}
                     </span>
-                    <span>{space.activeCollection.total} 个视频</span>
+                    <span>
+                      {tr(
+                        `${space.activeCollection.total} 个视频`,
+                        `${space.activeCollection.total} ${space.activeCollection.total === 1 ? "video" : "videos"}`,
+                      )}
+                    </span>
                     <button
                       className="text-[var(--accent)] hover:underline"
                       onClick={() => {
@@ -1023,7 +1102,7 @@ export default function SourcesView() {
                         setSelKeys(new Set());
                       }}
                     >
-                      返回全部投稿
+                      {tr("返回全部投稿", "Back to all uploads")}
                     </button>
                   </div>
                 )}
@@ -1032,22 +1111,25 @@ export default function SourcesView() {
             {!space && !selMode && visibleRows.length > 0 && (
               <div className="flex items-center justify-between px-1">
                 <span className="text-[11.5px] text-[var(--ink-3)]">
-                  {visibleRows.length} 个结果
+                  {tr(
+                    `${visibleRows.length} 个结果`,
+                    `${visibleRows.length} ${visibleRows.length === 1 ? "result" : "results"}`,
+                  )}
                 </span>
                 <button
-                  className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1.5"
+                  className="btn-ghost h-7 px-2.5 text-[11.5px] flex items-center gap-1.5 whitespace-nowrap"
                   onClick={() => {
                     setSelMode(true);
                     setSelKeys(new Set());
                   }}
                 >
-                  <Square size={12} /> 多选
+                  <Square size={12} /> {tr("多选", "Select")}
                 </button>
               </div>
             )}
             {!space && selMode && listRows.length === 0 && (
               <div className="text-[12px] text-[var(--ink-3)] text-center py-2">
-                当前结果为空
+                {tr("当前结果为空", "No results")}
               </div>
             )}
 
@@ -1075,11 +1157,17 @@ export default function SourcesView() {
                   <Plus size={13} />
                   {space.activeCollection
                     ? space.activeCollection.loadingMore
-                      ? "加载中…"
-                      : `加载更多（已显示 ${space.activeCollection.rows.length}/${space.activeCollection.total}）`
+                      ? tr("加载中…", "Loading…")
+                      : tr(
+                          `加载更多（已显示 ${space.activeCollection.rows.length}/${space.activeCollection.total}）`,
+                          `Load More (${space.activeCollection.rows.length}/${space.activeCollection.total})`,
+                        )
                     : space.loadingMore
-                      ? "加载中…"
-                      : `加载更多（已显示 ${space.rows.length}/${space.total}）`}
+                      ? tr("加载中…", "Loading…")
+                      : tr(
+                          `加载更多（已显示 ${space.rows.length}/${space.total}）`,
+                          `Load More (${space.rows.length}/${space.total})`,
+                        )}
                 </button>
               )}
           </div>
@@ -1111,8 +1199,8 @@ export default function SourcesView() {
       {menu &&
         createPortal(
           <div
-            className="fixed z-[75] w-[190px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
-            style={clampMenuPos(menu.x, menu.y, 190, 200)}
+            className="fixed z-[75] w-[215px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
+            style={clampMenuPos(menu.x, menu.y, 215, 200)}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseLeave={() => setMenu(null)}
           >
@@ -1124,7 +1212,7 @@ export default function SourcesView() {
                 setMenu(null);
               }}
             >
-              <Play size={13} /> 播放
+              <Play size={13} /> {tr("播放", "Play")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -1134,7 +1222,7 @@ export default function SourcesView() {
                 setMenu(null);
               }}
             >
-              <Play size={13} /> 下一首播放
+              <Play size={13} /> {tr("下一首播放", "Play Next")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -1144,7 +1232,7 @@ export default function SourcesView() {
                 setMenu(null);
               }}
             >
-              <Play size={13} /> 加入队列
+              <Play size={13} /> {tr("加入队列", "Add to Queue")}
             </button>
             <div className="my-1 mx-2 border-t border-[var(--line)]" />
             <button
@@ -1154,7 +1242,7 @@ export default function SourcesView() {
                 setMenu(null);
               }}
             >
-              <ListMusic size={13} /> 添加到播放列表…
+              <ListMusic size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -1163,7 +1251,10 @@ export default function SourcesView() {
                 setMenu(null);
               }}
             >
-              <Heart size={13} /> {rowLiked(menu.row) ? "取消喜欢" : "收藏到“我喜欢”"}
+              <Heart size={13} />{" "}
+              {rowLiked(menu.row)
+                ? tr("取消喜欢", "Remove Favorite")
+                : tr("收藏到“我喜欢”", "Add to Favorites")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -1172,7 +1263,7 @@ export default function SourcesView() {
                 setMenu(null);
               }}
             >
-              <ListMusic size={13} /> 下载到本地
+              <ListMusic size={13} /> {tr("下载到本地", "Download to Library")}
             </button>
           </div>,
           document.body
@@ -1192,21 +1283,28 @@ export default function SourcesView() {
           qrRunRef.current++;
           setQr(null);
         }}
-        title="B 站登录"
+        title={tr("B 站登录", "Bilibili Sign In")}
         width={300}
       >
         <div className="flex flex-col items-center gap-3 py-2">
           {qr && (
             <img
               src={qr.qr}
-              alt="B站登录二维码"
+              alt={tr("B站登录二维码", "Bilibili QR Code")}
               className="w-[220px] h-[220px] rounded-xl bg-white p-2"
             />
           )}
           <div className="text-[12.5px] text-[var(--ink-2)] text-center leading-relaxed">
-            用 <span className="text-[#fb7299] font-medium">哔哩哔哩 App</span> 扫码登录
+            {tr("用 ", "Scan with the ")}
+            <span className="text-[#fb7299] font-medium">
+              {tr("哔哩哔哩 App", "Bilibili app")}
+            </span>
+            {tr(" 扫码登录", "")}
             <br />
-            登录后可显示视频字幕（作歌词）、按收藏排序
+            {tr(
+              "登录后可显示视频字幕（作歌词）、按收藏排序",
+              "Enables video subtitles as lyrics and sorting by favorites",
+            )}
           </div>
         </div>
       </Modal>
@@ -1227,8 +1325,8 @@ export default function SourcesView() {
         rows: [
           {
             rid: `direct-${id}`,
-            title: title.trim() || u.split("/").pop() || "在线音源",
-            artist: "在线音源",
+            title: title.trim() || u.split("/").pop() || tr("在线音源", "Online Source"),
+            artist: tr("在线音源", "Online Source"),
             cover: "",
             durationMs: 0,
             play: 0,
@@ -1237,7 +1335,7 @@ export default function SourcesView() {
           },
         ],
       });
-      useStore.getState().toast("已添加并播放", "success");
+      useStore.getState().toast(tr("已添加并播放", "Added and playing"), "success");
       playSourceId(id);
     } catch (e) {
       useStore.getState().toast(String(e), "error");

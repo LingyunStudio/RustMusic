@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Play, Shuffle } from "lucide-react";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import TrackList from "../components/TrackList";
 import { ConfirmModal } from "../components/Dialogs";
 import ViewShell from "../components/ViewShell";
@@ -19,6 +20,7 @@ export default function ArtistAlbumView({
 }: {
   kind: "artist" | "album";
 }) {
+  const { tr } = useI18n();
   const name = useStore((s) => s.detailName);
   const tracks = useStore((s) => s.tracks);
   const popDetailPage = useStore((s) => s.popDetailPage);
@@ -184,26 +186,31 @@ export default function ArtistAlbumView({
           <button
             className="btn-ghost w-7 h-7 -ml-1.5"
             onClick={popDetailPage}
-            title="返回上一页"
+            title={tr("返回上一页", "Back")}
           >
             <ArrowLeft size={15} />
           </button>
-          {kind === "artist" ? "歌手" : "专辑"}
+          {kind === "artist" ? tr("歌手", "Artist") : tr("专辑", "Album")}
         </div>
         <h1 className="text-[30px] font-extrabold leading-none tracking-tight text-[var(--ink)] truncate">
           {name}
         </h1>
         <div className="flex items-center gap-3 mt-3 text-[12.5px] text-[var(--ink-2)]">
           <span className="tabular-nums">
-            本地 {localMatches.length} 首
+            {tr(`本地 ${localMatches.length} 首`, `${localMatches.length} local`)}
           </span>
           <span className="w-1 h-1 rounded-full bg-[var(--ink-3)]" />
           <span className="tabular-nums">
-            {onlineLoading ? "在线搜索中…" : `在线 ${onlineEntries.length} 首`}
+            {onlineLoading
+              ? tr("在线搜索中…", "Searching online…")
+              : tr(`在线 ${onlineEntries.length} 首`, `${onlineEntries.length} online`)}
           </span>
           {detailSource && (
             <span className="text-[var(--ink-3)]">
-              · 优先{detailSource === "netease" ? "网易云" : detailSource === "qq" ? "QQ 音乐" : "酷狗"}结果
+              {tr(
+                `· 优先${detailSource === "netease" ? "网易云" : detailSource === "qq" ? "QQ 音乐" : "酷狗"}结果`,
+                `· Preferring ${detailSource === "netease" ? "NetEase" : detailSource === "qq" ? "QQ Music" : "Kugou"}`
+              )}
             </span>
           )}
         </div>
@@ -212,11 +219,11 @@ export default function ArtistAlbumView({
         <div className="flex items-center gap-3 shrink-0 anim-rise">
           <button className="btn-secondary" onClick={() => playAll(true)}>
             <Shuffle size={14} />
-            随机播放
+            {tr("随机播放", "Shuffle")}
           </button>
           <button className="btn-primary" onClick={() => playAll(false)}>
             <Play size={14} className="fill-current" />
-            播放全部
+            {tr("播放全部", "Play All")}
           </button>
         </div>
       )}
@@ -238,11 +245,11 @@ export default function ArtistAlbumView({
       >
         {(localMatches.length > 0 || onlineEntries.length > 0) && (
           <div className={tableHeaderClass}>
-            <span className="text-center">序号</span>
-            <span>歌曲</span>
-            <span>专辑</span>
-            <span className="text-right">时长</span>
-            <span className="text-right">操作</span>
+            <span className="text-center">{tr("序号", "#")}</span>
+            <span>{tr("歌曲", "TITLE")}</span>
+            <span>{tr("专辑", "ALBUM")}</span>
+            <span className="text-right">{tr("时长", "TIME")}</span>
+            <span className="text-right">{tr("操作", "ACTIONS")}</span>
           </div>
         )}
         <TrackList
@@ -251,17 +258,35 @@ export default function ArtistAlbumView({
           onlineEntries={onlineEntries}
           onMetaClick={(field, text) => openDetailPage(field, text)}
           onDeleteTrack={(t) => setDeleteTarget(t)}
-          emptyHint={`本地曲库中没有该${kind === "artist" ? "歌手" : "专辑"}的歌曲${
-            onlineLoading ? "，正在搜索在线曲库…" : "，在线曲库也没有找到"
-          }`}
+          emptyHint={
+            kind === "artist"
+              ? onlineLoading
+                ? tr(
+                    "本地曲库中没有该歌手的歌曲，正在搜索在线曲库…",
+                    "No local tracks by this artist, searching online…"
+                  )
+                : tr(
+                    "本地曲库中没有该歌手的歌曲，在线曲库也没有找到",
+                    "No tracks found for this artist locally or online"
+                  )
+              : onlineLoading
+                ? tr(
+                    "本地曲库中没有该专辑的歌曲，正在搜索在线曲库…",
+                    "No local tracks in this album, searching online…"
+                  )
+                : tr(
+                    "本地曲库中没有该专辑的歌曲，在线曲库也没有找到",
+                    "No tracks found for this album locally or online"
+                  )
+          }
         />
       </ViewShell>
 
       {/* 单曲从硬盘删除确认弹窗 */}
       <ConfirmModal
         open={!!deleteTarget}
-        title="从硬盘删除歌曲"
-        confirmText="确认删除"
+        title={tr("从硬盘删除歌曲", "Delete Song from Disk")}
+        confirmText={tr("确认删除", "Delete")}
         danger
         onClose={() => setDeleteTarget(null)}
         onConfirm={async () => {
@@ -273,7 +298,10 @@ export default function ArtistAlbumView({
       >
         <div className="space-y-2">
           <p className="text-[13px] text-[var(--ink)] font-medium">
-            确定要从硬盘上删除歌曲「{deleteTarget?.title}」吗？
+            {tr(
+              `确定要从硬盘上删除歌曲「${deleteTarget?.title}」吗？`,
+              `Permanently delete "${deleteTarget?.title}" from disk?`
+            )}
           </p>
           {deleteTarget?.path && (
             <div className="text-[11.5px] text-[var(--ink-2)] break-all font-mono bg-[var(--shade)] p-2 rounded-lg border border-[var(--line)]">
@@ -281,7 +309,10 @@ export default function ArtistAlbumView({
             </div>
           )}
           <p className="text-[12px] text-[#e0533f]">
-            注意：此操作将直接将文件从硬盘永久删除，无法撤销！
+            {tr(
+              "注意：此操作将直接将文件从硬盘永久删除，无法撤销！",
+              "Warning: This will permanently delete the file from disk and cannot be undone!"
+            )}
           </p>
         </div>
       </ConfirmModal>

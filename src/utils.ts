@@ -1,4 +1,5 @@
 import type { LyricsPayload, LyricLine, TrackMeta } from "./types";
+import { tr } from "./i18n";
 
 /** 当前播放位置对应的歌词行（无同步歌词返回 null） */
 export function fmtTime(ms: number): string {
@@ -185,11 +186,11 @@ export async function extractColor(url: string): Promise<string | null> {
 }
 
 export function trackTitle(t: TrackMeta): string {
-  return t.title || t.path.split(/[\\/]/).pop() || "未知曲目";
+  return t.title || t.path.split(/[\\/]/).pop() || tr("未知曲目", "Unknown Track");
 }
 
 export function trackArtist(t: TrackMeta): string {
-  return t.artist || "未知艺术家";
+  return t.artist || tr("未知艺术家", "Unknown Artist");
 }
 
 export function matchSearch(t: TrackMeta, q: string): boolean {

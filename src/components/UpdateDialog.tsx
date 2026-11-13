@@ -5,6 +5,7 @@ import DOMPurify from "dompurify";
 import { Download, Loader2 } from "lucide-react";
 import Modal from "./Modal";
 import { api, listenEvent } from "../api";
+import { useI18n } from "../i18n";
 import type { UpdateInfo } from "../types";
 import { useStore } from "../store";
 
@@ -108,6 +109,7 @@ function fmtMB(n: number): string {
 }
 
 export default function UpdateDialog() {
+  const { tr } = useI18n();
   const open = useUpdateStore((s) => s.open);
   const phase = useUpdateStore((s) => s.phase);
   const info = useUpdateStore((s) => s.info);
@@ -172,13 +174,13 @@ export default function UpdateDialog() {
   };
 
   return (
-    <Modal open={open} onClose={() => useUpdateStore.getState().close()} width={560} title="发现新版本">
+    <Modal open={open} onClose={() => useUpdateStore.getState().close()} width={560} title={tr("发现新版本", "Update Available")}>
       {phase === "installing" ? (
         <div className="flex flex-col items-center gap-3 py-8">
           <Loader2 size={24} className="animate-spin text-[var(--accent)]" />
-          <div className="text-[13px] text-[var(--ink)]">正在退出并安装更新…</div>
+          <div className="text-[13px] text-[var(--ink)]">{tr("正在退出并安装更新…", "Exiting to install update…")}</div>
           <div className="text-[11.5px] text-[var(--ink-3)]">
-            安装位置保持不变，完成后将自动重启应用
+            {tr("安装位置保持不变，完成后将自动重启应用", "Install location will remain unchanged; app will restart automatically")}
           </div>
         </div>
       ) : (
@@ -194,7 +196,7 @@ export default function UpdateDialog() {
             </span>
             {info.publishedAt && (
               <span className="ml-auto text-[11.5px] text-[var(--ink-3)]">
-                {info.publishedAt.slice(0, 10)} 发布
+                {tr(`${info.publishedAt.slice(0, 10)} 发布`, `Released ${info.publishedAt.slice(0, 10)}`)}
               </span>
             )}
           </div>
@@ -206,7 +208,10 @@ export default function UpdateDialog() {
             dangerouslySetInnerHTML={{
               __html:
                 notesHtml ||
-                '<p class="rn-empty">本次更新没有提供更新说明。</p>',
+                tr(
+                  '<p class="rn-empty">本次更新没有提供更新说明。</p>',
+                  '<p class="rn-empty">No release notes provided for this update.</p>'
+                ),
             }}
           />
 
@@ -220,7 +225,10 @@ export default function UpdateDialog() {
                 />
               </div>
               <div className="text-[11.5px] text-[var(--ink-2)] mt-2 tabular-nums">
-                正在下载安装包… {fmtMB(received)} / {fmtMB(total)}（{pct}%）
+                {tr(
+                  `正在下载安装包… ${fmtMB(received)} / ${fmtMB(total)}（${pct}%）`,
+                  `Downloading installer… ${fmtMB(received)} / ${fmtMB(total)} (${pct}%)`
+                )}
               </div>
             </div>
           )}
@@ -233,21 +241,21 @@ export default function UpdateDialog() {
             {phase === "available" && (
               <>
                 <button className="btn-secondary" onClick={() => useUpdateStore.getState().close()}>
-                  以后再说
+                  {tr("以后再说", "Later")}
                 </button>
                 <button className="btn-primary" onClick={() => useUpdateStore.getState().confirm()}>
                   <Download size={14} />
-                  {info.canInstall ? "立即更新" : "前往发布页"}
+                  {info.canInstall ? tr("立即更新", "Update Now") : tr("前往发布页", "Open Releases")}
                 </button>
               </>
             )}
             {phase === "downloading" && (
               <>
                 <span className="mr-auto text-[11.5px] text-[var(--ink-3)]">
-                  下载完成后将自动安装并重启
+                  {tr("下载完成后将自动安装并重启", "Will install and restart automatically once downloaded")}
                 </span>
                 <button className="btn-secondary" onClick={() => useUpdateStore.getState().cancel()}>
-                  取消下载
+                  {tr("取消下载", "Cancel")}
                 </button>
               </>
             )}

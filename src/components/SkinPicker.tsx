@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, ImagePlus, RefreshCw, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import Modal from "./Modal";
+import { useI18n } from "../i18n";
 import { useStore } from "../store";
 import { api } from "../api";
 import {
@@ -14,6 +15,8 @@ import {
   saveCustomImages,
   saveCustomSkinSettings,
   setActiveCustomImage,
+  skinDesc,
+  skinName,
   SKINS,
   skinSupportsFx,
   skinUri,
@@ -29,6 +32,7 @@ export default function SkinPicker({
   open: boolean;
   onClose: () => void;
 }) {
+  const { tr } = useI18n();
   const skin = useStore((s) => s.skin);
   const setSkin = useStore((s) => s.setSkin);
   const fxAudio = useStore((s) => s.fxAudio);
@@ -51,9 +55,12 @@ export default function SkinPicker({
       const { open } = await import("@tauri-apps/plugin-dialog");
       const sel = await open({
         multiple: true,
-        title: "添加皮肤图片",
+        title: tr("添加皮肤图片", "Add Skin Image"),
         filters: [
-          { name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif"] },
+          {
+            name: tr("图片", "Images"),
+            extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif"],
+          },
         ],
       });
       const paths = typeof sel === "string" ? [sel] : (sel ?? []);
@@ -77,7 +84,10 @@ export default function SkinPicker({
       setActiveCustomImage(prepared[prepared.length - 1]);
       setActiveImg(prepared[prepared.length - 1]);
       setSkin(CUSTOM_SKIN);
-      useStore.getState().toast(`已添加 ${paths.length} 张皮肤图片`, "success");
+      useStore.getState().toast(
+        tr(`已添加 ${paths.length} 张皮肤图片`, `Added ${paths.length} skin image(s)`),
+        "success"
+      );
     } catch (e) {
       useStore.getState().toast(String(e), "error");
     }
@@ -133,20 +143,20 @@ export default function SkinPicker({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="皮肤" width={720}>
+    <Modal open={open} onClose={onClose} title={tr("皮肤", "Skins")} width={720}>
       <div className="skin-picker-fixed">
       <div className="grid grid-cols-3 gap-3 max-h-[54vh] overflow-y-auto pr-1">
         {card(
           DEFAULT_SKIN,
-          "默认",
-          "主题氛围 · 无背景图",
+          tr("默认", "Default"),
+          tr("主题氛围 · 无背景图", "Theme Ambience · No Background Image"),
           {
             background:
               "radial-gradient(ellipse 120% 100% at 50% -20%, #3a2a18 0%, #1c140c 55%, #0f0c09 100%)",
           }
         )}
         {SKINS.map((s) =>
-          card(s.key, s.name, s.desc, {
+          card(s.key, skinName(s), skinDesc(s), {
             backgroundImage: skinUri(s.key) ?? undefined,
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -171,7 +181,7 @@ export default function SkinPicker({
                 backgroundSize: "var(--skin-fill, cover)",
                 backgroundPosition: "center",
               }}
-              title="使用这张图片"
+              title={tr("使用这张图片", "Use this image")}
             >
               {active && (
                 <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-[var(--accent)] text-[var(--accent-on)] flex items-center justify-center shadow">
@@ -184,13 +194,13 @@ export default function SkinPicker({
                   e.stopPropagation();
                   removeImage(img);
                 }}
-                title="删除"
+                title={tr("删除", "Delete")}
               >
                 <X size={11} strokeWidth={3} />
               </span>
               <div className="absolute inset-x-0 bottom-0 px-2.5 pb-1.5 pt-6 bg-gradient-to-t from-black/60 to-transparent">
                 <div className="text-[12.5px] text-white font-semibold leading-tight drop-shadow">
-                  自定义图片
+                  {tr("自定义图片", "Custom Image")}
                 </div>
               </div>
             </div>
@@ -201,11 +211,11 @@ export default function SkinPicker({
           onClick={pickImage}
           className="relative w-full pt-[56.25%] rounded-xl overflow-hidden transition-all duration-200 hover:scale-[1.03]"
           style={{ background: "var(--shade)" }}
-          title="添加图片"
+          title={tr("添加图片", "Add Image")}
         >
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-[var(--ink-3)]">
             <ImagePlus size={20} />
-            <span className="text-[11.5px]">添加图片</span>
+            <span className="text-[11.5px]">{tr("添加图片", "Add Image")}</span>
           </div>
         </button>
       </div>
@@ -213,14 +223,16 @@ export default function SkinPicker({
       {skin === CUSTOM_SKIN && activeImg && (
         <div className={`mt-3 p-4 flex flex-col gap-3.5 ${isLiquid ? "rounded-2xl liquid-panel" : "rounded-xl bg-[var(--shade)]"}`}>
           <div className="flex items-center gap-3">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[64px] shrink-0">填充方式</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[82px] shrink-0">
+              {tr("填充方式", "Fill Mode")}
+            </span>
             <div className="flex gap-1">
               {(
                 [
-                  ["cover", "封面"],
-                  ["contain", "包含"],
-                  ["stretch", "拉伸"],
-                  ["tile", "平铺"],
+                  ["cover", tr("封面", "Cover")],
+                  ["contain", tr("包含", "Contain")],
+                  ["stretch", tr("拉伸", "Stretch")],
+                  ["tile", tr("平铺", "Tile")],
                 ] as const
               ).map(([k, label]) => (
                 <button
@@ -239,13 +251,15 @@ export default function SkinPicker({
             <button
               className="ml-auto btn-ghost w-8 h-8 text-[var(--ink-2)]"
               onClick={pickImage}
-              title="更换图片"
+              title={tr("更换图片", "Change Image")}
             >
               <RefreshCw size={14} />
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[64px] shrink-0">透明度</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[82px] shrink-0">
+              {tr("透明度", "Dimming")}
+            </span>
             <input
               type="range"
               min={0}
@@ -259,13 +273,15 @@ export default function SkinPicker({
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[12.5px] text-[var(--ink-2)] w-[64px] shrink-0">文字色系</span>
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[82px] shrink-0">
+              {tr("文字色系", "Text Tone")}
+            </span>
             <div className="flex gap-1">
               {(
                 [
-                  ["auto", "自动"],
-                  ["light", "浅色文字"],
-                  ["dark", "深色文字"],
+                  ["auto", tr("自动", "Auto")],
+                  ["light", tr("浅色文字", "Light Text")],
+                  ["dark", tr("深色文字", "Dark Text")],
                 ] as const
               ).map(([k, label]) => (
                 <button
@@ -287,16 +303,21 @@ export default function SkinPicker({
       {/* 音频律动开关：仅支持律动的皮肤（带基座版）显示 */}
       {skinSupportsFx(skin) && (
         <div className="mt-3 p-4 rounded-xl bg-[var(--shade)] flex items-center gap-3">
-          <span className="text-[12.5px] text-[var(--ink-2)] shrink-0">音频律动</span>
+          <span className="text-[12.5px] text-[var(--ink-2)] shrink-0">
+            {tr("音频律动", "Audio FX")}
+          </span>
           <span className="text-[11.5px] text-[var(--ink-3)] flex-1 leading-snug">
-            频谱柱、涟漪与光晕跟随正在播放的歌曲实时起伏（引擎 FFT，两种输出模式均生效）
+            {tr(
+              "频谱柱、涟漪与光晕跟随正在播放的歌曲实时起伏（引擎 FFT，两种输出模式均生效）",
+              "Spectrum bars, ripples, and glow pulse to the playing track in real time (engine FFT, both output modes)"
+            )}
           </span>
           <button
             className={`relative w-10 h-[22px] rounded-full transition-colors shrink-0 ${
               fxAudio ? "bg-[var(--accent)]" : "bg-[var(--shade-strong)]"
             }`}
             onClick={() => setFxAudio(!fxAudio)}
-            title={fxAudio ? "关闭音频律动" : "开启音频律动"}
+            title={fxAudio ? tr("关闭音频律动", "Disable Audio FX") : tr("开启音频律动", "Enable Audio FX")}
           >
             <span
               className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-all ${
@@ -307,7 +328,10 @@ export default function SkinPicker({
         </div>
       )}
       <div className="text-[10.5px] text-[var(--ink-3)] mt-3 leading-relaxed">
-        皮肤替换主界面背景，与浅色/暗色主题、强调色自由组合；播放时封面主色会为壁纸添上一层随音乐呼吸的微光。
+        {tr(
+          "皮肤替换主界面背景，与浅色/暗色主题、强调色自由组合；播放时封面主色会为壁纸添上一层随音乐呼吸的微光。",
+          "Skins replace the main background and combine freely with Light/Dark themes and accent colors; cover artwork adds a gentle reactive glow during playback."
+        )}
       </div>
       </div>
     </Modal>

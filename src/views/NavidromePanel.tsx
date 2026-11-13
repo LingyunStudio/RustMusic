@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useStore } from "../store";
+import { useI18n } from "../i18n";
 import { useLocatePillEl } from "../hooks/useLocatePillEl";
 import { useLocatePill } from "../hooks/useLocatePill";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
@@ -59,6 +60,7 @@ const ndSnapshot: {
 };
 
 export default function NavidromePanel() {
+  const { tr } = useI18n();
   const toast = useStore((s) => s.toast);
   const playNext = useStore((s) => s.playNext);
   const addToQueue = useStore((s) => s.addToQueue);
@@ -145,7 +147,13 @@ export default function NavidromePanel() {
 
   const connect = async () => {
     if (!server.trim() || !username.trim() || !password) {
-      toast("服务器地址、用户名、密码均不能为空", "error");
+      toast(
+        tr(
+          "服务器地址、用户名、密码均不能为空",
+          "Server URL, username, and password are all required",
+        ),
+        "error",
+      );
       return;
     }
     setConnecting(true);
@@ -166,7 +174,7 @@ export default function NavidromePanel() {
       }
       setPassword("");
       setView({ page: "albums" });
-      toast("Navidrome 已连接", "success");
+      toast(tr("Navidrome 已连接", "Connected to Navidrome"), "success");
     } catch (e) {
       toast(String(e), "error");
     } finally {
@@ -188,7 +196,7 @@ export default function NavidromePanel() {
     setAlbums([]);
     navStack.current = []; // 断开后返回栈失效，一并清掉
     setView({ page: "albums" });
-    toast("已断开并清除保存的密码", "success");
+    toast(tr("已断开并清除保存的密码", "Disconnected and cleared saved password"), "success");
   };
 
   const playSong = (s: NdSong) => {
@@ -324,7 +332,9 @@ export default function NavidromePanel() {
         mediaMid: "",
       });
       await useStore.getState().refreshTracks();
-      useStore.getState().toast(`已下载到资料库：${name}`, "success");
+      useStore
+        .getState()
+        .toast(tr(`已下载到资料库：${name}`, `Downloaded to library: ${name}`), "success");
     } catch (e) {
       useStore.getState().toast(String(e), "error");
     } finally {
@@ -412,20 +422,25 @@ export default function NavidromePanel() {
           >
             <Server size={26} className="text-[var(--ink-3)]" />
           </div>
-          <div className="text-[13.5px] text-[var(--ink-2)]">连接你的 Navidrome 服务器</div>
+          <div className="text-[13.5px] text-[var(--ink-2)]">
+            {tr("连接你的 Navidrome 服务器", "Connect to Your Navidrome Server")}
+          </div>
           <div className="flex flex-col gap-2.5 w-[360px]">
             <input
               type="text"
               value={server}
               onChange={(e) => setServer(e.target.value)}
-              placeholder="服务器地址（如 music.example.com 或 192.168.1.10:4533）"
+              placeholder={tr(
+                "服务器地址（如 music.example.com 或 192.168.1.10:4533）",
+                "Server URL (e.g. music.example.com or 192.168.1.10:4533)",
+              )}
               className={inputClass}
             />
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="用户名"
+              placeholder={tr("用户名", "Username")}
               className={inputClass}
             />
             <input
@@ -433,17 +448,19 @@ export default function NavidromePanel() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && connect()}
-              placeholder="密码（保存在系统凭据管理器）"
+              placeholder={tr("密码（保存在系统凭据管理器）", "Password (stored in OS credential manager)")}
               className={inputClass}
             />
             <button className="btn-primary h-10" onClick={connect} disabled={connecting}>
               {connecting ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-              连接
+              {tr("连接", "Connect")}
             </button>
           </div>
           <div className="text-[11px] text-[var(--ink-3)] max-w-[360px] text-center leading-relaxed">
-            兼容 Navidrome 及所有 Subsonic API 服务器。密码仅保存在本机系统
-            凭据管理器中（Windows 凭据管理器 / Linux Secret Service），不上传、不落明文。
+            {tr(
+              "兼容 Navidrome 及所有 Subsonic API 服务器。密码仅保存在本机系统凭据管理器中（Windows 凭据管理器 / Linux Secret Service），不上传、不落明文。",
+              "Compatible with Navidrome and Subsonic API servers. Passwords are stored locally in your OS credential store (Windows Credential Manager / Linux Secret Service) and never saved in plaintext.",
+            )}
           </div>
         </div>
       ) : (
@@ -454,7 +471,7 @@ export default function NavidromePanel() {
               <button
                 className="btn-ghost w-10 h-10 shrink-0"
                 onClick={goBack}
-                title="返回上一页"
+                title={tr("返回上一页", "Back")}
               >
                 <ArrowLeft size={16} />
               </button>
@@ -464,8 +481,8 @@ export default function NavidromePanel() {
               {view.page === "album"
                 ? view.name
                 : view.page === "search"
-                  ? `搜索：${view.query}`
-                  : `专辑库 · ${username}`}
+                  ? tr(`搜索：${view.query}`, `Search: ${view.query}`)
+                  : tr(`专辑库 · ${username}`, `Albums · ${username}`)}
             </span>
             <div className="relative flex-1 max-w-[380px] ml-auto">
               <Search
@@ -477,16 +494,20 @@ export default function NavidromePanel() {
                 value={kw}
                 onChange={(e) => setKw(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitSearch()}
-                placeholder="搜索服务器曲库…"
+                placeholder={tr("搜索服务器曲库…", "Search server library…")}
                 className={searchInputClass}
               />
             </div>
-            <button className="btn-primary h-10" onClick={submitSearch} disabled={loading}>
+            <button className="btn-primary h-10 shrink-0 whitespace-nowrap" onClick={submitSearch} disabled={loading}>
               {loading ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
-              搜索
+              {tr("搜索", "Search")}
             </button>
-            <button className="btn-secondary h-9 !px-3 text-[12px]" onClick={forget} title="断开并清除保存的密码">
-              断开
+            <button
+              className="btn-secondary h-9 !px-3 text-[12px] shrink-0 whitespace-nowrap"
+              onClick={forget}
+              title={tr("断开并清除保存的密码", "Disconnect and clear saved password")}
+            >
+              {tr("断开", "Disconnect")}
             </button>
           </div>
 
@@ -494,8 +515,8 @@ export default function NavidromePanel() {
           <div className="flex items-center gap-1.5 mb-3 shrink-0">
             {(
               [
-                ["albums", `专辑 (${albums.length})`],
-                ["songs", `歌曲 (${total || allSongs.length})`],
+                ["albums", tr(`专辑 (${albums.length})`, `Albums (${albums.length})`)],
+                ["songs", tr(`歌曲 (${total || allSongs.length})`, `Songs (${total || allSongs.length})`)],
               ] as const
             ).map(([k, label]) => (
               <button
@@ -529,7 +550,7 @@ export default function NavidromePanel() {
             {loading && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
-                加载中…
+                {tr("加载中…", "Loading…")}
               </div>
             )}
             {!loading && view.page === "songs" && (
@@ -559,7 +580,7 @@ export default function NavidromePanel() {
                       <button
                         className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--ink-3)] group-hover:bg-[var(--accent)] group-hover:text-[var(--accent-on)] transition-colors"
                         onClick={() => playSong(s)}
-                        title="播放"
+                        title={tr("播放", "Play")}
                       >
                         <Play size={14} className="fill-current ml-px" />
                       </button>
@@ -575,7 +596,7 @@ export default function NavidromePanel() {
                         <button
                           className="btn-ghost w-8 h-8"
                           onClick={() => downloadSong(s)}
-                          title="下载到资料库"
+                          title={tr("下载到资料库", "Download to Library")}
                         >
                           <Download size={14} />
                         </button>
@@ -583,9 +604,9 @@ export default function NavidromePanel() {
                           className="btn-ghost w-8 h-8"
                           onClick={(ev) => {
                             const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-                            setMenu({ x: r.right - 200, y: r.bottom + 4, song: s });
+                            setMenu({ x: r.right - 215, y: r.bottom + 4, song: s });
                           }}
-                          title={isSkeuo ? "更多选项" : undefined}
+                          title={isSkeuo ? tr("更多选项", "More Options") : undefined}
                         >
                           <MoreHorizontal
                             size={16}
@@ -611,13 +632,13 @@ export default function NavidromePanel() {
                     <div className="flex justify-center pt-2 pb-4">
                       <button className="btn-secondary !py-1.5 !px-4" onClick={loadMoreSongs}>
                         {loading ? <Loader2 size={13} className="animate-spin" /> : null}
-                        加载更多（{allSongs.length}/{total}）
+                        {tr(`加载更多（${allSongs.length}/${total}）`, `Load More (${allSongs.length}/${total})`)}
                       </button>
                     </div>
                   )}
                   {!allSongs.length && (
                     <div className="text-center text-[var(--ink-3)] text-[13px] pt-10">
-                      服务器曲库为空
+                      {tr("服务器曲库为空", "Server library is empty")}
                     </div>
                   )}
                 </div>
@@ -648,13 +669,13 @@ export default function NavidromePanel() {
                     </div>
                     <div className="text-[13px] text-[var(--ink)] truncate font-medium">{a.name}</div>
                     <div className="text-[11.5px] text-[var(--ink-3)] truncate">
-                      {a.artist} · {a.songCount} 首
+                      {a.artist} · {tr(`${a.songCount} 首`, `${a.songCount} ${a.songCount === 1 ? "song" : "songs"}`)}
                     </div>
                   </button>
                 ))}
                 {!albums.length && (
                   <div className="col-span-4 text-center text-[var(--ink-3)] text-[13px] pt-10">
-                    服务器曲库为空
+                    {tr("服务器曲库为空", "Server library is empty")}
                   </div>
                 )}
               </div>
@@ -666,7 +687,7 @@ export default function NavidromePanel() {
                   <div className="flex items-end gap-4 mb-4">
                     <div className="text-[22px] font-extrabold text-[var(--ink)]">{view.name}</div>
                     <div className="text-[12.5px] text-[var(--ink-3)] pb-1">
-                      {view.artist} · {rows.length} 首
+                      {view.artist} · {tr(`${rows.length} 首`, `${rows.length} ${rows.length === 1 ? "song" : "songs"}`)}
                     </div>
                   </div>
                 )}
@@ -684,7 +705,7 @@ export default function NavidromePanel() {
                       <button
                         className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--ink-3)] group-hover:bg-[var(--accent)] group-hover:text-[var(--accent-on)] transition-colors"
                         onClick={() => playSong(s)}
-                        title="播放"
+                        title={tr("播放", "Play")}
                       >
                         <Play size={14} className="fill-current ml-px" />
                       </button>
@@ -700,7 +721,7 @@ export default function NavidromePanel() {
                         <button
                           className="btn-ghost w-8 h-8"
                           onClick={() => downloadSong(s)}
-                          title="下载到资料库"
+                          title={tr("下载到资料库", "Download to Library")}
                         >
                           <Download size={14} />
                         </button>
@@ -708,9 +729,9 @@ export default function NavidromePanel() {
                           className="btn-ghost w-8 h-8"
                           onClick={(ev) => {
                             const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-                            setMenu({ x: r.right - 200, y: r.bottom + 4, song: s });
+                            setMenu({ x: r.right - 215, y: r.bottom + 4, song: s });
                           }}
-                          title={isSkeuo ? "更多选项" : undefined}
+                          title={isSkeuo ? tr("更多选项", "More Options") : undefined}
                         >
                           <MoreHorizontal
                             size={16}
@@ -726,7 +747,9 @@ export default function NavidromePanel() {
                   ))}
                   {!rows.length && (
                     <div className="text-center text-[var(--ink-3)] text-[13px] pt-10">
-                      {view.page === "search" && searched ? "没有找到相关歌曲" : "专辑暂无曲目"}
+                      {view.page === "search" && searched
+                        ? tr("没有找到相关歌曲", "No matching tracks found")
+                        : tr("专辑暂无曲目", "No tracks in this album")}
                     </div>
                   )}
                 </div>
@@ -740,9 +763,9 @@ export default function NavidromePanel() {
       {menu &&
         createPortal(
           <div
-            className="fixed z-[75] w-[190px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
+            className="fixed z-[75] w-[215px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
             style={(() => {
-              const p = clampMenuPos(menu.x, menu.y, 190, 220);
+              const p = clampMenuPos(menu.x, menu.y, 215, 220);
               return { left: p.x, top: p.y };
             })()}
             onMouseDown={(e) => e.stopPropagation()}
@@ -755,7 +778,7 @@ export default function NavidromePanel() {
                 setMenu(null);
               }}
             >
-              <Play size={13} /> 播放
+              <Play size={13} /> {tr("播放", "Play")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -764,7 +787,7 @@ export default function NavidromePanel() {
                 setMenu(null);
               }}
             >
-              <ListPlus size={13} /> 下一首播放
+              <ListPlus size={13} /> {tr("下一首播放", "Play Next")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -773,7 +796,7 @@ export default function NavidromePanel() {
                 setMenu(null);
               }}
             >
-              <ListPlus size={13} /> 加入队列
+              <ListPlus size={13} /> {tr("加入队列", "Add to Queue")}
             </button>
             <div className="my-1 mx-2 border-t border-[var(--line)]" />
             <button
@@ -783,7 +806,7 @@ export default function NavidromePanel() {
                 setMenu(null);
               }}
             >
-              <Check size={13} /> 收藏到“我喜欢”
+              <Check size={13} /> {tr("收藏到“我喜欢”", "Add to Favorites")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -792,7 +815,7 @@ export default function NavidromePanel() {
                 setMenu(null);
               }}
             >
-              <ListPlus size={13} /> 添加到播放列表…
+              <ListPlus size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
             </button>
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
@@ -801,7 +824,7 @@ export default function NavidromePanel() {
                 setMenu(null);
               }}
             >
-              <Download size={13} /> 下载到资料库
+              <Download size={13} /> {tr("下载到资料库", "Download to Library")}
             </button>
           </div>,
           document.body
@@ -809,7 +832,7 @@ export default function NavidromePanel() {
 
       {/* 添加到播放列表 */}
       {pickerSong && (
-        <Modal open onClose={() => setPickerSong(null)} title="添加到播放列表" width={380}>
+        <Modal open onClose={() => setPickerSong(null)} title={tr("添加到播放列表", "Add to Playlist")} width={380}>
           <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
             {playlists.map((p) => (
               <button
@@ -817,25 +840,25 @@ export default function NavidromePanel() {
                 className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
                 onClick={async () => {
                   await addOnlineToPlaylist(p.id, likeRowOf(pickerSong));
-                  toast(`已添加到「${p.name}」`, "success");
+                  toast(tr(`已添加到「${p.name}」`, `Added to "${p.name}"`), "success");
                   setPickerSong(null);
                 }}
               >
                 <span className="truncate">{p.name}</span>
                 <span className="text-[11px] text-[var(--ink-2)]">
-                  {p.entries.length} 首
+                  {tr(`${p.entries.length} 首`, `${p.entries.length} ${p.entries.length === 1 ? "track" : "tracks"}`)}
                 </span>
               </button>
             ))}
             {!playlists.length && (
               <div className="text-[12.5px] text-[var(--ink-2)] py-2">
-                还没有播放列表，请先在侧边栏创建
+                {tr("还没有播放列表，请先在侧边栏创建", "No playlists yet. Create one in the sidebar first.")}
               </div>
             )}
           </div>
           <div className="flex justify-end mt-2">
             <button className="btn-secondary" onClick={() => setPickerSong(null)}>
-              关闭
+              {tr("关闭", "Close")}
             </button>
           </div>
         </Modal>
@@ -846,7 +869,7 @@ export default function NavidromePanel() {
         <div className="fixed bottom-24 right-8 z-[70]">
           <span className="chip text-[var(--ink-2)]" style={{ background: "var(--shade-strong)" }}>
             <Loader2 size={12} className="animate-spin" />
-            正在下载…
+            {tr("正在下载…", "Downloading…")}
           </span>
         </div>
       )}

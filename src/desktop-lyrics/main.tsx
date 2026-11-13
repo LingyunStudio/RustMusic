@@ -11,12 +11,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { LyricLine } from "../types";
 import { estimateLyricWidth, lyricLineProgress } from "../utils";
+import { initI18n, useI18n } from "../i18n";
 import { initTheme } from "../theme";
 import { PLATFORM } from "../platform";
 import "../index.css";
 
 // 主题样式作用域在 html[data-ui]/[data-theme] 上（src/themes/*.css），
 // 副窗口需与主窗口一样初始化，否则拿不到任何主题变量
+initI18n();
 initTheme();
 
 interface PushPayload {
@@ -78,6 +80,7 @@ async function mediaControl(action: string) {
 }
 
 function DesktopLyrics() {
+  const { lang, tr } = useI18n();
   const [data, setData] = useState<PushPayload>({
     lines: null,
     synced: false,
@@ -87,6 +90,10 @@ function DesktopLyrics() {
     title: "",
     artist: "",
   });
+
+  useEffect(() => {
+    document.title = tr("桌面歌词", "Desktop Lyrics");
+  }, [lang, tr]);
   const [locked, setLocked] = useState(false);
   const [hover, setHover] = useState(false);
   // 置顶状态：以窗口真实状态为唯一事实源（后端创建时设了置顶，但
@@ -302,7 +309,9 @@ function DesktopLyrics() {
     data.title && data.artist
       ? `${data.title} · ${data.artist}`
       : data.title || data.artist;
-  const idleText = data.playing ? "纯音乐，请欣赏" : "等待播放…";
+  const idleText = data.playing
+    ? tr("纯音乐，请欣赏", "Instrumental — enjoy")
+    : tr("等待播放…", "Waiting for playback…");
 
   const close = async () => {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -397,7 +406,7 @@ function DesktopLyrics() {
             className="text-[15px] w-8 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
             style={{ color: "rgba(255,255,255,0.85)" }}
             onClick={() => mediaControl("prev")}
-            title="上一首"
+            title={tr("上一首", "Previous")}
           >
             ⏮
           </button>
@@ -405,7 +414,7 @@ function DesktopLyrics() {
             className="text-[15px] w-8 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
             style={{ color: colors.sung }}
             onClick={() => mediaControl("toggle")}
-            title={data.playing ? "暂停" : "播放"}
+            title={data.playing ? tr("暂停", "Pause") : tr("播放", "Play")}
           >
             {data.playing ? "⏸" : "▶"}
           </button>
@@ -413,7 +422,7 @@ function DesktopLyrics() {
             className="text-[15px] w-8 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
             style={{ color: "rgba(255,255,255,0.85)" }}
             onClick={() => mediaControl("next")}
-            title="下一首"
+            title={tr("下一首", "Next")}
           >
             ⏭
           </button>
@@ -422,7 +431,10 @@ function DesktopLyrics() {
             className="text-[13px] w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
             style={{ color: "rgba(255,255,255,0.85)" }}
             onClick={toggleLock}
-            title="锁定：鼠标穿透歌词窗口（控制条随之隐藏），主窗口按 L 或托盘菜单解锁"
+            title={tr(
+              "锁定：鼠标穿透歌词窗口（控制条随之隐藏），主窗口按 L 或托盘菜单解锁",
+              "Lock: click-through lyrics window (hides controls); press L in main window or unlock from tray menu"
+            )}
           >
             🔓
           </button>
@@ -434,7 +446,11 @@ function DesktopLyrics() {
                 : { color: "rgba(255,255,255,0.85)" }
             }
             onClick={toggleTop}
-            title={alwaysTop ? "已置顶（点击取消）" : "置顶（点击后窗口总在最前）"}
+            title={
+              alwaysTop
+                ? tr("已置顶（点击取消）", "Pinned on top (click to unpin)")
+                : tr("置顶（点击后窗口总在最前）", "Pin always on top")
+            }
           >
             📌
           </button>
@@ -442,7 +458,7 @@ function DesktopLyrics() {
             className="text-[13px] w-7 h-7 rounded-lg hover:brightness-125 flex items-center justify-center"
             style={{ color: "rgba(255,255,255,0.85)" }}
             onClick={close}
-            title="关闭"
+            title={tr("关闭", "Close")}
           >
             ✕
           </button>
@@ -555,7 +571,7 @@ function DesktopLyrics() {
           <div
             onMouseDown={startResize}
             className="absolute right-0 bottom-0 w-[20px] h-[20px] cursor-nwse-resize z-10 flex items-center justify-center pointer-events-auto"
-            title="拖动缩放"
+            title={tr("拖动缩放", "Drag to resize")}
           >
             <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: hover || DEBUG_HOVER ? 0.9 : 0 }}>
               <path

@@ -46,5 +46,9 @@ pub fn spawn_exclusive_session<S>(
 where
     S: Source + Send + 'static,
 {
-    Err("WASAPI 独占模式仅支持 Windows".into())
+    Err(crate::i18n::pick(
+        "WASAPI 独占模式仅支持 Windows",
+        "WASAPI Exclusive Mode is only supported on Windows",
+    )
+    .into())
 }
