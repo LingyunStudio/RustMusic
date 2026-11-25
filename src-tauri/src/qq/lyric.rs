@@ -58,10 +58,14 @@ pub fn lyric_qrc(
     });
     let cookie = credential_cookie(musicid, musickey);
     let resp = musicu_signed(&payload, Some(&cookie))?;
+    let outer_code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     let code = resp
         .pointer("/req_1/code")
         .and_then(|c| c.as_i64())
         .unwrap_or(0);
+    if is_expired_code(outer_code) || is_expired_code(code) {
+        return Err(session_expired_err());
+    }
     if code != 0 {
         return Ok(None);
     }

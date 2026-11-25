@@ -14,8 +14,9 @@ use crate::db;
 const SERVICE: &str = "RustMusic";
 
 /// 走 keyring 的 token 键
-const KEYS: [&str; 5] = [
+const KEYS: [&str; 6] = [
     "qq_musickey",
+    "qq_session",
     "kg_token",
     "netease_music_u",
     "bili_sessdata",
@@ -81,6 +82,31 @@ pub fn migrate_legacy(conn: &rusqlite::Connection) {
             eprintln!("[credentials] {key} 已迁移至系统凭据管理器");
         } else {
             eprintln!("[credentials] {key} 迁移失败（凭据管理器不可用），保留明文待下次重试");
+        }
+    }
+    // 兼容迁移：旧版本曾把微信续期凭证 wxrefresh_token 明文存于 settings 表，
+    // 迁入 keyring 的 qq_session JSON 后清理库内明文残留
+    let legacy_wx_rt = db::get_setting(conn, "qq_wx_refresh_token").unwrap_or_default();
+    if !legacy_wx_rt.is_empty() {
+        if get("qq_session").is_none() {
+            let musicid = db::get_setting(conn, "qq_musicid").unwrap_or_default();
+            let musickey = get("qq_musickey").unwrap_or_default();
+            let euin = db::get_setting(conn, "qq_encrypt_uin").unwrap_or_default();
+            let nick = db::get_setting(conn, "qq_nickname").unwrap_or_default();
+            let seeded = serde_json::json!({
+                "musicid": musicid,
+                "musickey": musickey,
+                "loginType": 1,
+                "refreshToken": legacy_wx_rt,
+                "encryptUin": euin,
+                "nickname": nick,
+            });
+            if set("qq_session", &seeded.to_string()).is_ok() {
+                let _ = db::set_setting(conn, "qq_wx_refresh_token", "");
+                eprintln!("[credentials] qq_wx_refresh_token 已迁入系统凭据管理器 qq_session");
+            }
+        } else {
+            let _ = db::set_setting(conn, "qq_wx_refresh_token", "");
         }
     }
 }

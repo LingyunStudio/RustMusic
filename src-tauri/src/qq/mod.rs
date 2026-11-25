@@ -4,7 +4,7 @@
 //! 会员权益获取播放链接，不包含任何绕过付费 / 版权限制的功能。
 
 use base64::Engine;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha1::{Digest as Sha1Digest, Sha1};
 use std::io::Read;
 use std::time::Duration;
@@ -220,6 +220,27 @@ fn chrono_now_ms() -> u128 {
         .unwrap_or(0)
 }
 
+pub fn now_secs() -> i64 {
+    (chrono_now_ms() / 1000) as i64
+}
+
+/// QQ 音乐 CGI 登录态过期错误码集合（UrlGetVkey=104009，通用鉴权网关=1000/104400/104401）
+pub fn is_expired_code(code: i64) -> bool {
+    matches!(code, 1000 | 104009 | 104400 | 104401)
+}
+
+pub fn session_expired_err() -> String {
+    crate::i18n::pick(
+        "QQ 音乐登录已过期，请重新登录",
+        "QQ Music session expired, please sign in again",
+    )
+    .into()
+}
+
+pub fn is_session_expired_err(err: &str) -> bool {
+    err.contains("QQ 音乐登录已过期") || err.contains("QQ Music session expired")
+}
+
 fn plain_get(url: &str, referer: &str) -> Result<String, String> {
     send_with_recover(|| {
         http_agent()
@@ -314,6 +335,164 @@ mod tests {
         assert_eq!(cookie_value(&cookies, "wxuin"), Some("2534405790".into()));
         assert_eq!(cookie_value(&cookies, "wxrefresh_token"), Some("17_AAA=BBB".into()));
         assert_eq!(cookie_value(&cookies, "missing"), None);
+    }
+
+    #[test]
+    fn test_qq_session_parse_qq_and_wx() {
+        // 1) QQ 扫码响应（QQConnectLogin.LoginServer）：含 refresh_key / refresh_token / keyExpiresIn
+        let qq_json = serde_json::json!({
+            "code": 0,
+            "req_1": {
+                "code": 0,
+                "data": {
+                    "openid": "OID_QQ_1",
+                    "refresh_token": "RT_QQ_1",
+                    "access_token": "AT_QQ_1",
+                    "expired_at": 1800000000i64,
+                    "musicid": 123456789i64,
+                    "str_musicid": "123456789",
+                    "musickey": "Q_H_L_key_v1",
+                    "musickeyCreateTime": 1700000000i64,
+                    "keyExpiresIn": 259200i64,
+                    "refresh_key": "RK_QQ_1",
+                    "encryptUin": "oK6kowEAoK4z",
+                    "nick": "测试用户",
+                    "loginType": 2
+                }
+            }
+        });
+        let s_qq = parse_session_from_login_json(&qq_json, &[], 2).expect("parse qq session");
+        assert_eq!(s_qq.musicid, "123456789");
+        assert_eq!(s_qq.musickey, "Q_H_L_key_v1");
+        assert_eq!(s_qq.login_type, 2);
+        assert_eq!(s_qq.openid, "OID_QQ_1");
+        assert_eq!(s_qq.access_token, "AT_QQ_1");
+        assert_eq!(s_qq.refresh_token, "RT_QQ_1");
+        assert_eq!(s_qq.refresh_key, "RK_QQ_1");
+        assert_eq!(s_qq.expired_at, 1_800_000_000);
+        assert_eq!(s_qq.musickey_create_time, 1_700_000_000);
+        assert_eq!(s_qq.key_expires_in, 259_200);
+        assert_eq!(s_qq.encrypt_uin, "oK6kowEAoK4z");
+        assert_eq!(s_qq.nickname, "测试用户");
+        assert!(s_qq.can_refresh());
+
+        // 2) 微信扫码响应：JSON 字段缺省时回退 Set-Cookie（qm_keyst + wxuin + wxrefresh_token）
+        let wx_json = serde_json::json!({
+            "code": 0,
+            "req": {
+                "code": 0,
+                "data": {
+                    "openid": "WX_OID",
+                    "unionid": "WX_UID",
+                    "nick": "微信听友"
+                }
+            }
+        });
+        let wx_cookies = vec![
+            "qm_keyst=W_X_wx_key_v1; Path=/; HttpOnly".to_string(),
+            "wxuin=1152921504999999999; Path=/".to_string(),
+            "wxrefresh_token=99_wx_rt_token==; Path=/".to_string(),
+        ];
+        let s_wx =
+            parse_session_from_login_json(&wx_json, &wx_cookies, 1).expect("parse wx session");
+        assert_eq!(s_wx.musicid, "1152921504999999999");
+        assert_eq!(s_wx.musickey, "W_X_wx_key_v1");
+        assert_eq!(s_wx.login_type, 1);
+        assert_eq!(s_wx.openid, "WX_OID");
+        assert_eq!(s_wx.unionid, "WX_UID");
+        assert_eq!(s_wx.refresh_token, "99_wx_rt_token==");
+        assert_eq!(s_wx.nickname, "微信听友");
+        assert!(s_wx.can_refresh());
+    }
+
+    #[test]
+    fn test_qq_session_expiry_and_merge() {
+        let base = QqSession {
+            musicid: "123456".into(),
+            musickey: "Q_H_L_old".into(),
+            login_type: 2,
+            openid: "OID".into(),
+            unionid: "UID".into(),
+            access_token: "AT".into(),
+            refresh_token: "RT".into(),
+            refresh_key: "RK_OLD".into(),
+            expired_at: 1_900_000_000,
+            musickey_create_time: 1_000_000,
+            key_expires_in: 259_200, // 72h
+            encrypt_uin: "EUIN".into(),
+            nickname: "Nick".into(),
+        };
+
+        // 刚登录（+10h）：未过期，也未进主动续期窗口（剩余 62h > 36h）
+        assert!(!base.is_expired_at(1_000_000 + 10 * 3600));
+        assert!(!base.needs_proactive_refresh(1_000_000 + 10 * 3600));
+
+        // 过半（+40h，剩余 32h ≤ 36h）：尚未硬过期，但进入后台静默续期窗口
+        assert!(!base.is_expired_at(1_000_000 + 40 * 3600));
+        assert!(base.needs_proactive_refresh(1_000_000 + 40 * 3600));
+
+        // 临近/到达 72h（含 5 分钟提前量）：判定已过期
+        assert!(base.is_expired_at(1_000_000 + 259_200 - 200));
+
+        // 合并续期响应：服务端仅下发新 musickey 与时间、省略未变字段时，原长效令牌必须保留
+        let partial_fresh = QqSession {
+            musicid: "123456".into(),
+            musickey: "Q_H_L_new".into(),
+            musickey_create_time: 1_200_000,
+            key_expires_in: 259_200,
+            ..Default::default()
+        };
+        let merged = base.merge_refresh(partial_fresh, 1_200_005);
+        assert_eq!(merged.musickey, "Q_H_L_new");
+        assert_eq!(merged.openid, "OID");
+        assert_eq!(merged.unionid, "UID");
+        assert_eq!(merged.access_token, "AT");
+        assert_eq!(merged.refresh_token, "RT");
+        assert_eq!(merged.refresh_key, "RK_OLD");
+        assert_eq!(merged.encrypt_uin, "EUIN");
+        assert_eq!(merged.nickname, "Nick");
+        assert!(!merged.is_expired_at(1_200_000 + 3600));
+    }
+
+    #[test]
+    fn test_qq_build_refresh_payload_qq_and_wx() {
+        let qq_sess = QqSession {
+            musicid: "987654321".into(),
+            musickey: "Q_H_L_tok".into(),
+            login_type: 2,
+            openid: "oid_q".into(),
+            access_token: "at_q".into(),
+            refresh_token: "rt_q".into(),
+            refresh_key: "rk_q".into(),
+            expired_at: 1_888_888_888,
+            ..Default::default()
+        };
+        let p_qq = build_refresh_payload(&qq_sess);
+        assert_eq!(p_qq.pointer("/comm/tmeLoginType").and_then(|v| v.as_str()), Some("2"));
+        assert_eq!(p_qq.pointer("/req_1/module").and_then(|v| v.as_str()), Some("music.login.LoginServer"));
+        assert_eq!(p_qq.pointer("/req_1/method").and_then(|v| v.as_str()), Some("Login"));
+        assert_eq!(p_qq.pointer("/req_1/param/loginMode").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(p_qq.pointer("/req_1/param/musicid").and_then(|v| v.as_i64()), Some(987_654_321));
+        assert_eq!(p_qq.pointer("/req_1/param/refresh_key").and_then(|v| v.as_str()), Some("rk_q"));
+
+        let wx_sess = QqSession {
+            musicid: "1152921504888888888".into(),
+            musickey: "W_X_tok".into(),
+            login_type: 1,
+            openid: "oid_w".into(),
+            unionid: "uid_w".into(),
+            refresh_token: "rt_w".into(),
+            refresh_key: "rk_w".into(),
+            ..Default::default()
+        };
+        let p_wx = build_refresh_payload(&wx_sess);
+        assert_eq!(p_wx.pointer("/comm/tmeLoginType").and_then(|v| v.as_str()), Some("1"));
+        assert_eq!(
+            p_wx.pointer("/req_1/param/str_musicid").and_then(|v| v.as_str()),
+            Some("1152921504888888888")
+        );
+        assert_eq!(p_wx.pointer("/req_1/param/refresh_token").and_then(|v| v.as_str()), Some("rt_w"));
+        assert_eq!(p_wx.pointer("/req_1/param/loginMode").and_then(|v| v.as_i64()), Some(2));
     }
 
     /// 走真实微信接口：取二维码 + 一次长轮询（应返回等待态）。

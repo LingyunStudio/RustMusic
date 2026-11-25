@@ -310,6 +310,10 @@ fn main() {
             let dwhandle = handle.clone();
             std::thread::spawn(move || device_watcher(dwhandle));
 
+            // QQ 音乐登录态后台保活：musickey 服务端寿命仅约 72h，常驻托盘期间
+            // 定期检查并在过半后用 refresh_key/refresh_token 静默换新
+            commands::spawn_qq_keepalive(handle.clone());
+
             setup_tray(&handle)?;
             Ok(())
         })

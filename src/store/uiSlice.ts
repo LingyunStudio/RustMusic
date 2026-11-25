@@ -448,6 +448,16 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       )
     );
 
+    // QQ 音乐登录态在后台续期仍被服务端判定彻底失效（如修改密码/授权吊销）时，
+    // 即时同步前端登录徽标，避免界面残留虚假的“已登录”状态
+    unbinds.push(
+      await listenEvent("qq://session-expired", () => {
+        if (get().qqLoggedIn) {
+          get().qqSetLogin(false, "");
+        }
+      })
+    );
+
     // 主窗口隐藏到托盘时 WebView 会被挂起（后端 TrySuspend 回收渲染内存），
     // 挂起期间发往前端的事件全部丢失：恢复后刷新一遍数据收敛状态
     unbinds.push(
@@ -458,6 +468,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
         s.refreshPlaylists();
         s.refreshRecentOnline();
         s.refreshCacheBytes();
+        s.qqRefreshStatus();
         // 扫描进度以快照为准；下载完成事件若丢失则复位下载条
         api.getScanState().then((scan) => {
           const s = get().scan;

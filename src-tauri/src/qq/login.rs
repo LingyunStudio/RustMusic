@@ -84,6 +84,147 @@ fn parse_query_param(url: &str, key: &str) -> Option<String> {
     None
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct QqSession {
+    pub musicid: String,
+    pub musickey: String,
+    /// 1 = 微信扫码（W_X_），2 = QQ 扫码（Q_H_L_）
+    pub login_type: i64,
+    pub openid: String,
+    pub unionid: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub refresh_key: String,
+    pub expired_at: i64,
+    /// musickey 签发时间戳（Unix 秒）
+    pub musickey_create_time: i64,
+    /// musickey 有效时长（秒，服务端标准值为 259200 = 72 小时）
+    pub key_expires_in: i64,
+    pub encrypt_uin: String,
+    pub nickname: String,
+}
+
+impl QqSession {
+    /// QQ 音乐 musickey 默认有效期：72 小时（259200 秒）
+    pub const DEFAULT_KEY_EXPIRES_IN: i64 = 259_200;
+    /// 过期判定提前量（5 分钟），避免卡在临界秒数发出必败请求
+    pub const EXPIRY_SAFETY_MARGIN_SECS: i64 = 300;
+    /// 主动续期窗口：剩余寿命 ≤ 36 小时（即 72h 票据过半后）即后台静默换新
+    pub const PROACTIVE_REFRESH_REMAINING_SECS: i64 = 36 * 3600;
+
+    pub fn infer_login_type(explicit: i64, musickey: &str) -> i64 {
+        if explicit == 1 || explicit == 2 {
+            explicit
+        } else if musickey.starts_with("W_X") {
+            1
+        } else {
+            2
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.musicid.is_empty() && !self.musickey.is_empty()
+    }
+
+    /// 是否持有可用于续期的长效令牌（refresh_key 或 refresh_token）
+    pub fn can_refresh(&self) -> bool {
+        !self.musicid.is_empty()
+            && (!self.refresh_key.is_empty() || !self.refresh_token.is_empty())
+    }
+
+    /// 按本地记录的签发时间判断 musickey 是否已过期。
+    /// 旧版遗留会话（musickey_create_time == 0）无时间戳，返回 false 交由实际接口判定。
+    pub fn is_expired_at(&self, now: i64) -> bool {
+        if self.musickey_create_time <= 0 {
+            return false;
+        }
+        let ttl = if self.key_expires_in > 0 {
+            self.key_expires_in
+        } else {
+            Self::DEFAULT_KEY_EXPIRES_IN
+        };
+        let effective_ttl = (ttl - Self::EXPIRY_SAFETY_MARGIN_SECS).max(60);
+        now >= self.musickey_create_time + effective_ttl
+    }
+
+    /// 是否进入主动续期窗口（剩余有效期 ≤ 36h 或 ≤ 总寿命一半；
+    /// 若旧会话无签发时间但已有 refresh_token，也主动刷新一次以补齐时间戳）
+    pub fn needs_proactive_refresh(&self, now: i64) -> bool {
+        if !self.can_refresh() {
+            return false;
+        }
+        if self.musickey_create_time <= 0 {
+            return true;
+        }
+        let ttl = if self.key_expires_in > 0 {
+            self.key_expires_in
+        } else {
+            Self::DEFAULT_KEY_EXPIRES_IN
+        };
+        let remaining = (self.musickey_create_time + ttl) - now;
+        let threshold = Self::PROACTIVE_REFRESH_REMAINING_SECS.min(ttl / 2).max(1800);
+        remaining <= threshold
+    }
+
+    /// 合并刷新响应：服务端未重发的长效字段（openid/unionid/refresh_token/refresh_key/encrypt_uin 等）
+    /// 保留原值，绝不用空串覆盖有效凭据
+    pub fn merge_refresh(&self, fresh: QqSession, now: i64) -> QqSession {
+        let pick_str = |new_val: String, old_val: &str| -> String {
+            if new_val.is_empty() {
+                old_val.to_string()
+            } else {
+                new_val
+            }
+        };
+        let musickey = pick_str(fresh.musickey, &self.musickey);
+        let login_type = if fresh.login_type == 1 || fresh.login_type == 2 {
+            fresh.login_type
+        } else {
+            Self::infer_login_type(self.login_type, &musickey)
+        };
+        QqSession {
+            musicid: pick_str(fresh.musicid, &self.musicid),
+            musickey,
+            login_type,
+            openid: pick_str(fresh.openid, &self.openid),
+            unionid: pick_str(fresh.unionid, &self.unionid),
+            access_token: pick_str(fresh.access_token, &self.access_token),
+            refresh_token: pick_str(fresh.refresh_token, &self.refresh_token),
+            refresh_key: pick_str(fresh.refresh_key, &self.refresh_key),
+            expired_at: if fresh.expired_at > 0 {
+                fresh.expired_at
+            } else {
+                self.expired_at
+            },
+            musickey_create_time: if fresh.musickey_create_time > 0 {
+                fresh.musickey_create_time
+            } else {
+                now
+            },
+            key_expires_in: if fresh.key_expires_in > 0 {
+                fresh.key_expires_in
+            } else if self.key_expires_in > 0 {
+                self.key_expires_in
+            } else {
+                Self::DEFAULT_KEY_EXPIRES_IN
+            },
+            encrypt_uin: pick_str(fresh.encrypt_uin, &self.encrypt_uin),
+            nickname: pick_str(fresh.nickname, &self.nickname),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefreshError {
+    /// 本地缺少 refresh_key / refresh_token（如升级前的旧登录态），无法静默续期
+    MissingRefreshToken,
+    /// 服务端明确拒绝（刷新凭证本身已过期、解绑或账号受限），需重新扫码
+    AuthExpired(i64, String),
+    /// 网络抖动或临时网关异常（应保留本地凭据，待下次重试）
+    Transient(String),
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct QqQrCheck {
@@ -93,9 +234,298 @@ pub struct QqQrCheck {
     pub musicid: Option<String>,
     pub musickey: Option<String>,
     pub encrypt_uin: Option<String>,
-    /// 微信链路的续期凭证（wxrefresh_token）。此前直接丢弃——官方客户端
-    /// 靠它定期换新 qm_keyst，本地留存为后续续期能力打基础（issue#8-5）
     pub refresh_token: Option<String>,
+    pub session: Option<QqSession>,
+}
+
+fn json_str_field(obj: &serde_json::Value, key: &str) -> Option<String> {
+    obj.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn json_i64_field(obj: &serde_json::Value, key: &str) -> Option<i64> {
+    obj.get(key).and_then(|v| {
+        v.as_i64()
+            .or_else(|| v.as_u64().and_then(|n| i64::try_from(n).ok()))
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+    })
+}
+
+/// 从 QQLogin / LoginServer 响应 JSON 与 Set-Cookie 解析完整会话凭证
+pub(super) fn parse_session_from_login_json(
+    body: &serde_json::Value,
+    cookies: &[String],
+    default_login_type: i64,
+) -> Option<QqSession> {
+    let data = body
+        .pointer("/req_1/data")
+        .or_else(|| body.pointer("/req/data"))
+        .or_else(|| body.pointer("/req_0/data"))
+        .or_else(|| body.get("data"))
+        .unwrap_or(body);
+
+    let (cred_id, cred_key) = find_credential(body)
+        .map(|(i, k)| (Some(i), Some(k)))
+        .unwrap_or((None, None));
+
+    let musicid = json_str_field(data, "str_musicid")
+        .or_else(|| {
+            json_i64_field(data, "musicid")
+                .filter(|&n| n > 0)
+                .map(|n| n.to_string())
+        })
+        .or(cred_id)
+        .or_else(|| cookie_value(cookies, "wxuin"))
+        .or_else(|| cookie_value(cookies, "uin"))
+        .or_else(|| cookie_value(cookies, "qqmusic_uin"))
+        .unwrap_or_default();
+
+    let musickey = json_str_field(data, "musickey")
+        .or(cred_key)
+        .or_else(|| cookie_value(cookies, "qm_keyst"))
+        .or_else(|| cookie_value(cookies, "qqmusic_key"))
+        .unwrap_or_default();
+
+    if musicid.is_empty() || musickey.is_empty() {
+        return None;
+    }
+
+    let raw_lt = json_i64_field(data, "loginType")
+        .or_else(|| json_i64_field(data, "login_type"))
+        .unwrap_or(0);
+    let login_type = QqSession::infer_login_type(
+        if raw_lt == 1 || raw_lt == 2 {
+            raw_lt
+        } else {
+            default_login_type
+        },
+        &musickey,
+    );
+
+    let openid = json_str_field(data, "openid")
+        .or_else(|| find_str_anywhere(body, "openid"))
+        .or_else(|| cookie_value(cookies, "wxopenid"))
+        .unwrap_or_default();
+    let unionid = json_str_field(data, "unionid")
+        .or_else(|| find_str_anywhere(body, "unionid"))
+        .unwrap_or_default();
+    let access_token = json_str_field(data, "access_token")
+        .or_else(|| find_str_anywhere(body, "access_token"))
+        .unwrap_or_default();
+    let refresh_token = json_str_field(data, "refresh_token")
+        .or_else(|| json_str_anywhere_nonempty(body, &["refresh_token", "wxrefresh_token"]))
+        .or_else(|| cookie_value(cookies, "wxrefresh_token"))
+        .unwrap_or_default();
+    let refresh_key = json_str_field(data, "refresh_key")
+        .or_else(|| find_str_anywhere(body, "refresh_key"))
+        .or_else(|| cookie_value(cookies, "qm_refresh_key"))
+        .unwrap_or_default();
+    let expired_at = json_i64_field(data, "expired_at").unwrap_or(0);
+    let now = now_secs();
+    let musickey_create_time = json_i64_field(data, "musickeyCreateTime")
+        .filter(|&t| t > 0)
+        .unwrap_or(now);
+    let key_expires_in = json_i64_field(data, "keyExpiresIn")
+        .filter(|&t| t > 0)
+        .unwrap_or(QqSession::DEFAULT_KEY_EXPIRES_IN);
+    let encrypt_uin = json_str_field(data, "encryptUin")
+        .or_else(|| find_str_anywhere(body, "encryptUin"))
+        .unwrap_or_default();
+    let nickname = ["nick", "nickname", "nickName"]
+        .iter()
+        .find_map(|k| json_str_field(data, k).or_else(|| find_str_anywhere(body, k)))
+        .unwrap_or_default();
+
+    Some(QqSession {
+        musicid,
+        musickey,
+        login_type,
+        openid,
+        unionid,
+        access_token,
+        refresh_token,
+        refresh_key,
+        expired_at,
+        musickey_create_time,
+        key_expires_in,
+        encrypt_uin,
+        nickname,
+    })
+}
+
+fn json_str_anywhere_nonempty(body: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|k| find_str_anywhere(body, k))
+}
+
+/// 发送登录/续期 CGI 请求并同时捕获响应 JSON 与 Set-Cookie：
+/// 优先走签名通道（musics.fcg），网关/解析失败再回退明文通道（musicu.fcg）
+fn post_login_cgi(
+    payload: &serde_json::Value,
+    cookie: Option<&str>,
+) -> Result<(serde_json::Value, Vec<String>), String> {
+    let body = serde_json::to_string(payload).map_err(|e| e.to_string())?;
+    let call_endpoint = |url: &str| -> Result<(serde_json::Value, Vec<String>), String> {
+        let mut req = http_agent()
+            .post(url)
+            .set("Content-Type", "application/json")
+            .set("Referer", "https://y.qq.com/")
+            .set("Origin", "https://y.qq.com")
+            .set("User-Agent", UA)
+            .timeout(TIMEOUT);
+        if let Some(c) = cookie {
+            req = req.set("Cookie", c);
+        }
+        let resp = send_with_recover(|| req.clone().send_string(&body))?;
+        let cookies: Vec<String> = resp
+            .all("Set-Cookie")
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect();
+        let text = resp.into_string().map_err(|e| e.to_string())?;
+        let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            let head: String = text.chars().take(150).collect();
+            format!("{e} | body: {head}")
+        })?;
+        Ok((json, cookies))
+    };
+
+    if let Ok(sign) = zzc_sign(&body) {
+        let signed_url = format!(
+            "https://u.y.qq.com/cgi-bin/musics.fcg?_={}&sign={}",
+            chrono_now_ms(),
+            sign
+        );
+        if let Ok((json, cookies)) = call_endpoint(&signed_url) {
+            if json.get("code").and_then(|c| c.as_i64()).unwrap_or(0) == 0 {
+                return Ok((json, cookies));
+            }
+        }
+    }
+    call_endpoint("https://u.y.qq.com/cgi-bin/musicu.fcg")
+}
+
+/// 构造双渠道统一续期载荷（music.login.LoginServer / Login, loginMode=2）
+pub(super) fn build_refresh_payload(prev: &QqSession) -> serde_json::Value {
+    let login_type = QqSession::infer_login_type(prev.login_type, &prev.musickey);
+    let param = if login_type == 1 {
+        serde_json::json!({
+            "openid": prev.openid,
+            "refresh_token": prev.refresh_token,
+            "str_musicid": prev.musicid,
+            "musickey": prev.musickey,
+            "unionid": prev.unionid,
+            "refresh_key": prev.refresh_key,
+            "loginMode": 2,
+        })
+    } else {
+        let musicid_num = prev.musicid.parse::<i64>().unwrap_or(0);
+        serde_json::json!({
+            "openid": prev.openid,
+            "access_token": prev.access_token,
+            "refresh_token": prev.refresh_token,
+            "expired_in": prev.expired_at,
+            "musicid": musicid_num,
+            "musickey": prev.musickey,
+            "refresh_key": prev.refresh_key,
+            "loginMode": 2,
+        })
+    };
+    serde_json::json!({
+        "comm": {
+            "ct": "11",
+            "cv": "13020508",
+            "v": "13020508",
+            "tmeAppID": "qqmusic",
+            "tmeLoginType": login_type.to_string(),
+            "qq": prev.musicid,
+            "uin": prev.musicid,
+            "authst": prev.musickey,
+            "g_tk": hash33(&prev.musickey, 5381),
+        },
+        "req_1": {
+            "module": "music.login.LoginServer",
+            "method": "Login",
+            "param": param,
+        }
+    })
+}
+
+pub(super) fn is_auth_revoked_code(code: i64) -> bool {
+    matches!(
+        code,
+        1000 | 104009 | 104400 | 104401 | 20272 | 20274 | 20277 | 20278 | 20450
+    )
+}
+
+/// 用 refresh_key / refresh_token 向 QQ 音乐 LoginServer 静默换取新 musickey
+pub fn refresh_session(prev: &QqSession) -> Result<QqSession, RefreshError> {
+    if !prev.can_refresh() {
+        return Err(RefreshError::MissingRefreshToken);
+    }
+    let login_type = QqSession::infer_login_type(prev.login_type, &prev.musickey);
+    let payload = build_refresh_payload(prev);
+    let cookie = credential_cookie(&prev.musicid, &prev.musickey);
+    let (body, cookies) =
+        post_login_cgi(&payload, Some(&cookie)).map_err(RefreshError::Transient)?;
+
+    let outer_code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+    if outer_code != 0 {
+        return if is_auth_revoked_code(outer_code) {
+            Err(RefreshError::AuthExpired(
+                outer_code,
+                format!("outer code={outer_code}"),
+            ))
+        } else {
+            Err(RefreshError::Transient(format!("outer code={outer_code}")))
+        };
+    }
+
+    let sub_code = body
+        .pointer("/req_1/code")
+        .and_then(|c| c.as_i64())
+        .unwrap_or(-1);
+    if sub_code != 0 {
+        let msg = body
+            .pointer("/req_1/data/errMsg")
+            .or_else(|| body.pointer("/req_1/data/errtip"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        return if is_auth_revoked_code(sub_code) {
+            Err(RefreshError::AuthExpired(sub_code, msg))
+        } else {
+            Err(RefreshError::Transient(format!(
+                "LoginServer code={sub_code} {msg}"
+            )))
+        };
+    }
+
+    let fresh = parse_session_from_login_json(&body, &cookies, login_type).ok_or_else(|| {
+        RefreshError::Transient("refresh response missing musickey/musicid".into())
+    })?;
+    Ok(prev.merge_refresh(fresh, now_secs()))
+}
+
+/// 向 QQ 音乐个人主页轻量接口核实当前 musickey 是否在服务端已失效。
+/// 网络异常返回 None（绝不把断网误判为登录过期）。
+pub fn check_session_expired(musicid: &str, musickey: &str) -> Option<bool> {
+    if musicid.is_empty() || musickey.is_empty() {
+        return Some(true);
+    }
+    let g_tk = hash33(musickey, 5381);
+    let url = format!(
+        "https://c6.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg?g_tk={g_tk}&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&cid=205360838&needNewCode=0&loginUin={}&hostUin=0&userid={}&reqfrom=1",
+        form_encode(musicid),
+        form_encode(musicid),
+    );
+    let text =
+        plain_get_with_cookie(&url, "https://y.qq.com/", &credential_cookie(musicid, musickey))
+            .ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let code = v.get("code").and_then(|c| c.as_i64())?;
+    Some(code != 0)
 }
 
 /// 轮询扫码状态；成功时完成 check_sig → OAuth → QQLogin 换取播放凭证
@@ -126,6 +556,7 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             musickey: None,
             encrypt_uin: None,
             refresh_token: None,
+            session: None,
         });
     }
 
@@ -190,74 +621,52 @@ pub fn qr_check(qrsig: &str) -> Result<QqQrCheck, String> {
             }
         })?;
 
-        // Step 3: QQLogin —— 用 code 换取播放凭证（musicid / musickey）
-        // 先走签名通道（musics.fcg），失败再试明文通道（musicu.fcg）
-        let make_payload = || {
-            serde_json::json!({
-                "comm": {"tmeLoginType": 2},
-                "req_1": {
-                    "module": "QQConnectLogin.LoginServer",
-                    "method": "QQLogin",
-                    "param": {"code": oauth_code}
-                }
-            })
-        };
-        let mut raw_log = String::new();
-        let mut login_resp: Option<serde_json::Value> = None;
-        let mut credential: Option<(String, String)> = None;
-
-        if let Ok(v) = musicu_signed(&make_payload(), None) {
-            login_resp = Some(v.clone());
-            match find_credential(&v) {
-                Some(c) => credential = Some(c),
-                None => raw_log = serde_json::to_string(&v).unwrap_or_default(),
+        // Step 3: QQLogin —— 用 code 换取完整会话凭证（含 refresh_key / refresh_token）
+        let payload = serde_json::json!({
+            "comm": {"tmeLoginType": 2},
+            "req_1": {
+                "module": "QQConnectLogin.LoginServer",
+                "method": "QQLogin",
+                "param": {"code": oauth_code}
             }
-        }
-        if credential.is_none() {
-            let url = "https://u.y.qq.com/cgi-bin/musicu.fcg";
-            if let Ok(body) = serde_json::to_string(&make_payload()) {
-                let sent = ureq::post(url)
-                    .set("Content-Type", "application/json")
-                    .set("Referer", "https://y.qq.com/")
-                    .set("User-Agent", UA)
-                    .timeout(TIMEOUT)
-                    .send_string(&body);
-                if let Ok(r) = sent {
-                    if let Ok(text) = r.into_string() {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                            login_resp = Some(v.clone());
-                            match find_credential(&v) {
-                                Some(c) => credential = Some(c),
-                                None => raw_log = text,
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let (musicid, musickey) = credential.ok_or_else(|| {
+        });
+        let (login_body, login_cookies) = post_login_cgi(&payload, None).map_err(|e| {
+            format!(
+                "{}: {e}",
+                crate::i18n::pick("QQ 登录凭证交换失败", "Failed to exchange QQ login credentials")
+            )
+        })?;
+        let mut sess = parse_session_from_login_json(&login_body, &login_cookies, 2).ok_or_else(|| {
+            let raw_log = serde_json::to_string(&login_body).unwrap_or_default();
             format!(
                 "{} | {}",
                 crate::i18n::pick("登录响应缺少凭证", "Login response missing credentials"),
                 raw_log.chars().take(200).collect::<String>()
             )
         })?;
-        let nickname = args.get(5).cloned();
-        let encrypt_uin = login_resp
-            .as_ref()
-            .and_then(|v| find_str_anywhere(v, "encryptUin"));
-
-        let refresh_token = login_resp
-            .as_ref()
-            .and_then(|v| find_str_anywhere(v, "wxrefresh_token"));
+        let ptui_nick = args.get(5).cloned().filter(|s| !s.is_empty());
+        if sess.nickname.is_empty() {
+            if let Some(n) = &ptui_nick {
+                sess.nickname = n.clone();
+            }
+        }
+        let nickname = if !sess.nickname.is_empty() {
+            Some(sess.nickname.clone())
+        } else {
+            ptui_nick
+        };
+        let musicid = Some(sess.musicid.clone());
+        let musickey = Some(sess.musickey.clone());
+        let encrypt_uin = (!sess.encrypt_uin.is_empty()).then(|| sess.encrypt_uin.clone());
+        let refresh_token = (!sess.refresh_token.is_empty()).then(|| sess.refresh_token.clone());
         Ok(QqQrCheck {
             status: "success".into(),
             nickname,
-            musicid: Some(musicid),
-            musickey: Some(musickey),
+            musicid,
+            musickey,
             encrypt_uin,
             refresh_token,
+            session: Some(sess),
         })
     }
 }
@@ -410,41 +819,30 @@ fn wx_exchange(code: &str) -> Result<QqQrCheck, String> {
         .into_json()
         .map_err(|e| format!("{}: {e}", crate::i18n::pick("微信登录响应解析失败", "Failed to parse WeChat login response")))?;
 
-    let credential = find_credential(&body);
-    let (musicid, musickey) = match credential {
-        Some(c) => c,
-        None => {
-            let key = cookie_value(&cookies, "qm_keyst");
-            let id = cookie_value(&cookies, "wxuin").or_else(|| cookie_value(&cookies, "uin"));
-            match (id, key) {
-                (Some(id), Some(key)) if !id.is_empty() && !key.is_empty() => (id, key),
-                _ => {
-                    return Err(format!(
-                        "{} | {}",
-                        crate::i18n::pick("微信登录响应缺少凭证", "WeChat login response missing credentials"),
-                        serde_json::to_string(&body)
-                            .unwrap_or_default()
-                            .chars()
-                            .take(200)
-                            .collect::<String>()
-                    ))
-                }
-            }
-        }
-    };
-    let nickname = ["nick", "nickname", "nickName"]
-        .iter()
-        .find_map(|k| find_str_anywhere(&body, k));
-    let encrypt_uin = find_str_anywhere(&body, "encryptUin");
-    let refresh_token = cookie_value(&cookies, "wxrefresh_token")
-        .or_else(|| find_str_anywhere(&body, "wxrefresh_token"));
+    let sess = parse_session_from_login_json(&body, &cookies, 1).ok_or_else(|| {
+        format!(
+            "{} | {}",
+            crate::i18n::pick("微信登录响应缺少凭证", "WeChat login response missing credentials"),
+            serde_json::to_string(&body)
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>()
+        )
+    })?;
+    let nickname = (!sess.nickname.is_empty()).then(|| sess.nickname.clone());
+    let musicid = Some(sess.musicid.clone());
+    let musickey = Some(sess.musickey.clone());
+    let encrypt_uin = (!sess.encrypt_uin.is_empty()).then(|| sess.encrypt_uin.clone());
+    let refresh_token = (!sess.refresh_token.is_empty()).then(|| sess.refresh_token.clone());
     Ok(QqQrCheck {
         status: "success".into(),
         nickname,
-        musicid: Some(musicid),
-        musickey: Some(musickey),
+        musicid,
+        musickey,
         encrypt_uin,
         refresh_token,
+        session: Some(sess),
     })
 }
 
@@ -473,6 +871,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
             musickey: None,
             encrypt_uin: None,
             refresh_token: None,
+            session: None,
         }),
         404 => Ok(QqQrCheck {
             status: "scanned".into(),
@@ -481,6 +880,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
             musickey: None,
             encrypt_uin: None,
             refresh_token: None,
+            session: None,
         }),
         402 => Ok(QqQrCheck {
             status: "expired".into(),
@@ -489,6 +889,7 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
             musickey: None,
             encrypt_uin: None,
             refresh_token: None,
+            session: None,
         }),
         405 if !code.is_empty() => wx_exchange(&code),
         _ => {
@@ -501,7 +902,8 @@ pub fn wx_qr_check(uuid: &str) -> Result<QqQrCheck, String> {
                     musicid: None,
                     musickey: None,
                     encrypt_uin: None,
-            refresh_token: None,
+                    refresh_token: None,
+                    session: None,
                 })
             }
         }

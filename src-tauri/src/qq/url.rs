@@ -282,13 +282,10 @@ pub fn song_url(
         }
     });
     let resp = musicu_signed(&payload, Some(&cookie))?;
+    let outer_code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     let code = resp.pointer("/req_1/code").and_then(|c| c.as_i64());
-    if code == Some(104009) {
-        return Err(crate::i18n::pick(
-            "QQ 音乐登录已过期，请重新登录",
-            "QQ Music session expired, please sign in again",
-        )
-        .into());
+    if is_expired_code(outer_code) || code.is_some_and(is_expired_code) {
+        return Err(session_expired_err());
     }
     let all_ok_but_no_url = code == Some(0);
     let sip = resp
@@ -328,6 +325,15 @@ pub fn song_url(
                 }
             }
             return Ok((url, (*ext).to_string(), label));
+        }
+    }
+
+    // VIP 曲目在返回 code=0 但所有档位 purl 均空时，UrlGetVkey 可能将已失效的 musickey
+    // 静默当匿名访客降权处理（而非直接报 104009）——轻量核实一次会话状态，若确已过期
+    // 则转为标准过期错误，交由外层自动续期并透明重试
+    if all_ok_but_no_url && vip && !musickey.is_empty() {
+        if check_session_expired(musicid, musickey) == Some(true) {
+            return Err(session_expired_err());
         }
     }
 

@@ -40,23 +40,19 @@ pub fn user_playlists(
         }
     });
     let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
+    let outer_code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
     let code = resp
         .pointer("/req_1/code")
         .and_then(|c| c.as_i64())
         .unwrap_or(0);
+    if is_expired_code(outer_code) || is_expired_code(code) {
+        return Err(session_expired_err());
+    }
     if code != 0 {
-        return Err(if code == 104009 {
-            crate::i18n::pick(
-                "QQ 音乐登录已过期，请重新登录",
-                "QQ Music session expired, please sign in again",
-            )
-            .into()
-        } else {
-            crate::i18n::pick(
-                format!("获取歌单列表失败（code {code}）"),
-                format!("Failed to fetch playlists (code {code})"),
-            )
-        });
+        return Err(crate::i18n::pick(
+            format!("获取歌单列表失败（code {code}）"),
+            format!("Failed to fetch playlists (code {code})"),
+        ));
     }
     let mut out = Vec::new();
     if let Some(list) = resp
@@ -222,18 +218,16 @@ pub fn playlist_tracks(
             }
         });
         let resp = musicu_signed(&payload, Some(&credential_cookie(musicid, musickey)))?;
+        let outer_code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         let code = resp
             .pointer("/req_1/code")
             .and_then(|c| c.as_i64())
             .unwrap_or(0);
+        if is_expired_code(outer_code) || is_expired_code(code) {
+            return Err(session_expired_err());
+        }
         if code != 0 {
-            return Err(if code == 104009 {
-                crate::i18n::pick(
-                    "QQ 音乐登录已过期，请重新登录",
-                    "QQ Music session expired, please log in again",
-                )
-                .into()
-            } else if crate::i18n::is_en() {
+            return Err(if crate::i18n::is_en() {
                 format!("Failed to fetch playlist details (code {code})")
             } else {
                 format!("获取歌单详情失败（code {code}）")
