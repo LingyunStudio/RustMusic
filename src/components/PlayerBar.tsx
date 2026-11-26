@@ -1030,12 +1030,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
             </button>
             {isSkeuo ? (
               <button
-                className="w-[40px] h-[40px] rounded-full flex items-center justify-center text-[var(--accent-on)] transition-transform hover:scale-105 active:scale-95 shadow-[var(--sk-raised-shadow)]"
-                style={{
-                  background: "linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 60%, var(--accent) 120%)",
-                  border: "1px solid var(--sk-edge)",
-                  boxShadow: "var(--sk-raised-shadow), 0 0 12px var(--accent-soft)",
-                }}
+                className={`skeuo-play-btn shrink-0 ${playing ? "playing" : ""}`}
                 onClick={togglePlay}
                 title={tr("播放 / 暂停（空格）", "Play / Pause (Space)")}
               >

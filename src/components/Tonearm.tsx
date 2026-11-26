@@ -3,177 +3,227 @@ interface TonearmProps {
   className?: string;
 }
 
+/**
+ * 响应式高精度 S 型镀铬唱臂（百分比自适应唱机台面尺寸，严丝合缝不溢出）：
+ * - 停机时稳稳落在右侧唱臂架上（rotate(0deg)）
+ * - 播放时优雅旋入黑胶沟槽（rotate(25deg)）
+ */
 export default function Tonearm({ playing, className = "" }: TonearmProps) {
   return (
-    <div
-      className={`pointer-events-none select-none ${className}`}
-      style={{
-        width: 105,
-        height: 250,
-      }}
-    >
+    <div className={`pointer-events-none select-none ${className}`}>
       <svg
-        viewBox="0 0 105 250"
-        className="w-full h-full"
+        viewBox="0 0 116 250"
+        className="w-full h-full block"
         style={{ overflow: "visible" }}
       >
         <defs>
-          {/* 金属拉丝唱臂高光渐变 */}
           <linearGradient id="armChrome" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#8d95a0" />
-            <stop offset="35%" stopColor="#ffffff" />
-            <stop offset="65%" stopColor="#c8d0db" />
-            <stop offset="100%" stopColor="#4c535e" />
+            <stop offset="0%" stopColor="#6f7682" />
+            <stop offset="28%" stopColor="#ffffff" />
+            <stop offset="56%" stopColor="#d4dbe4" />
+            <stop offset="82%" stopColor="#5a616d" />
+            <stop offset="100%" stopColor="#262a32" />
           </linearGradient>
 
-          {/* 唱臂配重砝码金属质感 */}
-          <linearGradient id="counterWeight" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#404650" />
-            <stop offset="40%" stopColor="#9ca5b2" />
-            <stop offset="70%" stopColor="#252a32" />
-            <stop offset="100%" stopColor="#14171d" />
+          <linearGradient id="counterWeight" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#2a2e36" />
+            <stop offset="28%" stopColor="#a7afb9" />
+            <stop offset="52%" stopColor="#eef1f5" />
+            <stop offset="76%" stopColor="#525864" />
+            <stop offset="100%" stopColor="#1b1e24" />
           </linearGradient>
 
-          {/* 万向万向轴承基座 */}
-          <radialGradient id="gimbalBase" cx="40%" cy="35%" r="65%">
-            <stop offset="0%" stopColor="#f3f4f6" />
-            <stop offset="45%" stopColor="#9ca3af" />
-            <stop offset="85%" stopColor="#374151" />
-            <stop offset="100%" stopColor="#111827" />
+          <radialGradient id="gimbalOuter" cx="36%" cy="32%" r="68%">
+            <stop offset="0%" stopColor="#f5f7fa" />
+            <stop offset="38%" stopColor="#9aa3b0" />
+            <stop offset="78%" stopColor="#3c424d" />
+            <stop offset="100%" stopColor="#14171c" />
           </radialGradient>
+
+          <linearGradient id="brassAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#fbe6b2" />
+            <stop offset="48%" stopColor="#c99c36" />
+            <stop offset="100%" stopColor="#6b4e11" />
+          </linearGradient>
         </defs>
 
-        {/* 唱臂底座支撑座与唱臂夹（固定不随唱臂旋转） */}
+        {/* 固定底座：CNC 万向节外座 + 防滑旋钮 + 唱臂停靠架 */}
         <g id="armRestAndBase">
-          {/* 外围金属固定座 */}
+          <circle cx="66" cy="48" r="28" fill="rgba(0,0,0,0.42)" />
           <circle
-            cx="65"
-            cy="45"
+            cx="66"
+            cy="48"
             r="26"
-            fill="url(#gimbalBase)"
-            stroke="#111"
-            strokeWidth="1.5"
-            filter="drop-shadow(0 3px 6px rgba(0,0,0,0.7))"
+            fill="url(#gimbalOuter)"
+            stroke="#0e1014"
+            strokeWidth="1.4"
+            filter="drop-shadow(0 4px 8px rgba(0,0,0,0.62))"
           />
-          <circle cx="65" cy="45" r="21" fill="#1e242d" stroke="#000" strokeWidth="1" />
-          {/* 防滑控制刻度环 */}
+          <circle cx="66" cy="48" r="21" fill="#181b21" stroke="#08090c" strokeWidth="1.1" />
           <circle
-            cx="65"
-            cy="45"
-            r="16"
+            cx="66"
+            cy="48"
+            r="16.5"
             fill="none"
-            stroke="rgba(255,255,255,0.25)"
+            stroke="rgba(255,255,255,0.28)"
+            strokeWidth="0.9"
+            strokeDasharray="1.8,2.8"
+          />
+          {/* 防滑偏压微调旋钮 */}
+          <circle
+            cx="91"
+            cy="64"
+            r="5.2"
+            fill="url(#gimbalOuter)"
+            stroke="#0e1014"
             strokeWidth="1"
-            strokeDasharray="2,3"
+            filter="drop-shadow(0 2px 3px rgba(0,0,0,0.55))"
           />
+          <line x1="91" y1="60.5" x2="91" y2="64" stroke="#111" strokeWidth="1" />
 
-          {/* 唱臂抬升杆 / 唱臂架 (Arm Rest Clip) */}
-          <path
-            d="M 68 85 L 68 115"
-            stroke="#4b5563"
-            strokeWidth="3.5"
-            strokeLinecap="round"
+          {/* 唱臂停靠卡扣架 */}
+          <rect
+            x="67.5"
+            y="84"
+            width="4.5"
+            height="26"
+            rx="2"
+            fill="url(#counterWeight)"
+            stroke="#0e1014"
+            strokeWidth="0.8"
           />
           <path
-            d="M 64 115 L 74 115"
-            stroke="#9ca3af"
+            d="M 63.5 109 L 75.5 109"
+            stroke="#b5bcc7"
             strokeWidth="3"
             strokeLinecap="round"
           />
         </g>
 
-        {/* 旋转主体：以枢轴 (65, 45) 为原点旋转 */}
+        {/* 旋转唱臂总成（以枢轴 (66, 48) 为圆心） */}
         <g
           id="armAssembly"
           style={{
-            transformOrigin: "65px 45px",
-            transform: playing ? "rotate(23deg)" : "rotate(0deg)",
-            transition: "transform 0.88s cubic-bezier(0.25, 1, 0.35, 1)",
+            transformOrigin: "66px 48px",
+            transform: playing ? "rotate(25deg)" : "rotate(0deg)",
+            transition: "transform 0.85s cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         >
-          {/* 配重砝码（位于枢轴后上方） */}
+          {/* 后配重连杆 */}
+          <rect x="64" y="29" width="4" height="14" fill="url(#armChrome)" />
+
+          {/* 滚花金属配重砝码 */}
           <rect
             x="53"
-            y="14"
+            y="10"
+            width="26"
+            height="20"
+            rx="3"
+            fill="url(#counterWeight)"
+            stroke="#0a0c10"
+            strokeWidth="1.2"
+            filter="drop-shadow(0 3px 5px rgba(0,0,0,0.62))"
+          />
+          <g stroke="rgba(0,0,0,0.28)" strokeWidth="0.7">
+            <line x1="57" y1="12" x2="57" y2="28" />
+            <line x1="61" y1="12" x2="61" y2="28" />
+            <line x1="65" y1="12" x2="65" y2="28" />
+            <line x1="69" y1="12" x2="69" y2="28" />
+            <line x1="73" y1="12" x2="73" y2="28" />
+          </g>
+          <rect x="53" y="25.5" width="26" height="3.2" fill="url(#brassAccent)" opacity="0.85" />
+
+          {/* 万向节金属桥架与中心轴承帽 */}
+          <rect
+            x="54"
+            y="44"
             width="24"
-            height="18"
-            rx="2.5"
+            height="8"
+            rx="2"
             fill="url(#counterWeight)"
             stroke="#0b0d11"
-            strokeWidth="1.2"
-            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.6))"
+            strokeWidth="0.9"
           />
-          {/* 砝码环形刻度细线 */}
-          <line x1="53" y1="23" x2="77" y2="23" stroke="#fff" strokeWidth="0.8" opacity="0.6" />
-          <line x1="61" y1="14" x2="61" y2="32" stroke="#000" strokeWidth="0.8" opacity="0.5" />
-
-          {/* 万向万向轴承球头金属帽 */}
           <circle
-            cx="65"
-            cy="45"
-            r="11"
-            fill="url(#gimbalBase)"
-            stroke="#000"
+            cx="66"
+            cy="48"
+            r="10"
+            fill="url(#gimbalOuter)"
+            stroke="#090b0f"
             strokeWidth="1.2"
-            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.65))"
+            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.68))"
           />
-          <circle cx="65" cy="45" r="5" fill="#1f2937" />
-          <circle cx="65" cy="45" r="2" fill="#d1d5db" />
+          <circle cx="66" cy="48" r="4.8" fill="#181c22" stroke="rgba(255,255,255,0.2)" strokeWidth="0.6" />
+          <circle cx="66" cy="48" r="2" fill="url(#brassAccent)" />
 
-          {/* 精工弯管唱臂杆 (Classic S-Wand) */}
+          {/* 精工 S 型镀铬唱臂管 */}
           <path
-            d="M 65 45 L 65 105 C 65 140, 52 170, 48 198 L 45 224"
+            d="M 66 58 L 66 106 C 66 138, 54 166, 49 194 L 45 216"
+            fill="none"
+            stroke="rgba(0,0,0,0.42)"
+            strokeWidth="5.2"
+            strokeLinecap="round"
+            transform="translate(2.5, 3)"
+          />
+          <path
+            d="M 66 58 L 66 106 C 66 138, 54 166, 49 194 L 45 216"
             fill="none"
             stroke="url(#armChrome)"
-            strokeWidth="4"
+            strokeWidth="4.2"
             strokeLinecap="round"
-            filter="drop-shadow(2px 3px 4px rgba(0,0,0,0.45))"
+          />
+          <path
+            d="M 65.2 60 L 65.2 106 C 65.2 138, 53.2 166, 48.2 194 L 44.2 215"
+            fill="none"
+            stroke="rgba(255,255,255,0.65)"
+            strokeWidth="0.9"
+            strokeLinecap="round"
           />
 
-          {/* 唱头接插件卡口螺母 */}
+          {/* 镀铬卡口锁紧环 */}
           <rect
-            x="42"
-            y="222"
-            width="6"
-            height="5"
-            rx="1"
-            fill="#374151"
-            stroke="#000"
-            strokeWidth="0.6"
+            x="41.5"
+            y="213"
+            width="7"
+            height="5.2"
+            rx="1.2"
+            fill="url(#counterWeight)"
+            stroke="#0a0c10"
+            strokeWidth="0.7"
+            transform="rotate(9 45 216)"
           />
 
-          {/* 唱头壳 (Cartridge Headshell) */}
-          <g filter="drop-shadow(0 3px 6px rgba(0,0,0,0.75))">
-            {/* 唱头壳主体 */}
+          {/* SME 风格镂空铝唱头壳 */}
+          <g filter="drop-shadow(1px 4px 6px rgba(0,0,0,0.72))">
             <path
-              d="M 45 226 L 39 242 L 34 242 L 40 226 Z"
-              fill="#181d24"
-              stroke="#0b0e12"
-              strokeWidth="0.8"
+              d="M 46.5 217 L 40 236 L 31.5 234 L 38 215 Z"
+              fill="#1b1f27"
+              stroke="#0a0c10"
+              strokeWidth="0.9"
             />
-            {/* 顶盖金属铭牌 */}
-            <line x1="43" y1="228" x2="38" y2="240" stroke="#f59e0b" strokeWidth="1" />
-            {/* 唱头壳指拨把手 (Finger Lift) */}
+            <circle cx="41.2" cy="221" r="1.05" fill="#0b0d11" />
+            <circle cx="39.3" cy="226.5" r="1.05" fill="#0b0d11" />
+            <circle cx="37.4" cy="232" r="1.05" fill="#0b0d11" />
+            <line x1="44.2" y1="218.5" x2="38.8" y2="234" stroke="url(#brassAccent)" strokeWidth="1" />
             <path
-              d="M 39 235 C 33 234, 30 238, 31 242"
+              d="M 38 225 C 30.5 223.5, 27 228, 28.5 233"
               fill="none"
-              stroke="#9ca3af"
-              strokeWidth="1.2"
+              stroke="#cbd2dc"
+              strokeWidth="1.4"
               strokeLinecap="round"
             />
-            {/* 唱头本体 */}
             <rect
-              x="33"
-              y="240"
-              width="6.5"
-              height="6"
-              rx="1"
-              fill="#dc2626"
-              stroke="#7f1d1d"
-              strokeWidth="0.6"
+              x="30.5"
+              y="233"
+              width="8.5"
+              height="6.2"
+              rx="1.2"
+              fill="#b91c1c"
+              stroke="#450a0a"
+              strokeWidth="0.7"
+              transform="rotate(14 34.5 236)"
             />
-            {/* 红宝石/钻石唱针尖点 */}
-            <circle cx="36" cy="246" r="1" fill="#fde047" />
+            <circle cx="33.8" cy="240.5" r="1.2" fill="#fef08a" />
           </g>
         </g>
       </svg>

@@ -365,14 +365,6 @@ export default function MiniPlayer() {
       title={tr("双击还原主窗口 · 拖拽移动", "Double-click to restore · Drag to move")}
       className="mini-player w-full h-full relative select-none flex flex-col justify-between overflow-hidden cursor-move"
     >
-      {/* 拟物主题沉头螺栓 */}
-      {uiTheme === "skeuo" && (
-        <>
-          <div className="skeuo-screw absolute top-1.5 left-1.5 z-10 pointer-events-none" />
-          <div className="skeuo-screw absolute bottom-2 left-1.5 z-10 pointer-events-none" />
-        </>
-      )}
-
       {/* 上半部：封面 + 歌曲信息 + 播控/窗口按钮 */}
       <div className="flex items-center gap-3 px-3 pt-2 pb-0.5 pointer-events-none">
         {/* 左侧封面 */}

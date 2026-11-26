@@ -3,143 +3,182 @@
 
 
 /* ---------- 主题变量 ----------
-   :root 为暗色（拟物复古音响风格）；html[data-theme="light"] 为浅色（经典阳极氧化铝与象牙白风格）。
+   默认暗色：黑金参考级 Hi-Fi 阳极氧化枪黑钛铝风格（McIntosh / Leica 工业美学）
+   html[data-theme="light"]：经典 Dieter Rams / Braun 阳极氧化香槟银铝与象牙白风格
    --accent 系列由 JS 按用户选择的强调色写入。 */
 
 html[data-ui="skeuo"] {
-  --bg: #111418;
-  --ink: #f4efe6;
-  --ink-2: #a8b0bd;
-  --ink-3: #6c7584;
-  --line: rgba(255, 255, 255, 0.07);
-  --glass-bg: linear-gradient(180deg, rgba(35, 40, 48, 0.95) 0%, rgba(20, 23, 28, 0.97) 100%);
-  --glass-bg-strong: linear-gradient(180deg, rgba(42, 48, 58, 0.97) 0%, rgba(24, 28, 34, 0.99) 100%);
-  --glass-line: rgba(0, 0, 0, 0.85);
-  --shade: rgba(0, 0, 0, 0.38);
-  --shade-strong: rgba(0, 0, 0, 0.65);
-  --shade-hover: rgba(255, 255, 255, 0.06);
-  --vignette: rgba(3, 4, 6, 0.75);
-  --backdrop-1: #1a1e25;
-  --backdrop-2: #0f1216;
+  --bg: #111215;
+  --ink: #f3ede2;
+  --ink-2: #a4a8b0;
+  --ink-3: #6c707a;
+  --line: rgba(255, 255, 255, 0.065);
+  --glass-bg: linear-gradient(180deg, rgba(34, 36, 42, 0.96) 0%, rgba(23, 25, 29, 0.98) 55%, rgba(18, 20, 24, 0.99) 100%);
+  --glass-bg-strong: linear-gradient(180deg, rgba(42, 45, 52, 0.98) 0%, rgba(25, 27, 32, 0.99) 100%);
+  --glass-line: rgba(0, 0, 0, 0.78);
+  --shade: rgba(0, 0, 0, 0.36);
+  --shade-strong: rgba(0, 0, 0, 0.62);
+  --shade-hover: rgba(255, 255, 255, 0.055);
+  --vignette: rgba(4, 5, 7, 0.72);
+  --backdrop-1: #1c1e23;
+  --backdrop-2: #121317;
   /* 主题固定文字色 */
-  --ink-t: #f4efe6;
-  --ink-2-t: #a8b0bd;
-  --ink-3-t: #6c7584;
-  --lyric-dim: rgba(244, 239, 230, 0.58);
-  --bar-tint: rgba(18, 21, 26, 0.95);
-  --bar-glass: linear-gradient(180deg, #2b313b 0%, #1c2027 50%, #13161b 100%);
-  --bar-line: rgba(0, 0, 0, 0.9);
-  --bar-shadow: 0 -3px 12px rgba(0, 0, 0, 0.5), 0 20px 48px -6px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.85);
-  --cover-shadow-sm: 0 6px 14px -2px rgba(0, 0, 0, 0.7), 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  --cover-shadow-lg: 0 26px 64px -10px rgba(0, 0, 0, 0.9), 0 8px 20px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  --glow: #d97706;
-  --blob-warm: #92400e;
-  --noise-opacity: 0.22;
-  --play-btn-bg: #f4efe6;
-  --play-btn-on: #1a150e;
+  --ink-t: #f3ede2;
+  --ink-2-t: #a4a8b0;
+  --ink-3-t: #6c707a;
+  --lyric-dim: rgba(243, 237, 226, 0.52);
+  --bar-tint: rgba(20, 22, 26, 0.96);
+  --bar-glass:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(180deg, #2d3038 0%, #202329 48%, #15171c 100%);
+  --bar-line: rgba(0, 0, 0, 0.85);
+  --bar-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px -8px rgba(0, 0, 0, 0.88),
+    0 4px 12px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.85);
+  --cover-shadow-sm: 0 6px 14px -3px rgba(0, 0, 0, 0.72), 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --cover-shadow-lg: 0 28px 64px -12px rgba(0, 0, 0, 0.88), 0 8px 20px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  --glow: #d9822b;
+  --blob-warm: #7c4716;
+  --noise-opacity: 0.16;
+  --play-btn-bg: #f3ede2;
+  --play-btn-on: #191510;
   color-scheme: dark;
   --skin-scrim-dark: linear-gradient(
     180deg,
-    rgba(14, 17, 22, 0.3) 0%,
-    rgba(14, 17, 22, 0.5) 55%,
-    rgba(14, 17, 22, 0.65) 100%
+    rgba(14, 15, 18, 0.34) 0%,
+    rgba(14, 15, 18, 0.52) 55%,
+    rgba(14, 15, 18, 0.68) 100%
   );
   --skin-scrim-light: linear-gradient(
     180deg,
-    rgba(240, 244, 248, 0.7) 0%,
-    rgba(240, 244, 248, 0.8) 100%
+    rgba(242, 243, 245, 0.72) 0%,
+    rgba(242, 243, 245, 0.82) 100%
   );
   --skin-scrim: var(--skin-scrim-dark);
 }
 
-/* ---------- 经典 Dieter Rams / Braun 拟物浅色主题 ---------- */
+/* ---------- 经典 Dieter Rams / Braun 阳极氧化香槟银铝浅色主题 ---------- */
 html[data-ui="skeuo"][data-theme="light"] {
-  --bg: #e2e6eb;
-  --ink: #1e242d;
-  --ink-2: #4f5867;
-  --ink-3: #828c9b;
-  --line: rgba(0, 0, 0, 0.08);
-  --glass-bg: linear-gradient(180deg, rgba(252, 253, 255, 0.96) 0%, rgba(234, 238, 245, 0.98) 100%);
-  --glass-bg-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 242, 248, 0.99) 100%);
-  --glass-line: rgba(0, 0, 0, 0.16);
-  --shade: rgba(0, 0, 0, 0.05);
-  --shade-strong: rgba(0, 0, 0, 0.1);
-  --shade-hover: rgba(0, 0, 0, 0.035);
-  --vignette: rgba(140, 155, 175, 0.25);
-  --backdrop-1: #ebedf2;
-  --backdrop-2: #dde2e9;
-  --ink-t: #1e242d;
-  --ink-2-t: #4f5867;
-  --ink-3-t: #828c9b;
-  --lyric-dim: rgba(30, 36, 45, 0.62);
-  --bar-tint: rgba(240, 243, 248, 0.95);
-  --bar-glass: linear-gradient(180deg, #f7f9fc 0%, #e8edf3 50%, #dce1e8 100%);
-  --bar-line: rgba(0, 0, 0, 0.18);
-  --bar-shadow: 0 14px 36px -8px rgba(35, 48, 68, 0.25), 0 3px 8px rgba(35, 48, 68, 0.1), inset 0 1px 0 #ffffff, inset 0 -1px 0 rgba(0, 0, 0, 0.12);
-  --cover-shadow-sm: 0 5px 14px rgba(35, 48, 68, 0.2), inset 0 1px 0 #ffffff;
-  --cover-shadow-lg: 0 32px 75px -16px rgba(35, 48, 68, 0.38), inset 0 1px 0 #ffffff;
-  --glow: #cbd5e1;
-  --blob-warm: #d5dde8;
-  --noise-opacity: 0.05;
+  --bg: #e1e3e6;
+  --ink: #1a1d22;
+  --ink-2: #50555e;
+  --ink-3: #838993;
+  --line: rgba(20, 24, 30, 0.08);
+  --glass-bg: linear-gradient(180deg, rgba(250, 250, 251, 0.97) 0%, rgba(238, 240, 243, 0.98) 55%, rgba(231, 233, 237, 0.99) 100%);
+  --glass-bg-strong: linear-gradient(180deg, rgba(254, 254, 255, 0.98) 0%, rgba(238, 240, 244, 0.99) 100%);
+  --glass-line: rgba(24, 30, 40, 0.14);
+  --shade: rgba(24, 30, 40, 0.045);
+  --shade-strong: rgba(24, 30, 40, 0.09);
+  --shade-hover: rgba(24, 30, 40, 0.038);
+  --vignette: rgba(130, 138, 150, 0.2);
+  --backdrop-1: #eceef0;
+  --backdrop-2: #dcdfe3;
+  --ink-t: #1a1d22;
+  --ink-2-t: #50555e;
+  --ink-3-t: #838993;
+  --lyric-dim: rgba(26, 29, 34, 0.56);
+  --bar-tint: rgba(241, 242, 244, 0.96);
+  --bar-glass:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.008) 0px,
+      rgba(0, 0, 0, 0.008) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(180deg, #f8f9fa 0%, #eaecef 52%, #dfe2e6 100%);
+  --bar-line: rgba(24, 30, 40, 0.16);
+  --bar-shadow:
+    0 14px 34px -8px rgba(28, 36, 48, 0.22),
+    0 3px 8px rgba(28, 36, 48, 0.09),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(24, 30, 40, 0.1);
+  --cover-shadow-sm: 0 5px 14px rgba(28, 36, 48, 0.18), inset 0 1px 0 #ffffff;
+  --cover-shadow-lg: 0 28px 66px -14px rgba(28, 36, 48, 0.32), inset 0 1px 0 #ffffff;
+  --glow: #cfd4dc;
+  --blob-warm: #d9dde3;
+  --noise-opacity: 0.04;
   --play-btn-bg: #ffffff;
-  --play-btn-on: #1e242d;
+  --play-btn-on: #1a1d22;
   color-scheme: light;
   --skin-scrim: var(--skin-scrim-light);
 }
 
-/* ---------- 拟物材质令牌（随主题切换） ----------
-   组件内不再硬编码黑/白半透明阴影：凹槽、按下态、分隔线、封面描边等
-   统一走这里的变量，浅色主题才不会出现「深色阴影糊在银色面板上」。
-   · groove   = 凹槽（滑轨、推子槽、旋钮底座、计数徽标）
-   · pressed  = 按下 / 选中态（侧栏选中项、开关点亮的按键）
-   · divider  = 面板接缝（暗线 + 亮线 = 一道刻槽）
-   · cover    = 封面 / 小图描边与投影 */
+/* ---------- 拟物材质令牌（随主题切换） ---------- */
 html[data-ui="skeuo"] {
-  --sk-edge: rgba(0, 0, 0, 0.55);
-  --sk-groove-bg: #0c0f13;
-  --sk-groove-border: rgba(0, 0, 0, 0.75);
-  --sk-groove-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9), inset 0 1px 1px #000, 0 1px 0 rgba(255, 255, 255, 0.08);
-  --sk-pressed-bg: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.24) 100%);
-  --sk-pressed-border: rgba(0, 0, 0, 0.72);
-  --sk-pressed-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.07);
-  --sk-divider: rgba(0, 0, 0, 0.45);
-  --sk-divider-hi: rgba(255, 255, 255, 0.05);
-  --sk-cover-border: rgba(0, 0, 0, 0.5);
-  --sk-cover-shadow: 0 3px 8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  --sk-row-hover-bg: rgba(0, 0, 0, 0.2);
-  --sk-row-hover-border: rgba(0, 0, 0, 0.3);
-  --sk-row-hover-shadow: 0 2px 6px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --sk-row-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --sk-knob-metal: linear-gradient(180deg, #ffffff 0%, #cbd2da 45%, #88909b 100%);
-  --sk-knob-shadow: 0 3px 6px rgba(0, 0, 0, 0.6), inset 0 1px 0 #ffffff, inset 0 -1px 1px rgba(0, 0, 0, 0.35);
-  --sk-emboss: 0 1px 1px rgba(0, 0, 0, 0.8);
-  /* 播放页歌词视窗：极薄的烟色玻璃，不压住封面取色背景 */
-  --sk-window-bg: rgba(6, 8, 12, 0.26);
-  --sk-window-border: rgba(0, 0, 0, 0.45);
-  --sk-window-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.07);
+  --sk-edge: rgba(0, 0, 0, 0.58);
+  --sk-raised-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+  --sk-groove-bg: #0c0d10;
+  --sk-groove-border: rgba(0, 0, 0, 0.78);
+  --sk-groove-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.92),
+    inset 0 1px 1px #000000,
+    0 1px 0 rgba(255, 255, 255, 0.075);
+  --sk-pressed-bg: linear-gradient(180deg, rgba(8, 9, 12, 0.72) 0%, rgba(18, 20, 24, 0.58) 100%);
+  --sk-pressed-border: rgba(0, 0, 0, 0.78);
+  --sk-pressed-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.85),
+    inset 0 1px 2px rgba(0, 0, 0, 0.9),
+    0 1px 0 rgba(255, 255, 255, 0.07);
+  --sk-divider: rgba(0, 0, 0, 0.52);
+  --sk-divider-hi: rgba(255, 255, 255, 0.06);
+  --sk-cover-border: rgba(0, 0, 0, 0.55);
+  --sk-cover-shadow: 0 4px 10px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --sk-row-hover-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(0, 0, 0, 0.16) 100%);
+  --sk-row-hover-border: rgba(0, 0, 0, 0.35);
+  --sk-row-hover-shadow: 0 2px 6px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --sk-row-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 3px 10px rgba(0, 0, 0, 0.36);
+  --sk-knob-metal: radial-gradient(circle at 32% 28%, #ffffff 0%, #d4d9e0 40%, #9097a2 82%, #676d77 100%);
+  --sk-knob-shadow: 0 3px 7px rgba(0, 0, 0, 0.65), inset 0 1px 1px #ffffff, inset 0 -1px 1px rgba(0, 0, 0, 0.38);
+  --sk-emboss: 0 1px 1px rgba(0, 0, 0, 0.85);
+  --sk-window-bg: rgba(12, 13, 16, 0.82);
+  --sk-window-border: rgba(0, 0, 0, 0.65);
+  --sk-window-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 html[data-ui="skeuo"][data-theme="light"] {
-  --sk-edge: rgba(30, 40, 55, 0.16);
-  --sk-groove-bg: #d2d8e0;
-  --sk-groove-border: rgba(30, 40, 55, 0.18);
-  --sk-groove-shadow: inset 0 1px 3px rgba(35, 48, 68, 0.3), inset 0 1px 1px rgba(35, 48, 68, 0.16), 0 1px 0 #ffffff;
-  --sk-pressed-bg: linear-gradient(180deg, #d3d9e1 0%, #e1e5eb 100%);
-  --sk-pressed-border: rgba(30, 40, 55, 0.15);
-  --sk-pressed-shadow: inset 0 2px 4px rgba(35, 48, 68, 0.2), inset 0 1px 1px rgba(35, 48, 68, 0.1), 0 1px 0 #ffffff;
-  --sk-divider: rgba(30, 40, 55, 0.11);
-  --sk-divider-hi: rgba(255, 255, 255, 0.75);
-  --sk-cover-border: rgba(30, 40, 55, 0.12);
-  --sk-cover-shadow: 0 3px 8px rgba(35, 48, 68, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  --sk-row-hover-bg: rgba(35, 48, 68, 0.045);
-  --sk-row-hover-border: rgba(30, 40, 55, 0.07);
-  --sk-row-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(35, 48, 68, 0.06);
-  --sk-row-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 2px 6px rgba(35, 48, 68, 0.08);
-  --sk-knob-shadow: 0 2px 5px rgba(35, 48, 68, 0.35), inset 0 1px 0 #ffffff, inset 0 -1px 1px rgba(0, 0, 0, 0.2);
-  --sk-emboss: 0 1px 0 rgba(255, 255, 255, 0.9);
-  --sk-window-bg: rgba(255, 255, 255, 0.3);
-  --sk-window-border: rgba(255, 255, 255, 0.55);
-  --sk-window-shadow: inset 0 2px 8px rgba(35, 48, 68, 0.1), 0 10px 30px -12px rgba(35, 48, 68, 0.25);
+  --sk-edge: rgba(24, 30, 40, 0.15);
+  --sk-raised-shadow:
+    0 3px 8px rgba(28, 36, 48, 0.16),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(24, 30, 40, 0.12);
+  --sk-groove-bg: #d4d7dc;
+  --sk-groove-border: rgba(24, 30, 40, 0.16);
+  --sk-groove-shadow:
+    inset 0 1.5px 3.5px rgba(28, 36, 48, 0.28),
+    inset 0 1px 1px rgba(28, 36, 48, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.92);
+  --sk-pressed-bg: linear-gradient(180deg, #cfd3d9 0%, #dfe2e7 100%);
+  --sk-pressed-border: rgba(24, 30, 40, 0.16);
+  --sk-pressed-shadow:
+    inset 0 2px 4px rgba(28, 36, 48, 0.22),
+    inset 0 1px 1px rgba(28, 36, 48, 0.12),
+    0 1px 0 #ffffff;
+  --sk-divider: rgba(24, 30, 40, 0.1);
+  --sk-divider-hi: rgba(255, 255, 255, 0.82);
+  --sk-cover-border: rgba(24, 30, 40, 0.13);
+  --sk-cover-shadow: 0 3px 9px rgba(28, 36, 48, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --sk-row-hover-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(226, 230, 236, 0.5) 100%);
+  --sk-row-hover-border: rgba(24, 30, 40, 0.08);
+  --sk-row-hover-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 3px rgba(28, 36, 48, 0.07);
+  --sk-row-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 2px 7px rgba(28, 36, 48, 0.09);
+  --sk-knob-shadow: 0 2px 6px rgba(28, 36, 48, 0.32), inset 0 1px 1px #ffffff, inset 0 -1px 1px rgba(0, 0, 0, 0.18);
+  --sk-emboss: 0 1px 0 rgba(255, 255, 255, 0.92);
+  --sk-window-bg: rgba(244, 245, 247, 0.9);
+  --sk-window-border: rgba(24, 30, 40, 0.16);
+  --sk-window-shadow: inset 0 2px 6px rgba(28, 36, 48, 0.08), 0 12px 32px -12px rgba(28, 36, 48, 0.24);
 }
 
 /* 默认强调色（琥珀），启动时 JS 会覆盖为用户选择 */
@@ -611,6 +650,20 @@ html[data-ui="skeuo"] .anim-lyric {
 @keyframes slowSpin {
   from { transform: rotate(0deg) scale(1.18); }
   to { transform: rotate(360deg) scale(1.18); }
+}
+
+/* 黑胶唱片专属等比匀速旋转（绝不缩放，暂停时原地停驻不跳回 0°） */
+@keyframes sk-vinylSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+html[data-ui="skeuo"] .skeuo-vinyl-spin {
+  animation: sk-vinylSpin 20s linear infinite;
+  animation-play-state: paused;
+  will-change: transform;
+}
+html[data-ui="skeuo"] .skeuo-vinyl-spin.is-playing {
+  animation-play-state: running;
 }
 
 /* hueFlow 与 slowSpin 同层叠加，will-change 保证合成器独立执行 */
@@ -1085,17 +1138,18 @@ html[data-ui="skeuo"] input[type="range"]:active::-webkit-slider-thumb {
 
 /* ---------- 拟物专属微质感类 ---------- */
 
-/* 1) 螺丝 / 铆钉：模拟机架面板四角沉头车削螺栓（微调切槽多向散射） */
+/* 1) 精密沉孔车削螺钉（9px，克制精致，告别粗笨电箱感） */
 html[data-ui="skeuo"] .skeuo-screw {
-  width: 11px;
-  height: 11px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #8e96a2 0%, #464d57 55%, #252a32 100%);
-  border: 1px solid rgba(0, 0, 0, 0.65);
+  background: radial-gradient(circle at 32% 30%, #8a909a 0%, #444952 52%, #1d2026 100%);
+  border: 1px solid rgba(0, 0, 0, 0.78);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.7),
-    inset 0 1px 1px rgba(255, 255, 255, 0.45);
-  position: relative;
+    0 1px 1.5px rgba(0, 0, 0, 0.75),
+    0 0 0 1.5px rgba(0, 0, 0, 0.35),
+    0 1px 0 1.5px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.38);
   display: inline-block;
   flex-shrink: 0;
 }
@@ -1104,44 +1158,46 @@ html[data-ui="skeuo"] .skeuo-screw::after {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 7px;
-  height: 1.2px;
-  background: #111418;
+  width: 5.5px;
+  height: 1px;
+  background: #0b0c0f;
   transform: translate(-50%, -50%) rotate(38deg);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0.7px 0 rgba(255, 255, 255, 0.18);
 }
-/* 螺丝刀口自然旋转差异（告别呆板一律 38 度） */
 html[data-ui="skeuo"] .skeuo-screw:nth-of-type(2n)::after {
-  transform: translate(-50%, -50%) rotate(124deg);
+  transform: translate(-50%, -50%) rotate(128deg);
 }
 html[data-ui="skeuo"] .skeuo-screw:nth-of-type(3n)::after {
-  transform: translate(-50%, -50%) rotate(71deg);
+  transform: translate(-50%, -50%) rotate(74deg);
 }
 html[data-ui="skeuo"] .skeuo-screw:nth-of-type(4n)::after {
-  transform: translate(-50%, -50%) rotate(162deg);
+  transform: translate(-50%, -50%) rotate(160deg);
 }
 
 html[data-ui="skeuo"][data-theme="light"] .skeuo-screw {
-  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #cbd2db 55%, #949da8 100%);
-  border: 1px solid rgba(35, 48, 68, 0.25);
-  box-shadow: 0 1px 2px rgba(35, 48, 68, 0.15), inset 0 1px 1px #ffffff;
+  background: radial-gradient(circle at 32% 30%, #ffffff 0%, #cfd4dc 54%, #98a0ac 100%);
+  border: 1px solid rgba(24, 30, 40, 0.22);
+  box-shadow:
+    0 1px 1.5px rgba(28, 36, 48, 0.16),
+    0 0 0 1.5px rgba(28, 36, 48, 0.07),
+    inset 0 1px 0.5px #ffffff;
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-screw::after {
-  background: #414a58;
-  box-shadow: 0 1px 0 #ffffff;
+  background: #4d5562;
+  box-shadow: 0 0.7px 0 #ffffff;
 }
 
-/* 2) 荧光/液晶内嵌显示屏（VFD/OLED）：双主题均保证自发光高亮可读性与防反光面罩 */
+/* 2) 蓝宝石光学玻璃内嵌显示屏（VFD/OLED）：通透清晰、细腻防眩光斜角反射 */
 html[data-ui="skeuo"] .skeuo-display {
-  --ink: #f1f5f9;
-  --ink-2: #94a3b8;
-  --ink-3: #64748b;
-  background: radial-gradient(ellipse at 50% 25%, rgba(18, 30, 26, 0.98) 0%, rgba(7, 13, 11, 0.99) 100%);
-  border: 1px solid rgba(0, 0, 0, 0.85);
+  --ink: #f4f1ea;
+  --ink-2: #a0a7b3;
+  --ink-3: #666e7b;
+  background: radial-gradient(ellipse at 50% 15%, rgba(20, 26, 26, 0.98) 0%, rgba(10, 12, 14, 0.99) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.88);
   box-shadow:
-    inset 0 3px 8px rgba(0, 0, 0, 0.95),
+    inset 0 3px 9px rgba(0, 0, 0, 0.92),
     inset 0 1px 2px #000000,
-    0 1px 0 rgba(255, 255, 255, 0.12);
+    0 1px 0 rgba(255, 255, 255, 0.1);
   position: relative;
   overflow: hidden;
 }
@@ -1149,140 +1205,184 @@ html[data-ui="skeuo"] .skeuo-display::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, transparent 45%);
+  background: linear-gradient(128deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.015) 36%, transparent 48%);
   pointer-events: none;
 }
-/* 微弱的 VFD 光栅网纹 */
 html[data-ui="skeuo"] .skeuo-display::after {
   content: "";
   position: absolute;
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 0, 0, 0.18) 0px,
-    rgba(0, 0, 0, 0.18) 1px,
+    rgba(0, 0, 0, 0.12) 0px,
+    rgba(0, 0, 0, 0.12) 1px,
     transparent 1px,
-    transparent 2px
+    transparent 3px
   );
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.32;
 }
 
 html[data-ui="skeuo"][data-theme="light"] .skeuo-display {
-  --ink: #111827;
-  --ink-2: #374151;
-  --ink-3: #6b7280;
-  background: linear-gradient(180deg, #dbe2ea 0%, #edf2f8 40%, #f6f8fb 100%);
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  --ink: #161a20;
+  --ink-2: #434954;
+  --ink-3: #767d89;
+  background: linear-gradient(180deg, #dde1e7 0%, #eceff4 42%, #f5f7fa 100%);
+  border: 1px solid rgba(24, 30, 40, 0.15);
   box-shadow:
-    inset 0 2px 4px rgba(35, 48, 68, 0.18),
-    inset 0 1px 1px rgba(35, 48, 68, 0.12),
+    inset 0 2px 5px rgba(28, 36, 48, 0.16),
+    inset 0 1px 1px rgba(28, 36, 48, 0.1),
     0 1px 0 #ffffff;
 }
-
 html[data-ui="skeuo"][data-theme="light"] .skeuo-display::before {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.65) 0%, transparent 45%);
+  background: linear-gradient(128deg, rgba(255, 255, 255, 0.62) 0%, transparent 44%);
 }
-
 html[data-ui="skeuo"][data-theme="light"] .skeuo-display::after {
-  opacity: 0.16;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(35, 48, 68, 0.08) 0px,
-    rgba(35, 48, 68, 0.08) 1px,
-    transparent 1px,
-    transparent 2px
-  );
+  opacity: 0.08;
 }
 
-/* 屏幕舱内微型操作键（深色模式：自发光/微透；浅色模式：精细金属按键） */
+/* 屏幕舱内微型操作键 */
 html[data-ui="skeuo"] .skeuo-display .btn-ghost {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   color: var(--ink-2) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
 }
 html[data-ui="skeuo"] .skeuo-display .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.15) !important;
   color: #fff !important;
 }
 html[data-ui="skeuo"] .skeuo-display .btn-ghost:active {
-  background: rgba(0, 0, 0, 0.4) !important;
+  background: rgba(0, 0, 0, 0.42) !important;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8) !important;
 }
 
 html[data-ui="skeuo"][data-theme="light"] .skeuo-display .btn-ghost {
-  background: linear-gradient(180deg, #ffffff 0%, #e9eef5 100%) !important;
-  border-color: rgba(0, 0, 0, 0.14) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #eaeef4 100%) !important;
+  border-color: rgba(24, 30, 40, 0.13) !important;
   color: var(--ink-2) !important;
-  box-shadow: 0 1px 2px rgba(35, 48, 68, 0.12), inset 0 1px 0 #ffffff !important;
+  box-shadow: 0 1px 2px rgba(28, 36, 48, 0.1), inset 0 1px 0 #ffffff !important;
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-display .btn-ghost:hover {
   background: #ffffff !important;
   color: var(--ink) !important;
-  box-shadow: 0 2px 4px rgba(35, 48, 68, 0.16), inset 0 1px 0 #ffffff !important;
+  box-shadow: 0 2px 4px rgba(28, 36, 48, 0.14), inset 0 1px 0 #ffffff !important;
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-display .btn-ghost:active {
-  background: #d8e0eb !important;
-  box-shadow: inset 0 1px 3px rgba(35, 48, 68, 0.25) !important;
+  background: #d8dde6 !important;
+  box-shadow: inset 0 1px 3px rgba(28, 36, 48, 0.22) !important;
 }
 
-/* 3) 沉槽阱（凹入式区域）：用于列表托盘、搜索框外围或控制凹陷区 */
+/* 3) 沉槽阱（凹入式区域） */
 html[data-ui="skeuo"] .skeuo-well {
   background: var(--sk-groove-bg);
   border: 1px solid var(--sk-groove-border);
   box-shadow: var(--sk-groove-shadow);
 }
 
-/* 4) 物理状态 LED 指示灯点亮与熄灭（带金属安装衬圈） */
+/* 4) 精密镀铬衬圈 LED 状态灯（点亮跟随强调色，熄灭为暗色微珠） */
 html[data-ui="skeuo"] .skeuo-led-on {
-  width: 7px;
-  height: 7px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fff 0%, #ffc470 35%, #f59e0b 70%, #b45309 100%);
+  background: radial-gradient(circle at 35% 32%, #ffffff 0%, var(--accent-strong) 42%, var(--accent) 78%, color-mix(in srgb, var(--accent) 55%, #000) 100%);
   box-shadow:
-    0 0 6px 1px #ff9400,
-    0 0 12px 2px rgba(245, 158, 11, 0.4),
-    inset 0 1px 1px #ffffff,
-    0 0 0 1px rgba(0, 0, 0, 0.65),
-    0 0 0 2px rgba(255, 255, 255, 0.15);
+    0 0 6px 1px var(--accent),
+    0 0 12px 2px var(--accent-soft),
+    inset 0 0.5px 1px #ffffff,
+    0 0 0 1px rgba(0, 0, 0, 0.72),
+    0 0 0 2px rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+html[data-ui="skeuo"] .skeuo-led-red {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, #fff1f2 0%, #fb7185 38%, #ef4444 74%, #991b1b 100%);
+  box-shadow:
+    0 0 6px 1px #ef4444,
+    0 0 12px 2px rgba(239, 68, 68, 0.45),
+    inset 0 0.5px 1px #ffffff,
+    0 0 0 1px rgba(0, 0, 0, 0.72),
+    0 0 0 2px rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
 }
 html[data-ui="skeuo"] .skeuo-led-off {
-  width: 7px;
-  height: 7px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #2a313d 0%, #151920 100%);
+  background: radial-gradient(circle at 35% 35%, #2b303a 0%, #14171d 100%);
   box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.9),
-    0 0 0 1px rgba(0, 0, 0, 0.75),
+    inset 0 1px 2px rgba(0, 0, 0, 0.92),
+    0 0 0 1px rgba(0, 0, 0, 0.78),
     0 0 0 2px rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-led-off {
-  background: radial-gradient(circle at 35% 35%, #c8d0db 0%, #8c96a4 100%);
+  background: radial-gradient(circle at 35% 35%, #c5cbd4 0%, #8e96a3 100%);
   box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(0, 0, 0, 0.25),
+    inset 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.2),
     0 0 0 2px #ffffff;
 }
 
-/* 5) 铭牌效果（金属铭牌印刷字体） */
+/* 5) 拉丝金属品牌铭牌（CNC 铣削高光边） */
 html[data-ui="skeuo"] .skeuo-nameplate {
-  background: linear-gradient(180deg, #323842 0%, #1e2229 55%, #14171d 100%);
-  border: 1px solid rgba(0, 0, 0, 0.75);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(180deg, #2d313a 0%, #1d2026 52%, #15171c 100%);
+  border: 1px solid rgba(0, 0, 0, 0.8);
   box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+    0 4px 12px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.65);
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-nameplate {
-  background: linear-gradient(180deg, #ffffff 0%, #e8ecf2 55%, #d5dbe4 100%);
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.01) 0px,
+      rgba(0, 0, 0, 0.01) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(180deg, #ffffff 0%, #eceff3 54%, #dce0e6 100%);
+  border: 1px solid rgba(24, 30, 40, 0.16);
   box-shadow:
-    0 2px 5px rgba(35, 48, 68, 0.15),
+    0 3px 8px rgba(28, 36, 48, 0.12),
     inset 0 1px 0 #ffffff,
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    inset 0 -1px 0 rgba(24, 30, 40, 0.09);
+}
+
+/* 5b) 主内容区机架金属舱（ViewShell 拟物专属） */
+html[data-ui="skeuo"] .skeuo-rack-panel {
+  background:
+    linear-gradient(180deg, rgba(31, 34, 40, 0.96) 0%, rgba(21, 23, 27, 0.98) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.78);
+  box-shadow:
+    0 12px 32px -6px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+}
+html[data-ui="skeuo"][data-theme="light"] .skeuo-rack-panel {
+  background:
+    linear-gradient(180deg, rgba(252, 252, 253, 0.97) 0%, rgba(238, 240, 244, 0.98) 100%);
+  border: 1px solid rgba(24, 30, 40, 0.14);
+  box-shadow:
+    0 10px 26px -6px rgba(28, 36, 48, 0.14),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(24, 30, 40, 0.08);
+}
+html[data-ui="skeuo"][data-skin="on"] .skeuo-rack-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px) saturate(1.12);
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
 }
 
 /* 6) 拟物物理轻触拨动开关（.skeuo-switch） */
@@ -1525,152 +1625,328 @@ html[data-ui="skeuo"] .release-notes > :first-child{ margin-top: 0; }
 html[data-ui="skeuo"] .release-notes > :last-child{ margin-bottom: 0; }
 html[data-ui="skeuo"] .release-notes .rn-empty{ color: var(--ink-3); margin: 0; }
 
-/* 拟物机箱拉丝金属/喷砂面板底板（去除粗暴的 CRT 扫描横纹，回归纯正细腻的模拟金属微光质感） */
+/* 拟物机箱阳极氧化拉丝金属底板 */
 html[data-ui="skeuo"] .skeuo-chassis-bg {
-  background: radial-gradient(ellipse 120% 80% at 50% -10%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.008) 0px,
+      rgba(255, 255, 255, 0.008) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    radial-gradient(ellipse 115% 75% at 50% -12%, var(--backdrop-1) 0%, var(--backdrop-2) 58%, var(--bg) 100%);
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-chassis-bg {
-  background: radial-gradient(ellipse 120% 80% at 50% -10%, var(--backdrop-1) 0%, var(--backdrop-2) 60%, var(--bg) 100%);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.006) 0px,
+      rgba(0, 0, 0, 0.006) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    radial-gradient(ellipse 115% 75% at 50% -12%, var(--backdrop-1) 0%, var(--backdrop-2) 58%, var(--bg) 100%);
 }
 
-/* ---------- 播放页：发烧级黑胶唱机与模拟监听台专属材质 ---------- */
+/* ---------- 播放页：发烧级直驱黑胶唱机与声学参考监听台 ---------- */
 
-/* 1) 唱机基座台板（沉重压铸机架铝合金面板，带四角机架螺栓与高光倒角） */
+/* 1) 唱机基座台板（CNC 铣削阳极氧化铝面板，带细微金属拉丝与双层倒角） */
 html[data-ui="skeuo"] .skeuo-turntable-deck {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(175deg, #272a32 0%, #1a1d23 48%, #121419 100%);
+  border: 1px solid rgba(0, 0, 0, 0.88);
+  box-shadow:
+    0 28px 60px -12px rgba(0, 0, 0, 0.82),
+    0 8px 20px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.92),
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(0, 0, 0, 0.45);
+}
+html[data-ui="skeuo"][data-theme="light"] .skeuo-turntable-deck {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.009) 0px,
+      rgba(0, 0, 0, 0.009) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    linear-gradient(175deg, #fcfcfd 0%, #eef0f4 48%, #dfe3e9 100%);
+  border: 1px solid rgba(24, 30, 40, 0.18);
+  box-shadow:
+    0 20px 44px -10px rgba(28, 36, 48, 0.22),
+    0 5px 14px rgba(28, 36, 48, 0.1),
+    inset 0 1px 0 #ffffff,
+    inset 0 -1px 0 rgba(24, 30, 40, 0.12);
+}
+
+/* 1b) 右侧声学参考监听舱（与唱机台同源拉丝金属外框，替代压抑死黑盒） */
+html[data-ui="skeuo"] .skeuo-acoustic-bay {
   background:
     repeating-linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.01) 0px,
       rgba(255, 255, 255, 0.01) 1px,
       transparent 1px,
-      transparent 4px
+      transparent 3px
     ),
-    linear-gradient(180deg, #242a34 0%, #171b22 45%, #111419 100%);
+    linear-gradient(175deg, #23262e 0%, #171a20 50%, #111318 100%);
   border: 1px solid rgba(0, 0, 0, 0.85);
   box-shadow:
-    0 24px 50px -10px rgba(0, 0, 0, 0.75),
+    0 28px 60px -12px rgba(0, 0, 0, 0.78),
     0 8px 20px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.9);
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.88);
 }
-html[data-ui="skeuo"][data-theme="light"] .skeuo-turntable-deck {
+html[data-ui="skeuo"][data-theme="light"] .skeuo-acoustic-bay {
   background:
     repeating-linear-gradient(
       90deg,
-      rgba(0, 0, 0, 0.015) 0px,
-      rgba(0, 0, 0, 0.015) 1px,
+      rgba(0, 0, 0, 0.008) 0px,
+      rgba(0, 0, 0, 0.008) 1px,
       transparent 1px,
-      transparent 4px
+      transparent 3px
     ),
-    linear-gradient(180deg, #ffffff 0%, #edf1f7 45%, #dde3ec 100%);
-  border: 1px solid rgba(35, 48, 68, 0.22);
+    linear-gradient(175deg, #fafbfc 0%, #edf0f4 50%, #e0e4ea 100%);
+  border: 1px solid rgba(24, 30, 40, 0.16);
   box-shadow:
-    0 16px 36px -8px rgba(35, 48, 68, 0.22),
-    0 4px 12px rgba(35, 48, 68, 0.1),
+    0 20px 44px -10px rgba(28, 36, 48, 0.18),
+    0 5px 14px rgba(28, 36, 48, 0.08),
     inset 0 1px 0 #ffffff,
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    inset 0 -1px 0 rgba(24, 30, 40, 0.1);
 }
 
-/* 2) 唱盘沉槽（重装沉入式转盘凹陷槽） */
+/* 1c) 歌词光学玻璃视窗（通透、无干扰、高对比） */
+html[data-ui="skeuo"] .skeuo-lyric-viewport {
+  background: radial-gradient(ellipse at 50% 0%, rgba(16, 18, 23, 0.82) 0%, rgba(9, 10, 13, 0.92) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.82);
+  box-shadow:
+    inset 0 4px 14px rgba(0, 0, 0, 0.72),
+    inset 0 1px 2px #000000,
+    0 1px 0 rgba(255, 255, 255, 0.08);
+}
+html[data-ui="skeuo"][data-theme="light"] .skeuo-lyric-viewport {
+  background: radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.88) 0%, rgba(235, 238, 244, 0.92) 100%);
+  border: 1px solid rgba(24, 30, 40, 0.14);
+  box-shadow:
+    inset 0 3px 10px rgba(28, 36, 48, 0.12),
+    inset 0 1px 2px rgba(28, 36, 48, 0.08),
+    0 1px 0 #ffffff;
+}
+
+/* 2) 唱盘沉槽（重装沉入式 CNC 铝制转盘凹槽） */
 html[data-ui="skeuo"] .skeuo-turntable-well {
-  background: radial-gradient(circle at center, #07090c 0%, #101319 75%, #1b2028 100%);
+  background: radial-gradient(circle at 50% 50%, #050608 0%, #0c0e13 76%, #181c23 94%, #252a33 100%);
   border: 2px solid rgba(0, 0, 0, 0.95);
   box-shadow:
-    inset 0 8px 24px rgba(0, 0, 0, 0.95),
+    inset 0 10px 26px rgba(0, 0, 0, 0.96),
     inset 0 2px 6px #000000,
-    0 1px 0 rgba(255, 255, 255, 0.15);
+    0 1px 0 rgba(255, 255, 255, 0.16),
+    0 -1px 0 rgba(0, 0, 0, 0.7);
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-turntable-well {
-  background: radial-gradient(circle at center, #bcc6d4 0%, #cfd7e3 75%, #e1e7f0 100%);
-  border: 2px solid rgba(35, 48, 68, 0.35);
+  background: radial-gradient(circle at 50% 50%, #b7c0cd 0%, #ccd3de 76%, #dfe4ec 96%, #edf0f5 100%);
+  border: 2px solid rgba(28, 36, 48, 0.28);
   box-shadow:
-    inset 0 6px 18px rgba(35, 48, 68, 0.35),
-    inset 0 2px 4px rgba(35, 48, 68, 0.2),
+    inset 0 8px 20px rgba(28, 36, 48, 0.34),
+    inset 0 2px 4px rgba(28, 36, 48, 0.18),
     0 1px 0 #ffffff;
+}
+
+/* 2b) 精工铝制转盘外圈 + 双排频闪测速点 */
+html[data-ui="skeuo"] .skeuo-platter-rim {
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(255, 255, 255, 0.22) 0deg,
+      rgba(255, 255, 255, 0.05) 60deg,
+      rgba(0, 0, 0, 0.35) 135deg,
+      rgba(255, 255, 255, 0.18) 215deg,
+      rgba(0, 0, 0, 0.3) 300deg,
+      rgba(255, 255, 255, 0.22) 360deg
+    ),
+    #252932;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.85),
+    inset 0 1px 1px rgba(255, 255, 255, 0.35),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.8);
+}
+html[data-ui="skeuo"][data-theme="light"] .skeuo-platter-rim {
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(255, 255, 255, 0.85) 0deg,
+      rgba(210, 216, 224, 0.9) 70deg,
+      rgba(160, 168, 180, 0.85) 150deg,
+      rgba(255, 255, 255, 0.9) 230deg,
+      rgba(175, 182, 194, 0.85) 310deg,
+      rgba(255, 255, 255, 0.85) 360deg
+    ),
+    #d4dae2;
+  box-shadow:
+    0 6px 18px rgba(28, 36, 48, 0.28),
+    inset 0 1px 1px #ffffff,
+    inset 0 -1px 2px rgba(28, 36, 48, 0.28);
 }
 
 /* 3) 转盘频闪测速点边缘（Strobe Dots） */
 html[data-ui="skeuo"] .skeuo-strobe-rim {
   background: repeating-conic-gradient(
-    rgba(255, 255, 255, 0.28) 0deg 1.2deg,
-    transparent 1.2deg 2.4deg
+    rgba(255, 245, 220, 0.42) 0deg 1.1deg,
+    transparent 1.1deg 2.5deg
   );
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-strobe-rim {
   background: repeating-conic-gradient(
-    rgba(35, 48, 68, 0.35) 0deg 1.2deg,
-    transparent 1.2deg 2.4deg
+    rgba(28, 36, 48, 0.42) 0deg 1.1deg,
+    transparent 1.1deg 2.5deg
   );
 }
 
-/* 4) 拟物金属唱片压镇（Record Clamp / Stabilizer） */
+/* 3b) 逼真黑胶唱片纹路（含 Lead-in、多音轨分隔环、死纹与黑胶深邃光泽） */
+html[data-ui="skeuo"] .skeuo-vinyl-disc {
+  background:
+    radial-gradient(
+      circle at center,
+      transparent 0%,
+      transparent 34%,
+      rgba(255, 255, 255, 0.06) 34.4%,
+      transparent 35%,
+      transparent 48%,
+      rgba(255, 255, 255, 0.045) 48.3%,
+      transparent 48.8%,
+      transparent 66%,
+      rgba(255, 255, 255, 0.045) 66.3%,
+      transparent 66.8%,
+      transparent 84%,
+      rgba(255, 255, 255, 0.05) 84.3%,
+      transparent 84.8%,
+      transparent 95%,
+      rgba(255, 255, 255, 0.09) 97%,
+      rgba(0, 0, 0, 0.7) 100%
+    ),
+    repeating-radial-gradient(
+      circle at center,
+      #0a0b0e 0px,
+      #0a0b0e 1.1px,
+      #161920 1.8px,
+      #0c0e12 2.6px
+    );
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+/* 4) 拟物金属唱片压镇（实心黄铜车削同心纹 / 阳极氧化银铝） */
 html[data-ui="skeuo"] .skeuo-record-clamp {
   background:
-    radial-gradient(circle at 32% 30%, #fff2d1 0%, #d4af37 32%, #85691d 72%, #42340b 100%);
-  border: 1.5px solid rgba(0, 0, 0, 0.75);
+    repeating-radial-gradient(
+      circle at center,
+      rgba(255, 255, 255, 0.09) 0px,
+      transparent 1.5px,
+      rgba(0, 0, 0, 0.14) 2.5px
+    ),
+    conic-gradient(
+      from 30deg,
+      #f8e4b0 0deg,
+      #c99c36 55deg,
+      #6a4f12 135deg,
+      #f2d58b 210deg,
+      #59420e 295deg,
+      #f8e4b0 360deg
+    );
+  border: 1.5px solid rgba(0, 0, 0, 0.82);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.8),
-    inset 0 1px 2px rgba(255, 255, 255, 0.8),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.6);
+    0 5px 14px rgba(0, 0, 0, 0.85),
+    inset 0 1px 2px rgba(255, 255, 255, 0.82),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.65);
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-record-clamp {
   background:
-    radial-gradient(circle at 32% 30%, #ffffff 0%, #cbd4e0 35%, #8893a3 75%, #505967 100%);
-  border: 1.5px solid rgba(35, 48, 68, 0.35);
+    repeating-radial-gradient(
+      circle at center,
+      rgba(255, 255, 255, 0.25) 0px,
+      transparent 1.5px,
+      rgba(0, 0, 0, 0.08) 2.5px
+    ),
+    conic-gradient(
+      from 30deg,
+      #ffffff 0deg,
+      #ccd3de 60deg,
+      #86909e 140deg,
+      #f5f7fa 215deg,
+      #7c8694 300deg,
+      #ffffff 360deg
+    );
+  border: 1.5px solid rgba(28, 36, 48, 0.32);
   box-shadow:
-    0 3px 8px rgba(35, 48, 68, 0.35),
+    0 4px 10px rgba(28, 36, 48, 0.35),
     inset 0 1px 2px #ffffff,
-    inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+    inset 0 -2px 4px rgba(0, 0, 0, 0.22);
 }
 
-/* 5) 模拟双通道 VU 电平表框架 */
+/* 5) 模拟双通道 VU 电平表精密金属表架 */
 html[data-ui="skeuo"] .skeuo-vu-frame {
-  background: linear-gradient(180deg, #161b22 0%, #0c0f13 100%);
-  border: 1px solid rgba(0, 0, 0, 0.88);
+  background: linear-gradient(180deg, #171a20 0%, #0d0f13 100%);
+  border: 1px solid rgba(0, 0, 0, 0.9);
   box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.95),
-    inset 0 1px 1px #000000,
+    inset 0 3px 8px rgba(0, 0, 0, 0.95),
+    inset 0 1px 2px #000000,
     0 1px 0 rgba(255, 255, 255, 0.12);
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-vu-frame {
-  background: linear-gradient(180deg, #d8e0eb 0%, #e9eef5 100%);
-  border: 1px solid rgba(35, 48, 68, 0.25);
+  background: linear-gradient(180deg, #d7dce3 0%, #e7ebf0 100%);
+  border: 1px solid rgba(24, 30, 40, 0.2);
   box-shadow:
-    inset 0 2px 4px rgba(35, 48, 68, 0.18),
+    inset 0 2px 5px rgba(28, 36, 48, 0.18),
     0 1px 0 #ffffff;
 }
 
-/* 6) 模拟 VU 电平表刻度盘（暖黄背光古典表盘 / 银白高保真表盘） */
+/* 6) 模拟 VU 电平表刻度盘（经典 Accuphase/McIntosh 暖琥珀钨丝背光 / Braun 奶油象牙光学表盘） */
 html[data-ui="skeuo"] .skeuo-vu-dial {
-  background: radial-gradient(ellipse at 50% 120%, #ffdf94 0%, #e8c474 45%, #bfa052 90%, #9e8238 100%);
+  background:
+    radial-gradient(ellipse 85% 95% at 50% 112%, #fff2c2 0%, #f5ce74 36%, #cf9a3b 74%, #875e1c 100%);
   box-shadow:
-    inset 0 0 12px rgba(245, 158, 11, 0.35),
-    inset 0 1px 3px rgba(0, 0, 0, 0.5);
-  color: #261d0d;
+    inset 0 2px 6px rgba(0, 0, 0, 0.65),
+    inset 0 0 16px rgba(245, 158, 11, 0.38),
+    0 1px 0 rgba(255, 255, 255, 0.14);
+  color: #24190a;
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-vu-dial {
-  background: radial-gradient(ellipse at 50% 120%, #ffffff 0%, #edf2f9 55%, #d5dde9 100%);
+  background:
+    radial-gradient(ellipse 90% 105% at 50% 110%, #fffdf7 0%, #f7f3e8 55%, #e5dfd0 100%);
   box-shadow:
-    inset 0 0 8px rgba(35, 48, 68, 0.12),
-    inset 0 1px 2px rgba(35, 48, 68, 0.2);
-  color: #1e242d;
+    inset 0 2px 5px rgba(28, 36, 48, 0.22),
+    inset 0 0 8px rgba(180, 155, 105, 0.14),
+    0 1px 0 #ffffff;
+  color: #1f2228;
 }
 
-/* 7) 实体黑胶封套外壳（厚纸板质感与封套光泽） */
+/* 7) 实体黑胶封套外壳（厚纸板装帧、细腻压痕与书脊反光） */
 html[data-ui="skeuo"] .skeuo-jacket {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 40%, rgba(0, 0, 0, 0.25) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.03) 42%, rgba(0, 0, 0, 0.32) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
-    0 20px 42px -10px rgba(0, 0, 0, 0.75),
-    0 6px 14px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    0 22px 46px -10px rgba(0, 0, 0, 0.82),
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset -1px 0 0 rgba(0, 0, 0, 0.45);
 }
 html[data-ui="skeuo"][data-theme="light"] .skeuo-jacket {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.3) 40%, rgba(35, 48, 68, 0.08) 100%);
-  border: 1px solid rgba(35, 48, 68, 0.16);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(244, 245, 248, 0.5) 45%, rgba(28, 36, 48, 0.08) 100%);
+  border: 1px solid rgba(24, 30, 40, 0.15);
   box-shadow:
-    0 14px 30px -8px rgba(35, 48, 68, 0.25),
-    0 4px 10px rgba(35, 48, 68, 0.1),
+    0 18px 36px -10px rgba(28, 36, 48, 0.26),
+    0 4px 12px rgba(28, 36, 48, 0.12),
     inset 0 1px 0 #ffffff;
 }
 

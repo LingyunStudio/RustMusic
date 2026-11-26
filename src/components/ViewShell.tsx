@@ -47,6 +47,11 @@ export default function ViewShell({
     );
   }
 
+  const resolvedCardClass =
+    isSkeuo && contentCardClass === "glass rounded-3xl"
+      ? "skeuo-rack-panel rounded-2xl"
+      : contentCardClass;
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {extra}
@@ -54,7 +59,7 @@ export default function ViewShell({
       <div className={`flex-1 min-h-0 flex flex-col px-6 ${resolvedBottomPadding}`}>
         {cardHeader}
         <div
-          className={`relative ${contentCardClass} flex-1 min-h-0 flex flex-col overflow-hidden`}
+          className={`relative ${resolvedCardClass} flex-1 min-h-0 flex flex-col overflow-hidden`}
         >
           {children}
         </div>

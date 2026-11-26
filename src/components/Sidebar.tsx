@@ -96,14 +96,15 @@ export default function Sidebar() {
     >
       {/* 品牌区 */}
       {isSkeuo ? (
-        <div className="skeuo-nameplate mt-2 mb-4 px-3.5 py-2.5 rounded-xl flex items-center gap-3">
-          <Logo size={38} />
-          <div className="min-w-0">
-            <div className="text-[14.5px] font-black tracking-wide leading-tight text-[var(--ink)]">
+        <div className="skeuo-nameplate relative mt-2 mb-4 px-3.5 py-2.5 rounded-xl flex items-center gap-3">
+          <Logo size={36} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-black tracking-wide leading-tight text-[var(--ink)]">
               RustMusic
             </div>
-            <div className="text-[9.5px] font-bold text-[var(--accent-strong)] tracking-[0.24em] mt-0.5">
-              HI-FI PLAYER
+            <div className="text-[9px] font-bold text-[var(--accent-strong)] tracking-[0.24em] mt-0.5 flex items-center gap-1.5">
+              <span className="skeuo-led-on !w-1.5 !h-1.5" />
+              HI-FI REFERENCE
             </div>
           </div>
         </div>
@@ -186,6 +187,11 @@ export default function Sidebar() {
                     : { border: "1px solid transparent" }
                 }
               >
+                {isSkeuo && (
+                  <span
+                    className={`${active ? "skeuo-led-on" : "skeuo-led-off"} !w-1.5 !h-1.5 shrink-0`}
+                  />
+                )}
                 {active && !isSkeuo && (
                   <span
                     className={

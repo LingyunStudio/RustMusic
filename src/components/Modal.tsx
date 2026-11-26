@@ -49,7 +49,7 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
   const headerClass = isLiquid
     ? "flex items-center justify-between px-6 pt-5 pb-3 border-b border-[var(--line)]"
     : isSkeuo
-      ? "flex items-center justify-between pl-8 pr-4 pt-3.5 pb-3 border-b border-[var(--sk-divider)] shadow-[0_1px_0_var(--sk-divider-hi)]"
+      ? "flex items-center justify-between px-5 pt-3.5 pb-3 border-b border-[var(--sk-divider)] shadow-[0_1px_0_var(--sk-divider-hi)]"
       : "flex items-center justify-between px-5 pt-4 pb-3";
 
   const titleClass = isLiquid
@@ -77,12 +77,6 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
         style={cardStyle}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {isSkeuo && (
-          <>
-            <div className="skeuo-screw absolute top-3 left-3" />
-            <div className="skeuo-screw absolute top-3 right-12" />
-          </>
-        )}
         {title && (
           <div className={headerClass}>
             <span className={titleClass}>{title}</span>

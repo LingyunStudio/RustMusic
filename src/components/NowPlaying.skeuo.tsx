@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Disc3, Heart, Maximize2, Mic2, Minimize2, Music4 } from "lucide-react";
+import { ChevronDown, Heart, Maximize2, Mic2, Minimize2 } from "lucide-react";
 import { useStore } from "../store";
 import { formatLyricSource, useI18n } from "../i18n";
 import CoverImg from "./CoverImg";
 import VUMeter from "./VUMeter";
 import Tonearm from "./Tonearm";
+import LyricMatchModal from "./LyricMatchModal";
 import { api, coverSrc } from "../api";
 import {
   applyLyricFill,
   clearLyricFill,
   extractPalette,
-  lyricAdaptiveColors,
   lyricLineProgress,
   remoteCoverCache,
 } from "../utils";
@@ -23,6 +23,7 @@ export default function NowPlaying() {
   const fullscreen = useStore((s) => s.fullscreen);
   const toggleFullscreen = useStore((s) => s.toggleFullscreen);
   const toggleLike = useStore((s) => s.toggleLike);
+  const togglePlay = useStore((s) => s.togglePlay);
   const lyrics = useStore((s) => s.lyrics);
   const lyricsLoading = useStore((s) => s.lyricsLoading);
   const lyricSource = useStore((s) => s.lyrics?.source);
@@ -40,6 +41,7 @@ export default function NowPlaying() {
   const lyricsFontScale = useStore((s) => s.lyricsFontScale);
   const setLyricsFontScale = useStore((s) => s.setLyricsFontScale);
   const theme = useStore((s) => s.theme);
+  const [matchOpen, setMatchOpen] = useState(false);
 
   // 挂载时开启后端音频频谱分析（驱动 VU 表和电平指示），卸载时关闭
   useEffect(() => {
@@ -252,8 +254,6 @@ export default function NowPlaying() {
     : "";
 
   const [palette, setPalette] = useState<string[]>([]);
-  const adaptive = palette.length >= 2 ? lyricAdaptiveColors(palette, theme) : null;
-  const lyricVars = (adaptive?.vars ?? {}) as React.CSSProperties;
 
   useEffect(() => {
     if (!coverUrl) {
@@ -389,183 +389,137 @@ export default function NowPlaying() {
 
   return (
     <div
-      className="absolute inset-0 z-40 anim-np overflow-hidden select-none"
-      style={{
-        background: "var(--bg)",
-        ...(lyricVars as React.CSSProperties),
-      }}
+      className="absolute inset-0 z-40 anim-np overflow-hidden select-none flex flex-col"
+      style={{ background: "var(--bg)" }}
     >
       {/* 拟物机架拉丝金属底板 */}
       <div className="absolute inset-0 skeuo-chassis-bg pointer-events-none" />
 
-      {/* 胆机/仪表发光氛围衬底：由封面主色温润晕染，杜绝生硬大色块 */}
+      {/* 胆机/仪表发光氛围衬底：由封面主色温润晕染 */}
       {palette.length >= 2 && (
         <div
           className="absolute inset-0 pointer-events-none transition-opacity duration-1000"
           style={{
-            background: `radial-gradient(ellipse 90% 70% at 50% 38%, ${palette[0]}2e 0%, ${palette[1]}16 55%, transparent 80%)`,
-            opacity: theme === "light" ? 0.35 : 0.65,
+            background: `radial-gradient(ellipse 80% 65% at 32% 45%, ${palette[0]}24 0%, ${palette[1]}12 48%, transparent 78%)`,
+            opacity: theme === "light" ? 0.25 : 0.58,
           }}
         />
       )}
 
-      {/* 物理机箱四角紧固车削螺丝 */}
-      <div className="skeuo-screw absolute top-3.5 left-4 z-20 pointer-events-none" />
-      <div className="skeuo-screw absolute top-3.5 right-4 z-20 pointer-events-none" />
-
-      {/* 顶栏：发烧级硬件机架式状态栏 */}
-      <div className="relative flex items-center justify-between px-8 pt-2.5 h-14 z-20 border-b border-[var(--sk-divider)] shadow-[inset_0_1px_0_var(--sk-divider-hi)]">
-        {/* 左侧：物理指示灯与母带工作模式 */}
+      {/* 顶栏：与下方双舱和底栏严格同宽同边距（px-6），pt-10 避让系统标题栏 */}
+      <div className="relative flex items-center justify-between max-w-[1440px] mx-auto w-full px-6 pt-10 pb-3 shrink-0 z-20">
+        {/* 左侧：物理运行状态灯 */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] shadow-[var(--sk-groove-shadow)]">
+          <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] shadow-[var(--sk-groove-shadow)]">
             <div className={playing ? "skeuo-led-on" : "skeuo-led-off"} />
             <span className="text-[10px] font-black tracking-[0.2em] text-[var(--accent-strong)] uppercase">
-              {playing ? "PHONO ACTIVE · 33⅓ RPM" : "DECK STANDBY"}
+              {playing ? "PHONO · 33⅓ RPM" : "DECK STANDBY"}
             </span>
           </div>
-          <span className="text-[11px] font-mono font-semibold text-[var(--ink-3)] hidden md:inline-block tracking-wider">
-            HI-FI DIRECT DRIVE MONITOR
+          <span className="text-[10.5px] font-mono font-semibold text-[var(--ink-3)] hidden md:inline-block tracking-[0.18em]">
+            DIRECT DRIVE REFERENCE
           </span>
         </div>
 
-        {/* 中间：机架金属名牌 */}
-        <div className="skeuo-nameplate px-3.5 py-1 rounded-md hidden lg:flex items-center gap-2">
-          <Disc3 size={13} className="text-[var(--accent-strong)]" />
-          <span className="text-[10.5px] font-black tracking-[0.25em] text-[var(--ink)]">
-            RUSTMUSIC REFERENCE SYSTEM
-          </span>
-        </div>
-
-        {/* 右侧：金属微倒角窗口操作键 */}
+        {/* 右侧：金属微倒角全屏与收起键 */}
         <div className="flex items-center gap-2">
           <button
-            className="titlebar-btn !w-8 !h-7 !rounded-lg"
+            className="btn-ghost !w-8 !h-8 !rounded-lg"
             onClick={() => toggleFullscreen()}
             title={fullscreen ? tr("退出全屏", "Exit Fullscreen") : tr("全屏播放（无边框）", "Fullscreen (Borderless)")}
           >
-            {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
           <button
-            className="titlebar-btn !w-8 !h-7 !rounded-lg"
+            className="btn-ghost !w-8 !h-8 !rounded-lg"
             onClick={() => {
               if (fullscreen) toggleFullscreen(false);
               setNowPlayingOpen(false);
             }}
             title={tr("收起播放页", "Collapse Now Playing")}
           >
-            <ChevronDown size={17} />
+            <ChevronDown size={18} />
           </button>
         </div>
       </div>
 
-      {/* 主体机台：双舱布局（左：直驱黑胶唱机工作台；右：精密声学监听歌词舱） */}
-      <div className="relative flex flex-col lg:flex-row gap-8 xl:gap-14 px-8 xl:px-14 pt-4 pb-28 items-center justify-center h-[calc(100%-56px)] z-10 max-w-[1580px] mx-auto w-full">
-        {/* 左舱：直驱黑胶唱机工作台 */}
-        <div className="w-full lg:w-[48%] max-w-[540px] flex flex-col items-center justify-center shrink-0">
-          {/* 拟物机架唱机台基座 */}
-          <div className="skeuo-turntable-deck rounded-2xl p-5 relative w-full flex flex-col items-center">
-            {/* 机台四角固定螺丝 */}
-            <div className="skeuo-screw absolute top-3 left-3" />
-            <div className="skeuo-screw absolute top-3 right-3" />
-            <div className="skeuo-screw absolute bottom-3 left-3" />
-            <div className="skeuo-screw absolute bottom-3 right-3" />
+      {/* 主体机台：左右双舱严格等高对齐，外边距 px-6 与底栏 PlayerBar 严丝合缝 */}
+      <div className="relative flex-1 min-h-0 flex items-center justify-center gap-6 xl:gap-8 px-6 pt-1 pb-[106px] z-10 max-w-[1440px] mx-auto w-full">
+        {/* 左舱：直驱黑胶唱机工作台（与右舱严格等高） */}
+        <div className="w-[43%] min-w-[350px] max-w-[490px] h-full max-h-[600px] flex flex-col shrink-0">
+          <div className="skeuo-turntable-deck rounded-2xl p-5 sm:p-6 relative w-full h-full flex flex-col items-center justify-between">
+            {/* 唱机台面：居中舒展，转盘 + 精密 S 型唱臂统一比例坐标系 */}
+            <div className="relative flex-1 min-h-0 w-full flex items-center justify-center">
+              <div className="relative w-full max-w-[420px] aspect-[1.22/1] max-h-full flex items-center justify-start pl-2 sm:pl-4">
+                {/* 沉入式 CNC 铝制转盘凹槽 */}
+                <div className="relative h-[94%] aspect-square rounded-full skeuo-turntable-well flex items-center justify-center shrink-0">
+                  {/* 车削铝转盘外环 + 频闪测速环 */}
+                  <div className="relative w-[calc(100%-10px)] h-[calc(100%-10px)] rounded-full skeuo-platter-rim flex items-center justify-center">
+                    <div className="absolute inset-[2px] rounded-full skeuo-strobe-rim pointer-events-none opacity-65" />
 
-            {/* 机台顶部铭牌与测速状态 */}
-            <div className="w-full flex items-center justify-between text-[10px] font-black tracking-widest text-[var(--ink-3)] px-3 mb-3 border-b border-[var(--sk-divider)] pb-2">
-              <span className="flex items-center gap-1.5 text-[var(--accent-strong)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                PRECISION TURNTABLE
-              </span>
-              <span className="font-mono">MODEL PT-9800</span>
-            </div>
+                    {/* 等比匀速旋转黑胶唱片（暂停原地停驻，绝不缩放变形） */}
+                    <div
+                      className={`relative w-[calc(100%-14px)] h-[calc(100%-14px)] rounded-full skeuo-vinyl-disc skeuo-vinyl-spin flex items-center justify-center ${
+                        playing ? "is-playing" : ""
+                      }`}
+                    >
+                      {/* 黑胶双色各向异性蝴蝶领结高光 */}
+                      <div
+                        className="absolute inset-0 rounded-full pointer-events-none"
+                        style={{
+                          background:
+                            "conic-gradient(from 38deg at 50% 50%, rgba(255,244,224,0.2) 0deg, rgba(255,255,255,0.03) 26deg, transparent 48deg, transparent 148deg, rgba(210,230,255,0.04) 168deg, rgba(255,250,240,0.2) 182deg, rgba(255,255,255,0.03) 208deg, transparent 230deg, transparent 330deg, rgba(255,255,255,0.03) 348deg, rgba(255,244,224,0.2) 360deg)",
+                        }}
+                      />
 
-            {/* 唱盘与唱臂交互核心区 */}
-            <div className="relative flex items-center justify-center my-2 w-full">
-              {/* 实体黑胶唱片封套（厚纸板装帧、哑光光泽与压痕） */}
-              <div className="relative z-10 rounded-xl p-1.5 skeuo-jacket shrink-0 -mr-16 xl:-mr-20 transition-transform duration-500 hover:scale-[1.01]">
-                <div className="relative rounded-lg overflow-hidden shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
-                  <CoverImg
-                    src={current.cover}
-                    seed={current.title}
-                    className="w-[min(30vh,250px)] h-[min(30vh,250px)] object-cover block"
-                    iconSize={48}
-                  />
-                  {/* 封套哑光反光层 */}
-                  <div
-                    className="absolute inset-0 pointer-events-none"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.02) 40%, transparent 60%)",
-                    }}
-                  />
-                  {/* 书脊折痕光影 */}
-                  <div className="absolute top-0 bottom-0 left-2 w-px bg-white/20 pointer-events-none" />
-                </div>
-              </div>
+                      {/* 饱满清晰的圆形专辑封面中心纸标 */}
+                      <div className="relative w-[43%] h-[43%] rounded-full overflow-hidden border-2 border-white/20 shadow-[0_0_0_2px_rgba(0,0,0,0.78),inset_0_2px_6px_rgba(0,0,0,0.85)]">
+                        <CoverImg
+                          src={current.cover}
+                          seed={current.title}
+                          className="w-full h-full object-cover"
+                          iconSize={28}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/25 pointer-events-none" />
+                      </div>
 
-              {/* 沉入式转盘凹槽（Turntable Well） */}
-              <div className="relative w-[min(34vh,280px)] h-[min(34vh,280px)] rounded-full skeuo-turntable-well flex items-center justify-center shrink-0">
-                {/* 频闪测速外圈（Strobe dots rim） */}
-                <div className="absolute inset-1 rounded-full skeuo-strobe-rim pointer-events-none opacity-45" />
-
-                {/* 旋转黑胶唱片 */}
-                <div
-                  className={`relative w-[min(31vh,255px)] h-[min(31vh,255px)] rounded-full shadow-[0_12px_32px_rgba(0,0,0,0.85)] flex items-center justify-center transition-transform ${
-                    playing ? "animate-[slowSpin_22s_linear_infinite]" : ""
-                  }`}
-                  style={{
-                    background:
-                      "repeating-radial-gradient(circle at center, #090b0e 0px, #090b0e 1px, #14181f 2px, #090b0e 3px)",
-                    border: "2px solid rgba(255, 255, 255, 0.08)",
-                  }}
-                >
-                  {/* 黑胶各向异性蝴蝶领结高光 */}
-                  <div
-                    className="absolute inset-0 rounded-full pointer-events-none"
-                    style={{
-                      background:
-                        "conic-gradient(from 40deg at 50% 50%, rgba(255,255,255,0.18) 0deg, rgba(255,255,255,0.02) 30deg, transparent 50deg, transparent 150deg, rgba(255,255,255,0.02) 170deg, rgba(255,255,255,0.18) 180deg, rgba(255,255,255,0.02) 210deg, transparent 230deg, transparent 330deg, rgba(255,255,255,0.02) 350deg, rgba(255,255,255,0.18) 360deg)",
-                    }}
-                  />
-
-                  {/* 唱片中心纸标 */}
-                  <div className="relative w-[86px] h-[86px] rounded-full overflow-hidden border-2 border-white/20 shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]">
-                    <CoverImg
-                      src={current.cover}
-                      seed={current.title}
-                      small
-                      className="w-full h-full object-cover scale-110"
-                      iconSize={20}
-                    />
-                    <div className="absolute inset-0 bg-black/20" />
-                  </div>
-
-                  {/* 拟物实心黄铜/铬合金唱片金属压镇（Record Clamp） */}
-                  <div className="absolute w-10 h-10 rounded-full skeuo-record-clamp flex items-center justify-center z-10 pointer-events-none">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#111] border border-white/60 shadow-[inset_0_1px_2px_#000]" />
+                      {/* 精致金属主轴心针 */}
+                      <div className="absolute w-3.5 h-3.5 rounded-full skeuo-record-clamp flex items-center justify-center z-10 pointer-events-none">
+                        <div className="w-1 h-1 rounded-full bg-[#111]" />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* 动态唱臂与唱针系统（播时旋入黑胶，暂停时升起归位） */}
+                {/* 精密 S 型唱臂：百分比锚定在唱机台面右侧 */}
                 <Tonearm
                   playing={playing}
-                  className="absolute -top-7 -right-11 z-20"
+                  className="absolute top-[1%] right-[0%] w-[29%] h-[86%] z-20"
                 />
+
+                {/* 台面右下角：真实可按的物理 START / STOP 启停微动键 */}
+                <button
+                  type="button"
+                  onClick={() => togglePlay()}
+                  title={playing ? tr("暂停", "Pause") : tr("播放", "Play")}
+                  className="btn-ghost absolute bottom-1 right-1 z-20 !px-2.5 !py-1 !rounded-md flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-[0.14em]"
+                >
+                  <span className={playing ? "skeuo-led-on !w-1.5 !h-1.5" : "skeuo-led-off !w-1.5 !h-1.5"} />
+                  {playing ? "STOP" : "START"}
+                </button>
               </div>
             </div>
 
-            {/* 歌曲主信息与硬件控制仓 */}
-            <div className="w-full text-center mt-3 px-2 flex flex-col items-center">
-              <h1 className="text-[21px] xl:text-[23px] font-black text-[var(--ink)] tracking-tight truncate max-w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] leading-tight">
+            {/* 歌曲主信息与精简硬件控制条 */}
+            <div className="w-full text-center mt-3 pt-3.5 border-t border-[var(--sk-divider)] px-1 flex flex-col items-center shrink-0">
+              <h1 className="text-[19px] xl:text-[21px] font-black text-[var(--ink)] tracking-tight truncate max-w-full leading-tight">
                 {current.title}
               </h1>
-              <div className="text-[13px] text-[var(--ink-2)] font-semibold mt-1 truncate max-w-full">
+              <div className="text-[12.5px] text-[var(--ink-2)] font-semibold mt-1 truncate max-w-full">
                 {current.artist}
               </div>
 
-              {/* 拟物金属凹槽集成控制台 */}
-              <div className="flex items-center gap-2.5 mt-3.5 px-3.5 py-1.5 rounded-xl skeuo-well">
-                {/* 物理收藏按钮（带红宝石指示灯点亮） */}
+              <div className="flex items-center gap-2 mt-3 px-3 py-1.5 rounded-xl skeuo-well">
                 <button
                   className="btn-ghost !w-7 !h-7 !rounded-lg relative flex items-center justify-center shrink-0"
                   onClick={handleToggleLike}
@@ -576,22 +530,20 @@ export default function NowPlaying() {
                     className={
                       isLiked
                         ? "fill-[#ef4444] text-[#ef4444]"
-                        : "text-[var(--ink-3)] group-hover:text-[var(--ink-2)]"
+                        : "text-[var(--ink-3)]"
                     }
                   />
                   {isLiked && (
-                    <span className="skeuo-led-on absolute -top-0.5 -right-0.5 !w-1.5 !h-1.5" />
+                    <span className="skeuo-led-red absolute -top-0.5 -right-0.5 !w-1.5 !h-1.5" />
                   )}
                 </button>
 
-                {/* 音源/专辑金属铭牌 */}
-                <span className="text-[10.5px] font-bold text-[var(--ink-2)] px-2.5 py-0.5 rounded-md bg-[var(--shade-strong)] border border-[var(--sk-edge)] max-w-[150px] truncate">
+                <span className="text-[10.5px] font-bold text-[var(--ink-2)] px-2.5 py-0.5 rounded-md bg-[var(--shade-strong)] border border-[var(--sk-edge)] max-w-[155px] truncate">
                   {current.album ? `${platformBadge} · ${current.album}` : platformBadge}
                 </span>
 
                 <div className="w-px h-3.5 bg-[var(--sk-divider)]" />
 
-                {/* 歌词翻译硬件切换键 */}
                 <button
                   disabled={!hasTrans}
                   className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
@@ -620,7 +572,6 @@ export default function NowPlaying() {
 
                 <div className="w-px h-3.5 bg-[var(--sk-divider)]" />
 
-                {/* 字号步进按键 */}
                 <div className="flex items-center gap-1">
                   <button
                     className="btn-ghost !w-6 !h-6 !rounded-md text-[10.5px] font-black"
@@ -637,6 +588,18 @@ export default function NowPlaying() {
                     A+
                   </button>
                 </div>
+                {current.kind === "track" && current.id != null && (
+                  <>
+                    <div className="w-px h-3.5 bg-[var(--sk-divider)]" />
+                    <button
+                      className="btn-ghost !px-2 !h-6 !rounded-md text-[10.5px] font-bold shrink-0"
+                      onClick={() => setMatchOpen(true)}
+                      title={tr("手动匹配、更换或导出本地歌词", "Match, replace, or export local lyrics")}
+                    >
+                      {tr("匹配", "Match")}
+                    </button>
+                  </>
+                )}
               </div>
 
               {lyricSource && (
@@ -648,21 +611,15 @@ export default function NowPlaying() {
           </div>
         </div>
 
-        {/* 右舱：精密声学监听歌词舱（集成双通道模拟 VU 表与平滑母带歌词流） */}
-        <div className="w-full lg:flex-1 min-w-0 h-[min(72vh,580px)] flex flex-col skeuo-display rounded-2xl p-4 sm:p-5 relative shadow-[0_20px_45px_rgba(0,0,0,0.65)]">
-          {/* 四角机架沉头螺栓 */}
-          <div className="skeuo-screw absolute top-3 left-3 z-20 pointer-events-none" />
-          <div className="skeuo-screw absolute top-3 right-3 z-20 pointer-events-none" />
-          <div className="skeuo-screw absolute bottom-3 left-3 z-20 pointer-events-none" />
-          <div className="skeuo-screw absolute bottom-3 right-3 z-20 pointer-events-none" />
-
-          {/* 顶舱：双通道模拟 VU 动圈电平表与音频状态 */}
-          <div className="shrink-0 mb-3 px-1 z-10">
+        {/* 右舱：精密声学监听歌词舱（与左舱严格等高） */}
+        <div className="flex-1 min-w-0 h-full max-h-[600px] flex flex-col skeuo-acoustic-bay rounded-2xl p-4 sm:p-5 relative">
+          {/* 顶舱：宽幅双通道模拟 VU 动圈电平表 */}
+          <div className="shrink-0 mb-4 z-10">
             <VUMeter playing={playing} />
           </div>
 
-          {/* 底舱：沉浸声学歌词视窗（无滚动条，平滑逐字推进） */}
-          <div className="relative flex-1 min-h-0 w-full rounded-xl overflow-hidden skeuo-well p-1">
+          {/* 底舱：通透光学玻璃声学歌词视窗 */}
+          <div className="relative flex-1 min-h-0 w-full rounded-xl overflow-hidden skeuo-lyric-viewport p-1">
             <div
               ref={scrollRef}
               className="relative h-full overflow-y-auto py-[22%] lyrics-mask px-4 text-center"
@@ -732,6 +689,16 @@ export default function NowPlaying() {
           </div>
         </div>
       </div>
+      {current.kind === "track" && current.id != null && (
+        <LyricMatchModal
+          open={matchOpen}
+          onClose={() => setMatchOpen(false)}
+          trackId={current.id}
+          title={current.title}
+          artist={current.artist}
+          durationMs={current.durationMs}
+        />
+      )}
     </div>
   );
 }
