@@ -32,7 +32,7 @@ fn not_logged_in_err() -> String {
 }
 
 /// 读取当前有效的 QQ 会话（内存缓存 → 系统凭据管理器 qq_session → 存量 qq_musickey 回退）
-fn load_qq_session(state: &AppState) -> Option<QqSession> {
+pub(crate) fn load_qq_session(state: &AppState) -> Option<QqSession> {
     if let Some(cached) = SESSION_CACHE.lock().unwrap().clone() {
         if cached.is_valid() {
             return Some(cached);

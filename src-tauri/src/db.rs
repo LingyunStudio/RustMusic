@@ -307,6 +307,30 @@ pub fn set_lyrics_cache(conn: &Connection, kind: &str, rid: &str, payload: &str)
     );
 }
 
+pub fn delete_lyrics_cache(conn: &Connection, kind: &str, rid: &str) {
+    let _ = conn.execute(
+        "DELETE FROM lyrics_cache WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+    );
+}
+
+/// 查询本地曲目匹配歌词所需的基础元数据：(path, lrc_path, title, artist, duration_sec)
+pub fn get_track_lyric_info(
+    conn: &Connection,
+    track_id: i64,
+) -> Option<(String, Option<String>, String, String, f64)> {
+    conn.query_row(
+        "SELECT path, lrc_path, title, artist, duration FROM tracks WHERE id = ?1",
+        params![track_id],
+        |r| {
+            let lrc: Option<String> = r.get(1)?;
+            let lrc = lrc.filter(|s| !s.is_empty());
+            Ok((r.get(0)?, lrc, r.get(2)?, r.get(3)?, r.get(4)?))
+        },
+    )
+    .ok()
+}
+
 // ---------- folders ----------
 
 pub fn list_folders(conn: &Connection) -> Vec<Folder> {

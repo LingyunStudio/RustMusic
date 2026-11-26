@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { formatLyricSource, useI18n } from "../i18n";
 import CoverImg from "./CoverImg";
 import NowPlayingSkeuo from "./NowPlaying.skeuo";
+import LyricMatchModal from "./LyricMatchModal";
 import { api, coverSrc } from "../api";
 import {
   applyLyricFill,
@@ -43,6 +44,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
   const setLyricsShowTrans = useStore((s) => s.setLyricsShowTrans);
   const lyricsFontScale = useStore((s) => s.lyricsFontScale);
   const setLyricsFontScale = useStore((s) => s.setLyricsFontScale);
+  const [matchOpen, setMatchOpen] = useState(false);
 
   const anchorRef = useRef({ pos: 0, at: performance.now() });
   useEffect(() => {
@@ -650,6 +652,18 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
               >
                 A+
               </button>
+              {current.kind === "track" && current.id != null && (
+                <>
+                  <span className="opacity-40">|</span>
+                  <button
+                    className="px-1.5 py-0.5 rounded hover:text-[var(--ink)] transition-colors font-medium"
+                    onClick={() => setMatchOpen(true)}
+                    title={tr("手动匹配、更换或导出本地歌词", "Match, replace, or export local lyrics")}
+                  >
+                    {tr("匹配歌词", "Match")}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -726,6 +740,16 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
           </div>
         </div>
       </div>
+      {current.kind === "track" && current.id != null && (
+        <LyricMatchModal
+          open={matchOpen}
+          onClose={() => setMatchOpen(false)}
+          trackId={current.id}
+          title={current.title}
+          artist={current.artist}
+          durationMs={current.durationMs}
+        />
+      )}
     </div>
   );
 }

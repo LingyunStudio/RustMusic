@@ -36,6 +36,32 @@ export const api = {
     invoke<void>("fx_set_enabled", { enabled }),
   dropPaths: (paths: string[]) => invoke<DropResult>("drop_paths", { paths }),
   getLyrics: (trackId: number) => invoke<LyricsPayload>("get_lyrics", { trackId }),
+  searchLocalLyricCandidates: (
+    keyword: string,
+    title: string,
+    artist: string,
+    durationMs: number
+  ) =>
+    invoke<
+      {
+        source: "netease" | "qq" | "kugou";
+        rid: string;
+        title: string;
+        artist: string;
+        album: string;
+        durationMs: number;
+        score: number;
+      }[]
+    >("search_local_lyric_candidates", { keyword, title, artist, durationMs }),
+  applyLocalLyricCandidate: (trackId: number, source: string, rid: string) =>
+    invoke<LyricsPayload>("apply_local_lyric_candidate", { trackId, source, rid }),
+  clearLocalLyricMatch: (trackId: number) =>
+    invoke<void>("clear_local_lyric_match", { trackId }),
+  exportLocalLyric: (
+    trackId: number,
+    mode: "sidecar" | "embed",
+    payload: LyricsPayload
+  ) => invoke<string>("export_local_lyric", { trackId, mode, payload }),
   likeTrack: (id: number, liked: boolean) =>
     invoke<void>("like_track", { id, liked }),
   likeTracks: (ids: number[], liked: boolean) =>
