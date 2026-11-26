@@ -262,9 +262,19 @@ fn main() {
                 .and_then(|v| v.parse().ok())
                 // 默认 2GB：无损音质单曲可达几十 MB，无上限会无限膨胀
                 .unwrap_or(2 * 1024 * 1024 * 1024);
+            let cache_root = db::get_setting(&conn, "cache_dir")
+                .filter(|s| !s.trim().is_empty())
+                .map(std::path::PathBuf::from)
+                .filter(|p| std::fs::create_dir_all(p).is_ok())
+                .unwrap_or_else(|| app_data.clone());
+            let _ = std::fs::create_dir_all(cache_root.join("cover-cache"));
+            // 自定义缓存目录时放行 cover-cache 的 asset:// 协议读取权限
+            let _ = handle
+                .asset_protocol_scope()
+                .allow_directory(cache_root.join("cover-cache"), true);
             let eng = engine::Engine::new(
                 handle.clone(),
-                &app_data,
+                &cache_root,
                 volume,
                 speed,
                 eq,
@@ -465,6 +475,8 @@ fn main() {
             commands::get_settings,
             commands::clear_cache,
             commands::cache_stats,
+            commands::get_cache_dir,
+            commands::set_cache_dir,
             commands::set_cache_limit,
             commands::get_app_info,
             commands::desktop_lyrics_open,

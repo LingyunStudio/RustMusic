@@ -182,8 +182,8 @@ pub async fn get_app_info(
 ///（同一封面只下载一次，列表滚动零重复请求）
 #[tauri::command]
 pub async fn fetch_cover(state: State<'_, AppState>, url: String) -> Result<String, String> {
-    let app_data = state.app_data.clone();
-    super::blocking(move || fetch_cover_task(app_data, url)).await
+    let cache_root = super::settings::resolve_cache_root(&state);
+    super::blocking(move || fetch_cover_task(cache_root, url)).await
 }
 
 /// 封面磁盘缓存键归一：Navidrome getCoverArt 携带动态鉴权参数 s/t，

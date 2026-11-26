@@ -29,7 +29,9 @@ import {
   uiThemeLabel,
 } from "../theme";
 import { useI18n } from "../i18n";
+import { remoteCoverCache } from "../utils";
 import { showUpdateDialog } from "../components/UpdateDialog";
+import ShortcutsSection from "../components/ShortcutsSection";
 
 const EQ_FREQS = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
@@ -138,6 +140,9 @@ export default function SettingsView() {
   const [appVersion, setAppVersion] = useState("");
   const [platform, setPlatform] = useState<string>(() => PLATFORM);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [cacheDir, setCacheDir] = useState("");
+  const [cacheDirIsCustom, setCacheDirIsCustom] = useState(false);
+  const [cacheMigrating, setCacheMigrating] = useState(false);
 
   const refreshDevices = async () => {
     try {
@@ -174,6 +179,13 @@ export default function SettingsView() {
       .then((d) => {
         setSaveDir(d.dir);
         setSaveDirDefault(d.default);
+      })
+      .catch(() => {});
+    api
+      .getCacheDir()
+      .then((c) => {
+        setCacheDir(c.dir);
+        setCacheDirIsCustom(c.isCustom);
       })
       .catch(() => {});
     refreshDevices();
@@ -218,6 +230,53 @@ export default function SettingsView() {
       await api.saveDirSet(selected);
       setSaveDir(selected);
       useStore.getState().toast(tr("下载目录已更新", "Download folder updated"), "success");
+    } catch (e) {
+      useStore.getState().toast(String(e), "error");
+    }
+  };
+
+  const applyCacheDir = async (nextDir: string | null) => {
+    if (cacheMigrating) return;
+    setCacheMigrating(true);
+    try {
+      const res = await api.setCacheDir(nextDir);
+      setCacheDir(res.dir);
+      setCacheDirIsCustom(res.isCustom);
+      remoteCoverCache.clear();
+      useStore.getState().refreshCacheBytes();
+      const baseMsg =
+        res.moved > 0
+          ? tr(
+              `缓存目录已更新，已迁移 ${res.moved} 个缓存文件`,
+              `Cache folder updated; migrated ${res.moved} ${res.moved === 1 ? "file" : "files"}`
+            )
+          : tr("缓存目录已更新", "Cache folder updated");
+      const fullMsg =
+        res.skipped > 0
+          ? `${baseMsg}${tr(
+              `（${res.skipped} 个正在使用的文件保留在原处）`,
+              ` (${res.skipped} in-use ${res.skipped === 1 ? "file" : "files"} kept at old path)`
+            )}`
+          : baseMsg;
+      useStore.getState().toast(fullMsg, "success");
+    } catch (e) {
+      useStore.getState().toast(String(e), "error");
+    } finally {
+      setCacheMigrating(false);
+    }
+  };
+
+  const pickCacheDir = async () => {
+    if (cacheMigrating) return;
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: tr("选择缓存目录（旧缓存将自动迁移）", "Select Cache Folder (Existing cache will be migrated)"),
+      });
+      if (!selected || typeof selected !== "string") return;
+      await applyCacheDir(selected);
     } catch (e) {
       useStore.getState().toast(String(e), "error");
     }
@@ -341,12 +400,6 @@ export default function SettingsView() {
               ))}
             </div>
           </div>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            {tr(
-              "最小化到托盘后音乐继续播放，从任务栏托盘图标可重新打开主界面或完全退出。",
-              "Audio continues playing in the tray; use the tray icon to reopen the window or quit."
-            )}
-          </p>
         </section>
 
         {/* 外观 */}
@@ -518,12 +571,6 @@ export default function SettingsView() {
               onChange={(k, v) => setDlyricsColors({ ...dlyricsColors, [k]: v })}
             />
           </div>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            {tr(
-              "已唱 = 当前行卡拉OK 染色；未唱 = 当前行文字；下一句 = 即将演唱的一行。播放页歌词颜色由封面自动适配（取封面主色保证对比可读），不在此设置。",
-              "Sung = active line fill; Unsung = current line text; Next = upcoming line. Now Playing lyric colors adapt automatically from album art."
-            )}
-          </p>
 
           {/* 歌词时间偏移微调（蓝牙延迟等场景可手动延后/提前） */}
           <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
@@ -725,12 +772,6 @@ export default function SettingsView() {
                   </button>
                 )}
               </div>
-              <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-                {tr(
-                  "在任务栏右侧托盘图标旁显示当前歌词行，随托盘图标增减自动移动，与悬浮歌词相互独立；色块可自定义文字颜色（默认随任务栏深浅取黑/白）。副屏任务栏无托盘区，歌词紧跟应用图标右侧。",
-                  "Displays current lyrics beside the system tray independently from desktop lyrics. Color adapts to taskbar contrast by default; secondary displays show lyrics next to taskbar app icons."
-                )}
-              </p>
             </>
           )}
         </section>
@@ -1005,13 +1046,7 @@ export default function SettingsView() {
               ))}
             </div>
           </div>
-          <span className="text-[11px] text-[var(--ink-3)] block mb-3">
-            {tr(
-              "各音源独立设置（播放、缓存与下载同步生效）。标有 VIP / SVIP 的音质需账号具备对应会员权益；当曲目无该档音源或账号权益不足时，将沿音质阶梯自动向下一档无损/高品回退。",
-              "Per-source preference applies to playback, caching, and downloads. VIP/SVIP tiers require matching account privileges; unavailable tiers automatically fall back down the quality ladder."
-            )}
-          </span>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 pt-4 border-t border-[var(--line)]">
             <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
               {tr("播放速度", "Playback Speed")}
             </span>
@@ -1029,12 +1064,6 @@ export default function SettingsView() {
               {speed.toFixed(2)}x
             </span>
           </div>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            {tr(
-              "变速通过重采样实现，音调会随之变化；均衡器实时作用于所有播放。",
-              "Speed adjustment uses resampling and shifts pitch; the equalizer applies live to all playback."
-            )}
-          </p>
         </section>
 
         {/* 输出设备 */}
@@ -1074,15 +1103,9 @@ export default function SettingsView() {
               <Loader2 size={14} className="animate-spin text-[var(--accent)] shrink-0" />
             )}
           </div>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            {tr(
-              "跟随系统默认时，插入耳机等设备热插拔会自动切换并从当前进度续播；固定设备则始终使用所选设备。",
-              "When following system default, plugging/unplugging devices switches automatically and resumes playback. Selecting a specific device keeps output pinned to it."
-            )}
-          </p>
           {platform === "windows" && (
             <>
-              <div className="flex items-center gap-4 mt-4">
+              <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--line)]">
                 <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
                   {tr("独占模式", "Exclusive Mode")}
                 </span>
@@ -1126,8 +1149,8 @@ export default function SettingsView() {
               </div>
               <p className="text-[11.5px] text-[var(--ink-3)] mt-2 leading-relaxed">
                 {tr(
-                  "WASAPI 独占模式下，应用将独占声卡、绕过 Windows 音量混音器：采样率按源文件直通输出，不经系统重采样与音效处理，尽可能保留原始音质。注意：独占播放期间其它应用将暂时无法发声；独占需要声卡驱动支持，蓝牙/网络音箱等设备驱动不支持独占，若当前设备不支持或系统禁用了独占授权，该曲目会自动回退普通模式播放（以提示说明原因）；均衡器与音量在独占模式下仍有效；开启后下一首生效，关闭则立即切回普通模式（从当前进度继续播放，其它应用恢复出声）。",
-                  "In WASAPI Exclusive mode, RustMusic takes exclusive control of the audio device and bypasses the Windows mixer so source sample rates pass through bit-perfectly without OS resampling or DSP. Other apps will be muted while active. Requires driver support (Bluetooth/network devices are unsupported and fall back to shared mode automatically with a toast). EQ and volume still apply; enabling takes effect on the next track, disabling switches back immediately."
+                  "独占声卡直通输出以保留原始音质；开启后下一首生效，期间其它应用将暂时静音，不支持的设备会自动回退普通模式。",
+                  "Bit-perfect direct audio output. Takes effect on the next track, mutes other apps while active, and falls back to shared mode if unsupported."
                 )}
               </p>
             </>
@@ -1174,7 +1197,54 @@ export default function SettingsView() {
 
         {/* 缓存 */}
         <section style={{ ["--row-idx" as string]: 7 }} className={sectionClass}>
-          <h2 className="text-[14.5px] font-semibold mb-2">{tr("缓存", "Cache")}</h2>
+          <h2 className="text-[14.5px] font-semibold mb-3">{tr("缓存", "Cache")}</h2>
+          <div className="flex flex-wrap items-center gap-3 mb-3.5">
+            <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
+              {tr("缓存目录", "Cache Folder")}
+            </span>
+            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <Folder size={14} className="text-[var(--ink-2)] shrink-0" />
+              <span
+                className="text-[12.5px] text-[var(--ink)] truncate flex-1 min-w-0"
+                title={cacheDir}
+              >
+                {cacheDir || "…"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <button
+                className="btn-secondary !py-1.5 !px-3 flex items-center gap-1.5"
+                disabled={!cacheDir || cacheMigrating}
+                onClick={() => {
+                  if (cacheDir) {
+                    api.openFolder(cacheDir).catch((e) => useStore.getState().toast(String(e), "error"));
+                  }
+                }}
+                title={tr("在文件管理器中打开缓存目录", "Open cache folder in file manager")}
+              >
+                <FolderOpen size={13} />
+                {tr("打开目录", "Open Folder")}
+              </button>
+              <button
+                className="btn-secondary !py-1.5 !px-3 flex items-center gap-1.5"
+                disabled={cacheMigrating}
+                onClick={pickCacheDir}
+              >
+                {cacheMigrating && <Loader2 size={12.5} className="animate-spin" />}
+                {cacheMigrating ? tr("迁移中…", "Migrating…") : tr("更改目录", "Change Folder")}
+              </button>
+              {cacheDirIsCustom && (
+                <button
+                  className="btn-ghost !py-1.5 !px-2.5 text-[12px]"
+                  disabled={cacheMigrating}
+                  onClick={() => applyCacheDir(null)}
+                  title={tr("恢复默认应用数据目录并迁回缓存", "Restore default folder and migrate cache back")}
+                >
+                  {tr("恢复默认", "Reset Default")}
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex items-center gap-4 mb-3">
             <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
               {tr("当前占用", "Cache Size")}
@@ -1214,20 +1284,26 @@ export default function SettingsView() {
               ))}
             </div>
           </div>
-          <button className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15 mt-3" onClick={clearCache}>
+          <button
+            className="btn-secondary !text-rose-300/80 hover:!bg-rose-500/15 mt-4"
+            disabled={cacheMigrating}
+            onClick={clearCache}
+          >
             <Trash2 size={13} />
             {tr("立即清理全部缓存", "Clear All Cache")}
           </button>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            {tr(
-              "在线歌曲播放时会自动缓存到应用数据目录（同一首歌同一音质只缓存一份，重复播放不再下载）。超过上限后从最旧缓存开始自动清理，正在播放的文件不受影响；「不限制」则永久保留。",
-              "Online streams are cached automatically per track and quality tier. When exceeding the limit, oldest entries are pruned automatically while the playing track is preserved."
-            )}
-          </p>
         </section>
 
+        {/* 快捷键 */}
+        <ShortcutsSection
+          sectionClass={sectionClass}
+          isSkeuo={isSkeuo}
+          isLiquid={isLiquid}
+          rowIdx={8}
+        />
+
         {/* 关于与更新 */}
-        <section style={{ ["--row-idx" as string]: 8 }} className={sectionClass}>
+        <section style={{ ["--row-idx" as string]: 9 }} className={sectionClass}>
           <h2 className="text-[14.5px] font-semibold mb-3">{tr("关于与更新", "About & Updates")}</h2>
           <div className="flex items-center gap-4">
             <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
@@ -1291,20 +1367,11 @@ export default function SettingsView() {
               )}
             </span>
           </div>
-          <p className="text-[11.5px] text-[var(--ink-3)] mt-2">
-            {tr(
-              "发现新版本时会展示更新说明，确认后自动下载并原地安装（不改变安装位置），完成后自动重启应用。",
-              "Shows release notes when a new version is found, downloads and installs in-place upon confirmation, then restarts automatically."
-            )}
-          </p>
         </section>
 
         <div className="text-[11.5px] text-[var(--ink-3)] px-1 pb-2">
           RustMusic {appVersion ? `v${appVersion}` : ""} · Rust + Tauri 2 + React ·{" "}
-          {tr(
-            "引擎 rodio / symphonia · 界面支持 Windows / Linux（WASAPI 独占输出仅 Windows）",
-            "Engine: rodio / symphonia · Windows / Linux (WASAPI Exclusive on Windows only)"
-          )}
+          {tr("跨平台高解析度音频播放器", "Cross-platform Hi-Res Audio Player")}
         </div>
       </div>
     </div>

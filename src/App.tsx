@@ -21,6 +21,7 @@ import { coverSrc } from "./api";
 import { extractColor } from "./utils";
 import { applySkin, skinSupportsFx, skinUri } from "./skins";
 import { initFx, setFxWanted } from "./fx";
+import { getShortcuts, isShortcutRecording, matchShortcut } from "./shortcuts";
 import { tr, useI18n } from "./i18n";
 import AudioFxLayer from "./components/AudioFxLayer";
 
@@ -217,59 +218,93 @@ export default function App() {
     initFx();
   }, []);
 
-  // 空格键 播放/暂停；L 切桌面歌词；Esc 退出全屏；左右箭头 快退/快进
+  // 全局应用内快捷键（支持设置页自定义与恢复默认）
   useEffect(() => {
+    let lastNonZeroVol = 0.8;
     const handler = (e: KeyboardEvent) => {
+      // 正在设置页录制快捷键时让路，不触发播放控制
+      if (isShortcutRecording()) return;
+
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
 
-      // 左右箭头：快退 / 快进 5 秒（无修饰键时生效，支持长按连续步进）
-      if (
-        (e.code === "ArrowLeft" || e.key === "ArrowLeft") &&
-        !e.altKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.shiftKey
-      ) {
+      // Esc 退出全屏保持系统级默认行为
+      if (e.key === "Escape" && useStore.getState().fullscreen) {
+        useStore.getState().toggleFullscreen(false);
+        return;
+      }
+
+      const sc = getShortcuts();
+
+      // 支持长按连续步进的快捷键（快退/快进/音量调节）
+      if (matchShortcut(e, sc.seekBackward)) {
         e.preventDefault();
         useStore.getState().seekBackward(5000);
         return;
       }
-      if (
-        (e.code === "ArrowRight" || e.key === "ArrowRight") &&
-        !e.altKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.shiftKey
-      ) {
+      if (matchShortcut(e, sc.seekForward)) {
         e.preventDefault();
         useStore.getState().seekForward(5000);
         return;
       }
+      if (matchShortcut(e, sc.volumeUp)) {
+        e.preventDefault();
+        const st = useStore.getState();
+        const next = Math.min(1, Math.round((st.volume + 0.05) * 100) / 100);
+        if (next > 0) lastNonZeroVol = next;
+        st.setVolume(next);
+        return;
+      }
+      if (matchShortcut(e, sc.volumeDown)) {
+        e.preventDefault();
+        const st = useStore.getState();
+        const next = Math.max(0, Math.round((st.volume - 0.05) * 100) / 100);
+        if (next > 0) lastNonZeroVol = next;
+        st.setVolume(next);
+        return;
+      }
 
-      // Ctrl+F 聚焦当前页搜索框（资料库/歌单页有监听）
-      if ((e.ctrlKey || e.metaKey) && e.code === "KeyF") {
+      // 非连发快捷键：忽略长按重复事件
+      if (e.repeat) return;
+
+      if (matchShortcut(e, sc.focusSearch)) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("rm:focus-search"));
         return;
       }
-      // 长按触发的 OS 键盘重复不响应：否则空格会以每秒几十次的频率
-      // 反复 togglePlay，L 反复开关桌面歌词窗口
-      if (e.repeat) return;
-      if (e.code === "Space") {
+      if (matchShortcut(e, sc.playPause)) {
         e.preventDefault();
         useStore.getState().togglePlay();
+        return;
       }
-      // L：桌面歌词开关（锁定时再按 = 解锁交互）
-      if (e.code === "KeyL") {
+      if (matchShortcut(e, sc.prevTrack)) {
+        e.preventDefault();
+        useStore.getState().prev();
+        return;
+      }
+      if (matchShortcut(e, sc.nextTrack)) {
+        e.preventDefault();
+        useStore.getState().next();
+        return;
+      }
+      if (matchShortcut(e, sc.toggleMute)) {
+        e.preventDefault();
+        const st = useStore.getState();
+        if (st.volume > 0) {
+          lastNonZeroVol = st.volume;
+          st.setVolume(0);
+        } else {
+          st.setVolume(lastNonZeroVol || 0.8);
+        }
+        return;
+      }
+      if (matchShortcut(e, sc.toggleDesktopLyrics)) {
+        e.preventDefault();
         const s = useStore.getState();
         if (!s.desktopLyricsOn) s.openDesktopLyrics();
         else if (s.desktopLyricsLock) s.unlockDesktopLyrics();
         else s.closeDesktopLyrics();
-      }
-      if (e.key === "Escape" && useStore.getState().fullscreen) {
-        useStore.getState().toggleFullscreen(false);
       }
     };
     window.addEventListener("keydown", handler);

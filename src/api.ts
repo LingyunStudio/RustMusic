@@ -395,6 +395,16 @@ export const api = {
   clearCache: () => invoke<number>("clear_cache"),
   cacheStats: () =>
     invoke<{ bytes: number; files: number }>("cache_stats"),
+  getCacheDir: () =>
+    invoke<{ dir: string; defaultDir: string; isCustom: boolean }>("get_cache_dir"),
+  setCacheDir: (dir: string | null) =>
+    invoke<{
+      dir: string;
+      defaultDir: string;
+      isCustom: boolean;
+      moved: number;
+      skipped: number;
+    }>("set_cache_dir", { dir }),
   setCacheLimit: (bytes: number) =>
     invoke<void>("set_cache_limit", { bytes }),
   getAppInfo: () =>

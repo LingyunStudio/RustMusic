@@ -110,7 +110,7 @@ pub struct Engine {
     want_url: Arc<RwLock<Option<String>>>,
     /// 正在后台下载的 URL 集合，防止同一 URL 并发下载写坏缓存文件
     downloading: RwLock<HashSet<String>>,
-    downloads_dir: PathBuf,
+    downloads_dir: RwLock<PathBuf>,
     /// 缓存上限（字节），0 = 不限制；下载完成后超限即 LRU 清理
     cache_limit: AtomicU64,
     smtc: Sender<SmtcMsg>,
@@ -181,7 +181,7 @@ impl Engine {
             play_seq: AtomicU64::new(0),
             want_url: Arc::new(RwLock::new(None)),
             downloading: RwLock::new(HashSet::new()),
-            downloads_dir,
+            downloads_dir: RwLock::new(downloads_dir),
             cache_limit: AtomicU64::new(cache_limit),
             smtc,
             device_pref: RwLock::new(None),

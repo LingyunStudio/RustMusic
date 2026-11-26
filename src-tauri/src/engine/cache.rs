@@ -74,7 +74,13 @@ impl Engine {
     }
 
     fn cache_path_for(&self, key: &str, ext: &str) -> PathBuf {
-        self.downloads_dir.join(format!("{key}.{ext}"))
+        self.downloads_dir.read().join(format!("{key}.{ext}"))
+    }
+
+    /// 运行时热切换音频缓存目录（迁移完成后调用，无需重启）
+    pub fn set_downloads_dir(&self, dir: PathBuf) {
+        let _ = std::fs::create_dir_all(&dir);
+        *self.downloads_dir.write() = dir;
     }
 
     /// 播放在线音源：有缓存直接播放，否则后台下载（带进度事件）完成后自动播放。
@@ -262,7 +268,8 @@ impl Engine {
     /// 缓存目录内所有完整缓存文件（含大小与最后访问时间），按新旧降序
     fn cache_entries(&self) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
         let mut out = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&self.downloads_dir) {
+        let dir = self.downloads_dir.read().clone();
+        if let Ok(rd) = std::fs::read_dir(&dir) {
             for e in rd.flatten() {
                 let p = e.path();
                 if !p.is_file() {
@@ -311,7 +318,8 @@ impl Engine {
             }
         }
         // 同步清掉失败残留的孤立 .part 文件（排除正在下载中的键）
-        if let Ok(rd) = std::fs::read_dir(&self.downloads_dir) {
+        let dir = self.downloads_dir.read().clone();
+        if let Ok(rd) = std::fs::read_dir(&dir) {
             for e in rd.flatten() {
                 let p = e.path();
                 if p.extension().and_then(|x| x.to_str()) != Some("part") {

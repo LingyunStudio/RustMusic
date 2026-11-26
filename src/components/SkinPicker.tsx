@@ -327,12 +327,6 @@ export default function SkinPicker({
           </button>
         </div>
       )}
-      <div className="text-[10.5px] text-[var(--ink-3)] mt-3 leading-relaxed">
-        {tr(
-          "皮肤替换主界面背景，与浅色/暗色主题、强调色自由组合；播放时封面主色会为壁纸添上一层随音乐呼吸的微光。",
-          "Skins replace the main background and combine freely with Light/Dark themes and accent colors; cover artwork adds a gentle reactive glow during playback."
-        )}
-      </div>
       </div>
     </Modal>
   );
