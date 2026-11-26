@@ -31,6 +31,7 @@ const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 function TrackTitleLyric() {
   const { tr } = useI18n();
   const pos = useStore((s) => s.pos);
+  const lyricOffsetMs = useStore((s) => s.lyricOffsetMs);
   const lyrics = useStore((s) => s.lyrics);
   const current = useStore((s) => s.current);
   const nowPlayingOpen = useStore((s) => s.nowPlayingOpen);
@@ -47,12 +48,13 @@ function TrackTitleLyric() {
   );
   const activeLyric = useMemo(() => {
     if (nowPlayingOpen || !timedLines.length) return null;
+    const lyricPos = Math.max(0, pos + (lyricOffsetMs ?? 0));
     let lo = 0;
     let hi = timedLines.length - 1;
     let ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if ((timedLines[mid].timeMs ?? 0) <= pos) {
+      if ((timedLines[mid].timeMs ?? 0) <= lyricPos) {
         ans = mid;
         lo = mid + 1;
       } else {
@@ -60,7 +62,7 @@ function TrackTitleLyric() {
       }
     }
     return ans >= 0 ? { text: timedLines[ans].text } : null;
-  }, [nowPlayingOpen, timedLines, pos]);
+  }, [nowPlayingOpen, timedLines, pos, lyricOffsetMs]);
 
   const lyricWrapRef = useRef<HTMLDivElement>(null);
   const [lyricOverflow, setLyricOverflow] = useState(false);

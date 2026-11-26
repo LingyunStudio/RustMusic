@@ -50,11 +50,14 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
     anchorRef.current = { pos: st0.pos, at: performance.now() };
     let lastPos = st0.pos;
     let lastPlaying = st0.playing;
+    let lastOffset = st0.lyricOffsetMs;
     return useStore.subscribe((s) => {
-      if (s.pos !== lastPos || s.playing !== lastPlaying) {
+      if (s.pos !== lastPos || s.playing !== lastPlaying || s.lyricOffsetMs !== lastOffset) {
         anchorRef.current = { pos: s.pos, at: performance.now() };
         lastPos = s.pos;
         lastPlaying = s.playing;
+        lastOffset = s.lyricOffsetMs;
+        if (!s.playing) renderFrameRef.current();
       }
     });
   }, []);
@@ -109,7 +112,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
       const st = useStore.getState();
       const dur = st.dur;
       const speed = st.speed;
-      const raw = a.pos + (performance.now() - a.at) * speed;
+      const raw = a.pos + (st.playing ? (performance.now() - a.at) * speed : 0);
       const posNow = dur > 0 ? Math.min(raw, dur) : raw;
       const lyricPos = Math.max(0, posNow + (st.lyricOffsetMs ?? 0));
 
@@ -181,6 +184,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
       }
     };
     renderFrameRef.current = tick;
+    tick();
     if (!playing) return;
     let raf = 0;
     const loop = () => {

@@ -36,8 +36,8 @@ function DynamicBackdrop() {
   // 律动开关/皮肤切换时：背景换用基座版并同步后端分析开关
   useEffect(() => {
     if (skinUrl) applySkin(skin, reactive);
-    setFxWanted(reactive);
-    return () => setFxWanted(false);
+    setFxWanted(reactive, "backdrop");
+    return () => setFxWanted(false, "backdrop");
   }, [skin, reactive, skinUrl]);
   // http 封面直接用原始 URL，本地路径才走 asset 协议
   const url = cover

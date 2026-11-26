@@ -24,13 +24,13 @@ export const saveFxPref = (on: boolean) =>
 
 let latest: SpectrumFrame = { bands: [], level: 0, beat: false };
 let lastAt = 0;
-let wanted = false; // 业务期望（律动层挂载中）
-let backendOn = false; // 后端实际状态（wanted && 可见）
+const fxOwners = new Set<string>(); // 业务期望（引用计数，多消费方互不覆盖）
+let backendOn = false; // 后端实际状态（fxOwners.size > 0 && 可见）
 let visible = !document.hidden;
 let inited = false;
 
 function syncBackend() {
-  const on = wanted && visible;
+  const on = fxOwners.size > 0 && visible;
   if (on === backendOn) return;
   backendOn = on;
   api.fxSetEnabled(on).catch(() => {
@@ -52,9 +52,10 @@ export function initFx() {
   });
 }
 
-/** 律动层挂载/卸载时切换后端分析开关 */
-export function setFxWanted(on: boolean) {
-  wanted = on;
+/** 消费方挂载/卸载时登记或撤销后端频谱分析需求（按 owner 去重引用计数） */
+export function setFxWanted(on: boolean, owner = "default") {
+  if (on) fxOwners.add(owner);
+  else fxOwners.delete(owner);
   syncBackend();
 }
 

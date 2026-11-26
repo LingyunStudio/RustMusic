@@ -23,6 +23,7 @@ import { fmtTime } from "../utils";
 function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
   const { tr } = useI18n();
   const pos = useStore((s) => s.pos);
+  const lyricOffsetMs = useStore((s) => s.lyricOffsetMs);
   const dur = useStore((s) => s.dur);
   const lyrics = useStore((s) => s.lyrics);
   const current = useStore((s) => s.current);
@@ -42,12 +43,13 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
   // 二分查找定位当前行
   const activeLyric = useMemo(() => {
     if (!timedLines.length) return null;
+    const lyricPos = Math.max(0, pos + (lyricOffsetMs ?? 0));
     let lo = 0;
     let hi = timedLines.length - 1;
     let ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if ((timedLines[mid].timeMs ?? 0) <= pos) {
+      if ((timedLines[mid].timeMs ?? 0) <= lyricPos) {
         ans = mid;
         lo = mid + 1;
       } else {
@@ -55,7 +57,7 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
       }
     }
     return ans >= 0 ? timedLines[ans] : null;
-  }, [timedLines, pos]);
+  }, [timedLines, pos, lyricOffsetMs]);
 
   const lyricText = activeLyric?.text?.trim();
   const lyricTrans = lyricsShowTrans && activeLyric?.trans?.trim();

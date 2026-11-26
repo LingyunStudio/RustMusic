@@ -43,9 +43,9 @@ export default function NowPlaying() {
 
   // 挂载时开启后端音频频谱分析（驱动 VU 表和电平指示），卸载时关闭
   useEffect(() => {
-    setFxWanted(true);
+    setFxWanted(true, "skeuo-vu");
     return () => {
-      setFxWanted(false);
+      setFxWanted(false, "skeuo-vu");
     };
   }, []);
 
@@ -56,11 +56,14 @@ export default function NowPlaying() {
     anchorRef.current = { pos: st0.pos, at: performance.now() };
     let lastPos = st0.pos;
     let lastPlaying = st0.playing;
+    let lastOffset = st0.lyricOffsetMs;
     return useStore.subscribe((s) => {
-      if (s.pos !== lastPos || s.playing !== lastPlaying) {
+      if (s.pos !== lastPos || s.playing !== lastPlaying || s.lyricOffsetMs !== lastOffset) {
         anchorRef.current = { pos: s.pos, at: performance.now() };
         lastPos = s.pos;
         lastPlaying = s.playing;
+        lastOffset = s.lyricOffsetMs;
+        if (!s.playing) renderFrameRef.current();
       }
     });
   }, []);
@@ -117,7 +120,7 @@ export default function NowPlaying() {
       const st = useStore.getState();
       const dur = st.dur;
       const speed = st.speed;
-      const raw = a.pos + (performance.now() - a.at) * speed;
+      const raw = a.pos + (st.playing ? (performance.now() - a.at) * speed : 0);
       const posNow = dur > 0 ? Math.min(raw, dur) : raw;
       const lyricPos = Math.max(0, posNow + (st.lyricOffsetMs ?? 0));
 
@@ -189,6 +192,7 @@ export default function NowPlaying() {
       }
     };
     renderFrameRef.current = tick;
+    tick();
     if (!playing) return;
     let raf = 0;
     const loop = () => {

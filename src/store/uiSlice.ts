@@ -188,12 +188,16 @@ function applyPlayState(set: SetFn, get: GetFn, p: PlayState, posOverride?: numb
   // 不再全量拉取曲目列表（大曲库下每首歌一次全量 IPC + 整表重渲染）
   if (isFreshStart && p.kind !== "track") get().refreshRecentOnline();
   // 引擎自动续播（预载下一曲）时队列指针跟随：状态帧的本地曲目即队列里的
-  // 下一首——按 kind:id 对位（对不上保持原位：手动播放不入队单曲等场景）
+  // 下一首——按 kind:id 对位（若当前指针已指向同一曲目则不动，避免队列含重复曲时跳回第一条死循环）
   if (isFreshStart && p.kind === "track" && p.id != null) {
-    const qi = get().queue.findIndex(
-      (q) => q.kind === "track" && q.id === p.id,
-    );
-    if (qi >= 0 && qi !== get().qIndex) set({ qIndex: qi });
+    const st = get();
+    const curItem = st.queue[st.qIndex];
+    if (!(curItem?.kind === "track" && curItem.id === p.id)) {
+      const qi = st.queue.findIndex(
+        (q) => q.kind === "track" && q.id === p.id,
+      );
+      if (qi >= 0 && qi !== st.qIndex) set({ qIndex: qi });
+    }
   }
   if (isFreshStart && p.kind === "track" && p.id != null) {
     const now = Math.floor(Date.now() / 1000);
@@ -761,86 +765,85 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       localStorage.setItem("rustmusic.miniPlayer", on ? "1" : "0");
     } catch {}
 
-    // 优先调用 Rust 原生后端命令（直接操作底层窗口，无权限或事件拦截问题）
+    // 优先调用 Rust 原生后端命令（已负责保存/恢复主窗尺寸位置与置顶），
+    // 仅在后端调用失败时才回退前端 window API，避免双路径竞态互相覆盖窗口几何
     const backendAction = on ? api.enterMiniMode() : api.exitMiniMode();
-    backendAction.catch(() => {});
+    backendAction.catch((err) => {
+      console.warn("后端切换迷你模式失败，回退前端窗口 API:", err);
+      import("@tauri-apps/api/window")
+        .then(async ({ getCurrentWindow }) => {
+          const { LogicalSize, PhysicalSize, PhysicalPosition } = await import("@tauri-apps/api/dpi");
+          const win = getCurrentWindow();
 
-    // 前端同时调用 window API 进行双重保障
-    import("@tauri-apps/api/window")
-      .then(async ({ getCurrentWindow }) => {
-        const { LogicalSize, PhysicalSize, PhysicalPosition } = await import("@tauri-apps/api/dpi");
-        const win = getCurrentWindow();
-
-        if (on) {
-          try {
-            const isMax = await win.isMaximized().catch(() => false);
-            if (isMax) {
-              await win.unmaximize().catch(() => {});
+          if (on) {
+            try {
+              const isMax = await win.isMaximized().catch(() => false);
+              if (isMax) {
+                await win.unmaximize().catch(() => {});
+              }
+              const size = await win.outerSize().catch(() => null);
+              const pos = await win.outerPosition().catch(() => null);
+              if (size && pos) {
+                sessionStorage.setItem(
+                  "rustmusic.prevWindowState",
+                  JSON.stringify({
+                    width: size.width,
+                    height: size.height,
+                    x: pos.x,
+                    y: pos.y,
+                    isMax,
+                  })
+                );
+              }
+            } catch (e) {
+              console.warn("保存原窗口尺寸位置失败:", e);
             }
-            const size = await win.outerSize().catch(() => null);
-            const pos = await win.outerPosition().catch(() => null);
-            if (size && pos) {
-              sessionStorage.setItem(
-                "rustmusic.prevWindowState",
-                JSON.stringify({
-                  width: size.width,
-                  height: size.height,
-                  x: pos.x,
-                  y: pos.y,
-                  isMax,
-                })
-              );
+
+            try {
+              await win.setMinSize(new LogicalSize(300, 70)).catch(() => {});
+              await win.setSize(new LogicalSize(360, 118)).catch(() => {});
+              await win.setAlwaysOnTop(true).catch(() => {});
+            } catch (e) {
+              console.error("切换至迷你小窗失败:", e);
             }
-          } catch (e) {
-            console.warn("保存原窗口尺寸位置失败:", e);
-          }
+          } else {
+            try {
+              await win.setAlwaysOnTop(false).catch(() => {});
 
-          try {
-            // 先放宽最小尺寸，允许窗口缩小至小悬浮窗尺寸（360x118，含歌词栏）
-            await win.setMinSize(new LogicalSize(300, 70)).catch(() => {});
-            await win.setSize(new LogicalSize(360, 118)).catch(() => {});
-            await win.setAlwaysOnTop(true).catch(() => {});
-          } catch (e) {
-            console.error("切换至迷你小窗失败:", e);
-          }
-        } else {
-          try {
-            await win.setAlwaysOnTop(false).catch(() => {});
-
-            let restored = false;
-            const savedRaw = sessionStorage.getItem("rustmusic.prevWindowState");
-            if (savedRaw) {
-              try {
-                const s = JSON.parse(savedRaw);
-                if (s && typeof s.width === "number" && typeof s.height === "number") {
-                  if (s.width >= 600 && s.height >= 400) {
-                    // 必须先扩大窗口尺寸，再设置最小尺寸，否则 Windows 会拒绝扩大！
-                    await win.setSize(new PhysicalSize(s.width, s.height)).catch(() => {});
-                    if (typeof s.x === "number" && typeof s.y === "number") {
-                      await win.setPosition(new PhysicalPosition(s.x, s.y)).catch(() => {});
+              let restored = false;
+              const savedRaw = sessionStorage.getItem("rustmusic.prevWindowState");
+              if (savedRaw) {
+                try {
+                  const s = JSON.parse(savedRaw);
+                  if (s && typeof s.width === "number" && typeof s.height === "number") {
+                    if (s.width >= 600 && s.height >= 400) {
+                      await win.setSize(new PhysicalSize(s.width, s.height)).catch(() => {});
+                      if (typeof s.x === "number" && typeof s.y === "number") {
+                        await win.setPosition(new PhysicalPosition(s.x, s.y)).catch(() => {});
+                      }
+                      await win.setMinSize(new LogicalSize(1000, 660)).catch(() => {});
+                      if (s.isMax) {
+                        await win.maximize().catch(() => {});
+                      }
+                      restored = true;
                     }
-                    await win.setMinSize(new LogicalSize(1000, 660)).catch(() => {});
-                    if (s.isMax) {
-                      await win.maximize().catch(() => {});
-                    }
-                    restored = true;
                   }
-                }
-              } catch {}
+                } catch {}
+              }
+              if (!restored) {
+                await win.setSize(new LogicalSize(1280, 880)).catch(() => {});
+                await win.center().catch(() => {});
+                await win.setMinSize(new LogicalSize(1000, 660)).catch(() => {});
+              }
+            } catch (e) {
+              console.error("从迷你模式还原主窗口失败:", e);
             }
-            if (!restored) {
-              await win.setSize(new LogicalSize(1280, 880)).catch(() => {});
-              await win.center().catch(() => {});
-              await win.setMinSize(new LogicalSize(1000, 660)).catch(() => {});
-            }
-          } catch (e) {
-            console.error("从迷你模式还原主窗口失败:", e);
           }
-        }
-      })
-      .catch((e) => {
-        console.error("导入 Tauri window 模块失败:", e);
-      });
+        })
+        .catch((e) => {
+          console.error("导入 Tauri window 模块失败:", e);
+        });
+    });
   },
 
   setQueueOpen(v) {
