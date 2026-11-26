@@ -530,8 +530,21 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   async toggleLikeOnline(row) {
     const key = `${row.kind}-${row.id}`;
     const next = !get().savedOnline[key];
+    // 自动从运行时缓存补齐 QQ mediaMid 与酷狗 albumAudioId，避免播放栏/重启后丢高音质参数
+    let mediaMid = row.mediaMid ?? "";
+    if (!mediaMid && row.kind === "qq") {
+      mediaMid = get().qqCache[String(row.id)]?.mediaMid ?? "";
+    } else if (!mediaMid && row.kind === "kugou") {
+      const aid = get().kugouCache[String(row.id)]?.albumAudioId;
+      if (aid) mediaMid = String(aid);
+    }
     // 乐观更新
-    set((s) => ({ savedOnline: { ...s.savedOnline, [key]: next } }));
+    set((s) => ({
+      savedOnline: { ...s.savedOnline, [key]: next },
+      ...(row.kind === "netease" && s.neteaseLoggedIn
+        ? { neteaseLiked: { ...s.neteaseLiked, [Number(row.id)]: next } }
+        : {}),
+    }));
     try {
       await api.likeOnline({
         kind: row.kind,
@@ -541,17 +554,26 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         album: row.album,
         cover: row.cover,
         durationMs: row.durationMs,
-        mediaMid: row.mediaMid ?? "",
+        mediaMid,
         vip: row.vip ?? false,
         like: next,
       });
       await get().refreshLikedOnline();
+      // 网易云已登录时同步远端账号「我喜欢」（不阻塞本机收藏）
+      if (row.kind === "netease" && get().neteaseLoggedIn) {
+        api.neteaseLike(Number(row.id), next).catch(() => {});
+      }
     } catch (e) {
       // 回滚仅当当前值仍是本次的乐观值：并发二次点击已成功时，
       // 无条件回滚会把正确状态改错且再无纠正路径
       set((s) =>
         s.savedOnline[key] === next
-          ? { savedOnline: { ...s.savedOnline, [key]: !next } }
+          ? {
+              savedOnline: { ...s.savedOnline, [key]: !next },
+              ...(row.kind === "netease" && s.neteaseLoggedIn
+                ? { neteaseLiked: { ...s.neteaseLiked, [Number(row.id)]: !next } }
+                : {}),
+            }
           : {}
       );
       get().toast(String(e), "error");
@@ -566,6 +588,16 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         "info"
       );
       try {
+        const kgCached =
+          row.kind === "kugou" ? get().kugouCache[String(row.id)] : undefined;
+        const qqCached =
+          row.kind === "qq" ? get().qqCache[String(row.id)] : undefined;
+        const rowEx = row as {
+          albumAudioId?: number;
+          hqHash?: string;
+          sqHash?: string;
+          superHash?: string;
+        };
         const r = await api.downloadOnline({
           kind: row.kind,
           id: String(row.id),
@@ -574,11 +606,11 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
           album: row.album,
           coverUrl: row.cover,
           durationMs: row.durationMs,
-          mediaMid: row.mediaMid ?? "",
-          albumAudioId: (row as { albumAudioId?: number }).albumAudioId,
-          hqHash: (row as { hqHash?: string }).hqHash,
-          sqHash: (row as { sqHash?: string }).sqHash,
-          superHash: (row as { superHash?: string }).superHash,
+          mediaMid: row.mediaMid || qqCached?.mediaMid || "",
+          albumAudioId: rowEx.albumAudioId ?? kgCached?.albumAudioId,
+          hqHash: rowEx.hqHash || kgCached?.hqHash,
+          sqHash: rowEx.sqHash || kgCached?.sqHash,
+          superHash: rowEx.superHash || kgCached?.superHash,
         });
         await get().refreshTracks();
         get().toast(
@@ -776,13 +808,18 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   neteaseSetLogin(loggedIn, nickname) {
-    // 登录/退出都意味着账号状态变化：清零 VIP 熔断计数
+    // 登录/退出都意味着账号状态变化：清零 VIP 熔断计数，退出时清空远端红心缓存
     resetVipFailStreak();
     set((s) => {
       const unavailable = Object.fromEntries(
         Object.entries(s.unavailable).filter(([k]) => !k.startsWith("netease:"))
       );
-      return { neteaseLoggedIn: loggedIn, neteaseNickname: nickname, unavailable };
+      return {
+        neteaseLoggedIn: loggedIn,
+        neteaseNickname: nickname,
+        unavailable,
+        ...(loggedIn ? {} : { neteaseLiked: {} }),
+      };
     });
   },
 

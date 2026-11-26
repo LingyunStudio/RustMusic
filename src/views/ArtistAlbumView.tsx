@@ -126,6 +126,7 @@ export default function ArtistAlbumView({
               album: s.album,
               cover: s.cover,
               duration: s.durationMs / 1000,
+              mediaMid: s.albumAudioId ? String(s.albumAudioId) : "",
               vip: s.vip,
             });
           }

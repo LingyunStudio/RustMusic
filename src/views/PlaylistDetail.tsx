@@ -419,8 +419,8 @@ export default function PlaylistDetail({ id }: { id: number }) {
               <span className="ml-1">
                 ·{" "}
                 {tr(
-                  `来源${pl.remoteKind === "netease" ? "网易云" : "QQ 音乐"}`,
-                  `from ${pl.remoteKind === "netease" ? "NetEase" : "QQ Music"}`,
+                  `来源${pl.remoteKind === "netease" ? "网易云" : pl.remoteKind === "kugou" ? "酷狗音乐" : "QQ 音乐"}`,
+                  `from ${pl.remoteKind === "netease" ? "NetEase" : pl.remoteKind === "kugou" ? "KuGou" : "QQ Music"}`,
                 )}
               </span>
             )}

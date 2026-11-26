@@ -15,7 +15,6 @@ import {
 import { api } from "../api";
 import { useStore } from "../store";
 import { useI18n } from "../i18n";
-import { useLocatePillEl } from "../hooks/useLocatePillEl";
 import { useLocatePill } from "../hooks/useLocatePill";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import LocateCurrentPill from "../components/LocateCurrentPill";
@@ -317,29 +316,8 @@ export default function NavidromePanel() {
     setView(prev.view);
   };
 
-  const downloadSong = async (s: NdSong) => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      const name = await api.downloadOnline({
-        kind: "navidrome",
-        id: s.id,
-        title: s.title,
-        artist: s.artist,
-        album: s.album,
-        coverUrl: s.coverUrl,
-        durationMs: s.duration * 1000,
-        mediaMid: "",
-      });
-      await useStore.getState().refreshTracks();
-      useStore
-        .getState()
-        .toast(tr(`已下载到资料库：${name}`, `Downloaded to library: ${name}`), "success");
-    } catch (e) {
-      useStore.getState().toast(String(e), "error");
-    } finally {
-      setDownloading(false);
-    }
+  const downloadSong = (s: NdSong) => {
+    void useStore.getState().downloadOnline(likeRowOf(s));
   };
 
   const rows: { s: NdSong; i: number }[] = albumSongs.map((s, i) => ({ s, i }));
@@ -351,9 +329,24 @@ export default function NavidromePanel() {
   const ND_ROW_H = 56;
   const songsWin = useVirtualWindow(allSongs.length, ND_ROW_H);
   const current = useStore((s) => s.current);
-  const pill = useLocatePillEl({
+  // 当前播放曲在歌曲页列表中的下标（数学定位：虚拟窗口化后元素不常驻
+  // DOM，元素版 querySelector 定位失效）
+  const currentSongIdx = useMemo(() => {
+    if (current?.kind !== "navidrome" || current.qid == null) return -1;
+    return allSongs.findIndex((s) => s.id === current.qid);
+  }, [allSongs, current]);
+  const activePillIdx = useMemo(() => {
+    if (current?.kind !== "navidrome" || current.qid == null) return -1;
+    if (view.page === "songs") return currentSongIdx;
+    if (view.page === "album" || view.page === "search") {
+      return rows.findIndex((r) => r.s.id === current.qid);
+    }
+    return -1;
+  }, [current, view.page, currentSongIdx, rows]);
+  const pill = useLocatePill({
     containerRef: scrollRef,
-    activeSelector: current?.kind === "navidrome" ? '[data-now-playing="1"]' : null,
+    rowHeight: ND_ROW_H,
+    currentIndex: activePillIdx,
   });
   const allSongsLenRef = useRef(allSongs.length);
   allSongsLenRef.current = allSongs.length;
@@ -362,12 +355,6 @@ export default function NavidromePanel() {
   const loadMoreSongsRef = useRef(loadMoreSongs);
   loadMoreSongsRef.current = loadMoreSongs;
   const locatedRef = useRef(false);
-  // 当前播放曲在歌曲页列表中的下标（数学定位：虚拟窗口化后元素不常驻
-  // DOM，元素版 querySelector 定位失效）
-  const currentSongIdx = useMemo(() => {
-    if (current?.kind !== "navidrome" || current.qid == null) return -1;
-    return allSongs.findIndex((s) => s.id === current.qid);
-  }, [allSongs, current]);
 
   // 首页歌曲加载完成后：正在播放的 Navidrome 歌曲若在列表中，定位到它
   useEffect(() => {
@@ -695,6 +682,9 @@ export default function NavidromePanel() {
                   {rows.map(({ s }) => (
                     <div
                       key={s.id}
+                      data-now-playing={
+                        current?.kind === "navidrome" && current.qid === s.id ? "1" : undefined
+                      }
                       className="group grid grid-cols-[36px_minmax(0,1fr)_160px_70px_120px] items-center gap-4 h-[56px] px-3 rounded-[13px] hover:bg-[var(--shade-hover)] transition-colors"
                       onDoubleClick={() => playSong(s)}
                       onContextMenu={(e) => {
@@ -840,7 +830,6 @@ export default function NavidromePanel() {
                 className="h-10 px-3 rounded-lg text-left text-[13px] text-[var(--ink)] hover:bg-[var(--shade)] flex items-center justify-between transition-colors"
                 onClick={async () => {
                   await addOnlineToPlaylist(p.id, likeRowOf(pickerSong));
-                  toast(tr(`已添加到「${p.name}」`, `Added to "${p.name}"`), "success");
                   setPickerSong(null);
                 }}
               >

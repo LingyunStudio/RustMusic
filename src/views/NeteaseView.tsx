@@ -16,6 +16,7 @@ import {
   History,
 } from "lucide-react";
 import { useStore } from "../store";
+import { capOnlineCache, pinnedIdsOf } from "../store/onlineCache";
 import { useI18n } from "../i18n";
 import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
@@ -217,24 +218,30 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const cacheRecSongs = (r: OnlineRecState) => {
     if (r.netease) {
       useStore.setState((s) => ({
-        neteaseCache: {
-          ...s.neteaseCache,
-          ...Object.fromEntries(r.netease!.map((t) => [t.id, t])),
-        },
+        neteaseCache: capOnlineCache(
+          "netease",
+          { ...s.neteaseCache, ...Object.fromEntries(r.netease!.map((t) => [t.id, t])) },
+          s.neteaseCache,
+          pinnedIdsOf("netease", s)
+        ),
       }));
     } else if (r.qq) {
       useStore.setState((s) => ({
-        qqCache: {
-          ...s.qqCache,
-          ...Object.fromEntries(r.qq!.map((t) => [t.id, t])),
-        },
+        qqCache: capOnlineCache(
+          "qq",
+          { ...s.qqCache, ...Object.fromEntries(r.qq!.map((t) => [t.id, t])) },
+          s.qqCache,
+          pinnedIdsOf("qq", s)
+        ),
       }));
     } else if (r.kugou) {
       useStore.setState((s) => ({
-        kugouCache: {
-          ...s.kugouCache,
-          ...Object.fromEntries(r.kugou!.map((t) => [t.id, t])),
-        },
+        kugouCache: capOnlineCache(
+          "kugou",
+          { ...s.kugouCache, ...Object.fromEntries(r.kugou!.map((t) => [t.id, t])) },
+          s.kugouCache,
+          pinnedIdsOf("kugou", s)
+        ),
       }));
     }
   };

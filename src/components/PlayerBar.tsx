@@ -618,16 +618,32 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 {current.kind === "netease" && current.nid != null && (
                   <button
                     className="btn-ghost !w-7 !h-7 shrink-0"
-                    onClick={() => neteaseToggleLike(current.nid!)}
+                    onClick={() =>
+                      toggleLikeOnline({
+                        kind: "netease",
+                        id: current.nid!,
+                        name: current.title,
+                        artist: current.artist,
+                        album: current.album,
+                        cover: current.cover,
+                        durationMs: current.durationMs,
+                        mediaMid: "",
+                        vip: false,
+                      })
+                    }
                     title={
-                      neteaseLiked[current.nid]
+                      savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid]
                         ? tr("取消收藏", "Unlike")
                         : tr("收藏到“我喜欢”", "Add to Liked")
                     }
                   >
                     <Heart
                       size={15}
-                      className={neteaseLiked[current.nid] ? "fill-[#e0533f] text-[#e0533f]" : "text-[var(--ink-3)]"}
+                      className={
+                        savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid]
+                          ? "fill-[#e0533f] text-[#e0533f]"
+                          : "text-[var(--ink-3)]"
+                      }
                     />
                   </button>
                 )}
@@ -824,16 +840,32 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 {current.kind === "netease" && current.nid != null && (
                   <button
                     className="btn-ghost w-8 h-8 shrink-0"
-                    onClick={() => neteaseToggleLike(current.nid!)}
+                    onClick={() =>
+                      toggleLikeOnline({
+                        kind: "netease",
+                        id: current.nid!,
+                        name: current.title,
+                        artist: current.artist,
+                        album: current.album,
+                        cover: current.cover,
+                        durationMs: current.durationMs,
+                        mediaMid: "",
+                        vip: false,
+                      })
+                    }
                     title={
-                      neteaseLiked[current.nid]
+                      savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid]
                         ? tr("取消收藏", "Unlike")
                         : tr("收藏到“我喜欢”", "Add to Liked")
                     }
                   >
                     <Heart
                       size={16}
-                      className={neteaseLiked[current.nid] ? "fill-[#e0533f] text-[#e0533f]" : ""}
+                      className={
+                        savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid]
+                          ? "fill-[#e0533f] text-[#e0533f]"
+                          : ""
+                      }
                     />
                   </button>
                 )}

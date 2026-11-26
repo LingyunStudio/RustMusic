@@ -441,12 +441,24 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
               {current.kind === "netease" && current.nid != null && (
                 <button
                   className="btn-ghost w-8 h-8 !rounded-full glass"
-                  onClick={() => neteaseToggleLike(current.nid!)}
+                  onClick={() =>
+                    toggleLikeOnline({
+                      kind: "netease",
+                      id: current.nid!,
+                      name: current.title,
+                      artist: current.artist,
+                      album: current.album,
+                      cover: current.cover,
+                      durationMs: current.durationMs,
+                      mediaMid: "",
+                      vip: false,
+                    })
+                  }
                 >
                   <Heart
                     size={16}
                     className={
-                      neteaseLiked[current.nid]
+                      savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid]
                         ? "fill-[#e0533f] text-[#e0533f]"
                         : ""
                     }

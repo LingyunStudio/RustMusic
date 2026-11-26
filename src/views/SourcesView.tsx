@@ -187,7 +187,7 @@ export default function SourcesView() {
   const [selMode, setSelMode] = useState(false);
   const [selKeys, setSelKeys] = useState<Set<string>>(new Set());
   /** 右键菜单 */
-  const [menu, setMenu] = useState<{ x: number; y: number; row: BiliSpaceItem } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; row: BiliSpaceItem & { sourceId?: number } } | null>(null);
   /** “添加到播放列表”弹窗（支持批量） */
   const [pickerRows, setPickerRows] = useState<BiliSpaceItem[] | null>(null);
   const [newPlName, setNewPlName] = useState("");
@@ -1207,8 +1207,12 @@ export default function SourcesView() {
             <button
               className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
               onClick={() => {
-                const idx = visibleRows.findIndex((x) => x.rid === menu.row.rid);
-                playBilibiliList(visibleRows, idx >= 0 ? idx : 0);
+                if (menu.row.sourceId != null) {
+                  playSourceId(menu.row.sourceId);
+                } else {
+                  const idx = visibleRows.findIndex((x) => x.rid === menu.row.rid);
+                  playBilibiliList(visibleRows, idx >= 0 ? idx : 0);
+                }
                 setMenu(null);
               }}
             >
@@ -1234,37 +1238,41 @@ export default function SourcesView() {
             >
               <Play size={13} /> {tr("加入队列", "Add to Queue")}
             </button>
-            <div className="my-1 mx-2 border-t border-[var(--line)]" />
-            <button
-              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
-              onClick={() => {
-                setPickerRows([menu.row]);
-                setMenu(null);
-              }}
-            >
-              <ListMusic size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
-            </button>
-            <button
-              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
-              onClick={() => {
-                toggleLikeOnline(toOnlineRow(menu.row));
-                setMenu(null);
-              }}
-            >
-              <Heart size={13} />{" "}
-              {rowLiked(menu.row)
-                ? tr("取消喜欢", "Remove Favorite")
-                : tr("收藏到“我喜欢”", "Add to Favorites")}
-            </button>
-            <button
-              className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
-              onClick={() => {
-                downloadOnline(toOnlineRow(menu.row));
-                setMenu(null);
-              }}
-            >
-              <ListMusic size={13} /> {tr("下载到本地", "Download to Library")}
-            </button>
+            {menu.row.sourceId == null && (
+              <>
+                <div className="my-1 mx-2 border-t border-[var(--line)]" />
+                <button
+                  className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                  onClick={() => {
+                    setPickerRows([menu.row]);
+                    setMenu(null);
+                  }}
+                >
+                  <ListMusic size={13} /> {tr("添加到播放列表…", "Add to Playlist…")}
+                </button>
+                <button
+                  className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                  onClick={() => {
+                    toggleLikeOnline(toOnlineRow(menu.row));
+                    setMenu(null);
+                  }}
+                >
+                  <Heart size={13} />{" "}
+                  {rowLiked(menu.row)
+                    ? tr("取消喜欢", "Remove Favorite")
+                    : tr("收藏到“我喜欢”", "Add to Favorites")}
+                </button>
+                <button
+                  className="w-full h-8 px-2.5 rounded-lg flex items-center gap-2.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--shade-strong)] text-left"
+                  onClick={() => {
+                    downloadOnline(toOnlineRow(menu.row));
+                    setMenu(null);
+                  }}
+                >
+                  <ListMusic size={13} /> {tr("下载到本地", "Download to Library")}
+                </button>
+              </>
+            )}
           </div>,
           document.body
         )}
@@ -1315,9 +1323,11 @@ export default function SourcesView() {
   async function submitDirect() {
     const u = url.trim();
     if (!/^https?:\/\//.test(u)) return;
+    const t = title.trim();
     try {
       const { api } = await import("../api");
-      const id = await api.addSource(u, title.trim());
+      const id = await api.addSource(u, t);
+      await useStore.getState().refreshSources();
       setUrl("");
       setTitle("");
       replaceResult({
@@ -1325,7 +1335,7 @@ export default function SourcesView() {
         rows: [
           {
             rid: `direct-${id}`,
-            title: title.trim() || u.split("/").pop() || tr("在线音源", "Online Source"),
+            title: t || u.split("/").pop() || tr("在线音源", "Online Source"),
             artist: tr("在线音源", "Online Source"),
             cover: "",
             durationMs: 0,

@@ -287,7 +287,7 @@ export default function NowPlaying() {
     current.kind === "track" && current.id != null
       ? !!current.liked
       : current.kind === "netease" && current.nid != null
-        ? !!neteaseLiked[current.nid]
+        ? !!(savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid])
         : current.kind === "qq" && current.qid != null
           ? !!savedOnline[`qq-${current.qid}`]
           : current.kind === "kugou" && current.kgid != null
@@ -302,7 +302,17 @@ export default function NowPlaying() {
     if (current.kind === "track" && current.id != null) {
       toggleLike(current.id);
     } else if (current.kind === "netease" && current.nid != null) {
-      neteaseToggleLike(current.nid);
+      toggleLikeOnline({
+        kind: "netease",
+        id: current.nid,
+        name: current.title,
+        artist: current.artist,
+        album: current.album,
+        cover: current.cover,
+        durationMs: current.durationMs,
+        mediaMid: "",
+        vip: false,
+      });
     } else if (current.kind === "qq" && current.qid != null) {
       const entry = [...likedOnline, ...recentOnline].find(
         (e) => e.kind === "qq" && e.onlineId === current.qid

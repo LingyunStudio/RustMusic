@@ -220,7 +220,9 @@ export default function MiniPlayer() {
   const isLiked = useMemo(() => {
     if (!current) return false;
     if (current.kind === "track") return !!current.liked;
-    if (current.kind === "netease" && current.nid) return !!neteaseLiked[current.nid];
+    if (current.kind === "netease" && current.nid) {
+      return !!(savedOnline[`netease-${current.nid}`] || neteaseLiked[current.nid]);
+    }
     if (current.kind === "qq" && current.qid) {
       return (
         !!savedOnline[`qq-${current.qid}`] ||
@@ -254,7 +256,17 @@ export default function MiniPlayer() {
     if (current.kind === "track" && current.id != null) {
       toggleLike(current.id);
     } else if (current.kind === "netease" && current.nid != null) {
-      neteaseToggleLike(current.nid);
+      toggleLikeOnline({
+        kind: "netease",
+        id: current.nid,
+        name: current.title,
+        artist: current.artist,
+        album: current.album,
+        cover: current.cover,
+        durationMs: current.durationMs,
+        mediaMid: "",
+        vip: false,
+      });
     } else if (current.kind === "qq" && current.qid != null) {
       const entry = [...likedOnline, ...recentOnline].find(
         (it) => it.kind === "qq" && it.onlineId === current.qid
