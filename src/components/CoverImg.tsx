@@ -75,7 +75,7 @@ export default function CoverImg({ src, seed, className = "", iconSize = 18, sma
           if (useSmall) setSmallMissing(true);
           else setErr(true);
         }}
-        className={`object-cover bg-[var(--shade)] ${className}`}
+        className={`object-cover object-center bg-[var(--shade)] ${className}`}
       />
     );
   }

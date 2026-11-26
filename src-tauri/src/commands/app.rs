@@ -207,10 +207,11 @@ fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String,
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(crate::i18n::pick("不支持的封面地址", "Unsupported cover URL").into());
     }
-    // 缓存名 = 归一键哈希 + 扩展名（重复调用直接命中，跨重启零重复下载）
+    // 缓存名 = 版本前缀 + 归一键哈希 + 扩展名（跨重启零重复下载）
     let cache_key = cover_cache_key(&url);
     let mut h = std::collections::hash_map::DefaultHasher::new();
     use std::hash::{Hash, Hasher};
+    "v2:".hash(&mut h);
     cache_key.hash(&mut h);
     let stem = format!("{:016x}", h.finish());
     let ext = if url.contains(".png") { "png" } else { "jpg" };
@@ -234,6 +235,20 @@ fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String,
         .map_err(|e| e.to_string())?;
     if buf.len() < 64 {
         return Err(crate::i18n::pick("封面内容为空", "Cover image is empty").into());
+    }
+    // 自动裁剪非正方形补白边/扫描白边；无白边时零损耗直写原字节
+    if let Ok(img) = image::load_from_memory(&buf) {
+        let (trimmed, changed) = crate::library::trim_scan_white_border(img);
+        if changed {
+            let fmt = if ext == "png" {
+                image::ImageFormat::Png
+            } else {
+                image::ImageFormat::Jpeg
+            };
+            if trimmed.to_rgb8().save_with_format(&dest, fmt).is_ok() {
+                return Ok(dest.to_string_lossy().into_owned());
+            }
+        }
     }
     std::fs::write(&dest, &buf).map_err(|e| e.to_string())?;
     Ok(dest.to_string_lossy().into_owned())

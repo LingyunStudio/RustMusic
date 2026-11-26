@@ -332,6 +332,97 @@ pub fn parse_track(path: &Path, app_data: &Path) -> Option<NewTrack> {
     })
 }
 
+/// 裁剪专辑封面边缘的扫描白边/非正方形补白边（如老 CD 扫描图右侧纯白条带）。
+///
+/// 安全保护：
+/// - 仅裁剪连续「近白」像素行/列（每边上限 12%）；
+/// - 若四条边全部为白边，说明封面本身为纯白底极简设计，不予裁剪；
+/// - 返回 `(处理后图像, 是否发生了裁剪)`，无白边时零修改原样返回。
+pub(crate) fn trim_scan_white_border(img: image::DynamicImage) -> (image::DynamicImage, bool) {
+    let rgb = img.to_rgb8();
+    let (w, h) = rgb.dimensions();
+    if w < 64 || h < 64 {
+        return (img, false);
+    }
+
+    let is_white_px = |x: u32, y: u32| -> bool {
+        let p = rgb.get_pixel(x, y).0;
+        p[0] >= 236 && p[1] >= 236 && p[2] >= 236
+    };
+
+    let row_is_white = |y: u32| -> bool {
+        let step = (w / 64).max(1);
+        let mut total = 0u32;
+        let mut white = 0u32;
+        let mut x = 0;
+        while x < w {
+            total += 1;
+            if is_white_px(x, y) {
+                white += 1;
+            }
+            x += step;
+        }
+        total > 0 && white * 100 >= total * 94
+    };
+
+    let col_is_white = |x: u32| -> bool {
+        let step = (h / 64).max(1);
+        let mut total = 0u32;
+        let mut white = 0u32;
+        let mut y = 0;
+        while y < h {
+            total += 1;
+            if is_white_px(x, y) {
+                white += 1;
+            }
+            y += step;
+        }
+        total > 0 && white * 100 >= total * 94
+    };
+
+    let max_x = ((w as f32) * 0.12) as u32;
+    let max_y = ((h as f32) * 0.12) as u32;
+
+    let mut top = 0u32;
+    while top < max_y && row_is_white(top) {
+        top += 1;
+    }
+    let mut bottom = 0u32;
+    while bottom < max_y && row_is_white(h - 1 - bottom) {
+        bottom += 1;
+    }
+    let mut left = 0u32;
+    while left < max_x && col_is_white(left) {
+        left += 1;
+    }
+    let mut right = 0u32;
+    while right < max_x && col_is_white(w - 1 - right) {
+        right += 1;
+    }
+
+    // 保护纯白底极简设计封面：若四条边全都是白边则不裁剪
+    if top > 1 && bottom > 1 && left > 1 && right > 1 {
+        return (img, false);
+    }
+    if top == 0 && bottom == 0 && left == 0 && right == 0 {
+        return (img, false);
+    }
+
+    // 有白边的那一侧多内缩 1px，去除 JPEG 色度子采样导致的过渡发白细线
+    let pad = |v: u32, lim: u32| if v > 0 { (v + 1).min(lim) } else { 0 };
+    let t = pad(top, max_y);
+    let b = pad(bottom, max_y);
+    let l = pad(left, max_x);
+    let r = pad(right, max_x);
+
+    let nw = w.saturating_sub(l + r);
+    let nh = h.saturating_sub(t + b);
+    if nw < 64 || nh < 64 {
+        return (img, false);
+    }
+    (img.crop_imm(l, t, nw, nh), true)
+}
+
 fn save_cover(
     app_data: &Path,
     track_path: &str,
@@ -347,8 +438,9 @@ fn save_cover(
     let dir = app_data.join("covers");
     let _ = fs::create_dir_all(&dir);
 
-    // 优先解码并压缩为统一尺寸的 JPEG
+    // 优先解码、自动去除单侧/双侧扫描白边，并压缩为统一尺寸的 JPEG
     if let Ok(img) = image::load_from_memory(data) {
+        let (img, _) = trim_scan_white_border(img);
         let img = if img.width() > 600 || img.height() > 600 {
             img.thumbnail(600, 600)
         } else {
