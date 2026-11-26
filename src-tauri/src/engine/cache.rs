@@ -111,7 +111,9 @@ impl Engine {
             *self.want_url.write() = None;
             return self.play_file(info);
         }
-        *self.want_url.write() = Some(url.clone());
+        // 用稳定缓存键 key 登记“用户正在等待播放的目标”：重切回正在下载的同一首歌时
+        // 即使服务端签发了新的临时签名直链 url_2 != url_1，仍能准确匹配并触发起播
+        *self.want_url.write() = Some(key.clone());
         // 同一缓存键已有下载在进行：只登记意图后返回，复用进行中的下载，
         // 避免两个线程同时写同一个 .part 缓存文件导致内容损坏
         {
@@ -140,6 +142,7 @@ impl Engine {
             let shared = Arc::clone(&shared);
             let started = Arc::clone(&started);
             let url = url.clone();
+            let want_key = key.clone();
             let info = info.clone();
             let cache = cache.clone();
             std::thread::spawn(move || loop {
@@ -148,7 +151,7 @@ impl Engine {
                     // 整段完成 → 由下载线程负责最终播放；失败 → 其已回报错误
                     break;
                 }
-                let armed = engine.want_url.read().as_deref() == Some(url.as_str());
+                let armed = engine.want_url.read().as_deref() == Some(want_key.as_str());
                 if !armed {
                     // 用户暂已切走：继续等下载完成（重新点播可在完成前再入本分支）。
                     // 预缓冲已达标时 wait_prebuffer 会立即返回，直接 continue 会
@@ -208,7 +211,7 @@ impl Engine {
                         serde_json::json!({ "error": e }),
                     );
                     // 用户仍在等这首时清除意图，便于下次点击重新发起下载
-                    if engine.want_url.read().as_deref() == Some(url.as_str()) {
+                    if engine.want_url.read().as_deref() == Some(key.as_str()) {
                         *engine.want_url.write() = None;
                     }
                 }
@@ -223,7 +226,7 @@ impl Engine {
                             .as_ref()
                             .map_or(false, |(p, _)| *p == part_str);
                     if !streaming_active {
-                        let still_wanted = engine.want_url.read().as_deref() == Some(url.as_str());
+                        let still_wanted = engine.want_url.read().as_deref() == Some(key.as_str());
                         if still_wanted {
                             let mut info = info;
                             info.path = cache.to_string_lossy().into_owned();
@@ -288,7 +291,7 @@ impl Engine {
         (total, count)
     }
 
-    /// 强制清理全部缓存；正在播放的文件跳过（Windows 上删除会失败）。
+    /// 强制清理全部缓存（含孤立 .part 临时文件）；正在播放或正在下载的文件跳过。
     /// 返回删除的文件数。
     pub fn clear_cache(&self) -> u32 {
         let playing = self
@@ -297,6 +300,7 @@ impl Engine {
             .as_ref()
             .map(|c| c.path.clone())
             .unwrap_or_default();
+        let active_dl = self.downloading.read().clone();
         let mut n = 0u32;
         for (p, _, _) in self.cache_entries() {
             if !playing.is_empty() && p == PathBuf::from(&playing) {
@@ -304,6 +308,22 @@ impl Engine {
             }
             if std::fs::remove_file(&p).is_ok() {
                 n += 1;
+            }
+        }
+        // 同步清掉失败残留的孤立 .part 文件（排除正在下载中的键）
+        if let Ok(rd) = std::fs::read_dir(&self.downloads_dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.extension().and_then(|x| x.to_str()) != Some("part") {
+                    continue;
+                }
+                let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                if active_dl.contains(stem) {
+                    continue;
+                }
+                if std::fs::remove_file(&p).is_ok() {
+                    n += 1;
+                }
             }
         }
         n
@@ -483,8 +503,11 @@ fn download_inner(
         // 先终态后重命名：读取器收到 EOF 后释放文件，重命名成功率更高
         s.finish(io_result.is_ok(), received);
     }
-    io_result?;
     drop(file);
+    if let Err(e) = io_result {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
     // 播放端可能仍持有 .part 句柄（流式播放中）：Windows 上重命名会失败，
     // 短暂重试，仍失败则留给读取器 Drop 时收尾
     let mut renamed = false;

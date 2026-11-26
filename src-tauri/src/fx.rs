@@ -158,15 +158,18 @@ struct BandMap {
 impl BandMap {
     fn build(sr: u32) -> Self {
         let ratio = (F_HI / F_LO).powf(1.0 / BANDS as f32);
-        let bin_of = |hz: f32| (hz * WIN as f32 / sr as f32).round().max(1.0) as usize;
+        let max_bin = (WIN / 2).max(2);
+        let bin_of = |hz: f32| (hz * WIN as f32 / sr.max(1) as f32).round().max(1.0) as usize;
         let mut start = Vec::with_capacity(BANDS);
         let mut end = Vec::with_capacity(BANDS);
         let mut f = F_LO;
         for _ in 0..BANDS {
-            let s = bin_of(f);
-            let e = (bin_of(f * ratio)).max(s + 1).min(WIN / 2);
+            // 严格钳制在奈奎斯特半谱 [1, WIN/2) 内：低采样率（8/11.025/12kHz）不越界 panic，
+            // 16/22.05/24kHz 不误读共轭镜像频段
+            let s = bin_of(f).min(max_bin - 1);
+            let e = bin_of(f * ratio).max(s + 1).min(max_bin);
             start.push(s);
-            end.push(e.max(s + 1));
+            end.push(e);
             f *= ratio;
         }
         BandMap { start, end, sr }
@@ -319,6 +322,24 @@ fn spectrum_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn band_map_low_sample_rates_safe() {
+        let fft = Fft::new(WIN);
+        let hann = vec![1.0f32; WIN];
+        let samples = vec![0.0f32; WIN];
+        let mut re = vec![0.0f32; WIN];
+        let mut im = vec![0.0f32; WIN];
+        for sr in [8_000u32, 11_025, 12_000, 16_000, 22_050, 24_000, 44_100, 48_000, 192_000] {
+            let map = BandMap::build(sr);
+            for i in 0..BANDS {
+                assert!(map.start[i] < WIN / 2, "sr={sr} start[{i}]={}", map.start[i]);
+                assert!(map.end[i] <= WIN / 2, "sr={sr} end[{i}]={}", map.end[i]);
+                assert!(map.start[i] < map.end[i], "sr={sr} band[{i}] empty");
+            }
+            let _ = spectrum_frame(&fft, &hann, &map, &samples, &mut re, &mut im);
+        }
+    }
 
     /// 与教科书 DFT 对拍：随机实信号，频谱幅度误差应远小于视觉阈值
     #[test]

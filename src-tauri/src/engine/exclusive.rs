@@ -15,6 +15,16 @@ impl Engine {
     /// 初始化在会话线程完成，此处阻塞等待协商结果（最多 3s）；
     /// 失败时采样源已被会话线程取走，由调用方重新解码回退共享模式。
     pub(super) fn start_exclusive(&self, info: &TrackInfo, skip_ms: u64) -> Result<(), String> {
+        self.start_exclusive_inner(info, skip_ms, false, true)
+    }
+
+    fn start_exclusive_inner(
+        &self,
+        info: &TrackInfo,
+        skip_ms: u64,
+        initial_paused: bool,
+        bump_seq: bool,
+    ) -> Result<(), String> {
         self.rebuilding.store(true, Ordering::Relaxed);
         let result = (|| -> Result<(), String> {
             // 终止旧会话并等线程真正退出（设备随音频客户端释放）：
@@ -28,6 +38,7 @@ impl Engine {
             // DASH（B 站 fMP4）由 helper 走 symphonia 直连源（rodio 会 panic），
             // 其余格式 rodio 解码 + skip_duration
             let src = self.open_current_source(&info.path, skip_ms)?;
+            let src_dur = src.total_duration().map(|d| d.as_millis() as u64).unwrap_or(0);
             let wrapped =
                 EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), skip_ms as f64)
                     .with_fx(self.fx.clone());
@@ -40,6 +51,9 @@ impl Engine {
                 output_latency_ms: self.output_latency_ms.clone(),
             };
             let (ctl, rx) = wasapi_out::spawn_exclusive_session(wrapped, params)?;
+            if initial_paused {
+                ctl.paused.store(true, Ordering::Relaxed);
+            }
             // 会话一创建就注册控制句柄：协商期间超时/切歌/关开关也能终止它，
             // 防止孤儿线程晚一步拿到设备后无人可控（表现为其它软件一直无声）
             *self.excl.write() = Some(ctl.clone());
@@ -71,8 +85,15 @@ impl Engine {
             self.shared_broken.store(true, Ordering::Relaxed);
             self.sink.read().clear();
             self.pos_ms.store(skip_ms, Ordering::Relaxed);
-            self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
-            self.user_paused.store(false, Ordering::Relaxed);
+            let dur = if info.duration_ms > 0 {
+                info.duration_ms
+            } else if src_dur > 0 {
+                src_dur
+            } else {
+                self.dur_ms.load(Ordering::Relaxed)
+            };
+            self.dur_ms.store(dur, Ordering::Relaxed);
+            self.user_paused.store(initial_paused, Ordering::Relaxed);
             self.stopped.store(false, Ordering::Relaxed);
             Ok(())
         })();
@@ -81,34 +102,31 @@ impl Engine {
             let info = info.clone();
             *self.current.write() = Some(info.clone());
             self.notify_smtc();
-            let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
-            let _ = self.app.emit(
-                "player://state",
-                PlayState {
-                    playing: true,
-                    info,
-                    seq,
-                },
-            );
+            if bump_seq {
+                let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
+                let _ = self.app.emit(
+                    "player://state",
+                    PlayState {
+                        playing: !initial_paused,
+                        info,
+                        seq,
+                    },
+                );
+            } else {
+                self.emit_state(!initial_paused);
+            }
         }
         result
     }
 
-    /// 重建独占会话（seek / 倍速 / 设备切换时），保持暂停状态
+    /// 重建独占会话（seek / 倍速 / 设备切换时），保持暂停状态且不递增开播代次 seq
     pub(super) fn rebuild_exclusive_at(
         &self,
         info: &TrackInfo,
         ms: u64,
         was_paused: bool,
     ) -> Result<(), String> {
-        let result = self.start_exclusive(info, ms);
-        if result.is_ok() {
-            if let Some(ctl) = self.excl.read().as_ref() {
-                ctl.paused.store(was_paused, Ordering::Relaxed);
-            }
-            self.user_paused.store(was_paused, Ordering::Relaxed);
-        }
-        result
+        self.start_exclusive_inner(info, ms, was_paused, false)
     }
 
     /// 停止独占会话并立即切回共享模式（从当前进度续播，保持暂停状态）。

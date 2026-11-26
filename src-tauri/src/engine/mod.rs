@@ -137,25 +137,27 @@ impl Engine {
         cache_limit: u64,
         smtc: Sender<SmtcMsg>,
     ) -> Result<Self, String> {
-        let (handle, sink) = Self::build_output(None)?;
+        let (handle, sink) = Self::build_output(None, false)?;
         let latency_ms = Self::shared_output_latency_ms(handle);
         // 皮肤律动：分接器常驻，分析线程在开关打开前空转（每 tick 一次原子读）
         let fx_shared = Arc::new(FxShared::new());
         fx::spawn(app.clone(), fx_shared.clone());
         let downloads_dir = app_data.join("downloads");
         let _ = std::fs::create_dir_all(&downloads_dir);
-        // 旧版缓存按 URL 哈希命名（无稳定前缀），链接签名变化导致
-        // 这些文件永不再命中，启动时清掉以免白占磁盘。
+        // 旧版缓存按 URL 哈希命名（无稳定前缀），以及异常退出残留的 .part 临时文件，
+        // 启动时一并清掉以免长期占用磁盘。
         // 白名单必须覆盖全部缓存键前缀（net/qq/kug/bili/nd/url，见 cache_key_for），
         // 漏掉的前缀会被误当旧文件删光——该音源缓存将永远活不过一次重启
         if let Ok(rd) = std::fs::read_dir(&downloads_dir) {
             for e in rd.flatten() {
+                let p = e.path();
                 let name = e.file_name().to_string_lossy().into_owned();
+                let is_part = p.extension().and_then(|x| x.to_str()) == Some("part");
                 let recognized = ["net-", "qq-", "kug-", "bili-", "nd-", "url-"]
                     .iter()
                     .any(|p| name.starts_with(p));
-                if !recognized {
-                    let _ = std::fs::remove_file(e.path());
+                if !recognized || is_part {
+                    let _ = std::fs::remove_file(p);
                 }
             }
         }
@@ -452,7 +454,10 @@ impl Engine {
             .as_ref()
             .map(|i| {
                 // FLAC 与 MP4 容器（symdec 源）解码器都不支持就地 seek：走重建
-                i.path.to_lowercase().ends_with(".flac") || is_mp4_container(&i.path)
+                // 除后缀外同时嗅探 fLaC 魔数，覆盖缓存为 .bin 的 Navidrome/直链 FLAC
+                i.path.to_lowercase().ends_with(".flac")
+                    || is_flac_container(&i.path)
+                    || is_mp4_container(&i.path)
             })
             .unwrap_or(false)
             || is_streaming;
@@ -487,10 +492,18 @@ impl Engine {
     /// 边下边播中的曲目同样适用（流读取器按包跳转到目标位置，缺失数据阻塞等待）。
     fn rebuild_at(&self, info: &TrackInfo, ms: u64) -> Result<(), String> {
         let src = self.open_current_source(&info.path, ms)?;
+        let src_dur = src.total_duration().map(|d| d.as_millis() as u64).unwrap_or(0);
         let wrapped = EqSource::with_base(src, self.eq.clone(), self.pos_ms.clone(), ms as f64)
             .with_fx(self.fx.clone());
         self.pos_ms.store(ms, Ordering::Relaxed);
-        self.dur_ms.store(info.duration_ms, Ordering::Relaxed);
+        let dur = if info.duration_ms > 0 {
+            info.duration_ms
+        } else if src_dur > 0 {
+            src_dur
+        } else {
+            self.dur_ms.load(Ordering::Relaxed)
+        };
+        self.dur_ms.store(dur, Ordering::Relaxed);
         let sink = self.sink.read();
         sink.clear();
         sink.append(wrapped);
@@ -635,6 +648,15 @@ fn is_mp4_container(path: &str) -> bool {
     let mut head = [0u8; 8];
     let n = f.read(&mut head).unwrap_or(0);
     n == 8 && head[4..8] == *b"ftyp"
+}
+
+fn is_flac_container(path: &str) -> bool {
+    let Ok(mut f) = File::open(path) else {
+        return false;
+    };
+    let mut head = [0u8; 4];
+    let n = f.read(&mut head).unwrap_or(0);
+    n == 4 && head == *b"fLaC"
 }
 
 /// start() 尾部的公共播放准备（新 Sink 后设置音量/速度并开播）

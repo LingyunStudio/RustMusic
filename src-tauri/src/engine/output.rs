@@ -95,38 +95,47 @@ static LEAKED_SINKS: Mutex<Vec<(String, &'static MixerDeviceSink)>> = Mutex::new
 
 impl Engine {
     /// 按设备偏好创建输出流与 Player；None = 系统默认设备。
+    /// `force_reopen = true`：独占会话或设备热拔插导致既有共享流失效时强制重开，
+    /// 绝不复用 LEAKED_SINKS 里已被系统作废的旧句柄。
     pub(super) fn build_output(
         pref: Option<&str>,
+        force_reopen: bool,
     ) -> Result<(&'static MixerDeviceSink, Player), String> {
         let host = rodio::cpal::default_host();
+        let names = wasapi_name_map();
         let device = match pref {
-            Some(name) => {
-                let names = wasapi_name_map();
-                host.output_devices()
-                    .map_err(|e| {
-                        crate::i18n::pick(
-                            format!("枚举输出设备失败: {e}"),
-                            format!("Failed to enumerate output devices: {e}"),
-                        )
-                    })?
-                    .find(|d| device_matches(d, &names, name))
-                    .ok_or_else(|| {
-                        crate::i18n::pick(
-                            format!("输出设备「{name}」不存在"),
-                            format!("Output device \"{name}\" not found"),
-                        )
-                    })?
-            }
+            Some(name) => host
+                .output_devices()
+                .map_err(|e| {
+                    crate::i18n::pick(
+                        format!("枚举输出设备失败: {e}"),
+                        format!("Failed to enumerate output devices: {e}"),
+                    )
+                })?
+                .find(|d| device_matches(d, &names, name))
+                .ok_or_else(|| {
+                    crate::i18n::pick(
+                        format!("输出设备「{name}」不存在"),
+                        format!("Output device \"{name}\" not found"),
+                    )
+                })?,
             None => host.default_output_device().ok_or_else(|| {
                 crate::i18n::pick("没有可用的音频输出设备", "No audio output device available")
             })?,
         };
-        let device_name = device.name().unwrap_or_default();
-        // 同一设备已有泄漏句柄：复用（旧 Player 已 stop， mixer 仍活着）
-        if let Some((_, sink)) = LEAKED_SINKS.lock().iter().find(|(k, _)| *k == device_name) {
-            let player = Player::connect_new(sink.mixer());
-            player.pause();
-            return Ok((sink, player));
+        // 优先用端点唯一 ID 做缓存键（其次完整 FriendlyName），避免多台同名「耳机」串流
+        let device_key = device
+            .id()
+            .ok()
+            .map(|i| i.1)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| display_name(&device, &names));
+        if !force_reopen {
+            if let Some((_, sink)) = LEAKED_SINKS.lock().iter().find(|(k, _)| *k == device_key) {
+                let player = Player::connect_new(sink.mixer());
+                player.pause();
+                return Ok((sink, player));
+            }
         }
         let leaked: &'static MixerDeviceSink = Box::leak(Box::new(
             rodio::DeviceSinkBuilder::from_device(device)
@@ -138,9 +147,14 @@ impl Engine {
                     )
                 })?,
         ));
-        LEAKED_SINKS
-            .lock()
-            .push((device_name.clone(), leaked));
+        {
+            let mut sinks = LEAKED_SINKS.lock();
+            if let Some(slot) = sinks.iter_mut().find(|(k, _)| *k == device_key) {
+                slot.1 = leaked;
+            } else {
+                sinks.push((device_key, leaked));
+            }
+        }
         let sink = Player::connect_new(leaked.mixer());
         sink.pause();
         Ok((leaked, sink))
@@ -164,7 +178,7 @@ impl Engine {
 
     /// 重建共享模式输出流与 Sink（独占会话跑过之后共享流已失效时调用）
     pub(super) fn rebuild_shared_output(&self) {
-        match Self::build_output(self.device_pref.read().as_deref()) {
+        match Self::build_output(self.device_pref.read().as_deref(), true) {
             Ok((handle, sink)) => {
                 let mut old = self.sink.write();
                 old.stop();
@@ -221,7 +235,7 @@ impl Engine {
             let volume = f32::from_bits(self.volume.load(Ordering::Relaxed));
             let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
 
-            let (handle, sink) = Self::build_output(name)?;
+            let (handle, sink) = Self::build_output(name, true)?;
             {
                 let mut old_sink = self.sink.write();
                 old_sink.stop();
@@ -243,7 +257,8 @@ impl Engine {
                                 self.eq.clone(),
                                 self.pos_ms.clone(),
                                 pos as f64,
-                            );
+                            )
+                            .with_fx(self.fx.clone());
                             let sink = self.sink.read();
                             sink.clear();
                             sink.append(wrapped);
