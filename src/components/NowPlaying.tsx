@@ -681,7 +681,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
               aria-hidden
               className="absolute inset-0 pointer-events-none"
               style={{
-                background: `radial-gradient(115% 95% at 50% 50%, ${scrim} 42%, transparent 96%)`,
+                background: `radial-gradient(ellipse 50% 50% at 50% 50%, ${scrim} 0%, transparent 100%)`,
               }}
             />
           )}
