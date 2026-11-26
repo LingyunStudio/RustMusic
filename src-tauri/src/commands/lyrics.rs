@@ -56,6 +56,23 @@ pub async fn get_lyrics(
         }
     }
 
+    // 实时检查同目录同名 .lrc：用户先入库音频、事后补放 .lrc 时增量扫描不会重解析，
+    // 在此兜底读取并回填 tracks.lrc_path
+    let sidecar = std::path::Path::new(&path).with_extension("lrc");
+    if sidecar.exists() {
+        if let Some(text) = read_lrc_text(&sidecar) {
+            let p = lyrics::parse(&text);
+            if !p.lines.is_empty() {
+                let conn = state.db.lock();
+                let _ = conn.execute(
+                    "UPDATE tracks SET lrc_path = ?1 WHERE id = ?2",
+                    rusqlite::params![sidecar.to_string_lossy().as_ref(), track_id],
+                );
+                return Ok(LyricsPayload::new(p.synced, p.lines));
+            }
+        }
+    }
+
     // 内嵌歌词
     if let Ok(tagged) = lofty::read_from_path(&path) {
         if let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) {

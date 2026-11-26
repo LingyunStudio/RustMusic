@@ -1,5 +1,6 @@
 //! 副屏任务栏时钟区左缘测量（UIA，后台线程 + SWR 缓存）。
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
@@ -9,14 +10,13 @@ use windows::core::w;
 use super::render::scale;
 use super::*;
 
-/// 副屏时钟区测量缓存（后台线程写入，渲染线程只读）
-struct ZoneCache {
-    tray: isize,
-    at: Instant,
-    zone_left: i32,
-}
+/// 副屏时钟区测量缓存：按副屏任务栏 HWND 分别存储，避免 3 屏及以上场景互相覆盖反复触发 UIA
+static ZONE_CACHE: std::sync::OnceLock<Mutex<HashMap<isize, (Instant, i32)>>> =
+    std::sync::OnceLock::new();
 
-static ZONE_CACHE: Mutex<Option<ZoneCache>> = Mutex::new(None);
+fn zone_cache() -> &'static Mutex<HashMap<isize, (Instant, i32)>> {
+    ZONE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 static ZONE_WORKER_BUSY: AtomicBool = AtomicBool::new(false);
 
@@ -30,11 +30,10 @@ static ZONE_WORKER_BUSY: AtomicBool = AtomicBool::new(false);
 pub(super) unsafe fn secondary_zone_left(tray: HWND, tray_r: &RECT) -> Option<i32> {
     const TTL: Duration = Duration::from_secs(60);
     let key = tray.0 as isize;
-    let cached = ZONE_CACHE
+    let cached = zone_cache()
         .lock()
-        .as_ref()
-        .filter(|c| c.tray == key)
-        .map(|c| (c.zone_left, c.at.elapsed() < TTL));
+        .get(&key)
+        .map(|(at, zone_left)| (*zone_left, at.elapsed() < TTL));
     match cached {
         Some((zone, fresh)) => {
             if !fresh {
@@ -77,11 +76,9 @@ unsafe fn measure_zone_worker(tray: HWND, tray_r: RECT) {
     let zone = measure_zone_uia(tray, &tray_r);
     let elapsed = t0.elapsed();
     if let Some(zone) = zone {
-        *ZONE_CACHE.lock() = Some(ZoneCache {
-            tray: tray.0 as isize,
-            at: Instant::now(),
-            zone_left: zone,
-        });
+        zone_cache()
+            .lock()
+            .insert(tray.0 as isize, (Instant::now(), zone));
     }
     ZONE_WORKER_BUSY.store(false, Ordering::SeqCst);
     eprintln!(

@@ -69,6 +69,14 @@ pub(crate) fn media_control(app: &AppHandle, action: &str, value: Option<f64>) {
             "media://control",
             serde_json::json!({ "action": action, "value": value }),
         );
+        // 托盘隐藏态连续按媒体键时顺延重挂起倒计时，避免刚切歌即被旧定时器冻结
+        let hidden = app
+            .get_webview_window("main")
+            .map(|w| !w.is_visible().unwrap_or(true))
+            .unwrap_or(false);
+        if hidden {
+            schedule_resuspend(app);
+        }
         return;
     }
     resume_main_webview(app, true);

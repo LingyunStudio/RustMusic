@@ -109,23 +109,21 @@ struct Word {
 }
 
 /// Convert QRC content to Enhanced LRC format.
+/// 每字同时写起止标签 `<start>text<end>`（与 yrc/krc 一致），避免句中停顿时
+/// 逐字染色把空白拍拉长到下一字开始。
 pub fn to_enhanced_lrc(content: &str) -> String {
     let mut out = Vec::new();
 
     for line in parse_lines(content) {
         let mut rendered = format!("[{}]", format_timestamp(line.start_ms as i64));
-        let word_count = line.words.len();
-        for (idx, word) in line.words.iter().enumerate() {
+        for word in &line.words {
+            let end_ms = word.start_ms + word.duration_ms;
             rendered.push_str(&format!(
-                "<{}>{}",
+                "<{}>{}<{}>",
                 format_timestamp(word.start_ms as i64),
-                word.text
+                word.text,
+                format_timestamp(end_ms as i64)
             ));
-            if idx == word_count - 1 {
-                // Append end tag after the last word
-                let end_ms = word.start_ms + word.duration_ms;
-                rendered.push_str(&format!("<{}>", format_timestamp(end_ms as i64)));
-            }
         }
         out.push(rendered);
     }
@@ -151,8 +149,10 @@ pub fn to_lrc(content: &str) -> String {
 }
 
 fn parse_lines(content: &str) -> Vec<QrcLine> {
-    let line_re = Regex::new(r"^\[(\d+),(\d+)\](.*)$").unwrap();
-    let word_re = Regex::new(r"\((\d+),(\d+)\)").unwrap();
+    static LINE_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    static WORD_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let line_re = LINE_RE.get_or_init(|| Regex::new(r"^\[(\d+),(\d+)\](.*)$").unwrap());
+    let word_re = WORD_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+)\)").unwrap());
 
     let mut lines = Vec::new();
 
@@ -190,18 +190,26 @@ fn parse_lines(content: &str) -> Vec<QrcLine> {
     lines
 }
 
-/// Extract the `LyricContent` attribute value from the decrypted XML.
+/// Extract the `LyricContent` attribute value from the decrypted XML (with XML entity unescaping).
 pub fn extract_lyric_content(xml: &str) -> Option<String> {
-    let re = Regex::new(r#"LyricContent="([\s\S]*?)"\s*/>"#).unwrap();
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r#"LyricContent="([\s\S]*?)"\s*/>"#).unwrap());
     re.captures(xml)
-        .map(|c| c[1].to_string())
+        .map(|c| {
+            c[1].replace("&apos;", "'")
+                .replace("&quot;", "\"")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&")
+        })
         .filter(|s| !s.trim().is_empty())
 }
 
 /// Check if the content is in QRC format (lines start with `[number,number]`).
 #[allow(dead_code)]
 pub fn is_qrc(content: &str) -> bool {
-    let re = Regex::new(r"(?m)^\[\d+,\d+\]").unwrap();
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"(?m)^\[\d+,\d+\]").unwrap());
     re.is_match(content)
 }
 

@@ -16,6 +16,16 @@ fn emit_to_frontend(app: &AppHandle, event: &str, payload: serde_json::Value, wa
         .load(Ordering::SeqCst);
     if !suspended {
         let _ = app.emit(event, payload);
+        // 窗口仍在托盘隐藏态（刚被前一个事件短暂唤醒）时，有新关键事件需顺延挂起倒计时
+        if wake {
+            let hidden = app
+                .get_webview_window("main")
+                .map(|w| !w.is_visible().unwrap_or(true))
+                .unwrap_or(false);
+            if hidden {
+                schedule_resuspend(app);
+            }
+        }
         return;
     }
     if !wake {
@@ -129,9 +139,22 @@ pub(crate) fn monitor(app: AppHandle) {
             // 前端通过 player://state 事件同步（start() 内部发出）。
             // 预载缺失/起播失败 → 原有编排路径：唤醒前端做切歌决策
             if let Some(info) = eng.take_preload() {
-                if let Err(e) = eng.play_file(info) {
-                    eprintln!("[monitor] 预载续播失败: {e} → 回落前端编排");
-                    emit_to_frontend(&app, "player://ended", serde_json::json!({}), true);
+                let preload_id = info.id;
+                match eng.play_file(info) {
+                    Ok(()) => {
+                        // 补记播放统计：预载续播不经 play_track 命令，此前漏写 stats 表
+                        if let Some(tid) = preload_id {
+                            let st = app.state::<AppState>();
+                            let conn = st.db.lock();
+                            crate::db::record_play(&conn, tid);
+                        }
+                        // 清空上一首残留的任务栏歌词行，避免托盘挂起期间继续滚旧歌歌词
+                        crate::taskbar_lyric::set_lines(vec![]);
+                    }
+                    Err(e) => {
+                        eprintln!("[monitor] 预载续播失败: {e} → 回落前端编排");
+                        emit_to_frontend(&app, "player://ended", serde_json::json!({}), true);
+                    }
                 }
             } else {
                 // 队列/循环逻辑在前端：挂起中也要唤醒投递，否则托盘播放不连续

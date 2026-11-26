@@ -1,6 +1,7 @@
 //! 任务栏歌词：DirectWrite/Direct2D 渲染与托盘锚定定位。
 
 use windows::Win32::Foundation::{COLORREF, HWND, POINT, RECT, SIZE};
+use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
 };
@@ -125,6 +126,21 @@ pub(super) unsafe fn render_line(hwnd: HWND, tray: HWND, text: &str, color: COLO
     // 锚点（子窗口坐标 = 任务栏客户区坐标）
     let (x, y) = anchor_point(tray, &tray_r, taskbar_w, taskbar_h, w, h);
 
+    // 脏检查：窗口可见且位置、尺寸、文字、颜色均未变化时直接跳过 GDI/D2D 重绘与 UpdateLayeredWindow
+    static LAST_RENDERED: std::sync::OnceLock<
+        parking_lot::Mutex<std::collections::HashMap<isize, (i32, i32, i32, i32, u32, String)>>,
+    > = std::sync::OnceLock::new();
+    let rendered_map = LAST_RENDERED.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+    let key_hwnd = hwnd.0 as isize;
+    if IsWindowVisible(hwnd).as_bool() {
+        let map = rendered_map.lock();
+        if let Some(prev) = map.get(&key_hwnd) {
+            if prev.0 == x && prev.1 == y && prev.2 == w && prev.3 == h && prev.4 == color.0 && prev.5 == text {
+                return;
+            }
+        }
+    }
+
     let Some(buf) = FrameBuf::new(w, h) else {
         return;
     };
@@ -187,6 +203,9 @@ pub(super) unsafe fn render_line(hwnd: HWND, tray: HWND, text: &str, color: COLO
         0,
         SET_WINDOW_POS_FLAGS(SWP_NOACTIVATE.0 | SWP_NOMOVE.0 | SWP_NOSIZE.0),
     );
+    rendered_map
+        .lock()
+        .insert(key_hwnd, (x, y, w, h, color.0, text.to_string()));
 }
 
 /// 锚点计算：横排主屏 = 托盘区左缘 - 宽 - 间距；横排副屏 = 图标区右缘 + 间距；
@@ -338,7 +357,13 @@ unsafe fn fit_text(
     let mut best: Option<(IDWriteTextLayout, f32, f32)> = None;
     while lo <= hi {
         let mid = (lo + hi) / 2;
-        let mut cand = text[..mid].to_vec();
+        // 避免从 UTF-16 高代理项（Emoji/扩展汉字）中间截断产生乱码方框
+        let cut = if mid > 0 && (0xD800..=0xDBFF).contains(&text[mid - 1]) {
+            mid - 1
+        } else {
+            mid
+        };
+        let mut cand = text[..cut].to_vec();
         cand.extend_from_slice(&ell);
         if let Ok(l) = ctx.dwrite.CreateTextLayout(&cand, format, max_w, max_h) {
             let mut cm = DWRITE_TEXT_METRICS::default();

@@ -58,7 +58,8 @@ pub(crate) fn suspend_main_webview(app: &AppHandle) {
         let Some(win) = app.get_webview_window("main") else {
             return;
         };
-        if let Err(e) = win.with_webview(|webview| {
+        let app_for_trim = app.clone();
+        if let Err(e) = win.with_webview(move |webview| {
             use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
             use windows::core::Interface as _;
             let controller = webview.controller();
@@ -74,14 +75,21 @@ pub(crate) fn suspend_main_webview(app: &AppHandle) {
                 // IsVisible=false 是 TrySuspend 的前置条件
                 let _ = controller.SetIsVisible(false);
                 let handler =
-                    webview2_com::TrySuspendCompletedHandler::create(Box::new(|hr, ok| {
+                    webview2_com::TrySuspendCompletedHandler::create(Box::new(move |hr, ok| {
                         eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
                         if ok {
+                            let app_trim = app_for_trim.clone();
                             // 冻结后 Windows 仍惰性裁剪工作集（实测半分钟才落到底），
-                            // 主动换出物理页让内存即刻回落；进程已冻结，操作安全
-                            std::thread::spawn(|| {
+                            // 主动换出物理页让内存即刻回落；延迟后先复核仍处于挂起态再裁剪
+                            std::thread::spawn(move || {
                                 std::thread::sleep(Duration::from_millis(800));
-                                trim_webview_working_sets();
+                                let still_suspended = app_trim
+                                    .try_state::<AppState>()
+                                    .map(|st| st.webview_suspended.load(Ordering::SeqCst))
+                                    .unwrap_or(false);
+                                if still_suspended {
+                                    trim_webview_working_sets();
+                                }
                             });
                         }
                         Ok(())
@@ -173,9 +181,13 @@ fn trim_webview_working_sets() {
     }
     eprintln!("[webview] 工作集裁剪完成，进程数 {trimmed}");
 }
+/// 延迟重挂起代次：每次唤醒或收到新后台事件自增，旧定时线程到期直接作废
+static RESUSPEND_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// 恢复主窗口 WebView。notify=true 时补发播放状态/进度并通知前端
 /// 刷新数据（挂起期间发往前端的事件都会被丢弃）。
 pub(crate) fn resume_main_webview(app: &AppHandle, notify: bool) {
+    RESUSPEND_GEN.fetch_add(1, Ordering::SeqCst);
     {
         let st = app.state::<AppState>();
         if !st.webview_suspended.swap(false, Ordering::SeqCst) && !notify {
@@ -217,9 +229,13 @@ pub(crate) fn resume_main_webview(app: &AppHandle, notify: bool) {
 }
 /// 窗口仍隐藏时延迟重新挂起（短暂唤醒处理完托盘操作/换曲后回收内存）
 pub(crate) fn schedule_resuspend(app: &AppHandle) {
+    let gen = RESUSPEND_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let app2 = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(8));
+        if RESUSPEND_GEN.load(Ordering::SeqCst) != gen {
+            return;
+        }
         let hidden = app2
             .get_webview_window("main")
             .map(|w| !w.is_visible().unwrap_or(false))

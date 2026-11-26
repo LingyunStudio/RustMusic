@@ -345,14 +345,21 @@ pub fn fmt_lrc_time(ms: u64) -> String {
     format!("{}:{:02}.{:02}", csec / 6000, (csec / 100) % 60, csec % 100)
 }
 
-/// [mm:ss] / [mm:ss.xx] / [mm:ss.xxx] → 毫秒
+/// [mm:ss] / [mm:ss.xx] / [mm:ss.xxx] / [mm:ss:xx] → 毫秒
 fn parse_time_tag(tag: &str) -> Option<u64> {
     let (mm, rest) = tag.split_once(':')?;
     let minutes: i64 = mm.trim().parse().ok()?;
     if minutes < 0 {
         return None;
     }
-    let secs: f64 = rest.trim().replace(',', ".").parse().ok()?;
+    let rest = rest.trim();
+    // 兼容两冒号格式 [mm:ss:xx]（部分旧工具导出的百分秒/毫秒格式）
+    let normalized = if let Some((ss, frac)) = rest.split_once(':') {
+        format!("{}.{}", ss.trim(), frac.trim())
+    } else {
+        rest.replace(',', ".")
+    };
+    let secs: f64 = normalized.parse().ok()?;
     if !(0.0..60.0).contains(&secs) {
         return None;
     }

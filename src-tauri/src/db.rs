@@ -698,11 +698,12 @@ pub fn list_playlists(conn: &Connection) -> Vec<Playlist> {
                 COALESCE(t.duration, ot.duration_ms / 1000.0, 0) AS duration,
                 COALESCE(ot.media_mid, '') AS media_mid,
                 COALESCE(ot.vip, 0) AS vip,
-                COALESCE(ot.last_played, 0) AS last_played,
+                COALESCE(st.last_played, ot.last_played, 0) AS last_played,
                 COALESCE(l.liked_at, lo.liked_at, 0) AS liked_at
          FROM playlists p
          LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
          LEFT JOIN tracks t ON pt.kind = 'local' AND t.id = pt.track_id
+         LEFT JOIN stats st ON pt.kind = 'local' AND st.track_id = pt.track_id
          LEFT JOIN online_tracks ot ON pt.kind != 'local' AND ot.kind = pt.kind AND ot.rid = pt.online_id
          LEFT JOIN liked l ON pt.kind = 'local' AND l.track_id = pt.track_id
          LEFT JOIN liked_online lo ON pt.kind != 'local' AND lo.kind = pt.kind AND lo.rid = pt.online_id
@@ -1010,7 +1011,10 @@ pub fn add_source(conn: &Connection, url: &str, title: &str) -> Result<i64, Stri
         params![url, title, now_secs()],
     )
     .map_err(|e| e.to_string())?;
-    Ok(conn.last_insert_rowid())
+    conn.query_row("SELECT id FROM sources WHERE url = ?1", params![url], |r| {
+        r.get(0)
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// 按 URL 查音源（url 有 UNIQUE 索引，查重一条走索引即可，无需全表拉取）
@@ -1129,7 +1133,12 @@ pub fn upsert_online_track(
            vip=CASE WHEN excluded.vip THEN 1 ELSE online_tracks.vip END",
         params![kind, rid, title, artist, album, cover, duration_ms, media_mid, vip as i64],
     );
-    conn.last_insert_rowid()
+    conn.query_row(
+        "SELECT id FROM online_tracks WHERE kind = ?1 AND rid = ?2",
+        params![kind, rid],
+        |r| r.get(0),
+    )
+    .unwrap_or_else(|_| conn.last_insert_rowid())
 }
 
 /// 记录在线曲目播放（未入库的自动补录元数据，供“最近播放”显示）；
@@ -1229,10 +1238,11 @@ pub fn playlist_entries(conn: &Connection, pid: i64) -> Vec<PlaylistEntryRow> {
               COALESCE(t.duration, ot.duration_ms / 1000.0, 0) AS duration,
               COALESCE(ot.media_mid, '') AS media_mid,
               COALESCE(ot.vip, 0) AS vip,
-              COALESCE(ot.last_played, 0) AS last_played,
+              COALESCE(st.last_played, ot.last_played, 0) AS last_played,
               COALESCE(l.liked_at, lo.liked_at, 0) AS liked_at
              FROM playlist_tracks pt
              LEFT JOIN tracks t ON pt.kind = 'local' AND t.id = pt.track_id
+             LEFT JOIN stats st ON pt.kind = 'local' AND st.track_id = pt.track_id
              LEFT JOIN online_tracks ot ON pt.kind != 'local' AND ot.kind = pt.kind AND ot.rid = pt.online_id
              LEFT JOIN liked l ON pt.kind = 'local' AND l.track_id = pt.track_id
              LEFT JOIN liked_online lo ON pt.kind != 'local' AND lo.kind = pt.kind AND lo.rid = pt.online_id
@@ -1342,7 +1352,10 @@ pub fn unlike_online_track(conn: &Connection, kind: &str, rid: &str) {
 
 pub fn liked_online_list(conn: &Connection) -> Vec<PlaylistEntryRow> {
     let mut stmt = match conn.prepare(
-        "SELECT l.kind, l.rid, ot.title, ot.artist, ot.album, ot.cover, ot.duration_ms, ot.media_mid, ot.vip, l.liked_at
+        "SELECT l.kind, l.rid,
+                COALESCE(ot.title, ''), COALESCE(ot.artist, ''), COALESCE(ot.album, ''),
+                COALESCE(ot.cover, ''), COALESCE(ot.duration_ms, 0),
+                COALESCE(ot.media_mid, ''), COALESCE(ot.vip, 0), l.liked_at
          FROM liked_online l
          LEFT JOIN online_tracks ot ON ot.kind = l.kind AND ot.rid = l.rid
          ORDER BY l.liked_at DESC, l.rowid DESC",
