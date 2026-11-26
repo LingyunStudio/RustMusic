@@ -404,8 +404,9 @@ fn song_url_v5(
         }
     };
     set_last_hires_error(None);
-    let mid = mid_of();
     let fetch_with_ids = |q: &str, h: &str, tier: &'static str, aid: u64, albid: u64| -> Result<(String, String, &'static str), String> {
+        // 每次请求动态取当前 mid：20028 触发 re_register 换新设备后，重试必须用新 mid 签 key
+        let mid = mid_of();
         let extra = vec![
             ("album_id".into(), albid.to_string()),
             ("area_code".into(), "1".into()),

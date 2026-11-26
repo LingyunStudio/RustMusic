@@ -186,13 +186,34 @@ pub async fn set_auto_update(state: State<'_, AppState>, enabled: bool) -> Resul
 }
 #[tauri::command]
 pub async fn clear_cache(state: State<'_, AppState>) -> Result<u32, String> {
-    Ok(engine_clone(&state).clear_cache())
+    let mut n = engine_clone(&state).clear_cache();
+    // 同步清理远程封面磁盘缓存（cover-cache）
+    let cover_dir = state.app_data.join("cover-cache");
+    if let Ok(rd) = std::fs::read_dir(&cover_dir) {
+        for e in rd.flatten() {
+            if e.path().is_file() && std::fs::remove_file(e.path()).is_ok() {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
 }
 
-/// 当前缓存占用（bytes）与文件数
+/// 当前缓存占用（bytes）与文件数（含音频缓存与 cover-cache 远程封面缓存）
 #[tauri::command]
 pub async fn cache_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let (bytes, files) = engine_clone(&state).cache_usage();
+    let (mut bytes, mut files) = engine_clone(&state).cache_usage();
+    let cover_dir = state.app_data.join("cover-cache");
+    if let Ok(rd) = std::fs::read_dir(&cover_dir) {
+        for e in rd.flatten() {
+            if let Ok(meta) = e.metadata() {
+                if meta.is_file() {
+                    bytes += meta.len();
+                    files += 1;
+                }
+            }
+        }
+    }
     Ok(json!({ "bytes": bytes, "files": files }))
 }
 

@@ -425,6 +425,13 @@ pub fn resolve_pages(input: &str) -> Result<Vec<(String, String)>, String> {
 /// 播放解析：bili:// 存储链接或用户输入的 B 站链接 → (音频直链, 曲目元信息)。
 /// 返回 Ok(None) 表示不是 B 站链接（调用方走原有通用音源逻辑）。
 pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
+    resolve_with_cookies(input, None)
+}
+
+pub fn resolve_with_cookies(
+    input: &str,
+    cookies: Option<&BiliCookies>,
+) -> Result<Option<(String, TrackInfo)>, String> {
     let s = input.trim();
     // bili://BVxxx?p=N → 还原成视频页链接统一解析
     let stored = match s.strip_prefix("bili://") {
@@ -489,7 +496,7 @@ pub fn resolve(input: &str) -> Result<Option<(String, TrackInfo)>, String> {
         video_title
     };
 
-    let (audio_url, quality) = fetch_audio(&bvid, cid, None)?;
+    let (audio_url, quality) = fetch_audio(&bvid, cid, cookies)?;
 
     let info = TrackInfo {
         id: None,
@@ -568,17 +575,24 @@ pub fn login_buvid3() -> String {
 }
 
 fn qr_debug_log(msg: &str) {
-    use std::io::Write;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::temp_dir().join("rustmusic_bili_qr.log"))
+    #[cfg(debug_assertions)]
     {
-        let _ = writeln!(f, "{ts} {msg}");
+        use std::io::Write;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(std::env::temp_dir().join("rustmusic_bili_qr.log"))
+        {
+            let _ = writeln!(f, "{ts} {msg}");
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = msg;
     }
 }
 
@@ -683,12 +697,12 @@ pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
     }
     let code = v["data"]["code"].as_i64().unwrap_or(-1);
     qr_debug_log(&format!(
-        "poll key_tail={} code={} msg={} setcookie_n={} url={}",
+        "poll key_tail={} code={} msg={} setcookie_n={} has_url={}",
         &key[key.len().saturating_sub(6)..],
         code,
         v["data"]["message"].as_str().unwrap_or(""),
         set_cookies.len(),
-        v["data"]["url"].as_str().unwrap_or("")
+        !v["data"]["url"].as_str().unwrap_or("").is_empty()
     ));
     let status = match code {
         0 => "success",

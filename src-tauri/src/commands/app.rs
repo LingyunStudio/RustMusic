@@ -186,14 +186,32 @@ pub async fn fetch_cover(state: State<'_, AppState>, url: String) -> Result<Stri
     super::blocking(move || fetch_cover_task(app_data, url)).await
 }
 
+/// 封面磁盘缓存键归一：Navidrome getCoverArt 携带动态鉴权参数 s/t，
+/// 剥离易变鉴权段后跨重启也能稳定命中同一缓存文件
+fn cover_cache_key(url: &str) -> String {
+    if !url.contains("/rest/getCoverArt") {
+        return url.to_string();
+    }
+    let Some((base, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let mut kept: Vec<&str> = query
+        .split('&')
+        .filter(|kv| !kv.starts_with("s=") && !kv.starts_with("t="))
+        .collect();
+    kept.sort_unstable();
+    format!("{base}?{}", kept.join("&"))
+}
+
 fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(crate::i18n::pick("不支持的封面地址", "Unsupported cover URL").into());
     }
-    // 缓存名 = URL 哈希 + 扩展名（重复调用直接命中，进程生命周期内零下载）
+    // 缓存名 = 归一键哈希 + 扩展名（重复调用直接命中，跨重启零重复下载）
+    let cache_key = cover_cache_key(&url);
     let mut h = std::collections::hash_map::DefaultHasher::new();
     use std::hash::{Hash, Hasher};
-    url.hash(&mut h);
+    cache_key.hash(&mut h);
     let stem = format!("{:016x}", h.finish());
     let ext = if url.contains(".png") { "png" } else { "jpg" };
 

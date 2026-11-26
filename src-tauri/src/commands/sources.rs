@@ -68,7 +68,10 @@ fn play_source_task(app: &AppHandle, id: i64) -> Result<(), String> {
             .filter(|u| crate::bilibili::looks_like_bili(u))
     };
     if let Some(url) = bili_input {
-        if let Some((audio_url, info)) = crate::bilibili::resolve(&url)? {
+        let cookies = super::bilibili::bili_cookies_opt(&state);
+        if let Some((audio_url, info)) =
+            crate::bilibili::resolve_with_cookies(&url, cookies.as_ref())?
+        {
             // 字幕与音频并行预取：开播时歌词缓存已就绪
             if let Some(rid) = info.qid.clone() {
                 spawn_bili_lyric_warmup(&state, rid);

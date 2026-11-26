@@ -12,6 +12,7 @@ use crate::AppState;
 use super::{engine_clone, notify_quality_fallback};
 /// 酷狗存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查各档
 /// 质量 hash 补齐，否则 HQ/无损音质会静默塌缩到标准
+#[allow(dead_code)]
 pub(crate) fn kugou_hashes_enriched(
     hash: &str,
     title: &str,
@@ -123,55 +124,30 @@ fn kugou_play_task(app: &AppHandle, track: KgPlayReq) -> Result<(), String> {
         super::resolve_quality("kugou", &q)
     };
     let (token, userid) = kg_prepare(&state);
-    // 存档行（最近播放/收藏/歌单）只落库了 128 hash：按标题反查补齐各档
-    // hash，否则 HQ/无损音质设置会静默塌缩到标准。
-    // 匿名（无 token）只有 128k 通道，hq/sq 档用不上——跳过反查，
-    // 省掉点播关键路径上串行的 1-2 次搜索往返
-    let (hq_hash, sq_hash, super_hash) = if token.is_empty() {
-        (
-            track.hq_hash.clone(),
-            track.sq_hash.clone(),
-            track.super_hash.clone(),
-        )
-    } else {
-        kugou_hashes_enriched(
-            &track.hash,
-            &track.title,
-            &track.artist,
-            &track.hq_hash,
-            &track.sq_hash,
-            &track.super_hash,
-        )
-    };
-    // 档位 hash 诊断（Hi-Res 排查）：行自带 vs 反查补齐后的最终状态
-    eprintln!(
-        "[kugou] 档位hash（{} - {}）：hq={} sq={} super={}（行自带 hq={} sq={} super={}，{}）",
-        track.artist,
-        track.title,
-        hq_hash.len(),
-        sq_hash.len(),
-        super_hash.len(),
-        track.hq_hash.len(),
-        track.sq_hash.len(),
-        track.super_hash.len(),
-        if token.is_empty() {
-            "匿名跳过反查"
-        } else {
-            "已反查"
-        },
-    );
-    let (url, _ext, quality_label) = crate::kugou::song_url(
+    let before_dfid = crate::kugou::current_dfid();
+    // song_url 内部在已登录时会按精确 hash 调一次 /v2/get_res_privilege/lite 补全各档
+    // 音质 hash 与 album_audio_id，无需在此额外串行跑 1~3 次关键词搜索反查
+    let url_res = crate::kugou::song_url(
         &track.hash,
         track.album_audio_id,
         track.album_id,
-        &hq_hash,
-        &sq_hash,
-        &super_hash,
+        &track.hq_hash,
+        &track.sq_hash,
+        &track.super_hash,
         track.vip,
         &token,
         &userid,
         &quality,
-    )?;
+    );
+    // 若 20028 风控触发了 re_register 换新设备，同步持久化新 (mid, dfid) 回库
+    let after_dfid = crate::kugou::current_dfid();
+    if !after_dfid.is_empty() && after_dfid != before_dfid {
+        let after_mid = crate::kugou::current_mid();
+        let conn = state.db.lock();
+        db::set_setting(&conn, "kg_mid", &after_mid);
+        db::set_setting(&conn, "kg_dfid", &after_dfid);
+    }
+    let (url, _ext, quality_label) = url_res?;
     let fallback_reason = if token.is_empty() {
         crate::i18n::pick(
             "酷狗未登录，匿名通道仅提供标准音质",

@@ -334,7 +334,7 @@ fn qq_play_task(app: &AppHandle, track: QqPlayReq) -> Result<(), String> {
         quality: Some(quality_label.to_string()),
     };
     // 记录到“最近播放”（在线曲目元数据轻量入库）
-    super::record_online_play(&state, &info, &track.media_mid, false);
+    super::record_online_play(&state, &info, &track.media_mid, track.vip);
     engine_clone(&state).play_url(url, info)
 }
 

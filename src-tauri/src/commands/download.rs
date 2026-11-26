@@ -8,7 +8,7 @@ use crate::db;
 
 use crate::AppState;
 
-use super::kugou::{kg_prepare, kugou_hashes_enriched};
+use super::kugou::kg_prepare;
 use super::netease::netease_cookie;
 use super::qq::qq_with_auto_refresh;
 // ---------- 在线歌曲收藏到本地 / 歌单导入 ----------
@@ -162,33 +162,35 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
         }
         "kugou" => {
             let (token, userid) = kg_prepare(&state);
+            let before_dfid = crate::kugou::current_dfid();
             // 搜索行带 albumAudioId；存档行的 media_mid 列也存了它
             let album_audio_id = if req.album_audio_id > 0 {
                 req.album_audio_id
             } else {
                 req.media_mid.parse().unwrap_or(0)
             };
-            // 前端带来的各档 hash 优先；存档行没有时按标题反查补齐
-            let (hq, sq, sup) = kugou_hashes_enriched(
-                &req.id,
-                &title,
-                &req.artist,
-                &req.hq_hash,
-                &req.sq_hash,
-                &req.super_hash,
-            );
-            let (u, ext, label) = crate::kugou::song_url(
+            // song_url 内部在已登录时按精确 hash 调 privilege_hashes 补齐高档位 hash；
+            // 未登录或缺失时再回退前端自带值
+            let url_res = crate::kugou::song_url(
                 &req.id,
                 album_audio_id,
                 0,
-                &hq,
-                &sq,
-                &sup,
+                &req.hq_hash,
+                &req.sq_hash,
+                &req.super_hash,
                 true,
                 &token,
                 &userid,
                 &quality,
-            )?;
+            );
+            let after_dfid = crate::kugou::current_dfid();
+            if !after_dfid.is_empty() && after_dfid != before_dfid {
+                let after_mid = crate::kugou::current_mid();
+                let conn = state.db.lock();
+                db::set_setting(&conn, "kg_mid", &after_mid);
+                db::set_setting(&conn, "kg_dfid", &after_dfid);
+            }
+            let (u, ext, label) = url_res?;
             (u, ext, Some(label.to_string()))
         }
         "bilibili" => {
@@ -212,15 +214,8 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
                 .into());
             }
             let url = crate::navidrome::stream_url(&server, &username, &req.id)?;
-            // 扩展名从流 URL 路径推断，推断不出按 mp3
-            let path = url.split('?').next().unwrap_or("");
-            let ext = path
-                .rsplit('.')
-                .next()
-                .filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric()))
-                .unwrap_or("mp3")
-                .to_string();
-            (url, ext, None)
+            // Navidrome /rest/stream 路径本身不含扩展名，下载阶段根据响应头/文件头魔数自动识别真实格式
+            (url, "auto".to_string(), None)
         }
         _ => return Err(crate::i18n::pick("未知音源类型", "Unknown audio source type").into()),
     };
@@ -235,21 +230,25 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
         )
     })?;
     let artist = sanitize_filename(&req.artist);
-    let name = format!(
-        "{} - {}.{}",
+    let stem = format!(
+        "{} - {}",
         if artist.is_empty() {
             "Unknown"
         } else {
             &artist
         },
         sanitize_filename(&title),
-        ext
     );
-    let dest = dir.join(&name);
-    if dest.exists() {
+    let initial_name = if ext == "auto" {
+        format!("{stem}.bin")
+    } else {
+        format!("{stem}.{ext}")
+    };
+    let dest = dir.join(&initial_name);
+    if ext != "auto" && dest.exists() {
         return Err(crate::i18n::pick(
-            format!("保存目录已存在同名文件：{name}（如需重新下载请先删除旧文件）"),
-            format!("File already exists: {name} (delete it first to re-download)"),
+            format!("保存目录已存在同名文件：{initial_name}（如需重新下载请先删除旧文件）"),
+            format!("File already exists: {initial_name} (delete it first to re-download)"),
         ));
     }
     // 同名并发下载登记：两个线程交错写同一文件必然产出损坏数据。
@@ -275,17 +274,41 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
         }
     }
     let _guard = Guard(reg_key);
-    let result = download_to_dest(app, &state, &req, &url, &title, &dest);
+    let part = dest.with_file_name(format!("{initial_name}.part"));
+    let result = download_to_dest(app, &state, &req, &url, &title, &dest, &part, ext == "auto");
     match result {
-        Ok(()) => Ok(serde_json::json!({ "name": name, "quality": q_label })),
+        Ok(final_name) => Ok(serde_json::json!({ "name": final_name, "quality": q_label })),
         Err(e) => {
             // 失败清掉半成品 .part，避免下次扫描把坏文件吸收入库
-            let _ = std::fs::remove_file(dest.with_extension("part"));
+            let _ = std::fs::remove_file(&part);
             Err(e)
         }
     }
 }
 
+/// 根据音频文件头魔数嗅探真实容器扩展名（用于 Navidrome /rest/stream 等无后缀直链）
+fn sniff_audio_ext(path: &std::path::Path) -> &'static str {
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return "mp3";
+    };
+    let mut head = [0u8; 12];
+    let n = f.read(&mut head).unwrap_or(0);
+    if n >= 4 && &head[0..4] == b"fLaC" {
+        return "flac";
+    }
+    if n >= 8 && &head[4..8] == b"ftyp" {
+        return "m4a";
+    }
+    if n >= 4 && &head[0..4] == b"OggS" {
+        return "ogg";
+    }
+    if n >= 12 && &head[0..4] == b"RIFF" && &head[8..12] == b"WAVE" {
+        return "wav";
+    }
+    "mp3"
+}
+
+#[allow(clippy::too_many_arguments)]
 fn download_to_dest(
     app: &AppHandle,
     state: &tauri::State<AppState>,
@@ -293,9 +316,10 @@ fn download_to_dest(
     url: &str,
     title: &str,
     dest: &std::path::Path,
-) -> Result<(), String> {
-    let part = dest.with_extension("part");
-    let mut file = std::fs::File::create(&part).map_err(|e| {
+    part: &std::path::Path,
+    auto_ext: bool,
+) -> Result<String, String> {
+    let mut file = std::fs::File::create(part).map_err(|e| {
         crate::i18n::pick(
             format!("创建缓存文件失败: {e}"),
             format!("Failed to create temp file: {e}"),
@@ -367,7 +391,24 @@ fn download_to_dest(
         )
         .into());
     }
-    std::fs::rename(&part, dest).map_err(|e| {
+    let final_dest = if auto_ext {
+        let detected = sniff_audio_ext(part);
+        let d = dest.with_extension(detected);
+        if d.exists() {
+            let fname = d
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            return Err(crate::i18n::pick(
+                format!("保存目录已存在同名文件：{fname}（如需重新下载请先删除旧文件）"),
+                format!("File already exists: {fname} (delete it first to re-download)"),
+            ));
+        }
+        d
+    } else {
+        dest.to_path_buf()
+    };
+    std::fs::rename(part, &final_dest).map_err(|e| {
         crate::i18n::pick(
             format!("保存文件失败: {e}"),
             format!("Failed to save file: {e}"),
@@ -394,7 +435,7 @@ fn download_to_dest(
     };
     if req.kind != "bilibili" {
         write_tags(
-            dest,
+            &final_dest,
             title,
             &req.artist,
             &req.album,
@@ -406,11 +447,11 @@ fn download_to_dest(
     // 4) 解析入库 + 标记已下载 + 保存目录纳入扫描。
     //    明显坏掉的文件（既解不出时长、前端也没给时长、体积又小）不再
     //    静默入库——空/半截文件曾以 0 秒坏曲目的身份混进资料库
-    let parsed = crate::library::parse_track(dest, &state.app_data);
+    let parsed = crate::library::parse_track(&final_dest, &state.app_data);
     let mut track = match parsed {
         Some(t) if t.duration > 0.0 || req.duration_ms > 0 || received >= 64 * 1024 => t,
         _ => {
-            let _ = std::fs::remove_file(dest);
+            let _ = std::fs::remove_file(&final_dest);
             return Err(crate::i18n::pick(
                 "下载的文件无法解析为有效音频，已删除",
                 "Downloaded file is not valid audio and was removed",
@@ -426,9 +467,14 @@ fn download_to_dest(
         let conn = state.db.lock();
         db::upsert_track(&conn, &track);
         db::mark_online_downloaded(&conn, &req.kind, &req.id);
-        let _ = db::add_folder(&conn, &dir_of(dest).to_string_lossy());
+        let norm_dir = crate::library::norm_path(dir_of(&final_dest));
+        let _ = db::add_folder(&conn, &norm_dir);
     }
-    Ok(())
+    let final_name = final_dest
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(final_name)
 }
 
 fn dir_of(p: &std::path::Path) -> &std::path::Path {

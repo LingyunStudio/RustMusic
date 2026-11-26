@@ -96,8 +96,11 @@ pub(super) fn dfid_of() -> String {
     }
 }
 
-/// 强制重新注册（风控 20028 后调用），成功返回新 dfid
+/// 强制重新注册（风控 20028 后调用）：必须先清空旧 mid 与 dfid，
+/// 否则 register_dev_once 仍拿被风控的旧 mid 请求并直接回落返回旧 dfid
 pub(super) fn re_register() -> Option<String> {
+    reset_mid();
+    *REGISTERED_DFID.lock().unwrap() = None;
     register_dev().ok()
 }
 

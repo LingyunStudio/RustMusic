@@ -194,6 +194,21 @@ fn cover_inflight() -> &'static Mutex<HashSet<String>> {
     S.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+fn cover_cache_key(url: &str) -> String {
+    if !url.contains("/rest/getCoverArt") {
+        return url.to_string();
+    }
+    let Some((base, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let mut kept: Vec<&str> = query
+        .split('&')
+        .filter(|kv| !kv.starts_with("s=") && !kv.starts_with("t="))
+        .collect();
+    kept.sort_unstable();
+    format!("{base}?{}", kept.join("&"))
+}
+
 /// 下载远程封面到本地缓存目录，返回落盘路径
 fn download_cover(p: &str, app: &AppHandle) -> Option<std::path::PathBuf> {
     let dir = app
@@ -201,7 +216,7 @@ fn download_cover(p: &str, app: &AppHandle) -> Option<std::path::PathBuf> {
         .map(|s| s.app_data.join("covers").join("smtc"))?;
     let _ = std::fs::create_dir_all(&dir);
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    p.hash(&mut h);
+    cover_cache_key(p).hash(&mut h);
     let ext = if p.to_lowercase().contains(".png") {
         "png"
     } else {

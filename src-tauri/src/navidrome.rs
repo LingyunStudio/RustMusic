@@ -393,13 +393,19 @@ pub fn stream_url(server: &str, username: &str, id: &str) -> Result<String, Stri
     ))
 }
 
+/// 进程内固定封面鉴权盐：同专辑多曲共享完全一致的 URL，确保前后端封面缓存 100% 命中
+fn cover_session_salt() -> &'static str {
+    static SALT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SALT.get_or_init(rand_salt)
+}
+
 /// 封面图地址（带鉴权，<img> 直接可用）
 pub fn cover_art_url(server: &str, username: &str, password: &str, cover_art: &str) -> String {
     if cover_art.is_empty() {
         return String::new();
     }
     let base = norm_base(server);
-    let salt = rand_salt();
+    let salt = cover_session_salt();
     let token = md5_hex(&format!("{password}{salt}"));
     format!(
         "{base}/rest/getCoverArt?u={}&t={token}&s={salt}&v={API_VER}&c={CLIENT}&id={}",
@@ -436,7 +442,7 @@ pub fn lyrics(
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
                 let sl = v.pointer("/subsonic-response/lyricsList/structuredLyrics/0");
                 if let Some(sl) = sl {
-                    let offset = sl.get("offset").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let offset = sl.get("offset").and_then(|x| x.as_i64()).unwrap_or(0);
                     let synced = sl.get("synced").and_then(|x| x.as_bool()).unwrap_or(false);
                     let empty = Vec::new();
                     let lines = sl.get("line").and_then(|x| x.as_array()).unwrap_or(&empty);
@@ -444,7 +450,8 @@ pub fn lyrics(
                         let out: Vec<crate::models::LyricLine> = lines
                             .iter()
                             .filter_map(|l| {
-                                let start = l.get("start").and_then(|x| x.as_u64())? + offset;
+                                let raw_start = l.get("start").and_then(|x| x.as_i64())?;
+                                let start = (raw_start + offset).max(0) as u64;
                                 let value = l.get("value").and_then(|x| x.as_str())?.to_string();
                                 Some(crate::models::LyricLine {
                                     time_ms: Some(start),
