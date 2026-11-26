@@ -22,6 +22,7 @@ import { api } from "../api";
 import { useVirtualWindow } from "../hooks/useVirtualWindow";
 import { useLocatePill } from "../hooks/useLocatePill";
 import LocateCurrentPill from "../components/LocateCurrentPill";
+import CoverImg from "../components/CoverImg";
 import type { NeteaseTrack, OnlineNavSnapshot, OnlineRecState, QqSong, QueueItem } from "../types";
 import { fmtTime } from "../utils";
 import { ImportPlaylistModal } from "./online/ImportPlaylistModal";
@@ -41,6 +42,15 @@ import {
 
 export default function OnlineLibraryView({ source }: { source: Source }) {
   const { tr } = useI18n();
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onFocusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener("rm:focus-search", onFocusSearch);
+    return () => window.removeEventListener("rm:focus-search", onFocusSearch);
+  }, []);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
   const isSkeuo = uiTheme === "skeuo";
@@ -745,7 +755,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       const el = e.target as HTMLElement | null;
       if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable)
         return;
-      if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setBatchMode(false);
+        setSel(new Set());
+      } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
         e.preventDefault();
         setSel(new Set(rows.map(selKeyOf)));
       } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyD") {
@@ -840,6 +854,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
               />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={kw}
                 onChange={(e) => setKw(e.target.value)}
@@ -961,11 +976,11 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
           {rec && (
             <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--line)] shrink-0">
               {rec.cover ? (
-                <img
+                <CoverImg
                   src={rec.cover}
-                  alt=""
-                  className="w-14 h-14 rounded-xl object-cover shadow-[var(--cover-shadow-sm)] shrink-0"
-                  draggable={false}
+                  seed={rec.title}
+                  className="w-14 h-14 rounded-xl shadow-[var(--cover-shadow-sm)] shrink-0"
+                  iconSize={18}
                 />
               ) : (
                 <div

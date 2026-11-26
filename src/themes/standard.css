@@ -589,7 +589,7 @@ html[data-ui="standard"] .eq-bars i {
 html[data-ui="standard"] .eq-bars i:nth-child(1){ height: 100%; animation-delay: -0.3s; }
 html[data-ui="standard"] .eq-bars i:nth-child(2){ height: 100%; animation-delay: -0.6s; }
 html[data-ui="standard"] .eq-bars i:nth-child(3){ height: 100%; animation-delay: -0.15s; }
-html[data-ui="standard"] .paused .eq-bars i {
+html[data-ui="standard"] .eq-bars.paused i {
   animation-play-state: paused;
   transform: scaleY(0.3);
 }

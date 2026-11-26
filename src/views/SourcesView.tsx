@@ -215,6 +215,15 @@ export default function SourcesView() {
 
   // 「回到当前歌曲」药丸 + 队列自动续页（B 站空间列表，卡片网格用元素级定位）
   const listRef = useRef<HTMLDivElement | null>(null);
+  const biliInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onFocusSearch = () => {
+      biliInputRef.current?.focus();
+      biliInputRef.current?.select();
+    };
+    window.addEventListener("rm:focus-search", onFocusSearch);
+    return () => window.removeEventListener("rm:focus-search", onFocusSearch);
+  }, []);
   const pill = useLocatePillEl({
     containerRef: listRef,
     activeSelector: current?.kind === "bilibili" ? '[data-now-playing="1"]' : null,
@@ -758,6 +767,7 @@ export default function SourcesView() {
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-[#fb7299]"
                 />
                 <input
+                  ref={biliInputRef}
                   type="text"
                   value={bili}
                   onChange={(e) => setBili(e.target.value)}

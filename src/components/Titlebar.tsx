@@ -118,18 +118,24 @@ export default function Titlebar() {
         <button
           className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.minimize()}
+          title={tr("最小化", "Minimize")}
+          aria-label={tr("最小化", "Minimize")}
         >
           <Minus size={14} />
         </button>
         <button
           className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[var(--shade)] hover:text-[var(--ink)] transition-colors"
           onClick={() => win.toggleMaximize()}
+          title={maximized ? tr("还原", "Restore") : tr("最大化", "Maximize")}
+          aria-label={maximized ? tr("还原", "Restore") : tr("最大化", "Maximize")}
         >
           {maximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
         </button>
         <button
-          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-[var(--ink)] transition-colors"
+          className="titlebar-btn w-11 h-9 flex items-center justify-center text-[var(--ink-2)] hover:bg-[#c73e2e] hover:text-white transition-colors"
           onClick={() => win.close()}
+          title={tr("关闭", "Close")}
+          aria-label={tr("关闭", "Close")}
         >
           <X size={15} />
         </button>

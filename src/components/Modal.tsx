@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useStore } from "../store";
@@ -15,6 +15,18 @@ export default function Modal({ open, onClose, title, width = 400, children }: M
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
   const isSkeuo = uiTheme === "skeuo";
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 

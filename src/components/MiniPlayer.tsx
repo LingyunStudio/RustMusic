@@ -100,7 +100,7 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
     <div
       onDoubleClick={onRestore}
       title={tr("双击还原主窗口", "Double-click to restore main window")}
-      className="mx-2.5 mb-1.5 px-2.5 h-[25px] rounded-md bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center gap-1.5 overflow-hidden pointer-events-auto cursor-pointer"
+      className="mx-2.5 mb-1.5 px-2.5 h-[25px] rounded-md bg-[var(--shade)] border border-[var(--line)] flex items-center gap-1.5 overflow-hidden pointer-events-auto cursor-pointer"
     >
       <Music2 size={11} className="text-[var(--accent)] shrink-0 opacity-80" />
       {/* 离屏标尺：与实际文字拥有完全一致的字号字体，用于准确计算文本在当前样式下的真实物理宽度 */}
@@ -537,7 +537,7 @@ export default function MiniPlayer() {
           setScrubRatio(null);
           setScrubbing(false);
         }}
-        className="group relative h-[3px] hover:h-[5px] w-full bg-black/10 dark:bg-white/10 cursor-pointer transition-all shrink-0"
+        className="group relative h-[3px] hover:h-[5px] w-full bg-[var(--line)] cursor-pointer transition-all shrink-0"
         title={tr(
           `进度：${fmtTime(displayPos)} / ${fmtTime(total)}`,
           `Progress: ${fmtTime(displayPos)} / ${fmtTime(total)}`

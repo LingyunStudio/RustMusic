@@ -265,6 +265,25 @@ export default function PlaylistDetail({ id }: { id: number }) {
     });
   };
 
+  useEffect(() => {
+    if (!batchMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable)
+        return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setBatchMode(false);
+        setSel(new Set());
+      } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
+        e.preventDefault();
+        setSel(new Set(list.map((r) => r.entry.rowid)));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [batchMode, list]);
+
   const toggleSelectAll = () => {
     if (sel.size === list.length) {
       setSel(new Set());
@@ -565,7 +584,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   );
 
   const batchBanner = batchMode ? (
-    <div className="mb-2 px-4 py-2 glass rounded-2xl flex items-center justify-between gap-3 text-[12.5px] anim-fade-in shrink-0">
+    <div className="mb-2 px-4 py-2 glass rounded-2xl flex items-center justify-between gap-3 text-[12.5px] anim-fade shrink-0">
       <div className="flex items-center gap-2.5">
         <span className="text-[var(--ink-2)] font-medium">
           {tr("已选 ", "Selected ")}
@@ -587,7 +606,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           {tr("清除", "Clear")}
         </button>
         <button
-          className="btn-danger !py-1 !px-2.5 !text-[12px]"
+          className="btn-secondary !py-1 !px-2.5 !text-[12px] !text-[#e0533f] hover:!bg-[#e0533f]/15"
           onClick={() => setConfirmBatchRemove(true)}
           disabled={sel.size === 0}
           title={tr("从当前歌单移除勾选歌曲", "Remove selected tracks from playlist")}

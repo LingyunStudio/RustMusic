@@ -5,6 +5,7 @@ import { Heart, MoreHorizontal, Pause, Play, Check } from "lucide-react";
 import { useStore } from "../../store";
 import { useI18n } from "../../i18n";
 import { fmtTime } from "../../utils";
+import CoverImg from "../../components/CoverImg";
 import type { OnlineRow } from "./shared";
 
 export function TrackRowItem({
@@ -135,22 +136,13 @@ export function TrackRowItem({
       </div>
 
       <div className="flex items-center gap-4 min-w-0">
-        {t.cover ? (
-          <img
-            src={t.cover}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            className="hover-lift w-11 h-11 rounded-xl object-cover shadow-[var(--cover-shadow-sm)] shrink-0"
-            draggable={false}
-          />
-        ) : (
-          <div
-            className="w-11 h-11 rounded-xl shrink-0"
-            style={{ background: "rgba(243,233,216,0.07)" }}
-          />
-        )}
+        <CoverImg
+          src={t.cover}
+          seed={t.name}
+          small
+          className="hover-lift w-11 h-11 rounded-xl shadow-[var(--cover-shadow-sm)] shrink-0"
+          iconSize={18}
+        />
         <div className="min-w-0">
           <div
             className={`text-[13.5px] truncate flex items-center gap-2 ${

@@ -21,6 +21,7 @@ import LocateCurrentPill from "../components/LocateCurrentPill";
 import type { NdAlbum, NdSong } from "../types";
 import { clampMenuPos, fmtTime } from "../utils";
 import Modal from "../components/Modal";
+import CoverImg from "../components/CoverImg";
 
 const LS_SERVER = "navidrome.ui.server";
 const LS_USER = "navidrome.ui.username";
@@ -324,6 +325,15 @@ export default function NavidromePanel() {
 
   // 「回到当前歌曲」药丸 + 队列自动续页（Navidrome 全部歌曲列表）
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onFocusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener("rm:focus-search", onFocusSearch);
+    return () => window.removeEventListener("rm:focus-search", onFocusSearch);
+  }, []);
   // “歌曲”页窗口化（此前全量渲染，大曲库 Navidrome DOM 行数线性增长）。
   // 与 scrollRef 共指同一容器：ref 合并挂载 + 滚动事件双订阅
   const ND_ROW_H = 56;
@@ -477,6 +487,7 @@ export default function NavidromePanel() {
                 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]"
               />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={kw}
                 onChange={(e) => setKw(e.target.value)}
@@ -642,11 +653,11 @@ export default function NavidromePanel() {
                   >
                     <div className="aspect-square rounded-xl overflow-hidden mb-2 bg-[var(--shade)]">
                       {a.coverUrl ? (
-                        <img
+                        <CoverImg
                           src={a.coverUrl}
-                          alt=""
-                          className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-200"
-                          draggable={false}
+                          seed={a.name}
+                          className="w-full h-full group-hover:scale-[1.04] transition-transform duration-200"
+                          iconSize={22}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">

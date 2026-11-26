@@ -381,7 +381,11 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       const el = e.target as HTMLElement | null;
       if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable)
         return;
-      if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setBatchMode(false);
+        setSel(new Set());
+      } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyA") {
         e.preventDefault();
         setSel(new Set(batchRows.map((r) => r.key)));
       } else if ((e.ctrlKey || e.metaKey) && e.code === "KeyD") {
@@ -394,20 +398,22 @@ export default function LibraryView({ mode }: { mode: Mode }) {
   }, [batchMode, batchRows]);
 
   const batchQueue = () => {
+    const st = useStore.getState();
+    const items: import("../types").QueueItem[] = [];
     for (const r of selectedBatch) {
-      if (r.type === "local") addToQueue({ kind: "track", id: r.t.id });
-      else if (r.e.kind === "netease")
-        addToQueue({ kind: "netease", id: Number(r.e.onlineId) });
-      else
-        addToQueue({
-          kind: r.e.kind as "qq" | "kugou",
-          id: r.e.onlineId ?? "",
-        });
+      if (r.type === "local") items.push({ kind: "track", id: r.t.id });
+      else {
+        const q = st.entryToQueueItem(r.e);
+        if (q) items.push(q);
+      }
+    }
+    if (items.length) {
+      useStore.setState((s) => ({ queue: [...s.queue, ...items] }));
     }
     toast(
       tr(
-        `已把 ${selectedBatch.length} 首加入队列`,
-        `Added ${selectedBatch.length} ${selectedBatch.length === 1 ? "track" : "tracks"} to queue`,
+        `已把 ${items.length} 首加入队列`,
+        `Added ${items.length} ${items.length === 1 ? "track" : "tracks"} to queue`,
       ),
       "success",
     );
@@ -727,32 +733,84 @@ export default function LibraryView({ mode }: { mode: Mode }) {
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
-                disabled={!selectedLocalTracks.length}
+                disabled={!selectedBatch.length}
                 onClick={async () => {
-                  // 批量喜欢本地曲目：单事务后端 + 本地乐观更新
-                  const ids = selectedLocalTracks.map((r) => r.t.id);
-                  const idSet = new Set(ids);
-                  useStore.setState((s) => ({
-                    tracks: s.tracks.map((t) =>
-                      idSet.has(t.id) && !t.liked ? { ...t, liked: true } : t
-                    ),
-                  }));
-                  try {
-                    await api.likeTracks(ids, true);
-                    toast(
-                      tr(
-                        `已喜欢 ${ids.length} 首歌曲`,
-                        `Liked ${ids.length} ${ids.length === 1 ? "track" : "tracks"}`
+                  const wantLike = mode !== "liked";
+                  const localIds = selectedLocalTracks.map((r) => r.t.id);
+                  const onlineRows = selectedBatch.filter(
+                    (r): r is Extract<typeof r, { type: "online" }> => r.type === "online"
+                  );
+                  let okCount = 0;
+                  if (localIds.length) {
+                    const idSet = new Set(localIds);
+                    const prevLiked = new Map(
+                      useStore.getState().tracks
+                        .filter((t) => idSet.has(t.id))
+                        .map((t) => [t.id, t.liked])
+                    );
+                    const prevCurLiked = useStore.getState().current?.liked ?? false;
+                    useStore.setState((s) => ({
+                      tracks: s.tracks.map((t) =>
+                        idSet.has(t.id) ? { ...t, liked: wantLike } : t
                       ),
+                      current:
+                        s.current?.kind === "track" && s.current.id != null && idSet.has(s.current.id)
+                          ? { ...s.current, liked: wantLike }
+                          : s.current,
+                    }));
+                    try {
+                      await api.likeTracks(localIds, wantLike);
+                      okCount += localIds.length;
+                    } catch (e) {
+                      useStore.setState((s) => ({
+                        tracks: s.tracks.map((t) =>
+                          prevLiked.has(t.id) ? { ...t, liked: prevLiked.get(t.id)! } : t
+                        ),
+                        current:
+                          s.current?.kind === "track" && s.current.id != null && idSet.has(s.current.id)
+                            ? { ...s.current, liked: prevCurLiked }
+                            : s.current,
+                      }));
+                      toast(String(e), "error");
+                    }
+                  }
+                  const st = useStore.getState();
+                  for (const r of onlineRows) {
+                    const key = `${r.e.kind}-${r.e.onlineId ?? ""}`;
+                    const isLiked = !!st.savedOnline[key];
+                    if (isLiked === wantLike) {
+                      okCount++;
+                      continue;
+                    }
+                    await st.toggleLikeOnline({
+                      kind: r.e.kind as "netease" | "qq" | "kugou" | "bilibili" | "navidrome",
+                      id: r.e.kind === "netease" ? Number(r.e.onlineId) : (r.e.onlineId ?? ""),
+                      name: r.e.title,
+                      artist: r.e.artist,
+                      album: r.e.album,
+                      cover: r.e.cover,
+                      durationMs: Math.round(r.e.duration * 1000),
+                      mediaMid: r.e.mediaMid,
+                      vip: r.e.vip,
+                    });
+                    okCount++;
+                  }
+                  if (okCount > 0) {
+                    toast(
+                      wantLike
+                        ? tr(`已喜欢 ${okCount} 首歌曲`, `Liked ${okCount} ${okCount === 1 ? "track" : "tracks"}`)
+                        : tr(`已取消喜欢 ${okCount} 首歌曲`, `Unliked ${okCount} ${okCount === 1 ? "track" : "tracks"}`),
                       "success"
                     );
-                  } catch (e) {
-                    toast(String(e), "error");
+                  }
+                  if (!wantLike) {
+                    setSel(new Set());
+                    setBatchMode(false);
                   }
                 }}
               >
                 <Heart size={13} />
-                {tr("喜欢", "Like")}
+                {mode === "liked" ? tr("取消喜欢", "Unlike") : tr("喜欢", "Like")}
               </button>
               <button
                 className="btn-secondary !py-1.5 !px-3"
