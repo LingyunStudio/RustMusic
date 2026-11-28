@@ -176,8 +176,8 @@ impl Engine {
         buf_ms + engine_overhead_ms
     }
 
-    /// 重建共享模式输出流与 Sink（独占会话跑过之后共享流已失效时调用）
-    pub(super) fn rebuild_shared_output(&self) {
+    /// 重建共享模式输出流与 Sink（独占会话跑过之后共享流已失效时调用），返回是否重建成功
+    pub(super) fn rebuild_shared_output(&self) -> bool {
         match Self::build_output(self.device_pref.read().as_deref(), true) {
             Ok((handle, sink)) => {
                 let mut old = self.sink.write();
@@ -187,8 +187,12 @@ impl Engine {
                 self.output_latency_ms
                     .store(Self::shared_output_latency_ms(handle), Ordering::Relaxed);
                 eprintln!("[engine] 共享输出流已重建");
+                true
             }
-            Err(e) => eprintln!("[engine] 重建共享输出流失败: {e}"),
+            Err(e) => {
+                eprintln!("[engine] 重建共享输出流失败: {e}");
+                false
+            }
         }
     }
 
@@ -232,6 +236,8 @@ impl Engine {
             let info = self.current.read().clone();
             let pos = self.pos_ms.load(Ordering::Relaxed);
             let was_paused = self.user_paused.load(Ordering::Relaxed);
+            let was_stopped = self.stopped.load(Ordering::Relaxed);
+            let was_empty = self.sink.read().empty();
             let volume = f32::from_bits(self.volume.load(Ordering::Relaxed));
             let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
 
@@ -246,10 +252,9 @@ impl Engine {
                 .store(Self::shared_output_latency_ms(handle), Ordering::Relaxed);
             self.set_device_preference(name);
 
+            // 已停止或自然播完（sink 为空）时只换输出流，不自发重新起播
             if let Some(info) = info {
-                // 当前有曲目：从 pos 处重建播放链。
-                // path 一律是本地路径（本地曲目或已缓存的在线音源文件）
-                if !info.path.is_empty() {
+                if !was_stopped && !was_empty && !info.path.is_empty() {
                     match self.open_current_source(&info.path, pos) {
                         Ok(src) => {
                             let wrapped = EqSource::with_base(
@@ -294,8 +299,8 @@ impl Engine {
             *self.excl.write() = None;
             self.shared_broken.store(true, Ordering::Relaxed);
         }
-        if self.shared_broken.swap(false, Ordering::Relaxed) {
-            self.rebuild_shared_output();
+        if self.shared_broken.load(Ordering::Relaxed) && self.rebuild_shared_output() {
+            self.shared_broken.store(false, Ordering::Relaxed);
         }
     }
     // ---------- 输出设备 ----------

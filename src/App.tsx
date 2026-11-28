@@ -24,6 +24,7 @@ import { initFx, setFxWanted } from "./fx";
 import { getShortcuts, isShortcutRecording, matchShortcut } from "./shortcuts";
 import { tr, useI18n } from "./i18n";
 import AudioFxLayer from "./components/AudioFxLayer";
+import LiquidGlassFilters from "./components/LiquidGlassFilters";
 
 function DynamicBackdrop() {
   const uiTheme = useStore((s) => s.uiTheme);
@@ -416,6 +417,7 @@ export default function App() {
 
   return (
     <div className="h-full relative overflow-hidden bg-[var(--bg)]">
+      {uiTheme === "liquid" && <LiquidGlassFilters />}
       <DynamicBackdrop />
 
       <div className="relative h-full flex flex-col">

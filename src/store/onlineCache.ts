@@ -58,15 +58,24 @@ export function capOnlineCache<K extends string | number, V>(
   for (const k in next) {
     if (!(k in prev)) order.push(k as K);
   }
-  // 引用集不计入淘汰配额：缓存被队列引用着就是“在用”，不是泄漏
-  const evictable = order.filter((k) => !pins?.has(k));
-  while (evictable.length > ONLINE_CACHE_CAP) {
-    const oldest = evictable.shift();
-    if (oldest !== undefined && oldest in next) {
-      delete next[oldest];
-      const at = order.indexOf(oldest);
-      if (at >= 0) order.splice(at, 1);
-    }
+  // 线性过滤已不存在的幽灵键并按需淘汰超出配额的最旧非 pinned 条目（O(N)）
+  let evictableCount = 0;
+  for (let i = 0; i < order.length; i++) {
+    const k = order[i];
+    if (k in next && !pins?.has(k)) evictableCount++;
   }
+  let toDrop = Math.max(0, evictableCount - ONLINE_CACHE_CAP);
+  let writeIdx = 0;
+  for (let i = 0; i < order.length; i++) {
+    const k = order[i];
+    if (!(k in next)) continue;
+    if (toDrop > 0 && !pins?.has(k)) {
+      delete next[k];
+      toDrop--;
+      continue;
+    }
+    order[writeIdx++] = k;
+  }
+  order.length = writeIdx;
   return next;
 }

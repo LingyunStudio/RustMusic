@@ -153,7 +153,9 @@ impl Engine {
         self.shared_broken.store(true, Ordering::Relaxed);
         self.rebuilding.store(true, Ordering::Relaxed);
         let result = (|| -> Result<(), String> {
-            self.rebuild_shared_output();
+            if self.rebuild_shared_output() {
+                self.shared_broken.store(false, Ordering::Relaxed);
+            }
             if let Some(info) = &info {
                 if was_stopped {
                     return Ok(());

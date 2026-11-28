@@ -475,13 +475,10 @@ pub fn song_url(
             // 不能整链中止——否则选高档时表现为"直接无法获取"
             continue;
         }
-        let first = resp.pointer("/data/0").cloned().ok_or_else(|| {
-            crate::i18n::pick(
-                "响应中没有该歌曲的数据",
-                "No track data returned in response",
-            )
-            .to_string()
-        })?;
+        let Some(first) = resp.pointer("/data/0").cloned() else {
+            // 高档位返回空 data 时沿降级阶梯继续尝试，不中止整条链路
+            continue;
+        };
         let item_code = first.get("code").and_then(|c| c.as_i64()).unwrap_or(200);
         let url = first
             .get("url")
@@ -493,10 +490,12 @@ pub fn song_url(
                 .split('?')
                 .next()
                 .unwrap_or("")
-                .rsplit('.')
+                .rsplit('/')
                 .next()
+                .and_then(|seg| seg.rsplit_once('.').map(|(_, e)| e))
+                .filter(|e| !e.is_empty() && e.len() <= 5 && e.bytes().all(|b| b.is_ascii_alphanumeric()))
                 .unwrap_or("mp3")
-                .to_lowercase();
+                .to_ascii_lowercase();
             // 接口返回的 br 单位是 bps（320000 = 320kbps），统一换算成 kbps 供音质显示
             let real_br = first
                 .get("br")
@@ -661,8 +660,9 @@ pub fn user_playlists(
     const PAGE: i64 = 60;
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    const MAX_PAGES: usize = 50;
     let mut offset = 0i64;
-    loop {
+    for _ in 0..MAX_PAGES {
         let payload = serde_json::json!({
             "uid": uid.to_string(),
             "offset": offset.to_string(),
@@ -678,12 +678,14 @@ pub fn user_playlists(
                 format!("获取歌单列表失败（code {code}）")
             });
         }
+        let more = resp.get("more").and_then(|v| v.as_bool()).unwrap_or(true);
         let list = resp
             .pointer("/playlist")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
         let got = list.len() as i64;
+        let before = out.len();
         for p in list {
             let id = p.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
             let name = p
@@ -700,7 +702,8 @@ pub fn user_playlists(
                 });
             }
         }
-        if got < PAGE || out.len() >= 2000 {
+        // 无新增条目或服务端明确 more=false 时终止，避免服务端忽略 offset 导致死循环
+        if !more || got < PAGE || out.len() == before || out.len() >= 2000 {
             break;
         }
         offset += PAGE;

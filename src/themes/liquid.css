@@ -33,18 +33,27 @@ html[data-ui="liquid"] {
     rgba(255, 255, 255, 0.055) 0%,
     rgba(255, 255, 255, 0.025) 100%
   );
-  /* 主浮层（Dock/弹窗）：更实的暗色玻璃，保证其上控件对比 */
+  /* 主浮层（弹窗/菜单）：清透且保证可读性的暗色玻璃 */
   --liquid-glass-bg-strong: linear-gradient(
     180deg,
-    rgba(34, 42, 64, 0.68) 0%,
-    rgba(15, 19, 32, 0.84) 100%
+    rgba(30, 38, 58, 0.56) 0%,
+    rgba(14, 18, 30, 0.68) 100%
   );
+  /* 播放条 Dock（Apple Liquid Glass v3 清透光学水体）：
+     极低不透明度 + 边缘凸透镜折射 + 棱镜色散 + 菲涅尔高光环，让下方滚动的设置卡片/封面真实透出并发生折射 */
   --liquid-glass-bg-dock: linear-gradient(
     180deg,
-    rgba(38, 47, 71, 0.5) 0%,
-    rgba(16, 21, 34, 0.74) 100%
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(20, 26, 40, 0.14) 50%,
+    rgba(10, 14, 24, 0.22) 100%
   );
-  --liquid-glass-bg-hover: rgba(255, 255, 255, 0.07);
+  --liquid-glass-shadow-dock:
+    0 22px 54px -10px rgba(0, 0, 0, 0.58),
+    0 6px 18px -4px rgba(0, 0, 0, 0.34),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.48),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.18),
+    inset 0 0 22px rgba(255, 255, 255, 0.05);
+  --liquid-glass-bg-hover: rgba(255, 255, 255, 0.09);
 
   --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.1);
   --liquid-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.065);
@@ -148,15 +157,22 @@ html[data-ui="liquid"][data-theme="light"] {
   );
   --liquid-glass-bg-strong: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.8) 0%,
-    rgba(255, 255, 255, 0.62) 100%
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(246, 250, 255, 0.54) 100%
   );
   --liquid-glass-bg-dock: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.72) 0%,
-    rgba(255, 255, 255, 0.54) 100%
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(255, 255, 255, 0.12) 52%,
+    rgba(240, 246, 255, 0.18) 100%
   );
-  --liquid-glass-bg-hover: rgba(255, 255, 255, 0.55);
+  --liquid-glass-shadow-dock:
+    0 20px 48px -12px rgba(20, 34, 58, 0.22),
+    0 4px 14px -2px rgba(20, 34, 58, 0.10),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.98),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.65),
+    inset 0 0 18px rgba(255, 255, 255, 0.22);
+  --liquid-glass-bg-hover: rgba(255, 255, 255, 0.58);
 
   --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.55);
   --liquid-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.38);
@@ -367,62 +383,129 @@ html[data-ui="liquid"] .liquid-card {
   overflow: hidden;
 }
 
-/* 播放条浮岛 Dock：全场主视觉。玻璃更实、blur 更高，
-   ::before 只做顶部一条流光棱线（抛光玻璃边缘的高光点） */
+/* 播放条浮岛 Dock（Apple Liquid Glass v3）：
+   · 清透低模糊水体 + 高饱和色散增艳，下方滚动的设置卡片/专辑封面/歌单行清晰穿透
+   · Chromium WebView2 启用真实 SVG 凸透镜边缘折射（url(#lg-refract-dock)），滚动穿过边缘产生真实光学弯曲
+   · ::before 绘制连续 1.25px 菲涅尔高光棱环（左上与右下对角镜面反光）
+   · ::after 绘制顶部抛光弧光与底部微弱焦散回光 */
 html[data-ui="liquid"] .liquid-dock {
   position: relative;
-  background:
-    linear-gradient(180deg, var(--glass-glint) 0%, transparent 30%),
-    var(--glass-form),
-    var(--liquid-glass-bg-dock);
-  backdrop-filter: blur(36px) saturate(220%);
-  -webkit-backdrop-filter: blur(30px) saturate(190%);
-  border: var(--liquid-glass-border);
-  border-top-color: var(--liquid-glass-border-specular);
-  box-shadow: var(--liquid-glass-shadow-lg);
-  border-radius: 16px;
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  isolation: isolate;
+  background: var(--liquid-glass-bg-dock);
+  backdrop-filter: blur(11px) saturate(215%) brightness(1.06);
+  -webkit-backdrop-filter: blur(11px) saturate(215%) brightness(1.06);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: var(--liquid-glass-shadow-dock);
+  border-radius: 26px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.42);
+  transition:
+    background 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.3s ease;
 }
 
+html[data-ui="liquid"][data-theme="light"] .liquid-dock {
+  border-color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.65);
+}
+
+/* Chromium WebView2 轻量单通道光学边缘折射：
+   单 pass SVG 凸透镜折射 + GPU 原生低模糊/高饱和，兼顾边缘弯曲折射与低 CPU 占用 */
+html[data-ui="liquid"][data-lg-refract="on"] .liquid-dock {
+  backdrop-filter: url(#lg-refract-dock) blur(3px) saturate(195%) brightness(1.06);
+}
+
+html[data-ui="liquid"][data-theme="light"][data-lg-refract="on"] .liquid-dock {
+  backdrop-filter: url(#lg-refract-dock) blur(3px) saturate(185%) brightness(1.06);
+}
+
+/* 连续菲涅尔高光环（沿 26px 圆角贴合，左上/右下自然偏亮） */
 html[data-ui="liquid"] .liquid-dock::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 1px;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.25px;
   background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.4) 30%,
-    rgba(255, 255, 255, 0.6) 50%,
-    rgba(255, 255, 255, 0.4) 70%,
-    transparent 100%
+    142deg,
+    rgba(255, 255, 255, 0.68) 0%,
+    rgba(255, 255, 255, 0.16) 24%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(255, 255, 255, 0.14) 76%,
+    rgba(255, 255, 255, 0.44) 100%
   );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
   pointer-events: none;
+  z-index: 2;
 }
 
 html[data-ui="liquid"][data-theme="light"] .liquid-dock::before {
   background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.9) 30%,
-    #fff 50%,
-    rgba(255, 255, 255, 0.9) 70%,
-    transparent 100%
+    142deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.55) 26%,
+    rgba(255, 255, 255, 0.18) 52%,
+    rgba(255, 255, 255, 0.52) 78%,
+    rgba(255, 255, 255, 0.92) 100%
   );
+}
+
+/* 顶部抛光镜面弧光 + 底部微弱焦散反光 */
+html[data-ui="liquid"] .liquid-dock::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.16) 0%,
+      rgba(255, 255, 255, 0.03) 26%,
+      transparent 52%,
+      rgba(255, 255, 255, 0.045) 100%
+    );
+  pointer-events: none;
+  z-index: -1;
+}
+
+html[data-ui="liquid"][data-theme="light"] .liquid-dock::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.42) 0%,
+      rgba(255, 255, 255, 0.08) 28%,
+      transparent 55%,
+      rgba(255, 255, 255, 0.16) 100%
+    );
 }
 
 /* 水滴按键 / 胶囊交互元素 */
 html[data-ui="liquid"] .liquid-pill {
   position: relative;
   background: var(--liquid-glass-bg-subtle);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  border: var(--liquid-glass-border-subtle);
-  box-shadow: var(--liquid-glass-shadow-sm);
+  backdrop-filter: blur(10px) saturate(190%) brightness(1.04);
+  -webkit-backdrop-filter: blur(10px) saturate(190%) brightness(1.04);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    var(--liquid-glass-shadow-sm),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.28);
   border-radius: 9999px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui="liquid"][data-theme="light"] .liquid-pill {
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    var(--liquid-glass-shadow-sm),
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.92);
 }
 
 html[data-ui="liquid"] .liquid-pill:hover {
@@ -505,12 +588,12 @@ html[data-ui="liquid"] .btn-ghost:active > svg {
 
 /* ---------- 高级动效 ---------- */
 
-/* 视图切换：内容上浮 + 淡入（配合 App 的 view-key 重挂载） */
+/* 视图切换：内容上浮 + 淡入（使用 backwards 避免动画结束后残留 transform 破坏子元素 backdrop-filter 采样） */
 @keyframes lg-viewIn {
   from { opacity: 0; transform: translateY(10px) scale(0.995); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-html[data-ui="liquid"] .anim-view{ animation: lg-viewIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+html[data-ui="liquid"] .anim-view{ animation: lg-viewIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 
 /* 列表行 stagger 入场：第 n 行延迟 n*24ms，前 12 行有入场编排 */
 @keyframes lg-rowIn {
@@ -518,7 +601,7 @@ html[data-ui="liquid"] .anim-view{ animation: lg-viewIn 0.28s cubic-bezier(0.2, 
   to { opacity: 1; transform: translateY(0); }
 }
 html[data-ui="liquid"] .anim-row {
-  animation: lg-rowIn 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: lg-rowIn 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   animation-delay: calc(var(--row-idx, 0) * 24ms);
 }
 
@@ -561,12 +644,13 @@ html[data-ui="liquid"] .btn-ghost:active > svg {
   animation: lg-heartPop 0.38s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* 播放条滑入（视图加载/切回时） */
+/* 播放条滑入（必须用 backwards：若用 both 会永久保留 transform: translateY(0) 形成 Backdrop Root，
+   彻底阻断内部 .liquid-dock 的 backdrop-filter 采样下方滚动内容！） */
 @keyframes lg-barIn {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
-html[data-ui="liquid"] .anim-bar{ animation: lg-barIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+html[data-ui="liquid"] .anim-bar{ animation: lg-barIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 
 /* 封面悬停浮升（行内封面） */
 html[data-ui="liquid"] .hover-lift {
@@ -861,24 +945,14 @@ html[data-ui="liquid"] .dynamic-gradient-layer {
   }
 }
 
-html[data-ui="liquid"] .anim-liquid-1 {
-  animation: lg-liquidBlob1 20s ease-in-out infinite;
-  will-change: transform;
-}
-
-html[data-ui="liquid"] .anim-liquid-2 {
-  animation: lg-liquidBlob2 24s ease-in-out infinite;
-  will-change: transform;
-}
-
-html[data-ui="liquid"] .anim-liquid-3 {
-  animation: lg-liquidBlob3 18s ease-in-out infinite;
-  will-change: transform;
-}
-
+/* 环境色斑保持静止渲染（切歌时由 DynamicBackdrop 平滑变色）：
+   避免底层 4 个超大模糊光斑 60fps 持续重绘，导致上层所有 backdrop-filter 玻璃面板每帧重算拉高 CPU/GPU 占用 */
+html[data-ui="liquid"] .anim-liquid-1,
+html[data-ui="liquid"] .anim-liquid-2,
+html[data-ui="liquid"] .anim-liquid-3,
 html[data-ui="liquid"] .anim-liquid-caustics {
-  animation: lg-liquidCaustics 32s linear infinite;
-  will-change: transform;
+  animation: none;
+  will-change: auto;
 }
 
 html[data-ui="liquid"] .anim-fade{ animation: lg-fadeIn 0.25s ease both; }

@@ -183,16 +183,19 @@ pub fn musicu_signed(
         chrono_now_ms(),
         sign
     );
-    let mut req = http_agent()
-        .post(&url)
-        .set("Content-Type", "application/json")
-        .set("Referer", "https://y.qq.com/")
-        .set("User-Agent", UA)
-        .timeout(TIMEOUT);
-    if let Some(c) = cookie {
-        req = req.set("Cookie", c);
-    }
-    let resp = send_with_recover(|| req.clone().send_string(&body)).map_err(|e| {
+    let resp = send_with_recover(|| {
+        let mut req = http_agent()
+            .post(&url)
+            .set("Content-Type", "application/json")
+            .set("Referer", "https://y.qq.com/")
+            .set("User-Agent", UA)
+            .timeout(TIMEOUT);
+        if let Some(c) = cookie {
+            req = req.set("Cookie", c);
+        }
+        req.send_string(&body)
+    })
+    .map_err(|e| {
         crate::i18n::pick(
             format!("QQ 音乐接口请求失败: {e}"),
             format!("QQ Music API request failed: {e}"),

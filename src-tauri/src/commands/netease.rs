@@ -264,10 +264,16 @@ pub async fn netease_lyric(state: State<'_, AppState>, id: i64) -> Result<Lyrics
 
 #[tauri::command]
 pub async fn netease_logout(state: State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.lock();
-    crate::credentials::clear("netease_music_u");
-    db::set_setting(&conn, "netease_nickname", "");
-    Ok(())
+    {
+        let conn = state.db.lock();
+        db::set_setting(&conn, "netease_nickname", "");
+        db::set_setting(&conn, "netease_uid", "");
+    }
+    super::blocking(|| {
+        crate::credentials::clear("netease_music_u");
+        Ok(())
+    })
+    .await
 }
 #[tauri::command]
 pub async fn netease_toplists() -> Result<serde_json::Value, String> {

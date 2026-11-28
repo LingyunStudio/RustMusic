@@ -70,8 +70,12 @@ fn extract_id(input: &str) -> Result<(String, Option<u32>), String> {
     // 短链跟随重定向拿真实视频页地址（只取最终 URL，不读响应体）。
     // 不带协议头的 "b23.tv/xxx"（looks_like_bili 放行）补上 https://，
     // 否则 HTTP 客户端无法请求，与 www.bilibili.com 形式行为不一致
-    if s.to_lowercase().contains("b23.tv/") {
-        if !s.to_lowercase().starts_with("http://") && !s.to_lowercase().starts_with("https://") {
+    let lower = s.to_ascii_lowercase();
+    let is_b23_short = lower.starts_with("https://b23.tv/")
+        || lower.starts_with("http://b23.tv/")
+        || lower.starts_with("b23.tv/");
+    if is_b23_short {
+        if !lower.starts_with("http://") && !lower.starts_with("https://") {
             s = format!("https://{s}");
         }
         let resp = agent().get(&s).call().map_err(|e| {
@@ -347,11 +351,12 @@ fn fetch_audio(
         // 回落结果不写 auth 缓存键：一次瞬时风控不该把登录用户钉在
         // 匿名（低音质）直链上 10 分钟
         match api_json_auth(&url, Some(c)) {
-            Ok(fetched) => {
+            Ok(fetched) if fetched["code"].as_i64() == Some(0) => {
                 cache_put(&cache_key, fetched.clone());
                 fetched
             }
-            Err(_) => api_json(&url)?,
+            // 风控/鉴权异常（code != 0）或网络错都不写入 auth 缓存，回落匿名通道
+            _ => api_json(&url)?,
         }
     } else {
         api_json(&url)?
@@ -536,7 +541,7 @@ pub struct BiliCookies {
 
 impl BiliCookies {
     pub fn is_empty(&self) -> bool {
-        self.sessdata.is_empty()
+        self.sessdata.is_empty() && self.buvid3.is_empty()
     }
     pub fn header(&self) -> String {
         let mut parts = Vec::new();
@@ -674,8 +679,9 @@ pub struct QrPoll {
 pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
     let buvid3 = login_buvid3();
     // poll 需要自管请求：成功时凭证在 Set-Cookie 头里，api_json_auth 拿不到
+    let enc_key = percent_encoding::utf8_percent_encode(key, percent_encoding::NON_ALPHANUMERIC);
     let mut req = agent().get(&format!(
-        "{PASSPORT_API}/x/passport-login/web/qrcode/poll?qrcode_key={key}"
+        "{PASSPORT_API}/x/passport-login/web/qrcode/poll?qrcode_key={enc_key}"
     ));
     req = req.set("User-Agent", UA_WEB).set("Referer", REFERER);
     if !buvid3.is_empty() {
@@ -696,9 +702,17 @@ pub fn login_qr_check(key: &str) -> Result<QrPoll, String> {
         return Err(format!("{}: {v}", crate::i18n::pick("登录状态查询失败", "Failed to check login status")));
     }
     let code = v["data"]["code"].as_i64().unwrap_or(-1);
+    let key_tail: String = key
+        .chars()
+        .rev()
+        .take(6)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     qr_debug_log(&format!(
         "poll key_tail={} code={} msg={} setcookie_n={} has_url={}",
-        &key[key.len().saturating_sub(6)..],
+        key_tail,
         code,
         v["data"]["message"].as_str().unwrap_or(""),
         set_cookies.len(),
@@ -883,7 +897,7 @@ fn api_json_auth_ref(
         let resp = match req.call() {
             Ok(r) => r,
             Err(ureq::Error::Status(code, _)) => {
-                if (code == 412 || code == 352) && attempt < 2 {
+                if (code == 412 || code == 352) && attempt < 3 {
                     last_err = format!("HTTP {code}");
                     continue;
                 }
@@ -906,7 +920,7 @@ fn api_json_auth_ref(
             )
         })?;
         let code = v["code"].as_i64().unwrap_or(0);
-        if (code == -412 || code == -352) && attempt < 2 {
+        if (code == -412 || code == -352) && attempt < 3 {
             last_err = crate::i18n::pick(
                 format!("接口风控 code {code}"),
                 format!("rate limited code {code}"),

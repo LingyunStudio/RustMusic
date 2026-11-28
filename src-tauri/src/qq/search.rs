@@ -59,7 +59,12 @@ fn song_from_search_json(s: &serde_json::Value) -> Option<QqSong> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        duration_ms: s.get("interval").and_then(|v| v.as_i64()).unwrap_or(0) as u64 * 1000,
+        duration_ms: s
+            .get("interval")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .max(0) as u64
+            * 1000,
         vip: s
             .pointer("/pay/pay_play")
             .or_else(|| s.pointer("/pay/payplay"))
@@ -85,30 +90,26 @@ pub fn search(keyword: &str, limit: i64, page: i64) -> Result<Vec<QqSong>, Strin
     );
     let mut last_err: String = match plain_get(&url, "https://y.qq.com/") {
         Err(e) => e,
-        Ok(text) => {
-            let resp: serde_json::Value = match serde_json::from_str(&text) {
-                Ok(v) => v,
-                Err(e) => {
-                    return Err(crate::i18n::pick(
-                        format!("QQ 音乐搜索解析失败: {e}"),
-                        format!("QQ Music search parse failed: {e}"),
-                    ))
-                }
-            };
-            if resp.get("code").and_then(|c| c.as_i64()) == Some(0) {
-                if let Some(list) = resp.pointer("/data/song/list").and_then(|v| v.as_array()) {
-                    let out: Vec<QqSong> = list.iter().filter_map(song_from_search_json).collect();
-                    if !out.is_empty() {
+        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Err(e) => crate::i18n::pick(
+                format!("soso 通道解析失败: {e}"),
+                format!("soso channel parse failed: {e}"),
+            ),
+            Ok(resp) => {
+                if resp.get("code").and_then(|c| c.as_i64()) == Some(0) {
+                    if let Some(list) = resp.pointer("/data/song/list").and_then(|v| v.as_array()) {
+                        let out: Vec<QqSong> = list.iter().filter_map(song_from_search_json).collect();
+                        // code == 0 且返回了合法数组（含 0 条/已过末页）直接返回，不误报搜索失败
                         return Ok(out);
                     }
                 }
+                let c = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+                crate::i18n::pick(
+                    format!("soso 通道无数据（code {c}）"),
+                    format!("soso channel returned no data (code {c})"),
+                )
             }
-            let c = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-            crate::i18n::pick(
-                format!("soso 通道无数据（code {c}）"),
-                format!("soso channel returned no data (code {c})"),
-            )
-        }
+        },
     };
 
     // 备用通道：musicu 的 SearchCgiService（网页版现行搜索，部分网络可用）

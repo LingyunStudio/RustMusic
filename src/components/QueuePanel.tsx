@@ -138,17 +138,25 @@ export default function QueuePanel() {
   const kugouCache = useStore((s) => s.kugouCache);
   const biliCache = useStore((s) => s.biliCache);
   const ndCache = useStore((s) => s.ndCache);
+  const tracksById = useMemo(
+    () => new Map(tracks.map((t) => [t.id, t])),
+    [tracks]
+  );
+  const sourcesById = useMemo(
+    () => new Map(sources.map((x) => [x.id, x])),
+    [sources]
+  );
   const labelCtx = useMemo<LabelCtx>(
     () => ({
-      tracksById: new Map(tracks.map((t) => [t.id, t])),
+      tracksById,
       netease: neteaseCache,
       qq: qqCache,
       kugou: kugouCache,
       bili: biliCache,
       nd: ndCache,
-      sources: new Map(sources.map((x) => [x.id, x])),
+      sources: sourcesById,
     }),
-    [tracks, sources, neteaseCache, qqCache, kugouCache, biliCache, ndCache]
+    [tracksById, sourcesById, neteaseCache, qqCache, kugouCache, biliCache, ndCache]
   );
 
   // 行 key 的稳定序号：同一首在队列中出现多次时按出现次编号，

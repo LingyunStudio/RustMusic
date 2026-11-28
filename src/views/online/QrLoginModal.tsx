@@ -34,8 +34,11 @@ export function QrLoginModal({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 微信长轮询循环的取消标志 + 自增序号（新一次 create 使旧循环自然退出）
   const wxLoopRef = useRef<{ cancel: boolean; seq: number }>({ cancel: false, seq: 0 });
+  // 二维码创建与轮询总代际号：关闭弹窗 / 切换模式 / 重新生成时递增，阻断过期异步续体
+  const sessionGenRef = useRef(0);
 
   const stopPolling = () => {
+    sessionGenRef.current += 1;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -55,8 +58,11 @@ export function QrLoginModal({
     onClose();
   };
 
-  const startPolling = (src: Source, identifier: string) => {
+  const startPolling = (src: Source, identifier: string, gen: number) => {
+    let inFlight = false;
     timerRef.current = setInterval(async () => {
+      if (inFlight || sessionGenRef.current !== gen) return;
+      inFlight = true;
       try {
         const c =
           src === "netease"
@@ -64,6 +70,7 @@ export function QrLoginModal({
             : src === "qq"
               ? await api.qqQrCheck(identifier)
               : await api.kugouQrCheck(identifier);
+        if (sessionGenRef.current !== gen) return;
         if (c.status === "waiting") return;
         if (c.status === "scanned") {
           setStatus("scanned");
@@ -94,23 +101,36 @@ export function QrLoginModal({
           onClose();
         }
       } catch (e) {
+        if (sessionGenRef.current !== gen) return;
         stopPolling();
         setStatus("error");
         setErrMsg(String(e));
+      } finally {
+        inFlight = false;
       }
     }, 1600);
   };
 
   /** 微信长轮询循环：每次后端调用挂起约 15s，出错退避重试（连续 3 次才报错） */
-  const startWxPolling = (uuid: string) => {
+  const startWxPolling = (uuid: string, gen: number) => {
     wxLoopRef.current.cancel = false;
     const seq = wxLoopRef.current.seq;
     (async () => {
       let failures = 0;
-      while (!wxLoopRef.current.cancel && wxLoopRef.current.seq === seq) {
+      while (
+        !wxLoopRef.current.cancel &&
+        wxLoopRef.current.seq === seq &&
+        sessionGenRef.current === gen
+      ) {
         try {
           const c = await api.qqWxQrCheck(uuid);
-          if (wxLoopRef.current.cancel || wxLoopRef.current.seq !== seq) return;
+          if (
+            wxLoopRef.current.cancel ||
+            wxLoopRef.current.seq !== seq ||
+            sessionGenRef.current !== gen
+          ) {
+            return;
+          }
           failures = 0;
           if (c.status === "waiting") continue;
           if (c.status === "scanned") {
@@ -126,7 +146,13 @@ export function QrLoginModal({
             return;
           }
         } catch (e) {
-          if (wxLoopRef.current.cancel || wxLoopRef.current.seq !== seq) return;
+          if (
+            wxLoopRef.current.cancel ||
+            wxLoopRef.current.seq !== seq ||
+            sessionGenRef.current !== gen
+          ) {
+            return;
+          }
           failures += 1;
           if (failures >= 3) {
             setStatus("error");
@@ -139,30 +165,36 @@ export function QrLoginModal({
     })();
   };
 
-  const create = async () => {
+  const create = async (overrideMode?: QqMode) => {
     if (!source) return;
+    const activeMode = overrideMode ?? mode;
     stopPolling();
+    const gen = sessionGenRef.current;
     wxLoopRef.current.cancel = false;
     setStatus("loading");
     setErrMsg("");
     try {
       if (source === "netease") {
         const r = await api.neteaseQrCreate();
+        if (sessionGenRef.current !== gen) return;
         setQr(r.qr);
         setStatus("waiting");
-        startPolling("netease", r.key);
-      } else if (source === "qq" && mode === "wx") {
+        startPolling("netease", r.key, gen);
+      } else if (source === "qq" && activeMode === "wx") {
         const r = await api.qqWxQrCreate();
+        if (sessionGenRef.current !== gen) return;
         setQr(r.qr);
         setStatus("waiting");
-        startWxPolling(r.uuid);
+        startWxPolling(r.uuid, gen);
       } else if (source === "qq") {
         const r = await api.qqQrCreate();
+        if (sessionGenRef.current !== gen) return;
         setQr(r.qr);
         setStatus("waiting");
-        startPolling("qq", r.qrsig);
+        startPolling("qq", r.qrsig, gen);
       } else {
         const r = await api.kugouQrCreate();
+        if (sessionGenRef.current !== gen) return;
         if (!r.qr) {
           throw new Error(
             tr("二维码图片获取失败，请重试", "Failed to load QR code image, please retry"),
@@ -170,9 +202,10 @@ export function QrLoginModal({
         }
         setQr(r.qr);
         setStatus("waiting");
-        startPolling("kugou", r.key);
+        startPolling("kugou", r.key, gen);
       }
     } catch (e) {
+      if (sessionGenRef.current !== gen) return;
       setStatus("error");
       setErrMsg(String(e));
     }
@@ -191,32 +224,9 @@ export function QrLoginModal({
 
   // 弹窗打开期间切换 QQ/微信模式：重建二维码
   const switchMode = (m: QqMode) => {
-    if (m === mode) return;
+    if (m === mode || source !== "qq") return;
     setMode(m);
-    // create 依赖最新 mode：直接以内联逻辑重建
-    (async () => {
-      if (!source || source !== "qq") return;
-      stopPolling();
-      wxLoopRef.current.cancel = false;
-      setStatus("loading");
-      setErrMsg("");
-      try {
-        if (m === "wx") {
-          const r = await api.qqWxQrCreate();
-          setQr(r.qr);
-          setStatus("waiting");
-          startWxPolling(r.uuid);
-        } else {
-          const r = await api.qqQrCreate();
-          setQr(r.qr);
-          setStatus("waiting");
-          startPolling("qq", r.qrsig);
-        }
-      } catch (e) {
-        setStatus("error");
-        setErrMsg(String(e));
-      }
-    })();
+    void create(m);
   };
 
   const sourceName =
@@ -289,7 +299,7 @@ export function QrLoginModal({
                   ? tr("二维码已过期", "QR code expired")
                   : tr(`出错了：${errMsg}`, `Error: ${errMsg}`)}
           {status === "expired" && (
-            <button className="btn-secondary !py-1.5 !px-3 ml-2" onClick={create}>
+            <button className="btn-secondary !py-1.5 !px-3 ml-2" onClick={() => void create()}>
               {tr("刷新", "Refresh")}
             </button>
           )}

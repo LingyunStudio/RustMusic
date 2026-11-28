@@ -547,8 +547,8 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       <div
         className={
           isSkeuo
-            ? `h-[74px] rounded-[18px] flex items-center pl-4 pr-5 gap-4 transition-opacity duration-300 ${
-                nowPlayingOpen ? "opacity-80 hover:opacity-100" : ""
+            ? `h-[72px] rounded-[16px] flex items-center px-3.5 gap-3 transition-opacity duration-300 ${
+                nowPlayingOpen ? "opacity-85 hover:opacity-100" : ""
               }`
             : isLiquid
             ? `h-[68px] rounded-[26px] flex items-center pl-5 pr-5 gap-5 transition-all duration-300 liquid-dock relative z-10 ${
@@ -575,7 +575,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
       >
         {/* 曲目信息 */}
         {isSkeuo ? (
-          <div className="skeuo-display rounded-[12px] p-1.5 pr-3 flex items-center gap-3 w-[270px] min-w-[200px]">
+          <div className="skeuo-display rounded-[11px] p-1.5 pr-2.5 flex items-center gap-2.5 w-[216px] xl:w-[252px] min-w-[168px] shrink">
             {current ? (
               <>
                 <button
@@ -1016,28 +1016,28 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
 
         {/* 中部控制 */}
         <div className="flex-1 flex flex-col items-center justify-center gap-1 min-w-0">
-          <div className="flex items-center gap-3">
+          <div className={`flex items-center ${isSkeuo ? "gap-1.5 xl:gap-2.5" : "gap-3"}`}>
             <button
-              className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} ${shuffle ? "!text-[var(--accent)]" : ""}`}
+              className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px]" : "w-[30px] h-[30px]"} ${shuffle ? "!text-[var(--accent)]" : ""}`}
               onClick={toggleShuffle}
               title={tr("随机播放", "Shuffle")}
             >
-              <Shuffle size={15} />
+              <Shuffle size={14} />
             </button>
             <button
-              className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"}`}
+              className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px]" : "w-[30px] h-[30px]"}`}
               onClick={prev}
               title={tr("上一首", "Previous")}
             >
-              <SkipBack size={16} className="fill-current" />
+              <SkipBack size={15} className="fill-current" />
             </button>
             <button
-              className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} disabled:opacity-40`}
+              className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px]" : "w-[30px] h-[30px]"} disabled:opacity-40`}
               disabled={!current}
               onClick={() => seekBackward(5000)}
               title={tr("快退 5 秒（←）", "Rewind 5s (←)")}
             >
-              <Rewind size={16} className="fill-current" />
+              <Rewind size={15} className="fill-current" />
             </button>
             {isSkeuo ? (
               <button
@@ -1046,9 +1046,9 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 title={tr("播放 / 暂停（空格）", "Play / Pause (Space)")}
               >
                 {playing ? (
-                  <Pause size={18} className="fill-current" />
+                  <Pause size={17} className="fill-current" />
                 ) : (
-                  <Play size={18} className="fill-current ml-0.5" />
+                  <Play size={17} className="fill-current ml-0.5" />
                 )}
               </button>
             ) : isLiquid ? (
@@ -1081,22 +1081,22 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
               </button>
             )}
             <button
-              className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} disabled:opacity-40`}
+              className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px]" : "w-[30px] h-[30px]"} disabled:opacity-40`}
               disabled={!current}
               onClick={() => seekForward(5000)}
               title={tr("快进 5 秒（→）", "Forward 5s (→)")}
             >
-              <FastForward size={16} className="fill-current" />
+              <FastForward size={15} className="fill-current" />
             </button>
             <button
-              className={`btn-ghost ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"}`}
+              className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px]" : "w-[30px] h-[30px]"}`}
               onClick={() => next(false)}
               title={tr("下一首", "Next")}
             >
-              <SkipForward size={16} className="fill-current" />
+              <SkipForward size={15} className="fill-current" />
             </button>
             <button
-              className={`btn-ghost relative ${isSkeuo ? "w-[32px] h-[32px]" : "w-[30px] h-[30px]"} ${
+              className={`btn-ghost relative ${isSkeuo ? "w-[30px] h-[30px]" : "w-[30px] h-[30px]"} ${
                 repeat !== "off" ? (isSkeuo ? "!text-[var(--accent-strong)]" : "!text-[var(--accent)]") : ""
               }`}
               onClick={() =>
@@ -1110,7 +1110,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                     : tr("关闭循环", "Repeat Off")
               }
             >
-              {repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+              {repeat === "one" ? <Repeat1 size={14} /> : <Repeat size={14} />}
               {isSkeuo && repeat !== "off" && (
                 <span className="skeuo-led-on absolute top-1 right-1 !w-[4px] !h-[4px]" />
               )}
@@ -1120,10 +1120,16 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
         </div>
 
         {/* 右侧控制 */}
-        <div className="flex items-center gap-2 w-[260px] min-w-[200px] justify-end">
+        <div
+          className={`flex items-center justify-end ${
+            isSkeuo
+              ? "gap-1.5 w-[212px] xl:w-[238px] min-w-0 shrink-0"
+              : "gap-2 w-[260px] min-w-[200px]"
+          }`}
+        >
           {/* 桌面歌词开关 */}
           <button
-            className={`btn-ghost ${isSkeuo ? "w-[34px] h-[34px] text-[12px]" : "w-9 h-9 text-[13px]"} font-bold ${
+            className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px] text-[11.5px]" : "w-9 h-9 text-[13px]"} font-bold ${
               desktopLyricsOn ? "!text-[var(--accent)]" : ""
             }`}
             onClick={() => {
@@ -1143,7 +1149,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
             {tr("词", "Lyr")}
           </button>
           <button
-            className={`btn-ghost relative ${isSkeuo ? "w-[34px] h-[34px] text-[11px]" : "w-9 h-9 text-[11.5px]"} font-bold tabular-nums`}
+            className={`btn-ghost relative ${isSkeuo ? "w-[30px] h-[30px] text-[10.5px]" : "w-9 h-9 text-[11.5px]"} font-bold tabular-nums`}
             onClick={() => {
               const i = SPEEDS.indexOf(speed);
               if (i >= 0) {
@@ -1166,10 +1172,10 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           <div className="relative flex items-center">
             <button
               ref={volBtnRef}
-              className={`btn-ghost ${isSkeuo ? "w-[34px] h-[34px]" : "w-9 h-9"} shrink-0 ${
+              className={`btn-ghost ${isSkeuo ? "w-[30px] h-[30px]" : "w-9 h-9"} shrink-0 ${
                 volOpen
                   ? isSkeuo
-                    ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
+                    ? "!text-[var(--accent-strong)] shadow-[var(--sk-pressed-shadow)]"
                     : "!text-[var(--accent)]"
                   : ""
               }`}
@@ -1203,10 +1209,10 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           {/* 定时停止 */}
           <div className="relative flex items-center">
             <button
-              className={`btn-ghost relative ${isSkeuo ? "w-[34px] h-[34px]" : "w-9 h-9"} shrink-0 ${
+              className={`btn-ghost relative ${isSkeuo ? "w-[30px] h-[30px]" : "w-9 h-9"} shrink-0 ${
                 sleepAt != null || sleepStopAfterTrack || sleepStopAfterQueue
                   ? isSkeuo
-                    ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
+                    ? "!text-[var(--accent-strong)] shadow-[var(--sk-pressed-shadow)]"
                     : "!text-[var(--accent)]"
                   : ""
               }`}
@@ -1243,18 +1249,18 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
           </div>
 
           <button
-            className={`btn-ghost relative ${isSkeuo ? "w-[34px] h-[34px]" : "w-9 h-9"} ${miniPlayer ? "!text-[var(--accent)]" : ""}`}
+            className={`btn-ghost relative ${isSkeuo ? "w-[30px] h-[30px]" : "w-9 h-9"} ${miniPlayer ? "!text-[var(--accent)]" : ""}`}
             onClick={() => setMiniPlayer(!miniPlayer)}
             title={tr("极简小窗模式", "Mini Player")}
           >
-            <PictureInPicture2 size={isSkeuo ? 15 : 16} />
+            <PictureInPicture2 size={isSkeuo ? 14 : 16} />
           </button>
 
           <button
-            className={`btn-ghost relative ${isSkeuo ? "w-[34px] h-[34px]" : "w-9 h-9"} ${
+            className={`btn-ghost relative ${isSkeuo ? "w-[30px] h-[30px]" : "w-9 h-9"} ${
               queueOpen
                 ? isSkeuo
-                  ? "!text-[var(--accent-strong)] shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]"
+                  ? "!text-[var(--accent-strong)] shadow-[var(--sk-pressed-shadow)]"
                   : "!text-[var(--accent)]"
                 : ""
             }`}

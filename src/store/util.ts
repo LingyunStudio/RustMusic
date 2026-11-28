@@ -15,6 +15,7 @@ export function jsonEq(a: unknown, b: unknown): boolean {
  *  菜单栏歌词（Linux）与任务栏歌词（Windows）吃同一批状态帧：
  *  行变化才 IPC，与悬浮窗独立。 */
 let lastPushedLines: unknown = undefined; // undefined = 尚未推过（下次必带 lines）
+let cachedEmit: typeof import("@tauri-apps/api/event").emit | null = null;
 export async function pushDesktopLyrics(
   s: Pick<
     Store,
@@ -35,8 +36,11 @@ export async function pushDesktopLyrics(
     const lines = s.lyrics?.lines ?? null;
     const includeLines = lines !== lastPushedLines;
     lastPushedLines = lines;
-    const { emit } = await import("@tauri-apps/api/event");
-    emit(
+    if (!cachedEmit) {
+      const mod = await import("@tauri-apps/api/event");
+      cachedEmit = mod.emit;
+    }
+    cachedEmit(
       "dlyrics://push",
       {
         ...(includeLines ? { lines } : {}),

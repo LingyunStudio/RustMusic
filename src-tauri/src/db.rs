@@ -171,19 +171,23 @@ pub fn migrate(conn: &Connection) {
     // 播放列表手动排序位（侧边栏长按拖动调序）：旧行回填为 id，保持原顺序
     add_column_if_missing(
         conn,
+        "playlist_tracks",
+        "kind",
+        "ALTER TABLE playlist_tracks ADD COLUMN kind TEXT NOT NULL DEFAULT 'local'",
+    );
+    add_column_if_missing(
+        conn,
+        "playlist_tracks",
+        "online_id",
+        "ALTER TABLE playlist_tracks ADD COLUMN online_id TEXT NOT NULL DEFAULT ''",
+    );
+    add_column_if_missing(
+        conn,
         "playlists",
         "sort_pos",
         "ALTER TABLE playlists ADD COLUMN sort_pos INTEGER NOT NULL DEFAULT 0",
     );
     let _ = conn.execute("UPDATE playlists SET sort_pos = id WHERE sort_pos = 0", []);
-    // 依赖渐进迁移补上的列的索引不能放 SCHEMA（legacy 库在 SCHEMA 阶段
-    // 还没有该列，CREATE INDEX 会让整批 execute_batch 失败 → 启动失败）：
-    // - playlist_tracks.track_id 反查歌单条目（PK 以 playlist_id 开头用不上）
-    // - online_tracks.last_played “最近播放”倒序取前 N
-    let _ = conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_pt_track ON playlist_tracks(track_id, kind);
-         CREATE INDEX IF NOT EXISTS idx_ot_last_played ON online_tracks(last_played);",
-    );
     // 酷狗榜单时长单位修复：榜单接口的 duration_128 本就是毫秒，曾被误当秒
     // 又乘 1000 入库（403000ms=6:43 的歌被存成 403000000ms=112 小时）。
     // 真实歌长 ≤ ~10 分钟、误乘后 ≥ 30 分钟×1000，阈值 5_000_000（83 分钟）
@@ -212,26 +216,36 @@ pub fn migrate(conn: &Connection) {
         .map(|sql| sql.contains("PRIMARY KEY (playlist_id, track_id)"))
         .unwrap_or(false);
     if needs_rebuild {
-        let _ = conn.execute_batch(
-            "BEGIN;
-             CREATE TABLE playlist_tracks_new (
-               playlist_id INTEGER NOT NULL,
-               track_id INTEGER NOT NULL,
-               position INTEGER NOT NULL DEFAULT 0,
-               kind TEXT NOT NULL DEFAULT 'local',
-               online_id TEXT NOT NULL DEFAULT '',
-               PRIMARY KEY (playlist_id, kind, online_id, track_id)
-             );
-             INSERT OR IGNORE INTO playlist_tracks_new
-               (playlist_id, track_id, position, kind, online_id)
-             SELECT playlist_id, track_id, position,
-               COALESCE(NULLIF(kind, ''), 'local'), COALESCE(online_id, '')
-             FROM playlist_tracks;
-             DROP TABLE playlist_tracks;
-             ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;
-             COMMIT;",
-        );
+        // 使用 rusqlite 事务对象：任意语句失败时 Drop 自动 ROLLBACK，避免裸 BEGIN 泄漏挂起事务
+        if let Ok(tx) = conn.unchecked_transaction() {
+            let res = tx.execute_batch(
+                "CREATE TABLE playlist_tracks_new (
+                   playlist_id INTEGER NOT NULL,
+                   track_id INTEGER NOT NULL,
+                   position INTEGER NOT NULL DEFAULT 0,
+                   kind TEXT NOT NULL DEFAULT 'local',
+                   online_id TEXT NOT NULL DEFAULT '',
+                   PRIMARY KEY (playlist_id, kind, online_id, track_id)
+                 );
+                 INSERT OR IGNORE INTO playlist_tracks_new
+                   (playlist_id, track_id, position, kind, online_id)
+                 SELECT playlist_id, track_id, position,
+                   COALESCE(NULLIF(kind, ''), 'local'), COALESCE(online_id, '')
+                 FROM playlist_tracks;
+                 DROP TABLE playlist_tracks;
+                 ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;",
+            );
+            if let Err(e) = res.and_then(|_| tx.commit()) {
+                eprintln!("[db] 重建 playlist_tracks 失败（已回滚）: {e}");
+            }
+        }
     }
+    // 索引放在表重建之后：避免 DROP TABLE playlist_tracks 把刚建好的 idx_pt_track 一并删掉
+    let _ = conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_pt_track ON playlist_tracks(track_id, kind);
+         CREATE INDEX IF NOT EXISTS idx_ot_last_played ON online_tracks(last_played);
+         CREATE INDEX IF NOT EXISTS idx_ot_downloaded ON online_tracks(downloaded);",
+    );
 }
 
 /// ALTER TABLE ... ADD COLUMN，列已存在时静默跳过（幂等迁移）
@@ -397,9 +411,15 @@ pub fn remove_folder(conn: &Connection, id: i64) {
         // 软删除该文件夹下的全部曲目（missing=1）：
         // 记录保留（喜欢/最近播放仍显示），文件夹重新添加后扫描复活。
         // 前缀匹配在 Rust 侧按小写比较：SQLite substr 按字符数取子串，
-        // 绑定字节长度对含中文的目录永远错位（一个都匹配不上）
-        let pref = format!("{}\\", p).to_lowercase();
+        // 跨平台目录前缀匹配：使用当前平台分隔符且不重复追加（兼容 Linux/macOS 的 `/`
+        // 以及 Windows 盘符根 `D:\`）
+        let sep = std::path::MAIN_SEPARATOR;
         let pl = p.to_lowercase();
+        let pref = if pl.ends_with('/') || pl.ends_with('\\') {
+            pl.clone()
+        } else {
+            format!("{pl}{sep}")
+        };
         let paths: Vec<String> = conn
             .prepare("SELECT path FROM tracks WHERE missing = 0")
             .map(|mut s| {
@@ -483,18 +503,22 @@ pub fn track_paths(conn: &Connection) -> Vec<(String, i64, i64, f64)> {
 /// 只更新状态真正变化的行：SQLite 对值未变的 UPDATE 也会重写行弄脏页，
 /// 大库一次扫描曾把整张表无差别重写一遍。
 pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, folder_prefixes: &[String]) {
-    // 前缀小写比较（Windows 路径大小写不敏感）；目录以分隔符结尾匹配子路径
+    let sep = std::path::MAIN_SEPARATOR;
+    // 前缀小写比较（Windows 路径大小写不敏感）；目录以平台分隔符结尾匹配子路径
     let prefixes: Vec<String> = folder_prefixes
         .iter()
         .map(|p| {
             let l = p.to_lowercase();
-            if l.ends_with('\\') {
+            if l.ends_with('/') || l.ends_with('\\') {
                 l
             } else {
-                format!("{l}\\")
+                format!("{l}{sep}")
             }
         })
         .collect();
+    // Windows 下对 seen 同步构建小写集合，避免目录大小写变化导致同一文件被误标失联
+    #[cfg(windows)]
+    let seen_lower: HashSet<String> = seen.iter().map(|s| s.to_lowercase()).collect();
     let all: Vec<(String, i64)> = match conn.prepare("SELECT path, missing FROM tracks") {
         Ok(mut s) => s
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -513,9 +537,13 @@ pub fn delete_missing(conn: &Connection, seen: &HashSet<String>, folder_prefixes
         if !in_scope {
             continue; // 监控范围之外：扫描无权判定
         }
-        if !seen.contains(&p) && missing == 0 {
+        #[cfg(windows)]
+        let is_seen = seen_lower.contains(&lower);
+        #[cfg(not(windows))]
+        let is_seen = seen.contains(&p);
+        if !is_seen && missing == 0 {
             to_stale.push(p);
-        } else if seen.contains(&p) && missing != 0 {
+        } else if is_seen && missing != 0 {
             to_revive.push(p);
         }
     }
@@ -639,6 +667,7 @@ pub fn get_lrc_path(conn: &Connection, id: i64) -> Option<String> {
 
 pub fn delete_track(conn: &Connection, id: i64) {
     let row_key = format!("track:{id}");
+    let tid_str = id.to_string();
     let _ = conn.execute("DELETE FROM tracks WHERE id = ?1", params![id]);
     let _ = conn.execute("DELETE FROM liked WHERE track_id = ?1", params![id]);
     let _ = conn.execute("DELETE FROM stats WHERE track_id = ?1", params![id]);
@@ -647,8 +676,12 @@ pub fn delete_track(conn: &Connection, id: i64) {
         params![id],
     );
     let _ = conn.execute(
-        "DELETE FROM manual_order WHERE row_key = ?1",
+        "DELETE FROM manual_order WHERE list IN ('library', 'liked') AND row_key = ?1",
         params![row_key],
+    );
+    let _ = conn.execute(
+        "DELETE FROM lyrics_cache WHERE kind IN ('local_manual', 'local_auto') AND rid = ?1",
+        params![tid_str],
     );
 }
 
@@ -660,6 +693,7 @@ pub fn delete_tracks(conn: &Connection, ids: &[i64]) {
         Ok(tx) => {
             for &id in ids {
                 let row_key = format!("track:{id}");
+                let tid_str = id.to_string();
                 let _ = tx.execute("DELETE FROM tracks WHERE id = ?1", params![id]);
                 let _ = tx.execute("DELETE FROM liked WHERE track_id = ?1", params![id]);
                 let _ = tx.execute("DELETE FROM stats WHERE track_id = ?1", params![id]);
@@ -668,8 +702,12 @@ pub fn delete_tracks(conn: &Connection, ids: &[i64]) {
                     params![id],
                 );
                 let _ = tx.execute(
-                    "DELETE FROM manual_order WHERE row_key = ?1",
+                    "DELETE FROM manual_order WHERE list IN ('library', 'liked') AND row_key = ?1",
                     params![row_key],
+                );
+                let _ = tx.execute(
+                    "DELETE FROM lyrics_cache WHERE kind IN ('local_manual', 'local_auto') AND rid = ?1",
+                    params![tid_str],
                 );
             }
             if let Err(e) = tx.commit() {

@@ -96,15 +96,15 @@ export default function Sidebar() {
     >
       {/* 品牌区 */}
       {isSkeuo ? (
-        <div className="skeuo-nameplate relative mt-2 mb-4 px-3.5 py-2.5 rounded-xl flex items-center gap-3">
-          <Logo size={36} />
+        <div className="skeuo-nameplate relative mt-1.5 mb-4 px-3 py-2.5 rounded-xl flex items-center gap-3">
+          <Logo size={34} />
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-black tracking-wide leading-tight text-[var(--ink)]">
+            <div className="text-[14px] font-bold tracking-wide leading-tight text-[var(--ink)]">
               RustMusic
             </div>
-            <div className="text-[9px] font-bold text-[var(--accent-strong)] tracking-[0.24em] mt-0.5 flex items-center gap-1.5">
-              <span className="skeuo-led-on !w-1.5 !h-1.5" />
-              HI-FI REFERENCE
+            <div className="text-[9px] font-semibold text-[var(--ink-3)] tracking-[0.22em] mt-0.5 flex items-center gap-1.5">
+              <span className="skeuo-led-on !w-[5px] !h-[5px]" />
+              HI-FI STUDIO
             </div>
           </div>
         </div>
@@ -187,9 +187,13 @@ export default function Sidebar() {
                     : { border: "1px solid transparent" }
                 }
               >
-                {isSkeuo && (
+                {isSkeuo && active && (
                   <span
-                    className={`${active ? "skeuo-led-on" : "skeuo-led-off"} !w-1.5 !h-1.5 shrink-0`}
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-full"
+                    style={{
+                      background: "var(--accent)",
+                      boxShadow: "0 0 8px var(--accent-soft)",
+                    }}
                   />
                 )}
                 {active && !isSkeuo && (

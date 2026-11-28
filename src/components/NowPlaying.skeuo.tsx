@@ -11,8 +11,8 @@ import {
   applyLyricFill,
   clearLyricFill,
   extractPalette,
+  fetchRemoteCover,
   lyricLineProgress,
-  remoteCoverCache,
 } from "../utils";
 import { setFxWanted } from "../fx";
 
@@ -114,6 +114,22 @@ export default function NowPlaying() {
     [lyrics]
   );
 
+  // 先重置旧行样式，再由下方播放驱动 effect 立即高亮当前行（暂停态也不会被误擦除）
+  useEffect(() => {
+    lastActiveRef.current = -1;
+    for (const r of lineRefs.current) {
+      if (!r) continue;
+      r.classList.remove("active");
+      r.style.color = "";
+      r.style.fontSize = "";
+      r.style.fontWeight = "";
+      r.style.opacity = "";
+      r.style.filter = "";
+      r.style.transform = "";
+      clearLyricFill(r);
+    }
+  }, [syncedLines]);
+
   // 逐帧驱动歌词渲染
   useEffect(() => {
     if (!syncedLines.length) return;
@@ -205,22 +221,6 @@ export default function NowPlaying() {
     return () => cancelAnimationFrame(raf);
   }, [syncedLines, playing]);
 
-  // 重置行样式
-  useEffect(() => {
-    lastActiveRef.current = -1;
-    for (const r of lineRefs.current) {
-      if (!r) continue;
-      r.classList.remove("active");
-      r.style.color = "";
-      r.style.fontSize = "";
-      r.style.fontWeight = "";
-      r.style.opacity = "";
-      r.style.filter = "";
-      r.style.transform = "";
-      clearLyricFill(r);
-    }
-  }, [syncedLines]);
-
   // 封面与调色板
   const rawCover = current?.cover ?? "";
   const isRemote = rawCover.startsWith("http://") || rawCover.startsWith("https://");
@@ -229,17 +229,9 @@ export default function NowPlaying() {
     setRemoteLocal(null);
     if (!isRemote || !rawCover) return;
     let alive = true;
-    remoteCoverCache.get(rawCover)?.then((p) => {
-      if (alive && p) setRemoteLocal(p);
-      return;
+    fetchRemoteCover(rawCover, api.fetchCover).then((path) => {
+      if (alive && path) setRemoteLocal(path);
     });
-    if (!remoteCoverCache.has(rawCover)) {
-      const pr = api.fetchCover(rawCover).catch(() => null);
-      remoteCoverCache.set(rawCover, pr as Promise<string>);
-      pr.then((path) => {
-        if (alive && path) setRemoteLocal(path);
-      });
-    }
     return () => {
       alive = false;
     };
@@ -400,7 +392,7 @@ export default function NowPlaying() {
         <div
           className="absolute inset-0 pointer-events-none transition-opacity duration-1000"
           style={{
-            background: `radial-gradient(ellipse 80% 65% at 32% 45%, ${palette[0]}24 0%, ${palette[1]}12 48%, transparent 78%)`,
+            background: `radial-gradient(ellipse 80% 65% at 32% 45%, ${palette[0].replace(/^hsl\((.+)\)$/, "hsla($1, 0.14)")} 0%, ${palette[1].replace(/^hsl\((.+)\)$/, "hsla($1, 0.07)")} 48%, transparent 78%)`,
             opacity: theme === "light" ? 0.25 : 0.58,
           }}
         />
@@ -408,16 +400,16 @@ export default function NowPlaying() {
 
       {/* 顶栏：与下方双舱和底栏严格同宽同边距（px-6），pt-10 避让系统标题栏 */}
       <div className="relative flex items-center justify-between max-w-[1440px] mx-auto w-full px-6 pt-10 pb-3 shrink-0 z-20">
-        {/* 左侧：物理运行状态灯 */}
+        {/* 左侧：克制的蚀刻运行状态指示 */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] shadow-[var(--sk-groove-shadow)]">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[var(--sk-groove-bg)] border border-[var(--sk-groove-border)] shadow-[var(--sk-groove-shadow)]">
             <div className={playing ? "skeuo-led-on" : "skeuo-led-off"} />
-            <span className="text-[10px] font-black tracking-[0.2em] text-[var(--accent-strong)] uppercase">
-              {playing ? "PHONO · 33⅓ RPM" : "DECK STANDBY"}
+            <span className="text-[10px] font-semibold tracking-[0.18em] text-[var(--ink-2)] uppercase">
+              {playing ? "PHONO · 33⅓ RPM" : "STANDBY"}
             </span>
           </div>
-          <span className="text-[10.5px] font-mono font-semibold text-[var(--ink-3)] hidden md:inline-block tracking-[0.18em]">
-            DIRECT DRIVE REFERENCE
+          <span className="text-[10px] font-mono text-[var(--ink-3)] hidden md:inline-block tracking-[0.2em]">
+            DIRECT DRIVE STUDIO
           </span>
         </div>
 
@@ -519,7 +511,7 @@ export default function NowPlaying() {
                 {current.artist}
               </div>
 
-              <div className="flex items-center gap-2 mt-3 px-3 py-1.5 rounded-xl skeuo-well">
+              <div className="flex items-center gap-1.5 mt-3 px-2.5 py-1.5 rounded-xl skeuo-well">
                 <button
                   className="btn-ghost !w-7 !h-7 !rounded-lg relative flex items-center justify-center shrink-0"
                   onClick={handleToggleLike}
@@ -529,16 +521,13 @@ export default function NowPlaying() {
                     size={14}
                     className={
                       isLiked
-                        ? "fill-[#ef4444] text-[#ef4444]"
+                        ? "fill-[#e0533f] text-[#e0533f]"
                         : "text-[var(--ink-3)]"
                     }
                   />
-                  {isLiked && (
-                    <span className="skeuo-led-red absolute -top-0.5 -right-0.5 !w-1.5 !h-1.5" />
-                  )}
                 </button>
 
-                <span className="text-[10.5px] font-bold text-[var(--ink-2)] px-2.5 py-0.5 rounded-md bg-[var(--shade-strong)] border border-[var(--sk-edge)] max-w-[155px] truncate">
+                <span className="text-[10.5px] font-medium text-[var(--ink-2)] px-2 py-0.5 rounded-md bg-[var(--shade)] border border-[var(--sk-edge)] max-w-[155px] truncate">
                   {current.album ? `${platformBadge} · ${current.album}` : platformBadge}
                 </span>
 
@@ -546,9 +535,9 @@ export default function NowPlaying() {
 
                 <button
                   disabled={!hasTrans}
-                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1 ${
                     !hasTrans
-                      ? "opacity-35 cursor-not-allowed text-[var(--ink-3)]"
+                      ? "opacity-50 cursor-not-allowed text-[var(--ink-3)]"
                       : lyricsShowTrans
                         ? "bg-[var(--accent)] text-white shadow-sm"
                         : "btn-ghost"

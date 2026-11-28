@@ -109,7 +109,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
       const newQueue = s.queue.filter((q) => !(q.kind === "track" && q.id === id));
       const newTracks = s.tracks.filter((t) => t.id !== id);
 
-      if (newQueue.length === 0) {
+      if (isCurrentDeleted && newQueue.length === 0) {
         api.stop().catch(() => {});
         set({
           queue: [],
@@ -120,13 +120,19 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
           tracks: newTracks,
         });
       } else if (isCurrentDeleted) {
-        const target = Math.min(s.qIndex, newQueue.length - 1);
+        const target = Math.max(0, Math.min(s.qIndex, newQueue.length - 1));
         set({
           queue: newQueue,
           qIndex: target,
           tracks: newTracks,
         });
         get().playQueueIndex(target);
+      } else if (newQueue.length === 0) {
+        set({
+          queue: [],
+          qIndex: 0,
+          tracks: newTracks,
+        });
       } else {
         const newQIndex = newQueue.findIndex((item) => {
           if (current?.kind === "track") return item.kind === "track" && item.id === current.id;
@@ -163,7 +169,7 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
       );
       const newTracks = s.tracks.filter((t) => !idSet.has(t.id));
 
-      if (newQueue.length === 0) {
+      if (isCurrentDeleted && newQueue.length === 0) {
         api.stop().catch(() => {});
         set({
           queue: [],
@@ -174,13 +180,19 @@ export const createLibrarySlice: StateCreator<Store, [], [], Fields> = (set, get
           tracks: newTracks,
         });
       } else if (isCurrentDeleted) {
-        const target = Math.min(s.qIndex, newQueue.length - 1);
+        const target = Math.max(0, Math.min(s.qIndex, newQueue.length - 1));
         set({
           queue: newQueue,
           qIndex: target,
           tracks: newTracks,
         });
         get().playQueueIndex(target);
+      } else if (newQueue.length === 0) {
+        set({
+          queue: [],
+          qIndex: 0,
+          tracks: newTracks,
+        });
       } else {
         const newQIndex = newQueue.findIndex((item) => {
           if (current?.kind === "track") return item.kind === "track" && item.id === current.id;

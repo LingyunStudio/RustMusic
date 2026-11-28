@@ -319,9 +319,8 @@ fn payload_to_lrc(payload: &LyricsPayload) -> String {
     out
 }
 
-fn netease_cookie_opt(state: &State<'_, AppState>) -> Option<String> {
-    let conn = state.db.lock();
-    db::get_setting(&conn, "netease_cookie").filter(|s| !s.is_empty())
+fn netease_cookie_opt(_state: &State<'_, AppState>) -> Option<String> {
+    crate::credentials::get("netease_music_u").filter(|s| !s.is_empty())
 }
 
 // ---------- 歌词命令 ----------
@@ -339,7 +338,8 @@ pub async fn get_lyrics(
         let tid = track_id.to_string();
         let manual = db::get_lyrics_cache(&conn, "local_manual", &tid);
         let auto = db::get_lyrics_cache(&conn, "local_auto", &tid);
-        let music_u = db::get_setting(&conn, "netease_cookie").filter(|s| !s.is_empty());
+        drop(conn);
+        let music_u = crate::credentials::get("netease_music_u").filter(|s| !s.is_empty());
         (path, lrc, title, artist, dur_sec, manual, auto, music_u)
     };
 

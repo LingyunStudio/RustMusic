@@ -1393,8 +1393,32 @@ function VSlider({
   onChange: (v: number) => void;
 }) {
   const H = 120;
-  const zero = ((0 - min) / (max - min)) * H;
-  const y = ((value - min) / (max - min)) * H;
+  const zero = (1 - (0 - min) / (max - min)) * H;
+  const y = (1 - (value - min) / (max - min)) * H;
+
+  const updateFromClientY = (el: HTMLDivElement, clientY: number) => {
+    const rect = el.getBoundingClientRect();
+    const ratio =
+      rect.height > 0 ? Math.min(1, Math.max(0, 1 - (clientY - rect.top) / rect.height)) : 0;
+    onChange(Math.round(min + ratio * (max - min)));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updateFromClientY(e.currentTarget, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.buttons !== 1) return;
+    updateFromClientY(e.currentTarget, e.clientY);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
 
   if (isSkeuo) {
     return (
@@ -1406,18 +1430,10 @@ function VSlider({
           border: "1px solid var(--sk-groove-border)",
           boxShadow: "var(--sk-groove-shadow)",
         }}
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          const rect = e.currentTarget.getBoundingClientRect();
-          const ratio = 1 - (e.clientY - rect.top) / rect.height;
-          onChange(Math.round(min + ratio * (max - min)));
-        }}
-        onPointerMove={(e) => {
-          if (e.buttons !== 1) return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          const ratio = Math.min(1, Math.max(0, 1 - (e.clientY - rect.top) / rect.height));
-          onChange(Math.round(min + ratio * (max - min)));
-        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         {/* 零点刻度参考线 */}
         <div
@@ -1457,18 +1473,10 @@ function VSlider({
     <div
       className="relative w-7 rounded-full bg-[var(--shade)] cursor-pointer touch-none"
       style={{ height: H }}
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId);
-        const rect = e.currentTarget.getBoundingClientRect();
-        const ratio = 1 - (e.clientY - rect.top) / rect.height;
-        onChange(Math.round(min + ratio * (max - min)));
-      }}
-      onPointerMove={(e) => {
-        if (e.buttons !== 1) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const ratio = Math.min(1, Math.max(0, 1 - (e.clientY - rect.top) / rect.height));
-        onChange(Math.round(min + ratio * (max - min)));
-      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
       <div
         className="absolute left-0 right-0 rounded-full"

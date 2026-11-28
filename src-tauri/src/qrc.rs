@@ -88,7 +88,7 @@ pub fn decrypt(hex: &str) -> Result<String, String> {
         data.extend_from_slice(&triple_des_crypt(&input, &schedule));
     }
 
-    let mut decoder = ZlibDecoder::new(&data[..]);
+    let mut decoder = ZlibDecoder::new(&data[..]).take(4 * 1024 * 1024);
     let mut out = Vec::new();
     decoder
         .read_to_end(&mut out)
@@ -117,7 +117,7 @@ pub fn to_enhanced_lrc(content: &str) -> String {
     for line in parse_lines(content) {
         let mut rendered = format!("[{}]", format_timestamp(line.start_ms as i64));
         for word in &line.words {
-            let end_ms = word.start_ms + word.duration_ms;
+            let end_ms = word.start_ms.saturating_add(word.duration_ms);
             rendered.push_str(&format!(
                 "<{}>{}<{}>",
                 format_timestamp(word.start_ms as i64),
@@ -157,7 +157,8 @@ fn parse_lines(content: &str) -> Vec<QrcLine> {
     let mut lines = Vec::new();
 
     for raw in content.lines() {
-        let Some(caps) = line_re.captures(raw.trim()) else {
+        let trimmed = raw.trim().trim_start_matches('\u{feff}');
+        let Some(caps) = line_re.captures(trimmed) else {
             continue;
         };
 
@@ -193,7 +194,7 @@ fn parse_lines(content: &str) -> Vec<QrcLine> {
 /// Extract the `LyricContent` attribute value from the decrypted XML (with XML entity unescaping).
 pub fn extract_lyric_content(xml: &str) -> Option<String> {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r#"LyricContent="([\s\S]*?)"\s*/>"#).unwrap());
+    let re = RE.get_or_init(|| Regex::new(r#"LyricContent="([^"]*)""#).unwrap());
     re.captures(xml)
         .map(|c| {
             c[1].replace("&apos;", "'")

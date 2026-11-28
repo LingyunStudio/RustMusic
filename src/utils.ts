@@ -292,44 +292,95 @@ export function lyricLineProgress(
  * - 折行歌词（2 行及以上）：用 Range.getClientRects() 生成百分比 polygon 按视觉行
  *   依次扫色，避免多行同时从左到右扫满（百分比坐标对 CSS zoom 与 transform: scale() 均免疫）。
  */
+type LyricLayoutCache = {
+  cw: number;
+  ch: number;
+  text: string;
+  single: boolean;
+  ovLeft: number;
+  ovTop: number;
+  ovWidth: number;
+  ovHeight: number;
+  rows: { left: number; right: number; top: number; bottom: number }[];
+  widths: number[];
+  totalW: number;
+};
+
+const lyricLayoutCache = new WeakMap<HTMLElement, LyricLayoutCache>();
+
 export function applyLyricFill(el: HTMLElement, fill: number): void {
   const clamped = Math.max(0, Math.min(1, fill));
-  el.style.setProperty("--fill", `${(clamped * 100).toFixed(2)}%`);
   const ov = el.querySelector<HTMLElement>(".lyric-fill-ov > span");
-  if (!ov) return;
-  const textNode = ov.firstChild;
-  if (!textNode || ov.clientWidth <= 0 || ov.clientHeight <= 0) {
-    ov.style.clipPath = "";
-    return;
-  }
-  const range = document.createRange();
-  range.selectNodeContents(textNode);
-  const rawRects = range.getClientRects();
-  if (rawRects.length <= 1) {
-    ov.style.clipPath = "";
-    return;
-  }
-  const ovRect = ov.getBoundingClientRect();
-  if (ovRect.width <= 0 || ovRect.height <= 0) {
-    ov.style.clipPath = "";
-    return;
-  }
-  const rows: { left: number; right: number; top: number; bottom: number }[] = [];
-  for (let i = 0; i < rawRects.length; i++) {
-    const r = rawRects[i];
-    if (r.width <= 0 && r.height <= 0) continue;
-    const prev = rows[rows.length - 1];
-    if (prev && Math.abs(r.top - prev.top) < Math.max(4, prev.bottom - prev.top) * 0.5) {
-      prev.left = Math.min(prev.left, r.left);
-      prev.right = Math.max(prev.right, r.right);
-      prev.top = Math.min(prev.top, r.top);
-      prev.bottom = Math.max(prev.bottom, r.bottom);
-    } else {
-      rows.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+  // 先读后写：避免先写 --fill 再读 clientWidth/getClientRects 触发 60fps 强制同步回流
+  let layout: LyricLayoutCache | null = null;
+  if (ov) {
+    const textNode = ov.firstChild;
+    const cw = ov.clientWidth;
+    const ch = ov.clientHeight;
+    if (textNode && cw > 0 && ch > 0) {
+      const text = textNode.textContent ?? "";
+      const cached = lyricLayoutCache.get(ov);
+      if (cached && cached.cw === cw && cached.ch === ch && cached.text === text) {
+        layout = cached;
+      } else {
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        const rawRects = range.getClientRects();
+        if (rawRects.length <= 1) {
+          layout = {
+            cw,
+            ch,
+            text,
+            single: true,
+            ovLeft: 0,
+            ovTop: 0,
+            ovWidth: 0,
+            ovHeight: 0,
+            rows: [],
+            widths: [],
+            totalW: 0,
+          };
+        } else {
+          const ovRect = ov.getBoundingClientRect();
+          const rows: { left: number; right: number; top: number; bottom: number }[] = [];
+          for (let i = 0; i < rawRects.length; i++) {
+            const r = rawRects[i];
+            if (r.width <= 0 && r.height <= 0) continue;
+            const prev = rows[rows.length - 1];
+            if (prev && Math.abs(r.top - prev.top) < Math.max(4, prev.bottom - prev.top) * 0.5) {
+              prev.left = Math.min(prev.left, r.left);
+              prev.right = Math.max(prev.right, r.right);
+              prev.top = Math.min(prev.top, r.top);
+              prev.bottom = Math.max(prev.bottom, r.bottom);
+            } else {
+              rows.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+            }
+          }
+          const widths = rows.map((r) => Math.max(0, r.right - r.left));
+          const totalW = widths.reduce((a, b) => a + b, 0);
+          layout = {
+            cw,
+            ch,
+            text,
+            single: rows.length <= 1 || ovRect.width <= 0 || ovRect.height <= 0 || totalW <= 0,
+            ovLeft: ovRect.left,
+            ovTop: ovRect.top,
+            ovWidth: ovRect.width,
+            ovHeight: ovRect.height,
+            rows,
+            widths,
+            totalW,
+          };
+        }
+        lyricLayoutCache.set(ov, layout);
+      }
     }
   }
-  if (rows.length <= 1) {
-    ov.style.clipPath = "";
+
+  el.style.setProperty("--fill", `${(clamped * 100).toFixed(2)}%`);
+  if (!ov) return;
+  if (!layout || layout.single) {
+    if (ov.style.clipPath) ov.style.clipPath = "";
     return;
   }
   if (clamped <= 0) {
@@ -340,12 +391,7 @@ export function applyLyricFill(el: HTMLElement, fill: number): void {
     ov.style.clipPath = "none";
     return;
   }
-  const widths = rows.map((r) => Math.max(0, r.right - r.left));
-  const totalW = widths.reduce((a, b) => a + b, 0);
-  if (totalW <= 0) {
-    ov.style.clipPath = "";
-    return;
-  }
+  const { rows, widths, totalW, ovLeft, ovTop, ovWidth, ovHeight } = layout;
   let target = clamped * totalW;
   let m = rows.length - 1;
   let rowFillPx = widths[m];
@@ -358,9 +404,9 @@ export function applyLyricFill(el: HTMLElement, fill: number): void {
     target -= widths[i];
   }
   const pctX = (x: number) =>
-    `${Math.max(0, Math.min(100, ((x - ovRect.left) / ovRect.width) * 100)).toFixed(2)}%`;
+    `${Math.max(0, Math.min(100, ((x - ovLeft) / ovWidth) * 100)).toFixed(2)}%`;
   const pctY = (y: number) =>
-    `${Math.max(0, Math.min(100, ((y - ovRect.top) / ovRect.height) * 100)).toFixed(2)}%`;
+    `${Math.max(0, Math.min(100, ((y - ovTop) / ovHeight) * 100)).toFixed(2)}%`;
   const xCur = pctX(rows[m].left + rowFillPx);
   const yTop = m === 0 ? "0%" : pctY((rows[m - 1].bottom + rows[m].top) / 2);
   const yBot = m === rows.length - 1 ? "100%" : pctY((rows[m].bottom + rows[m + 1].top) / 2);
@@ -374,7 +420,10 @@ export function applyLyricFill(el: HTMLElement, fill: number): void {
 export function clearLyricFill(el: HTMLElement): void {
   el.style.removeProperty("--fill");
   const ov = el.querySelector<HTMLElement>(".lyric-fill-ov > span");
-  if (ov) ov.style.clipPath = "";
+  if (ov) {
+    ov.style.clipPath = "";
+    lyricLayoutCache.delete(ov);
+  }
 }
 
 // ---------- 播放页歌词自适应配色 ----------
@@ -508,6 +557,36 @@ export function lyricAdaptiveColors(
   return { vars, scrim };
 }
 
-/** 远程封面 URL → 后端落盘路径的进程内缓存（Promise 复用，防重复下载）。
- *  CoverImg 与 NowPlaying 共用：同一封面只发一次 fetch_cover 请求 */
+/** 远程封面 URL → 后端落盘路径的进程内 LRU 缓存（Promise 复用，防重复下载；
+ *  失败结果自动驱逐不永久缓存，容量上限 600 防内存泄漏）。 */
+const REMOTE_COVER_CACHE_MAX = 600;
 export const remoteCoverCache = new Map<string, Promise<string | null>>();
+
+export function fetchRemoteCover(
+  url: string,
+  fetcher: (src: string) => Promise<string>
+): Promise<string | null> {
+  const hit = remoteCoverCache.get(url);
+  if (hit) {
+    // 刷新 LRU 位置
+    remoteCoverCache.delete(url);
+    remoteCoverCache.set(url, hit);
+    return hit;
+  }
+  const p = fetcher(url)
+    .then((path) => path || null)
+    .catch(() => null)
+    .then((res) => {
+      if (!res && remoteCoverCache.get(url) === p) {
+        remoteCoverCache.delete(url);
+      }
+      return res;
+    });
+  remoteCoverCache.set(url, p);
+  while (remoteCoverCache.size > REMOTE_COVER_CACHE_MAX) {
+    const oldest = remoteCoverCache.keys().next().value;
+    if (oldest !== undefined) remoteCoverCache.delete(oldest);
+    else break;
+  }
+  return p;
+}

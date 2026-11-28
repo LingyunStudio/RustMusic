@@ -90,8 +90,12 @@ fn persist_qq_session(state: &AppState, sess: &QqSession) -> Result<(), String> 
     Ok(())
 }
 
+/// 会话代际号：登出或新登录时递增，阻断在途后台续期把旧账号写回
+static QQ_SESSION_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// 清空本地 QQ 登录态（主动退出或续期令牌也被服务端判定失效时调用）
 fn clear_qq_session(app: Option<&AppHandle>, state: &AppState, emit_expired: bool) {
+    QQ_SESSION_GEN.fetch_add(1, Ordering::SeqCst);
     *SESSION_CACHE.lock().unwrap() = None;
     crate::credentials::clear("qq_session");
     crate::credentials::clear("qq_musickey");
@@ -129,8 +133,13 @@ fn refresh_qq_session_locked(
             return Ok(cur);
         }
     }
+    let gen = QQ_SESSION_GEN.load(Ordering::SeqCst);
     match crate::qq::refresh_session(&cur) {
         Ok(fresh) => {
+            // 若刷新期间用户已登出或切换新账号，丢弃过期续期结果
+            if QQ_SESSION_GEN.load(Ordering::SeqCst) != gen {
+                return Err(RefreshError::MissingRefreshToken);
+            }
             if let Err(e) = persist_qq_session(state, &fresh) {
                 eprintln!("[qq] 续期成功但保存凭据失败: {e}");
             } else {
@@ -429,6 +438,7 @@ fn save_qq_credential(state: &State<AppState>, r: &crate::qq::QqQrCheck) -> Resu
     };
 
     if let Some(s) = sess {
+        QQ_SESSION_GEN.fetch_add(1, Ordering::SeqCst);
         persist_qq_session(state, &s).map_err(|e| {
             crate::i18n::pick(
                 format!("登录成功但凭据保存失败: {e}"),

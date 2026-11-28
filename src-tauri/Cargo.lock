@@ -3990,7 +3990,7 @@ dependencies = [
 
 [[package]]
 name = "rustmusic"
-version = "0.7.4"
+version = "0.8.0"
 dependencies = [
  "aes",
  "base64 0.22.1",

@@ -676,7 +676,7 @@ export function skinUri(key: string, calm = false): string | null {
   if (key === CUSTOM_SKIN) {
     const img = activeCustomImage();
     if (!img) return null;
-    return `url("${convertFileSrc(img)}")`;
+    return `url("${convertFileSrc(img).replace(/["\\]/g, "\\$&")}")`;
   }
   if (!key || key === DEFAULT_SKIN) return null;
   const cacheKey = calm ? `${key}|calm` : key;
@@ -699,9 +699,10 @@ export function applySkin(key: string, calm = false) {
       // 自定义图片：填充方式/纱强度/文字色系全部来自用户设置
       applyCustomSkinVars();
     } else {
-      // 切回内置皮肤：清掉自定义皮肤的填充/文字色系残留
+      // 切回内置皮肤：清掉自定义皮肤的填充/透明度/文字色系残留
       root.removeProperty("--skin-fill");
       root.removeProperty("--skin-repeat");
+      root.removeProperty("--skin-img-opacity");
       delete document.documentElement.dataset.customText;
       // 每套皮肤各自的双主题纱：CSS 按 html[data-theme] 取用对应的一份
       const skin = SKINS.find((s) => s.key === key);
@@ -716,6 +717,7 @@ export function applySkin(key: string, calm = false) {
     root.removeProperty("--skin-scrim-light");
     root.removeProperty("--skin-fill");
     root.removeProperty("--skin-repeat");
+    root.removeProperty("--skin-img-opacity");
     delete document.documentElement.dataset.customText;
   }
   // data-skin 标记：CSS 据此切换玻璃/播放条的透明度档位——皮肤启用时

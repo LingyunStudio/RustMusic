@@ -74,12 +74,21 @@ const RustMusicLyricsIndicator = GObject.registerClass(
       } catch {
         // 文件不存在（应用未运行/未开启）：隐藏
       }
-      this._label.text = text;
-      this._label.set_style(LABEL_STYLE + (color ? ` color: ${color};` : ""));
-      // 应用在写入期间（含间奏的空行）保留占位，顶栏元素位置完全稳定；
-      // 仅在停止写入（过期/无文件）时隐藏
-      this.visible = fresh;
-      this._reposition();
+      if (
+        text !== this._lastText ||
+        color !== this._lastColor ||
+        fresh !== this._lastFresh
+      ) {
+        this._lastText = text;
+        this._lastColor = color;
+        this._lastFresh = fresh;
+        this._label.text = text;
+        this._label.set_style(LABEL_STYLE + (color ? ` color: ${color};` : ""));
+        // 应用在写入期间（含间奏的空行）保留占位，顶栏元素位置完全稳定；
+        // 仅在停止写入（过期/无文件）时隐藏
+        this.visible = fresh;
+      }
+      if (fresh) this._reposition();
     }
 
     /**

@@ -10,9 +10,9 @@ import {
   applyLyricFill,
   clearLyricFill,
   extractPalette,
+  fetchRemoteCover,
   lyricAdaptiveColors,
   lyricLineProgress,
-  remoteCoverCache,
 } from "../utils";
 
 export default function NowPlaying() {
@@ -107,6 +107,22 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
     [lyrics]
   );
 
+  // 先重置旧行样式，再由下方播放驱动 effect 立即高亮当前行（暂停态也不会被误擦除）
+  useEffect(() => {
+    lastActiveRef.current = -1;
+    for (const r of lineRefs.current) {
+      if (!r) continue;
+      r.classList.remove("active");
+      r.style.color = "";
+      r.style.fontSize = "";
+      r.style.fontWeight = "";
+      r.style.opacity = "";
+      r.style.filter = "";
+      r.style.transform = "";
+      clearLyricFill(r);
+    }
+  }, [syncedLines]);
+
   useEffect(() => {
     if (!syncedLines.length) return;
     const tick = () => {
@@ -197,21 +213,6 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
     return () => cancelAnimationFrame(raf);
   }, [syncedLines, playing]);
 
-  useEffect(() => {
-    lastActiveRef.current = -1;
-    for (const r of lineRefs.current) {
-      if (!r) continue;
-      r.classList.remove("active");
-      r.style.color = "";
-      r.style.fontSize = "";
-      r.style.fontWeight = "";
-      r.style.opacity = "";
-      r.style.filter = "";
-      r.style.transform = "";
-      clearLyricFill(r);
-    }
-  }, [syncedLines]);
-
   const rawCover = current?.cover ?? "";
   const isRemote = rawCover.startsWith("http://") || rawCover.startsWith("https://");
   const [remoteLocal, setRemoteLocal] = useState<string | null>(null);
@@ -219,17 +220,9 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
     setRemoteLocal(null);
     if (!isRemote || !rawCover) return;
     let alive = true;
-    remoteCoverCache.get(rawCover)?.then((p) => {
-      if (alive && p) setRemoteLocal(p);
-      return;
+    fetchRemoteCover(rawCover, api.fetchCover).then((path) => {
+      if (alive && path) setRemoteLocal(path);
     });
-    if (!remoteCoverCache.has(rawCover)) {
-      const pr = api.fetchCover(rawCover).catch(() => null);
-      remoteCoverCache.set(rawCover, pr as Promise<string>);
-      pr.then((path) => {
-        if (alive && path) setRemoteLocal(path);
-      });
-    }
     return () => {
       alive = false;
     };
@@ -408,7 +401,7 @@ function NowPlayingStandardOrLiquid({ isLiquid }: { isLiquid: boolean }) {
               }`}
               style={{
                 background: coverUrl
-                  ? `url(${coverUrl}) center/cover`
+                  ? `url("${coverUrl.replace(/["\\]/g, "\\$&")}") center/cover`
                   : "linear-gradient(135deg, var(--accent), var(--accent-strong))",
               }}
             />

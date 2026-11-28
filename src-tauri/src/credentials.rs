@@ -8,7 +8,21 @@
 //! 引擎/命令层的读取统一走 get；测试代码（#[ignore] 网络用例）仍可直连
 //! 本机数据库或 keyring 自行取值。
 
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+use parking_lot::RwLock;
+
 use crate::db;
+
+/// 进程内凭据缓存：消除每次业务命令都触发系统凭据管理器同步 IPC
+/// （Windows CredRead / Linux D-Bus Secret Service / macOS Keychain），
+/// 写入或清除时立即同步更新缓存
+static CRED_CACHE: OnceLock<RwLock<HashMap<String, Option<String>>>> = OnceLock::new();
+
+fn cache() -> &'static RwLock<HashMap<String, Option<String>>> {
+    CRED_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
 
 /// keyring 服务名（Entry::new(SERVICE, user)，user 复用 settings 表历史键名）
 const SERVICE: &str = "RustMusic";
@@ -34,8 +48,15 @@ fn entry(key: &str) -> Result<keyring::Entry, String> {
 
 /// 读取平台 token；无凭据返回 None（含空串视为无）
 pub fn get(key: &str) -> Option<String> {
-    let v = entry(key).ok()?.get_password().ok()?;
-    Some(v).filter(|s| !s.is_empty())
+    if let Some(hit) = cache().read().get(key) {
+        return hit.clone();
+    }
+    let val = entry(key)
+        .ok()
+        .and_then(|e| e.get_password().ok())
+        .filter(|s| !s.is_empty());
+    cache().write().insert(key.to_string(), val.clone());
+    val
 }
 
 /// 写入平台 token（空串 = 清除）
@@ -43,8 +64,10 @@ pub fn set(key: &str, value: &str) -> Result<(), String> {
     let e = entry(key)?;
     if value.is_empty() {
         match e.delete_credential() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(keyring::Error::NoEntry) => {
+                cache().write().insert(key.to_string(), None);
+                Ok(())
+            }
             Err(err) => Err(crate::i18n::pick(
                 format!("清除凭据失败: {err}"),
                 format!("Failed to clear credentials: {err}"),
@@ -56,7 +79,11 @@ pub fn set(key: &str, value: &str) -> Result<(), String> {
                 format!("保存凭据失败: {err}"),
                 format!("Failed to save credentials: {err}"),
             )
-        })
+        })?;
+        cache()
+            .write()
+            .insert(key.to_string(), Some(value.to_string()));
+        Ok(())
     }
 }
 

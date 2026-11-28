@@ -367,17 +367,19 @@ fn post_login_cgi(
 ) -> Result<(serde_json::Value, Vec<String>), String> {
     let body = serde_json::to_string(payload).map_err(|e| e.to_string())?;
     let call_endpoint = |url: &str| -> Result<(serde_json::Value, Vec<String>), String> {
-        let mut req = http_agent()
-            .post(url)
-            .set("Content-Type", "application/json")
-            .set("Referer", "https://y.qq.com/")
-            .set("Origin", "https://y.qq.com")
-            .set("User-Agent", UA)
-            .timeout(TIMEOUT);
-        if let Some(c) = cookie {
-            req = req.set("Cookie", c);
-        }
-        let resp = send_with_recover(|| req.clone().send_string(&body))?;
+        let resp = send_with_recover(|| {
+            let mut req = http_agent()
+                .post(url)
+                .set("Content-Type", "application/json")
+                .set("Referer", "https://y.qq.com/")
+                .set("Origin", "https://y.qq.com")
+                .set("User-Agent", UA)
+                .timeout(TIMEOUT);
+            if let Some(c) = cookie {
+                req = req.set("Cookie", c);
+            }
+            req.send_string(&body)
+        })?;
         let cookies: Vec<String> = resp
             .all("Set-Cookie")
             .into_iter()
@@ -525,7 +527,15 @@ pub fn check_session_expired(musicid: &str, musickey: &str) -> Option<bool> {
             .ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     let code = v.get("code").and_then(|c| c.as_i64())?;
-    Some(code != 0)
+    if code == 0 {
+        return Some(false);
+    }
+    // 仅对明确代表登录失效/未登录的错误码判定过期；其它临时服务端错误返回 None，避免误清有效凭据
+    if matches!(code, 1000 | 1001 | 104009 | 40001) {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 /// 轮询扫码状态；成功时完成 check_sig → OAuth → QQLogin 换取播放凭证

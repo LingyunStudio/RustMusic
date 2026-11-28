@@ -48,13 +48,13 @@ function VuDial({
   shadowRef: RefObject<SVGLineElement>;
 }) {
   return (
-    <div className="relative flex-1 min-w-0 h-[78px] rounded-lg overflow-hidden skeuo-vu-dial border border-black/45">
+    <div className="relative flex-1 min-w-0 h-[78px] rounded-lg overflow-hidden skeuo-vu-dial border border-black/25">
       {/* 曲面光学玻璃顶高光 */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.04) 24%, transparent 46%, rgba(0,0,0,0.2) 100%)",
+            "linear-gradient(180deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.03) 26%, transparent 50%, rgba(0,0,0,0.14) 100%)",
         }}
       />
       <svg
@@ -238,6 +238,14 @@ export default function VUMeter({ playing }: VUMeterProps) {
   const barLRefs = useRef<(HTMLDivElement | null)[]>([]);
   const barRRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const wakeRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (playing) wakeRef.current?.();
+  }, [playing]);
+
   useEffect(() => {
     let curL = 0;
     let curR = 0;
@@ -246,18 +254,24 @@ export default function VUMeter({ playing }: VUMeterProps) {
     let envRef = 0.45;
     let raf = 0;
     let prev = performance.now();
+    let lastRotL = "";
+    let lastRotR = "";
+    let lastPeak = false;
+    const lastBarL = new Array<boolean>(8).fill(false);
+    const lastBarR = new Array<boolean>(8).fill(false);
 
     const loop = (now: number) => {
-      raf = requestAnimationFrame(loop);
+      raf = 0;
       if (document.hidden) {
         prev = now;
+        if (playingRef.current) raf = requestAnimationFrame(loop);
         return;
       }
       const dt = Math.min(0.1, (now - prev) / 1000);
       prev = now;
 
       const { frame, age } = getFxFrame();
-      const live = playing && age < 400;
+      const live = playingRef.current && age < 400;
 
       let targetL = 0;
       let targetR = 0;
@@ -308,6 +322,10 @@ export default function VUMeter({ playing }: VUMeterProps) {
 
       curL += (targetL - curL) * (targetL > curL ? attackK : decayK);
       curR += (targetR - curR) * (targetR > curR ? attackK : decayK);
+      if (!playingRef.current && curL < 0.002 && curR < 0.002) {
+        curL = 0;
+        curR = 0;
+      }
 
       // 线性映射到表盘角度：-44deg (-20dB) ~ +22deg (0dB, ~0.76) ~ +43deg (+3dB, 1.0)
       const angleL = -44 + curL * 87;
@@ -315,14 +333,22 @@ export default function VUMeter({ playing }: VUMeterProps) {
 
       const rotL = `rotate(${angleL.toFixed(1)}deg)`;
       const rotR = `rotate(${angleR.toFixed(1)}deg)`;
-      if (needleLRef.current) needleLRef.current.style.transform = rotL;
-      if (shadowLRef.current) shadowLRef.current.style.transform = rotL;
-      if (needleRRef.current) needleRRef.current.style.transform = rotR;
-      if (shadowRRef.current) shadowRRef.current.style.transform = rotR;
+      if (rotL !== lastRotL) {
+        lastRotL = rotL;
+        if (needleLRef.current) needleLRef.current.style.transform = rotL;
+        if (shadowLRef.current) shadowLRef.current.style.transform = rotL;
+      }
+      if (rotR !== lastRotR) {
+        lastRotR = rotR;
+        if (needleRRef.current) needleRRef.current.style.transform = rotR;
+        if (shadowRRef.current) shadowRRef.current.style.transform = rotR;
+      }
 
       // PEAK 过载红灯：仅在真正强瞬态突破 +1.5dB（>0.86）时闪亮
-      if (peakRef.current) {
-        if (curL > 0.86 || curR > 0.86) {
+      const isPeak = curL > 0.86 || curR > 0.86;
+      if (isPeak !== lastPeak && peakRef.current) {
+        lastPeak = isPeak;
+        if (isPeak) {
           peakRef.current.classList.add("skeuo-led-red");
           peakRef.current.classList.remove("skeuo-led-off");
         } else {
@@ -334,16 +360,44 @@ export default function VUMeter({ playing }: VUMeterProps) {
       const step = 1 / 8;
       for (let i = 0; i < 8; i++) {
         const threshold = (i + 1) * step * 0.94;
-        const elL = barLRefs.current[i];
-        if (elL) elL.style.opacity = curL >= threshold ? "1" : "0.14";
-        const elR = barRRefs.current[i];
-        if (elR) elR.style.opacity = curR >= threshold ? "1" : "0.14";
+        const onL = curL >= threshold;
+        if (onL !== lastBarL[i]) {
+          lastBarL[i] = onL;
+          const elL = barLRefs.current[i];
+          if (elL) elL.style.opacity = onL ? "1" : "0.14";
+        }
+        const onR = curR >= threshold;
+        if (onR !== lastBarR[i]) {
+          lastBarR[i] = onR;
+          const elR = barRRefs.current[i];
+          if (elR) elR.style.opacity = onR ? "1" : "0.14";
+        }
+      }
+
+      // 暂停且指针已完全归零时停止 rAF，消除空闲 60fps 消耗
+      if (playingRef.current || curL > 0 || curR > 0) {
+        raf = requestAnimationFrame(loop);
       }
     };
 
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [playing]);
+    const wake = () => {
+      if (!raf) {
+        prev = performance.now();
+        raf = requestAnimationFrame(loop);
+      }
+    };
+    wakeRef.current = wake;
+    const onVis = () => {
+      if (!document.hidden && playingRef.current) wake();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    wake();
+    return () => {
+      wakeRef.current = null;
+      document.removeEventListener("visibilitychange", onVis);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
 
   return (
     <div className="skeuo-vu-frame rounded-xl px-3 py-2 flex items-center justify-between gap-3 select-none">

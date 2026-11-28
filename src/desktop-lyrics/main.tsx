@@ -190,23 +190,33 @@ function DesktopLyrics() {
   // 卡死在窗口内某点（真实鼠标是 Wayland 指针，影响不到它），轮询式
   // 判定会因此永远认为"光标在窗口内"——灰底永远不消失
   const lastMouseAt = useRef(0);
+  const insideRef = useRef(false);
   useEffect(() => {
     const mark = () => {
       lastMouseAt.current = Date.now();
     };
-    // 光标在窗口内停止移动时 X11 不再派发 mousemove，这里主动记一次
-    // "光标曾在窗口内"，之后的收起判定只依赖"多久没有新活动"
+    const onEnter = () => {
+      insideRef.current = true;
+      mark();
+    };
+    const onLeave = () => {
+      insideRef.current = false;
+      mark();
+    };
     mark();
     window.addEventListener("mousemove", mark);
-    window.addEventListener("mouseout", mark);
+    document.documentElement.addEventListener("mouseenter", onEnter);
+    document.documentElement.addEventListener("mouseleave", onLeave);
     const timer = setInterval(() => {
-      // 800ms 无活动即收起：离开窗口后灰底很快消失；光标静止在窗口内
-      // 会被 mouseout/Enter 交叉刷新，不会误收
-      if (Date.now() - lastMouseAt.current > 800) setHover(false);
+      // 光标明确在窗口内时给予 3s 空闲兜底（避免停在按钮上 0.8s 就闪消失）；
+      // 离开窗口后 800ms 快速收起
+      const timeout = insideRef.current ? 3000 : 800;
+      if (Date.now() - lastMouseAt.current > timeout) setHover(false);
     }, 300);
     return () => {
       window.removeEventListener("mousemove", mark);
-      window.removeEventListener("mouseout", mark);
+      document.documentElement.removeEventListener("mouseenter", onEnter);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
       clearInterval(timer);
     };
   }, []);

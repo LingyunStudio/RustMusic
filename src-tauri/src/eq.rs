@@ -28,9 +28,13 @@ impl EqShared {
     }
 
     pub fn set(&self, gains: [f32; 10], enabled: bool) {
-        *self.gains.write() = gains;
-        self.enabled.store(enabled, Ordering::Relaxed);
-        self.version.fetch_add(1, Ordering::Relaxed);
+        let mut clean = [0.0f32; 10];
+        for (dst, &g) in clean.iter_mut().zip(gains.iter()) {
+            *dst = if g.is_finite() { g.clamp(-15.0, 15.0) } else { 0.0 };
+        }
+        *self.gains.write() = clean;
+        self.enabled.store(enabled, Ordering::Release);
+        self.version.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -45,7 +49,15 @@ struct Biquad {
 impl Biquad {
     #[inline]
     fn process(&mut self, c: &[f64; 5], x: f64) -> f64 {
+        if !x.is_finite() {
+            self.reset();
+            return 0.0;
+        }
         let y = c[0] * x + c[1] * self.x1 + c[2] * self.x2 - c[3] * self.y1 - c[4] * self.y2;
+        if !y.is_finite() {
+            self.reset();
+            return 0.0;
+        }
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -239,7 +251,7 @@ impl<S: Source> Iterator for EqSource<S> {
             self.pending_r = Some(r);
             l
         };
-        let out = if self.shared.enabled.load(Ordering::Relaxed) {
+        let out = if self.shared.enabled.load(Ordering::Acquire) {
             self.refresh();
             let mut s = x as f64;
             let ch = self.cur;
@@ -261,8 +273,11 @@ impl<S: Source> Iterator for EqSource<S> {
             }
             self.frame_sum = 0.0;
             self.frames += 1;
-            let pos = self.base_ms + self.frames as f64 * 1000.0 / self.sr;
-            self.pos_ms.store(pos.max(0.0) as u64, Ordering::Relaxed);
+            // 每 256 帧更新一次 pos_ms（约 5ms 粒度），避免音频线程每秒 44k~192k 次原子写
+            if (self.frames & 255) == 0 || self.frames == 1 {
+                let pos = self.base_ms + self.frames as f64 * 1000.0 / self.sr;
+                self.pos_ms.store(pos.max(0.0) as u64, Ordering::Relaxed);
+            }
         }
         Some(out)
     }

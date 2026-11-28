@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Music2 } from "lucide-react";
 import { api, coverSrc } from "../api";
-import { remoteCoverCache } from "../utils";
-import { gradientFor } from "../utils";
+import { fetchRemoteCover, gradientFor } from "../utils";
 
 interface CoverImgProps {
   src?: string;
@@ -31,18 +30,10 @@ export default function CoverImg({ src, seed, className = "", iconSize = 18, sma
     setRemoteLocal(null);
     if (!isRemote || !src) return;
     let alive = true;
-    // 在线缓存的封面 URL 频繁重复：模块级 Map 进程内去重 + 后端磁盘缓存兜底
-    remoteCoverCache.get(src)?.then((p) => {
-      if (alive) setRemoteLocal(p);
-      return;
+    // 在线缓存的封面 URL 频繁重复：模块级 LRU Map 进程内去重，失败自动驱逐
+    fetchRemoteCover(src, api.fetchCover).then((path) => {
+      if (alive && path) setRemoteLocal(path);
     });
-    if (!remoteCoverCache.has(src)) {
-      const p = api.fetchCover(src).catch(() => null);
-      remoteCoverCache.set(src, p as Promise<string>);
-      p.then((path) => {
-        if (alive && path) setRemoteLocal(path);
-      });
-    }
     return () => {
       alive = false;
     };

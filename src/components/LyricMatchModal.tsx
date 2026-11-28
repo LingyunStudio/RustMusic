@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Download, FileAudio, Loader2, RotateCcw, Search } from "lucide-react";
 import Modal from "./Modal";
 import { api } from "../api";
@@ -48,24 +48,30 @@ export default function LyricMatchModal({
   const [exporting, setExporting] = useState<"sidecar" | "embed" | null>(null);
   const [cands, setCands] = useState<LyricCandidate[]>([]);
   const [searched, setSearched] = useState(false);
+  const searchGenRef = useRef(0);
 
   const runSearch = async (query: string) => {
     const q = query.trim();
     if (!q) return;
+    const gen = ++searchGenRef.current;
     setSearching(true);
     setSearched(true);
     try {
       const list = await api.searchLocalLyricCandidates(q, title, cleanArtist, durationMs);
+      if (searchGenRef.current !== gen) return;
       setCands(list);
     } catch (e) {
-      toast(String(e), "error");
+      if (searchGenRef.current === gen) toast(String(e), "error");
     } finally {
-      setSearching(false);
+      if (searchGenRef.current === gen) setSearching(false);
     }
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      searchGenRef.current += 1;
+      return;
+    }
     setKw(defaultKw);
     setCands([]);
     setSearched(false);
@@ -74,8 +80,11 @@ export default function LyricMatchModal({
   }, [open, trackId]);
 
   const reloadCurrentLyrics = async () => {
-    useStore.setState({ lyricsFor: null });
-    await loadLyricsByKey(`track-${trackId}`);
+    const cur = useStore.getState().current;
+    if (cur?.kind === "track" && cur.id === trackId) {
+      useStore.setState({ lyricsFor: null });
+      await loadLyricsByKey(`track-${trackId}`);
+    }
   };
 
   const handleApply = async (c: LyricCandidate) => {

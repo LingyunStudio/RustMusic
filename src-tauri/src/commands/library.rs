@@ -249,7 +249,8 @@ fn delete_tracks_task(app: &AppHandle, ids: Vec<i64>) -> Result<u32, String> {
 
         let pb = std::path::PathBuf::from(&t.path);
         if pb.exists() {
-            // 清理只读属性
+            // Windows 清理只读属性（Unix 下删除仅看父目录权限，set_readonly(false) 会把文件改成 0o666）
+            #[cfg(windows)]
             if let Ok(m) = std::fs::metadata(&pb) {
                 let mut perms = m.permissions();
                 if perms.readonly() {

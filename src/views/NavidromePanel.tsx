@@ -542,16 +542,16 @@ export default function NavidromePanel() {
               songsWin.containerRef.current = el;
             }}
             onScroll={songsWin.onScroll}
-            className="flex-1 min-h-0 overflow-y-auto"
+            className={`flex-1 min-h-0 overflow-y-auto ${isLiquid ? "pb-[96px]" : ""}`}
             style={isSkeuo ? undefined : { scrollbarWidth: "thin" }}
           >
-            {loading && (
+            {loading && !(view.page === "songs" && allSongs.length > 0) && (
               <div className="flex items-center justify-center gap-2.5 text-[var(--ink-3)] text-[13px] pt-16">
                 <Loader2 size={15} className="animate-spin" />
                 {tr("加载中…", "Loading…")}
               </div>
             )}
-            {!loading && view.page === "songs" && (
+            {view.page === "songs" && (!loading || allSongs.length > 0) && (
               <>
                 <div className="pb-4">
                   <div style={{ height: songsWin.start * ND_ROW_H }} aria-hidden />

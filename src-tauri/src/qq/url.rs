@@ -314,7 +314,8 @@ pub fn song_url(
             };
             // 若 CgiGetTrackInfo 未返回文件大小元数据，对高阶档位做一次轻量 Range 探活防 404
             if !has_file_meta && *ext == "flac" {
-                if let Err(ureq::Error::Status(status, _)) = ureq::get(&url)
+                if let Err(ureq::Error::Status(status, _)) = http_agent()
+                    .get(&url)
                     .set("Range", "bytes=0-15")
                     .timeout(std::time::Duration::from_secs(5))
                     .call()

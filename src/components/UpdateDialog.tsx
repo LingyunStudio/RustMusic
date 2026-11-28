@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -108,6 +108,8 @@ function fmtMB(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+let autoCheckTriggered = false;
+
 export default function UpdateDialog() {
   const { tr } = useI18n();
   const open = useUpdateStore((s) => s.open);
@@ -119,8 +121,11 @@ export default function UpdateDialog() {
   const error = useUpdateStore((s) => s.error);
 
   useEffect(() => {
-    // 启动自动检查：后端延 2 秒执行，避免抢占启动网络；调试构建后端会跳过
-    api.autoCheckUpdate().catch(() => {});
+    if (!autoCheckTriggered) {
+      autoCheckTriggered = true;
+      // 启动自动检查仅触发一次（退出迷你模式重新挂载时不重复检查）
+      api.autoCheckUpdate().catch(() => {});
+    }
     api
       .getAppInfo()
       .then((i) => useUpdateStore.setState({ currentVersion: i.version }))
@@ -154,13 +159,22 @@ export default function UpdateDialog() {
     };
   }, []);
 
+  const notesHtml = useMemo(() => {
+    if (!info?.notes) return "";
+    const raw = marked.parse(info.notes, { async: false, gfm: true, breaks: true }) as string;
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: [
+        "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
+        "ul", "ol", "li", "blockquote", "pre", "code",
+        "strong", "em", "del", "s", "a", "table", "thead", "tbody", "tr", "th", "td",
+      ],
+      ALLOWED_ATTR: ["href", "title"],
+      ALLOWED_URI_REGEXP: /^https?:\/\//i,
+    });
+  }, [info?.notes]);
+
   if (!open || !info) return null;
 
-  const notesHtml = info.notes
-    ? DOMPurify.sanitize(
-        marked.parse(info.notes, { async: false, gfm: true, breaks: true }) as string
-      )
-    : "";
   const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
 
   const onNotesClick = (e: React.MouseEvent) => {
@@ -205,6 +219,7 @@ export default function UpdateDialog() {
           <div
             className="release-notes max-h-[46vh] min-h-[72px] overflow-y-auto rounded-xl bg-[var(--shade)] border border-[var(--line)] px-4 py-3"
             onClick={onNotesClick}
+            onAuxClick={onNotesClick}
             dangerouslySetInnerHTML={{
               __html:
                 notesHtml ||

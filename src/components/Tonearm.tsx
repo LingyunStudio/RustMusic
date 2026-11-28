@@ -81,23 +81,28 @@ export default function Tonearm({ playing, className = "" }: TonearmProps) {
           />
           <line x1="91" y1="60.5" x2="91" y2="64" stroke="#111" strokeWidth="1" />
 
-          {/* 唱臂停靠卡扣架 */}
-          <rect
-            x="67.5"
-            y="84"
-            width="4.5"
-            height="26"
-            rx="2"
-            fill="url(#counterWeight)"
-            stroke="#0e1014"
-            strokeWidth="0.8"
-          />
-          <path
-            d="M 63.5 109 L 75.5 109"
-            stroke="#b5bcc7"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
+          {/* 唱臂立体停靠锁扣支座 */}
+          <g filter="drop-shadow(0 2px 3px rgba(0,0,0,0.45))">
+            <circle cx="69.5" cy="109" r="5.5" fill="url(#gimbalOuter)" stroke="#0e1014" strokeWidth="0.9" />
+            <circle cx="69.5" cy="109" r="2.2" fill="#181b21" />
+            <rect
+              x="67.5"
+              y="88"
+              width="4"
+              height="21"
+              rx="2"
+              fill="url(#counterWeight)"
+              stroke="#0e1014"
+              strokeWidth="0.7"
+            />
+            <path
+              d="M 64.5 103 C 64.5 107.5, 74.5 107.5, 74.5 103"
+              fill="none"
+              stroke="url(#armChrome)"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+            />
+          </g>
         </g>
 
         {/* 旋转唱臂总成（以枢轴 (66, 48) 为圆心） */}

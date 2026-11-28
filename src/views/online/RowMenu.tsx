@@ -1,4 +1,5 @@
 //! 在线曲目右键菜单（Portal 到 body）。
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Heart, Play } from "lucide-react";
 import { useStore } from "../../store";
@@ -22,6 +23,16 @@ export function RowMenu({
   const downloadOnline = useStore((s) => s.downloadOnline);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
+
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener("mousedown", close);
+    window.addEventListener("wheel", close, { passive: true });
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("wheel", close);
+    };
+  }, [onClose]);
 
   return createPortal(
     <div

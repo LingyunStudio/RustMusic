@@ -4,6 +4,33 @@
 //! ureq 的传输级错误（DNS / 连接 / TLS 失败）多为瞬态——等待片刻重试一次
 //! 即可自愈；连接池类 agent（QQ）在传输错误时由调用方重建后重试。
 
+use std::time::Duration;
+
+use parking_lot::RwLock;
+
+static SHARED_AGENT: RwLock<Option<ureq::Agent>> = RwLock::new(None);
+
+fn build_shared_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(20))
+        .build()
+}
+
+/// 进程级共享 HTTP 连接池（复用 TCP/TLS Keep-Alive，传输异常时自动重建）
+pub fn shared_agent() -> ureq::Agent {
+    if let Some(a) = SHARED_AGENT.read().as_ref() {
+        return a.clone();
+    }
+    let mut w = SHARED_AGENT.write();
+    w.get_or_insert_with(build_shared_agent).clone()
+}
+
+/// 丢弃旧连接池（网络/代理切换后下次请求重建）
+pub fn rebuild_shared_agent() {
+    *SHARED_AGENT.write() = None;
+}
+
 /// 是否传输级（网络层）错误——非 HTTP 状态码错误，重试有意义
 pub fn is_transport_err(e: &ureq::Error) -> bool {
     matches!(e, ureq::Error::Transport(_))
@@ -17,22 +44,36 @@ pub fn transport_text() -> &'static str {
     )
 }
 
+/// 剥离错误信息里的 URL query 敏感参数（防止 Subsonic t/s/u、酷狗 token 泄露到日志/界面）
+pub fn sanitize_err(e: &ureq::Error) -> String {
+    let raw = e.to_string();
+    if let Some(q) = raw.find('?') {
+        let rest = &raw[q + 1..];
+        if let Some(end) = rest.find(|c: char| c.is_whitespace() || c == ':' || c == ')' || c == '"') {
+            return format!("{}?<redacted>{}", &raw[..q], &rest[end..]);
+        }
+        return format!("{}?<redacted>", &raw[..q]);
+    }
+    raw
+}
+
 /// 带一次传输级重试：`f` 每次调用须新建请求（不复用可疑连接）。
-/// 首次传输错误 → 等 600ms 重试一次；仍失败返回友好文案。
+/// 首次传输错误 → 重建连接池并等 600ms 重试一次；仍失败返回友好文案。
 pub fn with_retry<T>(mut f: impl FnMut() -> Result<T, ureq::Error>) -> Result<T, String> {
     match f() {
         Ok(v) => Ok(v),
         Err(e) if is_transport_err(&e) => {
-            std::thread::sleep(std::time::Duration::from_millis(600));
+            rebuild_shared_agent();
+            std::thread::sleep(Duration::from_millis(600));
             f().map_err(|e2| {
                 if is_transport_err(&e2) {
                     transport_text().to_string()
                 } else {
-                    e2.to_string()
+                    sanitize_err(&e2)
                 }
             })
         }
-        Err(e) => Err(e.to_string()),
+        Err(e) => Err(sanitize_err(&e)),
     }
 }
 
@@ -42,7 +83,8 @@ pub fn with_retry_raw<T>(mut f: impl FnMut() -> Result<T, ureq::Error>) -> Resul
     match f() {
         Ok(v) => Ok(v),
         Err(e) if is_transport_err(&e) => {
-            std::thread::sleep(std::time::Duration::from_millis(600));
+            rebuild_shared_agent();
+            std::thread::sleep(Duration::from_millis(600));
             f()
         }
         Err(e) => Err(e),

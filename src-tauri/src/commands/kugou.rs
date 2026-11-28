@@ -302,12 +302,18 @@ pub async fn kugou_status(state: State<'_, AppState>) -> Result<serde_json::Valu
 
 #[tauri::command]
 pub async fn kugou_logout(state: State<'_, AppState>) -> Result<(), String> {
-    let conn = state.db.lock();
-    crate::credentials::clear("kg_token");
-    db::set_setting(&conn, "kg_userid", "");
-    db::set_setting(&conn, "kg_nickname", "");
-    db::set_setting(&conn, "kg_vip_type", "");
-    Ok(())
+    {
+        let conn = state.db.lock();
+        db::set_setting(&conn, "kg_userid", "");
+        db::set_setting(&conn, "kg_nickname", "");
+        db::set_setting(&conn, "kg_vip_type", "");
+    }
+    crate::kugou::set_account("", "");
+    super::blocking(|| {
+        crate::credentials::clear("kg_token");
+        Ok(())
+    })
+    .await
 }
 
 // ---------- 酷狗榜单 / 歌单广场（匿名） ----------

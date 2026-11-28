@@ -3,18 +3,20 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, TreeScope_Descendants};
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, FindWindowW, IsWindow};
 use windows::core::w;
 use super::render::scale;
 use super::*;
 
-/// 副屏时钟区测量缓存：按副屏任务栏 HWND 分别存储，避免 3 屏及以上场景互相覆盖反复触发 UIA
-static ZONE_CACHE: std::sync::OnceLock<Mutex<HashMap<isize, (Instant, i32)>>> =
+/// 副屏时钟区测量缓存：按副屏任务栏 HWND 分别存储（含 None 负缓存，避免 UIA 失败时 200ms 死循环刷线程）
+static ZONE_CACHE: std::sync::OnceLock<Mutex<HashMap<isize, (Instant, Option<i32>)>>> =
     std::sync::OnceLock::new();
 
-fn zone_cache() -> &'static Mutex<HashMap<isize, (Instant, i32)>> {
+fn zone_cache() -> &'static Mutex<HashMap<isize, (Instant, Option<i32>)>> {
     ZONE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -39,8 +41,8 @@ pub(super) unsafe fn secondary_zone_left(tray: HWND, tray_r: &RECT) -> Option<i3
             if !fresh {
                 request_zone_measure(tray, tray_r);
             }
-            // 过期值仍继续使用（SWR）：位置保持连续，后台刷新后就位
-            Some(zone)
+            // 过期值仍继续使用（SWR）；None 负缓存直接回落估算，TTL 内不再狂刷线程
+            zone
         }
         None => {
             // 从未测过：先走回落估算，测量落地后 200ms 定时器重锚定
@@ -75,11 +77,9 @@ unsafe fn measure_zone_worker(tray: HWND, tray_r: RECT) {
     let t0 = Instant::now();
     let zone = measure_zone_uia(tray, &tray_r);
     let elapsed = t0.elapsed();
-    if let Some(zone) = zone {
-        zone_cache()
-            .lock()
-            .insert(tray.0 as isize, (Instant::now(), zone));
-    }
+    zone_cache()
+        .lock()
+        .insert(tray.0 as isize, (Instant::now(), zone));
     ZONE_WORKER_BUSY.store(false, Ordering::SeqCst);
     eprintln!(
         "[taskbar-lyric] 副屏时钟区测量 {:?} → {:?}",
@@ -92,47 +92,53 @@ unsafe fn measure_zone_worker(tray: HWND, tray_r: RECT) {
 /// UIA 遍历任务栏元素树，取位于右侧 420px（按任务栏高度缩放）带内、
 /// 非通栏（宽 < 40% 任务栏）、非自身歌词窗口的元素中最靠左者
 unsafe fn measure_zone_uia(tray: HWND, tray_r: &RECT) -> Option<i32> {
-    let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-    let automation: IUIAutomation =
-        CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
-    let root = automation.ElementFromHandle(tray).ok()?;
-    let cond = automation.CreateTrueCondition().ok()?;
-    let all = root.FindAll(TreeScope_Descendants, &cond).ok()?;
+    let com_inited = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
+    let res = (|| -> Option<i32> {
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let root = automation.ElementFromHandle(tray).ok()?;
+        let cond = automation.CreateTrueCondition().ok()?;
+        let all = root.FindAll(TreeScope_Descendants, &cond).ok()?;
 
-    let taskbar_w = tray_r.right - tray_r.left;
-    let band = scale(tray_r.bottom - tray_r.top, 420);
-    let ours: Vec<isize> = LYRIC_WINDOWS.lock().iter().map(|(_, l)| *l).collect();
-    let mut zone_left: Option<i32> = None;
-    let n = all.Length().ok()?;
-    for i in 0..n {
-        let Ok(e) = all.GetElement(i) else { continue };
-        let Ok(r) = e.CurrentBoundingRectangle() else { continue };
-        let (l, t, rgt, b) = (r.left, r.top, r.right, r.bottom);
-        if rgt <= l || b <= t {
-            continue;
+        let taskbar_w = tray_r.right - tray_r.left;
+        let band = scale(tray_r.bottom - tray_r.top, 420);
+        let ours: Vec<isize> = LYRIC_WINDOWS.lock().iter().map(|(_, l)| *l).collect();
+        let mut zone_left: Option<i32> = None;
+        let n = all.Length().ok()?;
+        for i in 0..n {
+            let Ok(e) = all.GetElement(i) else { continue };
+            let Ok(r) = e.CurrentBoundingRectangle() else { continue };
+            let (l, t, rgt, b) = (r.left, r.top, r.right, r.bottom);
+            if rgt <= l || b <= t {
+                continue;
+            }
+            // 跳过自身歌词窗口（避免测量到自己的位置形成反馈回路）
+            if e.CurrentNativeWindowHandle()
+                .map(|h| ours.contains(&(h.0 as isize)))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            // 完全位于任务栏条带内
+            if l < tray_r.left || rgt > tray_r.right || t < tray_r.top || b > tray_r.bottom {
+                continue;
+            }
+            // 排除通栏容器（任务栏框架/XAML 岛横跨整条）
+            if rgt - l >= taskbar_w * 2 / 5 {
+                continue;
+            }
+            // 仅取右侧带内的元素
+            if l < tray_r.right - band {
+                continue;
+            }
+            zone_left = Some(zone_left.map_or(l, |z| z.min(l)));
         }
-        // 跳过自身歌词窗口（避免测量到自己的位置形成反馈回路）
-        if e.CurrentNativeWindowHandle()
-            .map(|h| ours.contains(&(h.0 as isize)))
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        // 完全位于任务栏条带内
-        if l < tray_r.left || rgt > tray_r.right || t < tray_r.top || b > tray_r.bottom {
-            continue;
-        }
-        // 排除通栏容器（任务栏框架/XAML 岛横跨整条）
-        if rgt - l >= taskbar_w * 2 / 5 {
-            continue;
-        }
-        // 仅取右侧带内的元素
-        if l < tray_r.right - band {
-            continue;
-        }
-        zone_left = Some(zone_left.map_or(l, |z| z.min(l)));
+        zone_left
+    })();
+    if com_inited {
+        CoUninitialize();
     }
-    zone_left
+    res
 }
 
 /// 主屏托盘区（TrayNotifyWnd）宽度：副屏时钟预留区的参考值

@@ -169,8 +169,9 @@ impl SymphoniaSource {
                 // 直接 ts × numer × 1000 / denom，u128 防溢出
                 let ms = src
                     .time_base
+                    .filter(|tb| tb.denom > 0)
                     .map(|tb| ((ts as u128 * tb.numer as u128 * 1000) / tb.denom as u128) as u64)
-                    .unwrap_or(u64::MAX);
+                    .unwrap_or(skip_ms);
                 last_ms = Some(ms);
                 if ms >= skip_ms {
                     landed_ms = Some(ms);
@@ -180,8 +181,8 @@ impl SymphoniaSource {
             // frames_out 按实际落点（首个保留包的时间戳）起算：
             // 引擎报告的播放位置才与真实音频位置对齐（理想 skip_ms 有偏差）
             src.frames_out = match landed_ms.or(last_ms) {
-                Some(ms) => ms * src.sample_rate as u64 / 1000,
-                None => skip_ms * src.sample_rate as u64 / 1000,
+                Some(ms) => ms.saturating_mul(src.sample_rate as u64) / 1000,
+                None => skip_ms.saturating_mul(src.sample_rate as u64) / 1000,
             };
         }
         Ok(src)
@@ -296,10 +297,13 @@ impl Iterator for SymphoniaSource {
 
 impl rodio::Source for SymphoniaSource {
     fn current_span_len(&self) -> Option<usize> {
-        let remaining =
-            (self.buf.len() - self.idx.min(self.buf.len())) / self.channels.max(1) as usize;
+        // rodio::Source 约定返回当前 span 的剩余采样数（而非帧数），
+        // 尚无已解码缓冲且未到 EOF 时返回 None 表示流继续
+        let remaining = self.buf.len().saturating_sub(self.idx);
         if self.eos && remaining == 0 {
             Some(0)
+        } else if remaining == 0 {
+            None
         } else {
             Some(remaining)
         }
@@ -314,6 +318,9 @@ impl rodio::Source for SymphoniaSource {
     }
 
     fn total_duration(&self) -> Option<Duration> {
+        if self.sample_rate == 0 {
+            return None;
+        }
         self.total_frames
             .map(|f| Duration::from_secs_f64(f as f64 / self.sample_rate as f64))
     }

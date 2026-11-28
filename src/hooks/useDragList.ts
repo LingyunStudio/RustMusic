@@ -189,7 +189,7 @@ export function useDragList(onSubmit: (from: number, to: number) => void) {
       st.pointerY = e.clientY;
       if (st.dragging) {
         e.preventDefault();
-        const c = st.container;
+        const c = st.scrollEl ?? st.container;
         if (c) {
           const r = c.getBoundingClientRect();
           const overTop = e.clientY - r.top;

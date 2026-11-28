@@ -36,7 +36,7 @@ export default function ViewShell({
     return (
       <div className="flex-1 min-h-0 flex flex-col">
         {extra}
-        <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
+        <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-2">
           {cardHeader}
           <div className="relative liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
             <header className={liquidHeaderClass}>{header}</header>
