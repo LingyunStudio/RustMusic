@@ -577,15 +577,15 @@ export default function SettingsView() {
             <span className="text-[12.5px] text-[var(--ink-2)] min-w-[116px] shrink-0">
               {tr("歌词偏移", "Lyrics Offset")}
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
-                className="btn-secondary !py-1 !px-2.5 !text-[11.5px]"
+                className="btn-secondary !py-1 !px-2.5 !text-[11.5px] whitespace-nowrap shrink-0"
                 onClick={() => setLyricOffsetMs(lyricOffsetMs - 50)}
                 title={tr("延后 50ms（歌词偏快时点此）", "Delay 50ms (if lyrics are early)")}
               >
                 -50ms
               </button>
-              <span className="text-[12px] text-[var(--ink)] tabular-nums min-w-[84px] text-center">
+              <span className="text-[12px] text-[var(--ink)] tabular-nums min-w-[84px] text-center whitespace-nowrap shrink-0">
                 {lyricOffsetMs === 0
                   ? "0 ms"
                   : lyricOffsetMs < 0
@@ -593,7 +593,7 @@ export default function SettingsView() {
                     : tr(`提前 ${lyricOffsetMs}ms`, `Ahead ${lyricOffsetMs}ms`)}
               </span>
               <button
-                className="btn-secondary !py-1 !px-2.5 !text-[11.5px]"
+                className="btn-secondary !py-1 !px-2.5 !text-[11.5px] whitespace-nowrap shrink-0"
                 onClick={() => setLyricOffsetMs(lyricOffsetMs + 50)}
                 title={tr("提前 50ms（歌词偏慢时点此）", "Advance 50ms (if lyrics are late)")}
               >
@@ -601,14 +601,14 @@ export default function SettingsView() {
               </button>
               {lyricOffsetMs !== 0 && (
                 <button
-                  className="btn-secondary !py-1 !px-2.5 !text-[11px] ml-1"
+                  className="btn-secondary !py-1 !px-2.5 !text-[11px] ml-1 whitespace-nowrap shrink-0"
                   onClick={() => setLyricOffsetMs(0)}
                 >
                   {tr("归零", "Reset")}
                 </button>
               )}
             </div>
-            <span className="text-[11.5px] text-[var(--ink-3)]">
+            <span className="text-[11.5px] text-[var(--ink-3)] min-w-0 leading-snug">
               {tr(
                 "已自动补偿声卡缓冲；使用蓝牙耳机等高延迟设备时可继续调负延后",
                 "Audio buffer delay is auto-compensated; lower further for high-latency Bluetooth headphones"
