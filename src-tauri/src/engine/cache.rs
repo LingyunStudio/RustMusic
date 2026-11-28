@@ -160,10 +160,13 @@ impl Engine {
                 let armed = engine.want_url.read().as_deref() == Some(want_key.as_str());
                 if !armed {
                     // 用户暂已切走：继续等下载完成（重新点播可在完成前再入本分支）。
-                    // 预缓冲已达标时 wait_prebuffer 会立即返回，直接 continue 会
-                    // 变成无 sleep 的忙等烧满一个核心——改等下载前沿推进（或终态）
-                    let next = shared.snapshot().0 + 1;
-                    shared.wait_prebuffer(next);
+                    // ready >= total 时不再调用 wait_prebuffer(ready+1) 避免立即返回空转
+                    let (cur_ready, cur_total, _, _) = shared.snapshot();
+                    if cur_total > 0 && cur_ready >= cur_total {
+                        std::thread::sleep(Duration::from_millis(50));
+                    } else {
+                        shared.wait_prebuffer(cur_ready + 1);
+                    }
                     continue;
                 }
                 // 预缓冲达标：嗅探容器（此时文件头必然已落盘）
@@ -176,15 +179,29 @@ impl Engine {
                 } else {
                     break;
                 }
-                // 先登记流式关联再置 started：open_current_source 与下载线程的
-                // 兜底播放判断都依赖它。起播走 play_file 完整流程——
-                // 独占模式开启时同样能协商独占会话（读取越界阻塞由流读取器承担）
+                // 文件嗅探后再次在写锁下原子核对 want_url，防止用户中途切歌被旧下载劫持
+                {
+                    let mut want = engine.want_url.write();
+                    if want.as_deref() != Some(want_key.as_str()) {
+                        continue;
+                    }
+                    *want = None;
+                }
                 let mut i = info.clone();
                 i.path = cache.to_string_lossy().into_owned();
                 *engine.active_streaming.write() = Some((i.path.clone(), Arc::clone(&shared)));
                 started.store(true, Ordering::SeqCst);
-                *engine.want_url.write() = None;
                 if let Err(e) = engine.play_file(i) {
+                    // 流式起播失败：回滚标记并恢复等待意图（若用户未切走），
+                    // 允许下载完成后的兜底分支按完整缓存接管播放
+                    *engine.active_streaming.write() = None;
+                    started.store(false, Ordering::SeqCst);
+                    {
+                        let mut want = engine.want_url.write();
+                        if want.is_none() {
+                            *want = Some(want_key.clone());
+                        }
+                    }
                     let _ = engine.app.emit(
                         "download://progress",
                         serde_json::json!({
@@ -209,13 +226,21 @@ impl Engine {
                         "download://progress",
                         serde_json::json!({ "url": url, "done": true, "error": e }),
                     );
-                    // 播放中的音频下载失败（读取端将按 EOF 自然结束并触发
-                    // player://ended）：单独通知前端计入"连跳熔断"统计，
-                    // 否则网络断开时会无限"取链→下载失败→跳下一首"（issue#8-3）
-                    let _ = app.emit(
-                        "player://download-failed",
-                        serde_json::json!({ "error": e }),
-                    );
+                    // 仅当用户仍在等待或正在流式播放这首时才上报 download-failed，
+                    // 避免已切到其他曲目后旧下载失败误触发连跳熔断
+                    let part_str = cache.to_string_lossy().into_owned();
+                    let still_relevant = engine.want_url.read().as_deref() == Some(key.as_str())
+                        || engine
+                            .active_streaming
+                            .read()
+                            .as_ref()
+                            .is_some_and(|(p, _)| *p == part_str);
+                    if still_relevant {
+                        let _ = app.emit(
+                            "player://download-failed",
+                            serde_json::json!({ "error": e }),
+                        );
+                    }
                     // 用户仍在等这首时清除意图，便于下次点击重新发起下载
                     if engine.want_url.read().as_deref() == Some(key.as_str()) {
                         *engine.want_url.write() = None;
@@ -413,22 +438,19 @@ fn download_inner(
     stream: Option<&Arc<crate::streaming::StreamingDownload>>,
 ) -> Result<(), String> {
     let part = dest.with_extension("part");
-    // 连接与读取分段超时：整体超时会在大文件（FLAC 等几十 MB）下载中途掐断连接
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(30))
-        .build();
-    let mut req = agent.get(url);
-    // B 站 CDN 直链必须带 Referer 与浏览器 UA，否则部分边缘节点裸请求 403
-    if with_bili_headers {
-        req = req
-            .set("Referer", "https://www.bilibili.com/")
-            .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
-    }
-    // 连接建立传输级重试（issue#8-2：网络/代理切换后死连接自愈）。
-    // 仅重试"拿到响应头之前"的失败——此刻尚未向流式读取端发布过字节，
-    // 重开连接从零下载是安全的；已经开始读取后的中断仍走原有 EOF 语义。
-    let resp = crate::net::with_retry(|| req.clone().call()).map_err(|e| {
+    // 复用共享连接池并支持传输错误时自动重建连接池重连
+    let resp = crate::net::with_retry(|| {
+        let mut req = crate::net::shared_agent()
+            .get(url)
+            .timeout(Duration::from_secs(600));
+        if with_bili_headers {
+            req = req
+                .set("Referer", "https://www.bilibili.com/")
+                .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
+        }
+        req.call()
+    })
+    .map_err(|e| {
         crate::i18n::pick(
             format!("下载音源失败: {e}"),
             format!("Failed to download audio source: {e}"),
@@ -505,6 +527,13 @@ fn download_inner(
                 }
             }
         }
+        // 校验完整性：服务端提前关闭连接（received < Content-Length）不能当成完整缓存落盘
+        if total > 0 && received < total {
+            return Err(crate::i18n::pick(
+                format!("下载数据流不完整（{received}/{total} 字节）"),
+                format!("Incomplete audio stream ({received}/{total} bytes)"),
+            ));
+        }
         Ok(())
     })();
     if let Some(s) = stream {
@@ -516,16 +545,19 @@ fn download_inner(
         let _ = std::fs::remove_file(&part);
         return Err(e);
     }
-    // 播放端可能仍持有 .part 句柄（流式播放中）：Windows 上重命名会失败，
-    // 短暂重试，仍失败则留给读取器 Drop 时收尾
+    // 播放端可能仍持有 .part 句柄（流式播放中）：Windows 上重命名会失败。
+    // 流式模式仅尝试一次，失败直接交由读取器 Drop 收尾（避免白等 3 秒）；
+    // 非流式模式短暂重试以应对杀软短暂占用。
     let mut renamed = false;
-    for _ in 0..30 {
+    let retries = if stream.is_some() { 1 } else { 30 };
+    for attempt in 0..retries {
         match std::fs::rename(&part, dest) {
             Ok(()) => {
                 renamed = true;
                 break;
             }
-            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) if attempt + 1 < retries => std::thread::sleep(Duration::from_millis(100)),
+            Err(_) => break,
         }
     }
     if !renamed {

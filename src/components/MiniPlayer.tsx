@@ -142,6 +142,99 @@ function MiniLyricBar({ onRestore }: { onRestore: () => void }) {
   );
 }
 
+/** 独立底部进度条：隔离每 250ms 一次的 pos/dur 更新，避免 MiniPlayer 整树重渲染 */
+function MiniProgressBar() {
+  const { tr } = useI18n();
+  const current = useStore((s) => s.current);
+  const pos = useStore((s) => s.pos);
+  const dur = useStore((s) => s.dur);
+  const seek = useStore((s) => s.seek);
+  const setScrubbing = useStore((s) => s.setScrubbing);
+  const total = dur || current?.durationMs || 0;
+
+  const [scrubRatio, setScrubRatio] = useState<number | null>(null);
+  const scrubRef = useRef<number | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+
+  const getRatio = (clientX: number) => {
+    const el = barRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ratio = getRatio(e.clientX);
+    setScrubbing(true);
+    scrubRef.current = ratio;
+    setScrubRatio(ratio);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (scrubRef.current != null) {
+      const ratio = getRatio(e.clientX);
+      scrubRef.current = ratio;
+      setScrubRatio(ratio);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const ratio = scrubRef.current;
+    scrubRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (ratio != null) {
+      const targetPos = Math.round(ratio * total);
+      setScrubRatio(null);
+      // 由 playerSlice.seek 的 finally 在后端 seek 完成后统一解除 scrubbing 锁
+      seek(targetPos);
+    }
+  };
+
+  const handleScrubCancel = () => {
+    if (scrubRef.current != null) {
+      scrubRef.current = null;
+      setScrubRatio(null);
+      setScrubbing(false);
+    }
+  };
+
+  const displayPos = scrubRatio != null ? Math.round(scrubRatio * total) : pos;
+  const progressPercent = total > 0 ? Math.min(100, Math.max(0, (displayPos / total) * 100)) : 0;
+
+  return (
+    <div
+      ref={barRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handleScrubCancel}
+      onLostPointerCapture={handleScrubCancel}
+      className="group relative h-[3px] hover:h-[5px] w-full bg-[var(--line)] cursor-pointer transition-all shrink-0"
+      title={tr(
+        `进度：${fmtTime(displayPos)} / ${fmtTime(total)}`,
+        `Progress: ${fmtTime(displayPos)} / ${fmtTime(total)}`
+      )}
+    >
+      <div
+        className="h-full bg-[var(--accent)] transition-[width] duration-100 ease-linear pointer-events-none"
+        style={{ width: `${progressPercent}%` }}
+      />
+      {/* 滑动小白点 */}
+      <div
+        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+        style={{ left: `${progressPercent}%` }}
+      />
+    </div>
+  );
+}
+
 export default function MiniPlayer() {
   const { tr } = useI18n();
   const current = useStore((s) => s.current);
@@ -151,16 +244,6 @@ export default function MiniPlayer() {
   const prev = useStore((s) => s.prev);
   const setMiniPlayer = useStore((s) => s.setMiniPlayer);
   const uiTheme = useStore((s) => s.uiTheme);
-
-  // 进度条与寻道
-  const pos = useStore((s) => s.pos);
-  const dur = useStore((s) => s.dur);
-  const seek = useStore((s) => s.seek);
-  const setScrubbing = useStore((s) => s.setScrubbing);
-  const total = dur || current?.durationMs || 0;
-
-  const [scrubRatio, setScrubRatio] = useState<number | null>(null);
-  const barRef = useRef<HTMLDivElement>(null);
 
   // 置顶状态
   const [pinned, setPinned] = useState(true);
@@ -321,42 +404,6 @@ export default function MiniPlayer() {
       });
     }
   };
-
-  // 进度拖动
-  const getRatio = (clientX: number) => {
-    const el = barRef.current;
-    if (!el) return 0;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0) return 0;
-    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const ratio = getRatio(e.clientX);
-    setScrubbing(true);
-    setScrubRatio(ratio);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (scrubRatio != null) {
-      setScrubRatio(getRatio(e.clientX));
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (scrubRatio != null) {
-      const targetPos = Math.round(scrubRatio * total);
-      seek(targetPos);
-      setScrubRatio(null);
-      setScrubbing(false);
-    }
-  };
-
-  const displayPos = scrubRatio != null ? Math.round(scrubRatio * total) : pos;
-  const progressPercent = total > 0 ? Math.min(100, Math.max(0, (displayPos / total) * 100)) : 0;
 
   return (
     <div
@@ -520,31 +567,7 @@ export default function MiniPlayer() {
       <MiniLyricBar onRestore={handleRestore} />
 
       {/* 底部交互式进度条 */}
-      <div
-        ref={barRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={() => {
-          setScrubRatio(null);
-          setScrubbing(false);
-        }}
-        className="group relative h-[3px] hover:h-[5px] w-full bg-[var(--line)] cursor-pointer transition-all shrink-0"
-        title={tr(
-          `进度：${fmtTime(displayPos)} / ${fmtTime(total)}`,
-          `Progress: ${fmtTime(displayPos)} / ${fmtTime(total)}`
-        )}
-      >
-        <div
-          className="h-full bg-[var(--accent)] transition-[width] duration-100 ease-linear pointer-events-none"
-          style={{ width: `${progressPercent}%` }}
-        />
-        {/* 滑动小白点 */}
-        <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-          style={{ left: `${progressPercent}%` }}
-        />
-      </div>
+      <MiniProgressBar />
     </div>
   );
 }

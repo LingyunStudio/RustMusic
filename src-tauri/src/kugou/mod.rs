@@ -109,7 +109,8 @@ fn parse_json(text: &str, what: &str) -> Result<serde_json::Value, String> {
 fn get_text(url: &str, referer: &str, ua: &str) -> Result<String, String> {
     // 传输级错误自动重试一次（issue#8-2：网络/代理切换自愈）
     match crate::net::with_retry_raw(|| {
-        ureq::get(url)
+        crate::net::shared_agent()
+            .get(url)
             .set("User-Agent", ua)
             .set("Referer", referer)
             .timeout(TIMEOUT)
@@ -117,10 +118,13 @@ fn get_text(url: &str, referer: &str, ua: &str) -> Result<String, String> {
     }) {
         Ok(resp) => read_body(resp),
         Err(ureq::Error::Status(_, resp)) => read_body(resp),
-        Err(e) => Err(crate::i18n::pick(
-            format!("请求酷狗接口失败: {e}"),
-            format!("KuGou API request failed: {e}"),
-        )),
+        Err(e) => {
+            let msg = crate::net::sanitize_err(&e);
+            Err(crate::i18n::pick(
+                format!("请求酷狗接口失败: {msg}"),
+                format!("KuGou API request failed: {msg}"),
+            ))
+        }
     }
 }
 
@@ -201,39 +205,47 @@ fn gateway_ex(
         .join("&");
     let url = format!("https://gateway.kugou.com{path}?{query}");
 
-    let mut req = match body {
-        Some(_) => ureq::post(&url),
-        None => ureq::get(&url),
-    }
-    .set("User-Agent", ANDROID_UA)
-    .set("dfid", &dfid)
-    .set("clienttime", &clienttime)
-    .set("mid", &mid_of())
-    .set("kg-rc", "1")
-    .set("kg-thash", "5d816a0")
-    .set("kg-rec", "1")
-    .set("kg-rf", "B9EDA08A64250DEFFBCADDEE00F8F25F")
-    .timeout(TIMEOUT);
-    if !router.is_empty() {
-        req = req.set("x-router", router);
-    }
-    for (k, v) in extra_headers {
-        req = req.set(k, v);
-    }
-    // 传输级错误自动重试一次（issue#8-2）：req 每次克隆重建，不复用可疑连接
+    let mid = mid_of();
+    // 传输级错误自动重试一次（issue#8-2）：在闭包内取最新 shared_agent，
+    // 以便断网/切代理重建连接池后重试走新池
     let resp = crate::net::with_retry_raw(|| {
+        let agent = crate::net::shared_agent();
+        let mut req = match body {
+            Some(_) => agent.post(&url),
+            None => agent.get(&url),
+        }
+        .set("User-Agent", ANDROID_UA)
+        .set("dfid", &dfid)
+        .set("clienttime", &clienttime)
+        .set("mid", &mid)
+        .set("kg-rc", "1")
+        .set("kg-thash", "5d816a0")
+        .set("kg-rec", "1")
+        .set("kg-rf", "B9EDA08A64250DEFFBCADDEE00F8F25F")
+        .timeout(TIMEOUT);
+        if !router.is_empty() {
+            req = req.set("x-router", router);
+        }
+        for (k, v) in extra_headers {
+            req = req.set(k, v);
+        }
         if let Some(b) = body {
-            req.clone()
-                .set("Content-Type", "application/json")
+            req.set("Content-Type", "application/json")
                 .send_string(&serde_json::to_string(b).unwrap_or_default())
         } else {
-            req.clone().call()
+            req.call()
         }
     });
     let text = match resp {
         Ok(r) => read_body(r)?,
         Err(ureq::Error::Status(_, r)) => read_body(r)?,
-        Err(e) => return Err(format!("{}: {e}", crate::i18n::pick("酷狗网关请求失败", "Kugou gateway request failed"))),
+        Err(e) => {
+            let msg = crate::net::sanitize_err(&e);
+            return Err(format!(
+                "{}: {msg}",
+                crate::i18n::pick("酷狗网关请求失败", "Kugou gateway request failed")
+            ));
+        }
     };
     let v = parse_json(&text, crate::i18n::pick("酷狗网关响应", "Kugou gateway response"))?;
     if v.get("status").and_then(|s| s.as_i64()) == Some(0) {

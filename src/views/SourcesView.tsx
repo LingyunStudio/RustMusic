@@ -91,7 +91,7 @@ function DownloadsPanel() {
           {tr("刷新", "Refresh")}
         </button>
       </div>
-      <div className={`flex-1 min-h-0 overflow-y-auto ${isLiquid ? "px-5" : "px-3"} pb-4`}>
+      <div className={`flex-1 min-h-0 overflow-y-auto ${isLiquid ? "px-5 pb-[96px]" : "px-3 pb-4"}`}>
         {loading && (
           <div className="text-[12.5px] text-[var(--ink-3)] text-center pt-10">
             {tr("加载中…", "Loading…")}
@@ -331,7 +331,9 @@ export default function SourcesView() {
       if (/space\.bilibili\.com\/\d+/.test(input) || /^\d+$/.test(input)) {
         await openSpace(input);
       } else {
+        const gen = ++spaceGenRef.current;
         const rows = await useStore.getState().biliVideoInfo(input);
+        if (gen !== spaceGenRef.current) return;
         if (!rows.length) throw new Error(tr("未解析到视频", "No video found"));
         replaceResult({ type: "video", rows });
       }
@@ -396,27 +398,25 @@ export default function SourcesView() {
           .getState()
           .biliSpaceCollectionMore(s.mid, c.id, c.kind, c.pn + 1);
         if (gen !== spaceGenRef.current) return null;
-        setResult((cur) =>
-          cur && cur.type === "space" && cur.activeCollection?.id === c.id
-            ? {
-                ...cur,
-                activeCollection: {
-                  ...c,
-                  // 追加按 rid 去重：分页接口数据变动会返回重叠条目
-                  rows: [
-                    ...c.rows,
-                    ...r.items.filter(
-                      (x) => !c.rows.some((y) => y.rid === x.rid),
-                    ),
-                  ],
-                  pn: c.pn + 1,
-                  hasMore: r.hasMore,
-                  loadingMore: false,
-                },
-              }
-            : cur
-        );
-        return r.items;
+        let added: BiliSpaceItem[] = [];
+        setResult((cur) => {
+          if (!cur || cur.type !== "space" || cur.activeCollection?.id !== c.id) return cur;
+          const ac = cur.activeCollection;
+          const seen = new Set(ac.rows.map((y) => y.rid));
+          added = r.items.filter((x) => !seen.has(x.rid));
+          return {
+            ...cur,
+            activeCollection: {
+              ...ac,
+              // 追加按 rid 去重：分页接口数据变动会返回重叠条目
+              rows: [...ac.rows, ...added],
+              pn: ac.pn + 1,
+              hasMore: r.hasMore,
+              loadingMore: false,
+            },
+          };
+        });
+        return added;
       } catch (e) {
         if (gen !== spaceGenRef.current) return null;
         setResult({ ...s, activeCollection: { ...c, loadingMore: false } });
@@ -428,23 +428,20 @@ export default function SourcesView() {
       try {
         const r = await useStore.getState().biliSpaceMore(s.mid, s.order, s.pn + 1);
         if (gen !== spaceGenRef.current) return null;
-        setResult((cur) =>
-          cur && cur.type === "space" && cur.mid === s.mid
-            ? {
-                ...cur,
-                rows: [
-                  ...cur.rows,
-                  ...r.items.filter(
-                    (x) => !cur.rows.some((y) => y.rid === x.rid),
-                  ),
-                ],
-                pn: s.pn + 1,
-                hasMore: r.hasMore,
-                loadingMore: false,
-              }
-            : cur
-        );
-        return r.items;
+        let added: BiliSpaceItem[] = [];
+        setResult((cur) => {
+          if (!cur || cur.type !== "space" || cur.mid !== s.mid) return cur;
+          const seen = new Set(cur.rows.map((y) => y.rid));
+          added = r.items.filter((x) => !seen.has(x.rid));
+          return {
+            ...cur,
+            rows: [...cur.rows, ...added],
+            pn: cur.pn + 1,
+            hasMore: r.hasMore,
+            loadingMore: false,
+          };
+        });
+        return added;
       } catch (e) {
         if (gen !== spaceGenRef.current) return null;
         setResult({ ...s, loadingMore: false });
@@ -946,7 +943,7 @@ export default function SourcesView() {
         </div>
       )}
 
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-5 pb-2">
+      <div ref={listRef} className={`flex-1 min-h-0 overflow-y-auto px-5 ${isLiquid ? "pb-[96px]" : "pb-2"}`}>
         {/* Navidrome 常驻挂载：切 Tab 用 display:none 隐藏而非卸载——
             保留连接状态、当前页面（导航栈）与滚动位置，
             切回来不再闪登录页重新自动连接 */}
@@ -1194,7 +1191,7 @@ export default function SourcesView() {
         className="fixed bottom-[92px] left-1/2 -translate-x-1/2"
       />
       {isLiquid ? (
-        <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-[90px]">
+        <div className="flex-1 min-h-0 flex flex-col pl-3 pr-2 pt-2 pb-2">
           <div className="liquid-panel flex-1 min-h-0 flex flex-col overflow-hidden">
             {pageContent}
           </div>
@@ -1210,7 +1207,10 @@ export default function SourcesView() {
         createPortal(
           <div
             className="fixed z-[75] w-[215px] glass-strong rounded-xl p-1.5 shadow-2xl anim-menu"
-            style={clampMenuPos(menu.x, menu.y, 215, 200)}
+            style={(() => {
+              const p = clampMenuPos(menu.x, menu.y, 215, 200);
+              return { left: p.x, top: p.y };
+            })()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseLeave={() => setMenu(null)}
           >

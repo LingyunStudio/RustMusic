@@ -26,6 +26,7 @@ export default function Slider({
   showThumb = "hover",
 }: SliderProps) {
   const [dragging, setDragging] = useState(false);
+  const draggingRef = useRef(false);
   const trackRef = useRef<HTMLDivElement>(null);
   const uiTheme = useStore((s) => s.uiTheme);
   const isLiquid = uiTheme === "liquid";
@@ -50,16 +51,18 @@ export default function Slider({
         // 只响应鼠标左键（button === 0），中键/右键点击不触发拖动
         if (e.button !== 0) return;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        draggingRef.current = true;
         setDragging(true);
         const v = calc(e);
         onChange?.(v);
       }}
       onPointerMove={(e) => {
-        if (!dragging) return;
+        if (!draggingRef.current) return;
         onChange?.(calc(e));
       }}
       onPointerUp={(e) => {
-        if (!dragging) return;
+        if (!draggingRef.current) return;
+        draggingRef.current = false;
         setDragging(false);
         try {
           (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -73,13 +76,15 @@ export default function Slider({
       // 也会持续 onChange，scrubbing 卡死导致进度条冻结。中断即放弃预览值，
       // 回落到受控 value（不 commit 中途的拖动）
       onPointerCancel={() => {
-        if (!dragging) return;
+        if (!draggingRef.current) return;
+        draggingRef.current = false;
         setDragging(false);
         onCancel?.();
       }}
       // 兜底：某些取消路径只发 lostpointercapture 不发 pointercancel
       onLostPointerCapture={() => {
-        if (!dragging) return;
+        if (!draggingRef.current) return;
+        draggingRef.current = false;
         setDragging(false);
         onCancel?.();
       }}

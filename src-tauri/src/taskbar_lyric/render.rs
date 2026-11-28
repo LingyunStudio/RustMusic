@@ -150,6 +150,9 @@ pub(super) unsafe fn render_line(hwnd: HWND, tray: HWND, text: &str, color: COLO
     let Some(brush) = ensure_brush(ctx, &rt, color) else {
         return;
     };
+    let Ok(brush_base) = brush.cast::<ID2D1Brush>() else {
+        return;
+    };
     rt.BeginDraw();
     // BeginDraw 后背景为透明黑（Clear 冗余但显式表达意图）
     let _ = rt.Clear(None);
@@ -157,12 +160,11 @@ pub(super) unsafe fn render_line(hwnd: HWND, tray: HWND, text: &str, color: COLO
         X: pad as f32,
         Y: (h as f32 - line_h) / 2.0,
     };
-    let Ok(brush_base) = brush.cast::<ID2D1Brush>() else {
-        return;
-    };
     rt.DrawTextLayout(origin, &layout, &brush_base, D2D1_DRAW_TEXT_OPTIONS_NONE);
     if let Err(e) = rt.EndDraw(None, None) {
-        eprintln!("[taskbar-lyric] D2D 绘制失败: {e}");
+        eprintln!("[taskbar-lyric] D2D 绘制失败，丢弃缓存以便下次重建: {e}");
+        ctx.rt = None;
+        ctx.brush = None;
         return;
     }
 
@@ -387,7 +389,7 @@ pub(super) fn resolve_color(color: Option<&str>) -> COLORREF {
         return default_color();
     };
     let hex = c.strip_prefix('#').unwrap_or(c);
-    let ok = !hex.is_empty() && hex.len() <= 8 && hex.chars().all(|ch| ch.is_ascii_hexdigit());
+    let ok = matches!(hex.len(), 3 | 6 | 8) && hex.chars().all(|ch| ch.is_ascii_hexdigit());
     if !ok {
         return default_color();
     }

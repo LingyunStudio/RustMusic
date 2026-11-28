@@ -52,6 +52,9 @@ impl FxShared {
     /// 音频线程调用：写入一帧单声道样本（无锁、无分配、无系统调用）
     #[inline]
     pub fn push(&self, x: f32) {
+        if !self.enabled.load(Ordering::Relaxed) {
+            return;
+        }
         let w = self.write.load(Ordering::Relaxed);
         self.buf[(w & RING_MASK) as usize].store(x.to_bits(), Ordering::Relaxed);
         self.write.store(w + 1, Ordering::Release);
@@ -72,14 +75,17 @@ impl FxShared {
         self.enabled.load(Ordering::Relaxed)
     }
 
-    /// 读取最近 out.len() 帧（不足时前面补零），返回实际拷贝数
+    /// 读取最近 out.len() 帧（不足时剩余位置补零），返回实际拷贝数
     fn latest(&self, out: &mut [f32]) -> usize {
         let w = self.write.load(Ordering::Acquire);
         let n = out.len().min(w as usize);
-        for i in 0..n {
+        for (i, slot) in out[..n].iter_mut().enumerate() {
             let bits =
-                self.buf[(w - n as u64 + i as u64 & RING_MASK) as usize].load(Ordering::Relaxed);
-            out[i] = f32::from_bits(bits);
+                self.buf[((w - n as u64 + i as u64) & RING_MASK) as usize].load(Ordering::Relaxed);
+            *slot = f32::from_bits(bits);
+        }
+        if n < out.len() {
+            out[n..].fill(0.0);
         }
         n
     }
@@ -285,16 +291,22 @@ fn spectrum_frame(
     re: &mut [f32],
     im: &mut [f32],
 ) -> ([f32; BANDS], f32) {
-    // 时域 RMS（未加窗）→ 总能量（光晕呼吸用）
+    // 时域 RMS（未加窗）→ 总能量（光晕呼吸用；清洗非有限样本防 level 永久锁死 NaN）
     let mut acc = 0f32;
-    for &x in samples.iter() {
+    for &raw_x in samples.iter() {
+        let x = if raw_x.is_finite() { raw_x } else { 0.0 };
         acc += x * x;
     }
-    let rms = (acc / samples.len() as f32).sqrt();
-    let level = (rms * 3.4).clamp(0.0, 1.0);
+    let rms = (acc / samples.len().max(1) as f32).sqrt();
+    let level = if rms.is_finite() {
+        (rms * 3.4).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
 
     for i in 0..samples.len() {
-        re[i] = samples[i] * hann[i];
+        let x = if samples[i].is_finite() { samples[i] } else { 0.0 };
+        re[i] = x * hann[i];
         im[i] = 0.0;
     }
     fft.run(re, im);
@@ -376,6 +388,7 @@ mod tests {
     #[test]
     fn ring_wraparound() {
         let fx = FxShared::new();
+        fx.set_enabled(true);
         let total = (RING_MASK + 1) as usize + 5000;
         for i in 0..total {
             fx.push(i as f32);

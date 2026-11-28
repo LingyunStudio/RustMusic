@@ -167,6 +167,22 @@ pub fn yrc_to_enhanced_lrc(yrc: &str) -> Option<String> {
     Some(out)
 }
 
+/// 解析 YRC 字元组 `(start,dur[,ext...])`：仅当括号内前两段均为纯数字且无多余非数字段时视为时间戳
+fn parse_yrc_tuple(s: &str) -> Option<(u64, u64, usize)> {
+    let rp = s.find(')')?;
+    let inner = &s[1..rp];
+    let mut parts = inner.split(',');
+    let ws = parts.next()?.trim().parse::<u64>().ok()?;
+    let wd = parts.next()?.trim().parse::<u64>().ok()?;
+    // 容忍可选第三/第四纯数字扩展字段，拒绝普通括号文本如 `(feat. xxx)` / `(Live)`
+    for extra in parts {
+        if extra.trim().parse::<u64>().is_err() {
+            return None;
+        }
+    }
+    Some((ws, wd, rp))
+}
+
 /// 单条 yrc/QRC 歌词行 → 一行增强 LRC（含换行）；解析失败返回 None（跳过该行）
 fn yrc_line_to_enhanced(line: &str) -> Option<String> {
     let rest = line.strip_prefix('[')?;
@@ -180,33 +196,30 @@ fn yrc_line_to_enhanced(line: &str) -> Option<String> {
     header[1].trim().parse::<u64>().ok()?;
     let words_raw = &rest[close + 1..];
 
-    // 游标扫描：每个 (start,dur[,x]) 元组配它**后面**紧邻的文本段
-    // （真实格式见 yrc_to_enhanced_lrc 注释；元组前的零散文本规范上
-    // 不存在，有也无处挂时间轴，跳过）
+    // 扫描整行：收集所有合法 `(start,dur[,...])` 词元组位置，
+    // 两个合法元组之间的全部内容（包括 `(Live)` / `(feat. xxx)` 等普通括号）都作为该词文本保留
+    let mut tuples: Vec<(usize, usize, u64, u64)> = Vec::new();
+    let mut scan = 0usize;
+    while let Some(rel) = words_raw[scan..].find('(') {
+        let lp = scan + rel;
+        if let Some((ws, wd, rel_rp)) = parse_yrc_tuple(&words_raw[lp..]) {
+            let rp = lp + rel_rp;
+            tuples.push((lp, rp, ws, wd));
+            scan = rp + 1;
+        } else {
+            scan = lp + 1;
+        }
+    }
+    if tuples.is_empty() {
+        return None;
+    }
+
     let mut body = String::new();
-    let mut cursor = 0usize;
-    while let Some(rel) = words_raw[cursor..].find('(') {
-        let lp = cursor + rel;
-        let rp = match words_raw[lp..].find(')') {
-            Some(p) => lp + p,
-            None => break, // 未闭合元组：其后无法再配对
-        };
-        // 字元组 (start,dur[,ext...])：只取前两个，容忍第三参数；
-        // 畸形元组只跳过自身，不拖累整行
-        let times: Vec<&str> = words_raw[lp + 1..rp].split(',').collect();
-        let Ok(ws) = times[0].trim().parse::<u64>() else {
-            cursor = rp + 1;
-            continue;
-        };
-        let Some(wd) = times.get(1).and_then(|t| t.trim().parse::<u64>().ok()) else {
-            cursor = rp + 1;
-            continue;
-        };
-        // 字文本：到下一个 '(' 或行尾
+    for (idx, &(_, rp, ws, wd)) in tuples.iter().enumerate() {
         let start = rp + 1;
-        let end = words_raw[start..]
-            .find('(')
-            .map(|p| start + p)
+        let end = tuples
+            .get(idx + 1)
+            .map(|&(next_lp, _, _, _)| next_lp)
             .unwrap_or(words_raw.len());
         // 仅去换行符，保留英文等逐词之间的空格（全角/英文单词间隔不可剥除）
         let text = words_raw[start..end].trim_matches(['\r', '\n']);
@@ -215,7 +228,6 @@ fn yrc_line_to_enhanced(line: &str) -> Option<String> {
             let ce = fmt_lrc_time(ws + wd);
             body.push_str(&format!("<{cs}>{text}<{ce}>"));
         }
-        cursor = end;
     }
     if body.is_empty() {
         return None;
@@ -363,7 +375,7 @@ fn parse_time_tag(tag: &str) -> Option<u64> {
     if !(0.0..60.0).contains(&secs) {
         return None;
     }
-    Some((minutes as f64 * 60_000.0 + secs * 1000.0) as u64)
+    Some((minutes as f64 * 60_000.0 + secs * 1000.0).round() as u64)
 }
 
 #[cfg(test)]
@@ -438,5 +450,13 @@ mod tests {
         let out = yrc_to_enhanced_lrc(yrc).expect("yrc parsed");
         let p = parse(&out);
         assert_eq!(p.lines[0].text, "I love you");
+    }
+
+    #[test]
+    fn yrc_preserves_parentheses() {
+        let yrc = "[1000,1500](1000,500,0)Hello (Live) (1500,500,0)(合)World";
+        let out = yrc_to_enhanced_lrc(yrc).expect("yrc parsed");
+        let p = parse(&out);
+        assert_eq!(p.lines[0].text, "Hello (Live) (合)World");
     }
 }

@@ -7,6 +7,10 @@ import type { Store } from "./contract";
 import { capOnlineCache, pinnedIdsOf } from "./onlineCache";
 import { pushDesktopLyrics } from "./util";
 
+let playRequestGen = 0;
+let seekRequestGen = 0;
+let lyricsRequestGen = 0;
+
 type Fields = Pick<
   Store,
   | "current"
@@ -63,6 +67,7 @@ type Fields = Pick<
   | "toggleShuffle"
   | "setEq"
   | "addToQueue"
+  | "addManyToQueue"
   | "playNext"
   | "removeQueueItem"
   | "clearQueue"
@@ -200,10 +205,10 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     if (!tracks.length) return;
     const queue: QueueItem[] = tracks.map((t) => ({ kind: "track", id: t.id }));
     const target = Math.max(0, Math.min(idx, queue.length - 1));
-    set((s) => ({
+    set(() => ({
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       // 队列被整体替换：此前在线列表注册的续页器上下文已失效，必须注销
@@ -240,11 +245,11 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
   playSourceItem(s) {
     const queue: QueueItem[] = [{ kind: "url", id: s.id }];
-    set((st) => ({
+    set(() => ({
       playingSourceId: s.id,
       queue,
       qIndex: 0,
-      history: [...st.history.slice(-50), st.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -340,7 +345,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       biliCache: capOnlineCache("bili", biliCache, get().biliCache, pinOf("bilibili")),
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -507,6 +512,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     const { queue } = get();
     const item = queue[i];
     if (!item) return;
+    const myPlayGen = ++playRequestGen;
     // 任何一次开播都解除“队列已播完”标记
     if (get().queueFinished) set({ queueFinished: false });
 
@@ -520,6 +526,8 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
         queueExtendBusy = true;
         extender()
           .then((items) => {
+            // 若在途期间用户已切换到其他歌单/队列，丢弃过期续页结果
+            if (get().queueExtender !== extender) return;
             if (items && items.length) {
               set((s) => ({ queue: [...s.queue, ...items] }));
               // 续页对用户可见化：这是“最后一首播完继续播下一页”的来源，
@@ -551,6 +559,8 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
      *  下次仍会尝试。登录过期则整个队列都会失败：立即停止并提示重新登录，
      *  不再连跳刷屏。 */
     const fail = (msg: string) => {
+      // 用户已切到更新的曲目：忽略旧曲目的延迟失败，避免误跳新曲
+      if (myPlayGen !== playRequestGen) return;
       const needRelogin =
         /登录已过期|请重新登录|未登录|session expired|not logged in|please log in|sign in/i.test(
           msg
@@ -829,11 +839,14 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   setScrubbing(v) {
+    if (v) seekRequestGen += 1;
     set({ scrubbing: v });
   },
 
   seek(ms) {
-    // scrubbing 保持锁定直到后端 seek 完成（FLAC 重建耗时数百 ms）
+    const mySeekGen = ++seekRequestGen;
+    // scrubbing 保持锁定直到本次后端 seek 完成（FLAC 重建耗时数百 ms）；
+    // 若期间开始了新一轮拖动，旧请求的 finally 不会误解新锁
     set({ pos: ms });
     // 暂停中拖动进度条不会有后续 pos 事件帧（引擎只在播放中发）：
     // 主动推一帧，否则桌面歌词停在旧行不动
@@ -841,7 +854,9 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
     api
       .seek(Math.round(ms))
       .catch((e) => get().toast(tr(`跳转失败：${e}`, `Seek failed: ${e}`), "error"))
-      .finally(() => set({ scrubbing: false }));
+      .finally(() => {
+        if (mySeekGen === seekRequestGen) set({ scrubbing: false });
+      });
   },
 
   seekForward(stepMs = 5000) {
@@ -935,6 +950,18 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
   addToQueue(item) {
     set((s) => ({ queue: [...s.queue, item] }));
     get().toast(tr("已加入播放队列", "Added to queue"), "success");
+  },
+
+  addManyToQueue(items) {
+    if (!items.length) return;
+    set((s) => ({ queue: [...s.queue, ...items] }));
+    get().toast(
+      tr(
+        `已把 ${items.length} 首加入队列`,
+        `Added ${items.length} ${items.length === 1 ? "track" : "tracks"} to queue`,
+      ),
+      "success",
+    );
   },
 
   playNext(item) {
@@ -1042,8 +1069,9 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
 
   async loadLyricsByKey(key) {
     // 同 key 且已在加载/已加载：跳过（防止 pos 事件高频触发重复请求）；
-    // 不同 key 之间的来回切换由 lyricsFor 标识丢弃过期响应
+    // 用单调代际号消除 A→B→A 切歌时的 ABA 竞态
     if (get().lyricsFor === key) return;
+    const myGen = ++lyricsRequestGen;
     set({ lyricsLoading: true, lyricsFor: key, lyrics: null });
     const [kind, ...rest] = key.split("-");
     const id = rest.join("-");
@@ -1060,7 +1088,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
                 : kind === "bili"
                   ? await api.biliLyric(id)
                   : await api.getLyrics(Number(id));
-      if (get().lyricsFor === key) {
+      if (myGen === lyricsRequestGen && get().lyricsFor === key) {
         set({ lyrics: payload, lyricsLoading: false });
         pushDesktopLyrics(get());
       }
@@ -1068,7 +1096,7 @@ export const createPlayerSlice: StateCreator<Store, [], [], Fields> = (set, get)
       // lyricsFor 一并清空：留着 key 会把后续所有重试拦在
       // "if (get().lyricsFor === key) return" 上——一次网络抖动，
       // 这首歌的歌词直到切歌都出不来
-      if (get().lyricsFor === key)
+      if (myGen === lyricsRequestGen && get().lyricsFor === key)
         set({ lyricsLoading: false, lyrics: null, lyricsFor: null });
     }
   },

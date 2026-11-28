@@ -94,10 +94,14 @@ fn get_password(server: &str, username: &str) -> Result<String, String> {
 
 // ---------- 基础 ----------
 
-/// 归一化服务器地址：补 scheme、去尾部斜杠
+/// 归一化服务器地址：补 scheme、去尾部斜杠（空串返回空串以保留空值校验）
 pub fn norm_base(server: &str) -> String {
     let s = server.trim();
-    let s = if s.starts_with("http://") || s.starts_with("https://") {
+    if s.is_empty() {
+        return String::new();
+    }
+    let lower = s.to_ascii_lowercase();
+    let s = if lower.starts_with("http://") || lower.starts_with("https://") {
         s.to_string()
     } else {
         format!("http://{s}")
@@ -149,12 +153,17 @@ fn get_json(
         "{base}/rest/{endpoint}?{}&{extra}",
         auth_query(server, username)?
     );
-    let resp = ureq::get(&url).timeout(TIMEOUT).call().map_err(|e| {
-        crate::i18n::pick(
-            format!("连接 Navidrome 服务器失败: {e}"),
-            format!("Failed to connect to Navidrome server: {e}"),
-        )
-    })?;
+    let resp = crate::net::shared_agent()
+        .get(&url)
+        .timeout(TIMEOUT)
+        .call()
+        .map_err(|e| {
+            let msg = crate::net::sanitize_err(&e);
+            crate::i18n::pick(
+                format!("连接 Navidrome 服务器失败: {msg}"),
+                format!("Failed to connect to Navidrome server: {msg}"),
+            )
+        })?;
     let text = resp.into_string().map_err(|e| {
         crate::i18n::pick(
             format!("Navidrome 响应读取失败: {e}"),
@@ -284,13 +293,15 @@ pub fn ping(server: &str, username: &str, password: &str) -> Result<(), String> 
         "{base}/rest/ping?u={}&t={token}&s={salt}&v={API_VER}&c={CLIENT}&f=json",
         enc(username)
     );
-    let resp = ureq::get(&url)
+    let resp = crate::net::shared_agent()
+        .get(&url)
         .timeout(TIMEOUT)
         .call()
         .map_err(|e| {
+            let msg = crate::net::sanitize_err(&e);
             crate::i18n::pick(
-                format!("无法连接服务器: {e}"),
-                format!("Unable to connect to server: {e}"),
+                format!("无法连接服务器: {msg}"),
+                format!("Unable to connect to server: {msg}"),
             )
         })?;
     let text = resp.into_string().map_err(|e| e.to_string())?;

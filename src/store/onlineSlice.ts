@@ -23,6 +23,7 @@ type Fields = Pick<
   | "qqSearching"
   | "qqSearched"
   | "qqPage"
+  | "qqHasMore"
   | "qqLoggedIn"
   | "qqNickname"
   | "qqCache"
@@ -30,6 +31,7 @@ type Fields = Pick<
   | "kugouSearching"
   | "kugouSearched"
   | "kugouPage"
+  | "kugouHasMore"
   | "kugouCache"
   | "kugouLoggedIn"
   | "kugouNickname"
@@ -167,6 +169,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   qqSearching: false,
   qqSearched: false,
   qqPage: 1,
+  qqHasMore: false,
   qqLoggedIn: false,
   qqNickname: "",
   qqCache: {},
@@ -175,6 +178,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   kugouSearching: false,
   kugouSearched: false,
   kugouPage: 1,
+  kugouHasMore: false,
   kugouCache: {},
   kugouLoggedIn: false,
   kugouNickname: "",
@@ -202,7 +206,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       ),
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -231,7 +235,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       ),
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -296,7 +300,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       playingSourceId: null,
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -305,13 +309,14 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   },
 
   playSourceId(id) {
-    set((s) => ({
+    set(() => ({
       playingSourceId: id,
       queue: [{ kind: "url", id }],
       qIndex: 0,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
+      queueExtender: null,
     }));
     api
       .playSource(id)
@@ -365,7 +370,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       ),
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -386,7 +391,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       ),
       queue,
       qIndex: target,
-      history: [...s.history.slice(-50), s.qIndex],
+      history: [],
       failStreak: 0,
       failToastId: null,
       queueExtender: null,
@@ -396,7 +401,6 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   async qqSearch(kw, append = false) {
     const keyword = kw.trim();
     if (!keyword) return;
-    const gen = ++searchGen.qq;
     if (append) {
       if (loadMoreBusy.qq) return;
       loadMoreBusy.qq = true;
@@ -405,10 +409,11 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
       // 页码/结果立即原子复位——否则新搜索在途时触发 append 会用旧页码发请求
       loadMoreBusy.qq = false;
     }
+    const gen = ++searchGen.qq;
     set(
       append
         ? { qqSearching: true }
-        : { qqSearching: true, qqSearched: true, qqResults: [], qqPage: 1 }
+        : { qqSearching: true, qqSearched: true, qqResults: [], qqPage: 1, qqHasMore: false }
     );
     try {
       const page = append ? get().qqPage + 1 : 1;
@@ -422,6 +427,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         qqResults: append ? dedupeAppend(s.qqResults, r.songs) : r.songs,
         qqSearching: false,
         qqPage: page,
+        qqHasMore: r.songs.length >= 30,
         qqCache: capOnlineCache("qq", cache, get().qqCache, pinnedIdsOf("qq", get())),
       }));
     } catch (e) {
@@ -437,17 +443,17 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   async kugouSearch(kw, append = false) {
     const keyword = kw.trim();
     if (!keyword) return;
-    const gen = ++searchGen.kugou;
     if (append) {
       if (loadMoreBusy.kugou) return;
       loadMoreBusy.kugou = true;
     } else {
       loadMoreBusy.kugou = false;
     }
+    const gen = ++searchGen.kugou;
     set(
       append
         ? { kugouSearching: true }
-        : { kugouSearching: true, kugouSearched: true, kugouResults: [], kugouPage: 1 }
+        : { kugouSearching: true, kugouSearched: true, kugouResults: [], kugouPage: 1, kugouHasMore: false }
     );
     try {
       const page = append ? get().kugouPage + 1 : 1;
@@ -459,6 +465,7 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
         kugouResults: append ? dedupeAppend(s.kugouResults, r.songs) : r.songs,
         kugouSearching: false,
         kugouPage: page,
+        kugouHasMore: r.songs.length >= 30,
         kugouCache: capOnlineCache("kugou", cache, get().kugouCache, pinnedIdsOf("kugou", get())),
       }));
     } catch (e) {
@@ -762,13 +769,13 @@ export const createOnlineSlice: StateCreator<Store, [], [], Fields> = (set, get)
   async neteaseSearch(kw, append = false) {
     const keyword = kw.trim();
     if (!keyword) return;
-    const gen = ++searchGen.netease;
     if (append) {
       if (loadMoreBusy.netease) return;
       loadMoreBusy.netease = true;
     } else {
       loadMoreBusy.netease = false;
     }
+    const gen = ++searchGen.netease;
     set(
       append
         ? { neteaseSearching: true }

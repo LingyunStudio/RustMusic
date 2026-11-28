@@ -501,8 +501,16 @@ export default function LibraryView({ mode }: { mode: Mode }) {
       saveManualOrder(orderList, visible.map(keyOfRow));
       return;
     }
-    // 有过滤：全量序列里先移除被拖行，再把它插到目标行的位置
-    const full = allRows.map(keyOfRow);
+    // 有过滤：全量序列先按手动序排列（避免覆盖未在过滤集里的行的手动序），
+    // 再移除被拖行并插到目标锚点前
+    const sortedAll = [...allRows].sort((a, b) => {
+      const ka = rowKeys(a, mode, "manual");
+      const kb = rowKeys(b, mode, "manual");
+      const d = (ka as number) - (kb as number);
+      if (d !== 0) return d;
+      return a.type === b.type ? 0 : a.type === "local" ? -1 : 1;
+    });
+    const full = sortedAll.map(keyOfRow);
     const movedKey = keyOfRow(moved);
     const anchorKey = to < visible.length - 1 ? keyOfRow(visible[to + 1]) : null;
     const without = full.filter((k) => k !== movedKey);

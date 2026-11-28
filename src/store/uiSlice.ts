@@ -21,7 +21,7 @@ import {
 import { applySkin, loadSkin, saveSkin } from "../skins";
 import { loadFxPref, saveFxPref } from "../fx";
 import { detectSystemLang, normalizeLanguagePref, setLanguagePref, tr } from "../i18n";
-import type { PlayState, ScanState } from "../types";
+import type { PlayState, QueueItem, RepeatMode, ScanState } from "../types";
 import type { Store } from "./contract";
 import { initMenubarLyrics, setMenubarLyricsEnabled, syncMenubarLyrics } from "./menubar";
 import { initTaskbarLyrics, setTaskbarLyricsEnabled, syncTaskbarLyrics } from "./taskbar";
@@ -118,16 +118,16 @@ let lastQualityToastAt = 0;
 /** 应用后端播放状态：player://state 事件与挂起恢复后的主动拉取共用。
  *  posOverride：拉取快照自带进度时直接采用（事件路径由 isFreshStart 决定是否归零）。 */
 function applyPlayState(set: SetFn, get: GetFn, p: PlayState, posOverride?: number) {
+  const prev = get();
   const liked =
     p.kind === "track" && p.id != null
-      ? get().tracks.find((t) => t.id === p.id)?.liked ?? false
+      ? prev.tracks.find((t) => t.id === p.id)?.liked ?? false
       : false;
   // seq 增加 = 换曲开播，进度归零；seq 不变 = 暂停/恢复，保留进度
   const isFreshStart =
-    p.seq != null ? p.seq > get().playSeq : p.playing && !get().playing;
-  if (p.seq != null) set({ playSeq: p.seq });
+    p.seq != null ? p.seq > prev.playSeq : p.playing && !prev.playing;
   // 同一首歌（挂起恢复的拉取/补发常如此）保持 current 引用不变，避免播放条闪烁
-  const cur = get().current;
+  const cur = prev.current;
   const sameTrack =
     cur != null &&
     cur.kind === p.kind &&
@@ -143,30 +143,53 @@ function applyPlayState(set: SetFn, get: GetFn, p: PlayState, posOverride?: numb
     cur.kgid === (p.kgid ?? null) &&
     cur.quality === (p.quality ?? null) &&
     cur.liked === liked;
-  set({
-    ...(sameTrack
-      ? {}
-      : {
-          current: {
-            id: p.id ?? null,
-            kind: p.kind,
-            path: p.path,
-            title: p.title,
-            artist: p.artist,
-            album: p.album,
-            cover: p.cover,
-            durationMs: p.durationMs,
-            nid: p.nid ?? null,
-            qid: p.qid ?? null,
-            kgid: p.kgid ?? null,
-            quality: p.quality ?? null,
-            liked,
-          },
-        }),
-    playing: p.playing,
-    dur: p.durationMs,
-    pos: posOverride != null ? posOverride : isFreshStart ? 0 : get().pos,
+
+  // 合并单次 set()：避免一次切歌触发最多 4 轮订阅重渲染
+  set((s) => {
+    const patch: Partial<Store> = {
+      ...(p.seq != null ? { playSeq: p.seq } : {}),
+      ...(sameTrack
+        ? {}
+        : {
+            current: {
+              id: p.id ?? null,
+              kind: p.kind,
+              path: p.path,
+              title: p.title,
+              artist: p.artist,
+              album: p.album,
+              cover: p.cover,
+              durationMs: p.durationMs,
+              nid: p.nid ?? null,
+              qid: p.qid ?? null,
+              kgid: p.kgid ?? null,
+              quality: p.quality ?? null,
+              liked,
+            },
+          }),
+      playing: p.playing,
+      dur: p.durationMs,
+      pos: posOverride != null ? posOverride : isFreshStart ? 0 : s.pos,
+    };
+
+    if (isFreshStart && p.kind === "track" && p.id != null) {
+      const curItem = s.queue[s.qIndex];
+      if (!(curItem?.kind === "track" && curItem.id === p.id)) {
+        const qi = s.queue.findIndex((q) => q.kind === "track" && q.id === p.id);
+        if (qi >= 0 && qi !== s.qIndex) patch.qIndex = qi;
+      }
+      const idx = s.tracks.findIndex((t) => t.id === p.id);
+      if (idx >= 0) {
+        const now = Math.floor(Date.now() / 1000);
+        const nextTracks = s.tracks.slice();
+        const t = nextTracks[idx];
+        nextTracks[idx] = { ...t, lastPlayed: now, playCount: t.playCount + 1 };
+        patch.tracks = nextTracks;
+      }
+    }
+    return patch;
   });
+
   // 自动加载当前曲目的歌词（播放栏滚动展示用）
   const key =
     p.kind === "track" && p.id != null
@@ -183,30 +206,8 @@ function applyPlayState(set: SetFn, get: GetFn, p: PlayState, posOverride?: numb
                 ? `nd-${p.qid}`
                 : null;
   if (key) get().loadLyricsByKey(key);
-  // 换曲开播：在线曲目更新“最近播放”；本地曲目只在本地更新单条的
-  // lastPlayed/playCount（后端 record_play 已在开播时落库）——
-  // 不再全量拉取曲目列表（大曲库下每首歌一次全量 IPC + 整表重渲染）
+  // 换曲开播：在线曲目更新“最近播放”
   if (isFreshStart && p.kind !== "track") get().refreshRecentOnline();
-  // 引擎自动续播（预载下一曲）时队列指针跟随：状态帧的本地曲目即队列里的
-  // 下一首——按 kind:id 对位（若当前指针已指向同一曲目则不动，避免队列含重复曲时跳回第一条死循环）
-  if (isFreshStart && p.kind === "track" && p.id != null) {
-    const st = get();
-    const curItem = st.queue[st.qIndex];
-    if (!(curItem?.kind === "track" && curItem.id === p.id)) {
-      const qi = st.queue.findIndex(
-        (q) => q.kind === "track" && q.id === p.id,
-      );
-      if (qi >= 0 && qi !== st.qIndex) set({ qIndex: qi });
-    }
-  }
-  if (isFreshStart && p.kind === "track" && p.id != null) {
-    const now = Math.floor(Date.now() / 1000);
-    set((s) => ({
-      tracks: s.tracks.map((t) =>
-        t.id === p.id ? { ...t, lastPlayed: now, playCount: t.playCount + 1 } : t
-      ),
-    }));
-  }
   // 播放/暂停/停止的即时同步：暂停后 pos 事件停发，
   // 不在这里推一帧的话桌面歌词会一直按旧 playing 状态外推
   pushDesktopLyrics(get());
@@ -296,27 +297,52 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
       // 自然播完由引擎直接续播（monitor 驱动），挂起期间也无缝连续；
       // 在线曲目取链需要前端，传 null 走原有唤醒编排路径
       let lastPreloadKey = "";
+      let prevPreloadDeps: {
+        queue: QueueItem[];
+        qIndex: number;
+        repeat: RepeatMode;
+        shuffle: boolean;
+        unavailable: Record<string, string>;
+        sleepStopAfterTrack: boolean;
+        sleepStopAfterQueue: boolean;
+        currentId: string | number | null;
+      } | null = null;
       const planPreload = () => {
         const st = get();
-        const key = [
-          st.sleepStopAfterTrack,
-          st.sleepStopAfterQueue,
-          st.repeat,
-          st.shuffle,
-          st.qIndex,
-          st.queue.length,
-          st.current ? `${st.current.kind}:${st.current.id}` : "",
-        ].join("|");
-        if (key === lastPreloadKey) return;
-        lastPreloadKey = key;
+        const currentId = st.current ? `${st.current.kind}:${st.current.id}` : null;
+        if (
+          prevPreloadDeps &&
+          prevPreloadDeps.queue === st.queue &&
+          prevPreloadDeps.qIndex === st.qIndex &&
+          prevPreloadDeps.repeat === st.repeat &&
+          prevPreloadDeps.shuffle === st.shuffle &&
+          prevPreloadDeps.unavailable === st.unavailable &&
+          prevPreloadDeps.sleepStopAfterTrack === st.sleepStopAfterTrack &&
+          prevPreloadDeps.sleepStopAfterQueue === st.sleepStopAfterQueue &&
+          prevPreloadDeps.currentId === currentId
+        ) {
+          return;
+        }
+        prevPreloadDeps = {
+          queue: st.queue,
+          qIndex: st.qIndex,
+          repeat: st.repeat,
+          shuffle: st.shuffle,
+          unavailable: st.unavailable,
+          sleepStopAfterTrack: st.sleepStopAfterTrack,
+          sleepStopAfterQueue: st.sleepStopAfterQueue,
+          currentId,
+        };
         const item =
           !st.sleepStopAfterTrack && !st.sleepStopAfterQueue
             ? peekNextIdx(st, true, false)
             : null;
+        const nextEntry = item != null ? st.queue[item] : null;
         const payload =
-          item != null && st.queue[item]?.kind === "track"
-            ? { id: st.queue[item].id as number }
-            : null;
+          nextEntry?.kind === "track" ? { id: nextEntry.id as number } : null;
+        const key = payload ? `track:${payload.id}` : "";
+        if (key === lastPreloadKey) return;
+        lastPreloadKey = key;
         void api.enginePreloadNext(payload).catch(() => {});
       };
       planPreload();
@@ -366,7 +392,7 @@ export const createUiSlice: StateCreator<Store, [], [], Fields> = (set, get) => 
           const reached =
             s.sleepQueueReached() ||
             s.repeat === "one" ||
-            s.qIndex >= s.queue.length - 1;
+            (!s.shuffle && s.qIndex >= s.queue.length - 1);
           if (reached) {
             set({ sleepStopAfterQueue: false });
             api.stop().catch(() => {});

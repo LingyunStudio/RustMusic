@@ -51,17 +51,24 @@ pub(crate) fn device_watcher(app: AppHandle) {
     loop {
         std::thread::sleep(std::time::Duration::from_secs(2));
         let now_default = crate::engine::default_device_display_name();
-        if now_default == last_default || now_default.is_empty() {
-            continue;
+        let default_changed = !now_default.is_empty() && now_default != last_default;
+        if default_changed {
+            last_default = now_default.clone();
         }
-        last_default = now_default.clone();
-        // 用户固定了设备（且该设备仍存在）时不打扰；跟随系统则自动切换。
-        // 匹配走 engine 的双通道规则（全名 + 旧版短名兜底）
-        if let Some(pref) = eng.device_preference() {
-            if eng.is_known_device(&pref) {
-                continue;
+        // 用户固定了设备时每轮都检查其是否仍在线（拔掉非默认 USB DAC 时系统默认
+        // 设备不变，不能依赖 default_changed 才触发回退）
+        let pinned_missing = match eng.device_preference() {
+            Some(pref) => {
+                if eng.is_known_device(&pref) {
+                    continue;
+                }
+                eprintln!("[engine] 固定设备「{pref}」已不存在，跟随系统默认");
+                true
             }
-            eprintln!("[engine] 固定设备「{pref}」已不存在，跟随系统默认");
+            None => false,
+        };
+        if !default_changed && !pinned_missing {
+            continue;
         }
         eprintln!("[engine] 默认输出设备变更 → 切到 {now_default}");
         if eng.switch_output_device(None).is_ok() {
@@ -81,6 +88,9 @@ pub(crate) fn monitor(app: AppHandle) {
     let mut diag = 0u32;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(120));
+        // 先于 is_active() 采样重建/切歌标志，再于判定处二次采样，消除 TOCTOU 误判自然播完
+        let busy_before = eng.rebuilding.load(Ordering::Acquire)
+            || eng.switching.load(Ordering::Acquire);
         let active = eng.is_active();
         let paused = eng.user_paused.load(Ordering::Relaxed);
 
@@ -126,12 +136,13 @@ pub(crate) fn monitor(app: AppHandle) {
         }
 
         // 一首曲目自然播完（非暂停、非手动停止；FLAC 重建 / 换曲瞬间 sink 短暂为空，跳过）
-        let rebuilding = eng.rebuilding.load(Ordering::Relaxed);
-        let switching = eng.switching.load(Ordering::Relaxed);
+        let rebuilding = eng.rebuilding.load(Ordering::Acquire);
+        let switching = eng.switching.load(Ordering::Acquire);
         if was_active
             && !active
             && !paused
             && !eng.stopped.load(Ordering::Relaxed)
+            && !busy_before
             && !rebuilding
             && !switching
         {

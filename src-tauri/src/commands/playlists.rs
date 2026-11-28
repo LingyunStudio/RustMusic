@@ -333,62 +333,101 @@ pub async fn import_playlist_m3u(
 
     // 本地行解析入库（文件级元数据解析是阻塞 IO，走专用线程池）。
     // 读取带编码回落（UTF-8 BOM / GB18030）：外部工具导出的中文 m3u 常是 GBK
-    let paths_for_parse = local_paths.clone();
-    let app_data = state.app_data.clone();
-    let parsed: Vec<Option<crate::db::NewTrack>> = super::blocking(move || {
-        Ok(paths_for_parse
+    let m3u_dir = std::path::Path::new(&path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let paths_for_norm = local_paths.clone();
+    // 1. 先在阻塞池规范化路径（不解析音频标签）
+    let resolved: Vec<(std::path::PathBuf, String)> = super::blocking(move || {
+        Ok(paths_for_norm
             .iter()
             .map(|p| {
-                let pb = std::path::PathBuf::from(p);
-                if pb.exists() && pb.is_file() && crate::library::is_audio(&pb) {
-                    crate::library::parse_track(&pb, &app_data)
-                } else {
-                    None
-                }
+                let raw = std::path::PathBuf::from(p);
+                let pb = if raw.is_absolute() { raw } else { m3u_dir.join(raw) };
+                let norm = crate::library::norm_path(&pb);
+                (pb, norm)
             })
             .collect::<Vec<_>>())
     })
     .await
     .map_err(|e| e.to_string())?;
 
+    // 2. 批量查库：已入库曲目直接复用 id，只对未入库文件跑 lofty 解析与封面提取
+    let mut existing_ids: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    {
+        let conn = state.db.lock();
+        if let Ok(mut stmt) = conn.prepare("SELECT id FROM tracks WHERE path = ?1") {
+            for (_, norm) in &resolved {
+                if existing_ids.contains_key(norm) {
+                    continue;
+                }
+                if let Ok(id) = stmt.query_row(rusqlite::params![norm], |r| r.get::<_, i64>(0)) {
+                    existing_ids.insert(norm.clone(), id);
+                }
+            }
+        };
+    }
+    let to_parse: Vec<(std::path::PathBuf, String)> = resolved
+        .iter()
+        .filter(|(_, norm)| !existing_ids.contains_key(norm))
+        .cloned()
+        .collect();
+    let app_data = state.app_data.clone();
+    let parsed_new: std::collections::HashMap<String, crate::db::NewTrack> = if to_parse.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        super::blocking(move || {
+            let mut map = std::collections::HashMap::new();
+            for (pb, norm) in to_parse {
+                if map.contains_key(&norm) {
+                    continue;
+                }
+                if pb.exists() && pb.is_file() && crate::library::is_audio(&pb) {
+                    if let Some(t) = crate::library::parse_track(&pb, &app_data) {
+                        map.insert(norm, t);
+                    }
+                }
+            }
+            Ok(map)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    };
+
+    // 3. 单事务批量落库（避免数百条 autocommit 事务）
     let conn = state.db.lock();
-    let pid = db::create_playlist(&conn, &name)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| e.to_string())?;
+    let pid = db::create_playlist(&tx, &name)?;
     let mut pos: i64 = 0;
     let mut added = 0usize;
     let mut missing_files = 0usize;
-    // 已入库曲目按路径直接引用；未入库但解析成功的先行入库。
-    // 解析结果与 local_paths 按下标严格对齐——此前用迭代器且只在
-    // “库中查不到”分支推进，已入库/未入库路径交错时取错元数据、加错歌
-    let mut parsed = parsed;
-    for (i, p) in local_paths.iter().enumerate() {
-        let norm = crate::library::norm_path(std::path::Path::new(p));
-        let tid: Option<i64> = match conn.query_row(
-            "SELECT id FROM tracks WHERE path = ?1",
-            rusqlite::params![norm],
-            |r| r.get(0),
-        ) {
-            Ok(id) => Some(id),
-            Err(_) => {
-                let t = std::mem::take(&mut parsed[i]);
-                match t {
-                    Some(t) => {
-                        db::upsert_track(&conn, &t);
-                        conn.query_row(
-                            "SELECT id FROM tracks WHERE path = ?1",
-                            rusqlite::params![t.path],
-                            |r| r.get(0),
-                        )
-                        .ok()
-                    }
-                    None => None,
-                }
+    for (_, norm) in resolved {
+        let tid: Option<i64> = if let Some(&id) = existing_ids.get(&norm) {
+            Some(id)
+        } else if let Some(t) = parsed_new.get(&norm) {
+            db::upsert_track(&tx, t);
+            let id = tx
+                .query_row(
+                    "SELECT id FROM tracks WHERE path = ?1",
+                    rusqlite::params![t.path],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(id) = id {
+                existing_ids.insert(norm, id);
             }
+            id
+        } else {
+            None
         };
         pos += 1;
         match tid {
             Some(tid) => {
                 // 计数只算真正新增的行（INSERT OR IGNORE 命中已有行时为 0）
-                let n = conn
+                let n = tx
                     .execute(
                         "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
                         rusqlite::params![pid, tid, pos],
@@ -405,7 +444,7 @@ pub async fn import_playlist_m3u(
     }
     // 在线条目：库里有元数据的还原引用（计数同样只算真正新增）
     for (kind, rid) in &online_refs {
-        let known: bool = conn
+        let known: bool = tx
             .query_row(
                 "SELECT 1 FROM online_tracks WHERE kind = ?1 AND rid = ?2",
                 rusqlite::params![kind, rid],
@@ -414,7 +453,7 @@ pub async fn import_playlist_m3u(
             .is_ok();
         if known {
             pos += 1;
-            let n = conn
+            let n = tx
                 .execute(
                     "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position, kind, online_id)
                      VALUES(?1, 0, ?2, ?3, ?4)",
@@ -429,13 +468,14 @@ pub async fn import_playlist_m3u(
         }
     }
     if added == 0 {
-        let _ = db::delete_playlist(&conn, pid);
+        let _ = tx.rollback();
         return Err(crate::i18n::pick(
             "文件里的条目都无法解析（本地文件不存在且无在线元数据）",
             "None of the entries in the file could be resolved (local files missing and no online metadata)",
         )
         .into());
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "playlistId": pid, "added": added, "skipped": missing_files }))
 }
 

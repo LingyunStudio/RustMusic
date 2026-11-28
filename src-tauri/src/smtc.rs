@@ -137,6 +137,11 @@ fn run(app: AppHandle, rx: Receiver<SmtcMsg>, tx: Sender<SmtcMsg>) {
                 }
             }
             SmtcMsg::Position { playing, pos_ms } => {
+                // 同步更新 last_update 的播放态与进度，避免异步 RefreshCover 回填封面时把进度弹回旧值
+                if let Some((_, ref mut p, ref mut pos)) = last_update {
+                    *p = playing;
+                    *pos = pos_ms;
+                }
                 // 系统媒体浮窗（SMTC）不会自行走表，播放中需周期刷新进度
                 if has_track {
                     let pos = MediaPosition(Duration::from_millis(pos_ms));
@@ -261,16 +266,23 @@ fn cover_uri(p: &str, app: &AppHandle, refresh: Sender<SmtcMsg>) -> Option<Strin
     // 远程封面：SMTC 线程内绝不联网（首次在线曲目会阻塞本线程最长 ~15s，
     // 期间进度刷新与媒体键事件全部卡死）。缓存命中直接用；未命中交给
     // 后台线程下载，完成后发 RefreshCover 重刷元数据补上封面
-    if let Some(hit) = cover_cache().lock().unwrap().get(p) {
+    let cache_key = cover_cache_key(p);
+    if let Some(hit) = cover_cache().lock().unwrap().get(&cache_key) {
         return hit.as_ref().and_then(|d| d.to_str()).map(file_uri);
     }
-    if cover_inflight().lock().unwrap().insert(p.to_string()) {
-        let key = p.to_string();
+    if cover_inflight().lock().unwrap().insert(cache_key.clone()) {
+        let url = p.to_string();
         let bg_app = app.clone();
         std::thread::spawn(move || {
-            let dest = download_cover(&key, &bg_app);
-            cover_cache().lock().unwrap().insert(key.clone(), dest);
-            cover_inflight().lock().unwrap().remove(&key);
+            let dest = download_cover(&url, &bg_app);
+            {
+                let mut cache = cover_cache().lock().unwrap();
+                if cache.len() >= 512 {
+                    cache.clear();
+                }
+                cache.insert(cache_key.clone(), dest);
+            }
+            cover_inflight().lock().unwrap().remove(&cache_key);
             let _ = refresh.send(SmtcMsg::RefreshCover);
         });
     }

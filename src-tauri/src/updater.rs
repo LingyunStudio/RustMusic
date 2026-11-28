@@ -34,9 +34,67 @@ const UA: &str = "RustMusic-Updater";
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
+static DOWNLOAD_BUSY: AtomicBool = AtomicBool::new(false);
+/// 本进程内最近一次通过 Ed25519 验签的安装包：(规范路径, SHA-256 hex)。
+/// install_and_restart 仅允许安装此处登记且落盘哈希未变的文件，阻断任意路径执行与 TOCTOU。
+static VERIFIED_INSTALLER: parking_lot::Mutex<Option<(PathBuf, String)>> =
+    parking_lot::Mutex::new(None);
 
 pub fn cancel_download() {
     DOWNLOAD_CANCEL.store(true, Ordering::Relaxed);
+}
+
+fn sha256_file_hex(path: &Path) -> Result<String, String> {
+    use sha2::Digest;
+    let mut f = std::fs::File::open(path).map_err(|e| {
+        crate::i18n::pick(
+            format!("读取安装包失败：{e}"),
+            format!("Failed to read installer: {e}"),
+        )
+    })?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = f.read(&mut buf).map_err(|e| {
+            crate::i18n::pick(
+                format!("读取安装包失败：{e}"),
+                format!("Failed to read installer: {e}"),
+            )
+        })?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn verify_before_install(setup: &Path) -> Result<PathBuf, String> {
+    let saved = VERIFIED_INSTALLER.lock().clone().ok_or_else(|| {
+        crate::i18n::pick(
+            "未找到已验签的安装包，请重新下载更新",
+            "No verified installer found; please download the update again",
+        )
+        .to_string()
+    })?;
+    let canon = std::fs::canonicalize(setup).unwrap_or_else(|_| setup.to_path_buf());
+    if canon != saved.0 {
+        return Err(crate::i18n::pick(
+            "安装包路径未经签名校验，已拒绝执行",
+            "Installer path was not verified by signature; execution refused",
+        )
+        .into());
+    }
+    let actual = sha256_file_hex(&canon)?;
+    if actual != saved.1 {
+        return Err(crate::i18n::pick(
+            "安装包内容已被篡改（SHA-256 不符），已拒绝执行",
+            "Installer file was modified after verification (SHA-256 mismatch); execution refused",
+        )
+        .into());
+    }
+    Ok(canon)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,7 +136,10 @@ fn is_newer(latest: &str, current: &str) -> bool {
             return x > y;
         }
     }
-    false
+    // 主版本号相同时，正式版高于预发布版（如 0.8.0 > 0.8.0-beta.1）
+    let latest_pre = latest.trim().split('+').next().unwrap_or("").contains('-');
+    let current_pre = current.trim().split('+').next().unwrap_or("").contains('-');
+    !latest_pre && current_pre
 }
 
 /// 从 release 附件里挑 Windows 安装包：优先 *setup*.exe（Inno 安装包），其次任意 .exe
@@ -342,6 +403,17 @@ pub fn download(
     sig_url: Option<&str>,
 ) -> Result<PathBuf, String> {
     use sha2::Digest as _;
+    if DOWNLOAD_BUSY.swap(true, Ordering::SeqCst) {
+        return Err(crate::i18n::pick("已有更新正在下载中", "An update download is already in progress").into());
+    }
+    struct BusyGuard;
+    impl Drop for BusyGuard {
+        fn drop(&mut self) {
+            DOWNLOAD_BUSY.store(false, Ordering::SeqCst);
+        }
+    }
+    let _busy_guard = BusyGuard;
+
     DOWNLOAD_CANCEL.store(false, Ordering::Relaxed);
     // 附件名固定为 RustMusic_*-setup.exe，仅允许常规文件名字符，避免拼进脚本出问题
     let safe_name: String = name
@@ -401,12 +473,14 @@ pub fn download(
             Ok(0) => break,
             Ok(n) => {
                 hasher.update(&buf[..n]);
-                file.write_all(&buf[..n]).map_err(|e| {
-                    crate::i18n::pick(
+                if let Err(e) = file.write_all(&buf[..n]) {
+                    drop(file);
+                    let _ = std::fs::remove_file(&path);
+                    return Err(crate::i18n::pick(
                         format!("写入安装包失败：{e}"),
                         format!("Failed to write installer: {e}"),
-                    )
-                })?;
+                    ));
+                }
                 received += n as u64;
                 if last_emit.elapsed() >= Duration::from_millis(120) {
                     last_emit = Instant::now();
@@ -426,23 +500,25 @@ pub fn download(
             }
         }
     }
-    file.flush().map_err(|e| {
-        crate::i18n::pick(
+    if let Err(e) = file.flush() {
+        drop(file);
+        let _ = std::fs::remove_file(&path);
+        return Err(crate::i18n::pick(
             format!("写入安装包失败：{e}"),
             format!("Failed to write installer: {e}"),
-        )
-    })?;
+        ));
+    }
     drop(file);
 
     if total > 0 && received != total {
         let _ = std::fs::remove_file(&path);
         return Err(crate::i18n::pick("下载不完整，请重试", "Incomplete download, please retry").into());
     }
+    let actual_sha256 = hex::encode(hasher.finalize());
     if let Some(d) = expected_digest {
         let expected = d.trim().to_lowercase();
         let expected = expected.strip_prefix("sha256:").unwrap_or(&expected);
-        let actual = hex::encode(hasher.finalize());
-        if !expected.is_empty() && actual != expected {
+        if !expected.is_empty() && actual_sha256 != expected {
             let _ = std::fs::remove_file(&path);
             return Err(crate::i18n::pick(
                 "安装包校验失败（SHA-256 不符），已删除下载文件",
@@ -455,7 +531,7 @@ pub fn download(
     // 缺失视为发布异常，拒绝安装（fail-closed）
     match sig_url {
         Some(u) => {
-            let sig = github_agent()
+            let sig_res = github_agent()
                 .get(u)
                 .set("User-Agent", UA)
                 .timeout(Duration::from_secs(20))
@@ -465,14 +541,22 @@ pub fn download(
                         format!("下载更新包签名失败：{e}"),
                         format!("Failed to download update signature: {e}"),
                     )
-                })?
-                .into_string()
-                .map_err(|e| {
-                    crate::i18n::pick(
-                        format!("读取更新包签名失败：{e}"),
-                        format!("Failed to read update signature: {e}"),
-                    )
-                })?;
+                })
+                .and_then(|resp| {
+                    resp.into_string().map_err(|e| {
+                        crate::i18n::pick(
+                            format!("读取更新包签名失败：{e}"),
+                            format!("Failed to read update signature: {e}"),
+                        )
+                    })
+                });
+            let sig = match sig_res {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(e);
+                }
+            };
             if let Err(e) = verify_signature(&path, &sig, UPDATE_PUBKEY) {
                 let _ = std::fs::remove_file(&path);
                 return Err(e);
@@ -487,6 +571,8 @@ pub fn download(
             .into());
         }
     }
+    let canon = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    *VERIFIED_INSTALLER.lock() = Some((canon, actual_sha256));
     Ok(path)
 }
 
@@ -539,7 +625,8 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
     let dir = exe.parent().ok_or_else(|| {
         crate::i18n::pick("获取安装目录失败", "Failed to get install directory").to_string()
     })?;
-    if !setup.is_file() {
+    let verified_setup = verify_before_install(setup)?;
+    if !verified_setup.is_file() {
         return Err(crate::i18n::pick(
             "安装包不存在，请重新下载",
             "Installer file not found; please download again",
@@ -547,8 +634,9 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
         .into());
     }
 
+    let setup_norm = crate::library::norm_path(&verified_setup);
     let script = build_update_script(
-        &setup.to_string_lossy(),
+        &setup_norm,
         &dir.to_string_lossy(),
         &exe.to_string_lossy(),
     );
@@ -610,20 +698,21 @@ pub fn install_and_restart(app: &AppHandle, setup: &Path) -> Result<(), String> 
         )
         .into());
     };
-    if !setup.is_file() {
+    let verified_setup = verify_before_install(setup)?;
+    if !verified_setup.is_file() {
         return Err(crate::i18n::pick(
             "安装包不存在，请重新下载",
             "Installer file not found; please download again",
         )
         .into());
     }
-    std::fs::set_permissions(setup, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
+    std::fs::set_permissions(&verified_setup, std::fs::Permissions::from_mode(0o755)).map_err(|e| {
         crate::i18n::pick(
             format!("设置安装包执行权限失败：{e}"),
             format!("Failed to set installer permissions: {e}"),
         )
     })?;
-    std::fs::rename(setup, &appimage).map_err(|e| {
+    std::fs::rename(&verified_setup, &appimage).map_err(|e| {
         crate::i18n::pick(
             format!("替换 AppImage 失败（所在目录可能不可写）：{e}"),
             format!("Failed to replace AppImage (directory may be read-only): {e}"),

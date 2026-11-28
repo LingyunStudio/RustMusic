@@ -89,6 +89,7 @@ export interface Store {
   qqSearched: boolean;
   /** 搜索分页页码（QQ 按页码翻页，不按结果数推算） */
   qqPage: number;
+  qqHasMore: boolean;
   qqLoggedIn: boolean;
   qqNickname: string;
   qqCache: Record<string, QqSong>;
@@ -98,6 +99,7 @@ export interface Store {
   kugouSearching: boolean;
   kugouSearched: boolean;
   kugouPage: number;
+  kugouHasMore: boolean;
   kugouCache: Record<string, KgSong>;
   kugouLoggedIn: boolean;
   kugouNickname: string;
@@ -260,6 +262,7 @@ export interface Store {
 
   toggleLike(id: number): void;
   addToQueue(item: QueueItem): void;
+  addManyToQueue(items: QueueItem[]): void;
   playNext(item: QueueItem): void;
   removeQueueItem(i: number): void;
   clearQueue(): void;

@@ -49,9 +49,9 @@ pub struct ExclusiveCtl {
 /// 等待会话线程退出。必须在重建共享输出流之前调用：
 /// 设备被独占客户端占用期间，新的共享流打不开（表现为关独占后无声）。
 pub fn wait_session_exit(ctl: &ExclusiveCtl, timeout_ms: u64) -> bool {
-    ctl.stop.store(true, Ordering::Relaxed);
+    ctl.stop.store(true, Ordering::Release);
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
-    while !ctl.exited.load(Ordering::Relaxed) {
+    while !ctl.exited.load(Ordering::Acquire) {
         if std::time::Instant::now() >= deadline {
             return false;
         }
@@ -95,8 +95,8 @@ where
         .name("wasapi-exclusive".into())
         .spawn(move || {
             let result = run_session(src, params, active, paused, stop, tx.clone());
-            // 线程收尾：先标记退出（设备已随 audio_client 释放），再回传结果
-            exited.store(true, Ordering::Relaxed);
+            // 线程收尾：先 Release 标记退出（保证 audio_client 已 Drop 释放设备），再回传结果
+            exited.store(true, Ordering::Release);
             let _ = tx.send(result);
         })
         .map_err(|e| {
@@ -125,72 +125,95 @@ enum SampleKind {
 }
 
 /// 线性重采样器：step = 每个输出帧消耗的输入帧数
-/// （= 速率比 × 倍速）。step == 1 时逐帧直通（位一致）。
+/// 零分配线性重采样器：复用内部缓冲，避免热路径每秒 88k~384k 次堆分配。
+/// `step ≈ 1.0` 时走直通快路径（位一致且不重复尾帧）。
 struct LinearResampler {
     step: f64,
     pos: f64,
-    prev: Option<Vec<f32>>,
-    cur: Option<Vec<f32>>,
+    has_cur: bool,
+    prev: Vec<f32>,
+    cur: Vec<f32>,
+    out: Vec<f32>,
     done: bool,
 }
 
 impl LinearResampler {
-    /// 从源拉取一帧（ch 个采样）；源耗尽返回 None
-    fn pull(src: &mut dyn Iterator<Item = f32>, ch: usize) -> Option<Vec<f32>> {
-        let mut f = Vec::with_capacity(ch);
-        for _ in 0..ch {
-            f.push(src.next()?);
+    fn new(step: f64, ch: usize) -> Self {
+        Self {
+            step,
+            pos: 0.0,
+            has_cur: false,
+            prev: vec![0.0; ch],
+            cur: vec![0.0; ch],
+            out: vec![0.0; ch],
+            done: false,
         }
-        Some(f)
     }
 
-    fn next_frame(&mut self, src: &mut dyn Iterator<Item = f32>, ch: usize) -> Option<Vec<f32>> {
+    /// 从源拉取一帧（ch 个采样）到 dst；源耗尽返回 false
+    fn pull_into(src: &mut dyn Iterator<Item = f32>, dst: &mut [f32]) -> bool {
+        for slot in dst.iter_mut() {
+            match src.next() {
+                Some(v) => *slot = v,
+                None => return false,
+            }
+        }
+        true
+    }
+
+    fn next_frame(&mut self, src: &mut dyn Iterator<Item = f32>) -> Option<&[f32]> {
         if self.done {
             return None;
         }
-        if self.cur.is_none() {
-            self.cur = Some(Self::pull(src, ch)?);
-            // prev 必须有值：否则前几次插值会走“直接输出 cur”分支，
-            // 造成重复帧（听感为节奏错乱/倍速）
-            if let Some(c) = &self.cur {
-                self.prev = Some(c.clone());
+        // 直通快路径：速率比 × 倍速 == 1.0 时直接拉取一帧，无插值、无尾帧重复
+        if (self.step - 1.0).abs() < 1e-9 {
+            if Self::pull_into(src, &mut self.out) {
+                return Some(&self.out);
             }
+            self.done = true;
+            return None;
         }
-        while self.pos >= 1.0 {
-            self.pos -= 1.0;
-            self.prev = self.cur.take();
-            match Self::pull(src, ch) {
-                Some(f) => self.cur = Some(f),
-                None => {
-                    self.done = true;
-                    return self.prev.take();
-                }
-            }
-        }
-        let out = match (&self.prev, &self.cur) {
-            (Some(p), Some(c)) if self.pos > 0.0 => p
-                .iter()
-                .zip(c.iter())
-                .map(|(a, b)| a + (b - a) * self.pos as f32)
-                .collect(),
-            (_, Some(c)) => c.clone(),
-            _ => {
+        if !self.has_cur {
+            if !Self::pull_into(src, &mut self.prev) {
                 self.done = true;
                 return None;
             }
-        };
+            if !Self::pull_into(src, &mut self.cur) {
+                self.cur.copy_from_slice(&self.prev);
+            }
+            self.has_cur = true;
+        }
+        while self.pos >= 1.0 {
+            self.pos -= 1.0;
+            self.prev.copy_from_slice(&self.cur);
+            if !Self::pull_into(src, &mut self.cur) {
+                self.done = true;
+                return None;
+            }
+        }
+        let frac = self.pos as f32;
+        if frac > 0.0 {
+            for ((o, &p), &c) in self.out.iter_mut().zip(&self.prev).zip(&self.cur) {
+                *o = p + (c - p) * frac;
+            }
+        } else {
+            self.out.copy_from_slice(&self.prev);
+        }
         self.pos += self.step;
-        Some(out)
+        Some(&self.out)
     }
 }
 
-/// 追加一帧采样到字节缓冲（按设备格式转换）
+/// 追加一帧采样到字节缓冲（按设备格式转换；始终清洗 NaN 并夹紧 [-1, 1] 防止 24-bit 整型溢出回绕爆音）
 fn append_frame(buf: &mut Vec<u8>, frame: &[f32], fmt: &FmtSpec, volume: f32) {
-    for &s in frame {
-        let s = if (volume - 1.0).abs() < f32::EPSILON {
-            s
+    let unity = (volume - 1.0).abs() < f32::EPSILON;
+    for &raw in frame {
+        let s = if !raw.is_finite() {
+            0.0
+        } else if unity {
+            raw.clamp(-1.0, 1.0)
         } else {
-            (s * volume).clamp(-1.0, 1.0)
+            (raw * volume).clamp(-1.0, 1.0)
         };
         match fmt.kind {
             SampleKind::I16 => {
@@ -216,10 +239,6 @@ fn append_frame(buf: &mut Vec<u8>, frame: &[f32], fmt: &FmtSpec, volume: f32) {
             }
         }
     }
-}
-
-fn silence_bytes(frames: usize, blockalign: usize) -> Vec<u8> {
-    vec![0u8; frames * blockalign]
 }
 
 fn silent_flags() -> BufferFlags {
@@ -530,30 +549,11 @@ where
             )
         })?;
         audio_client.start_stream().map_err(|e| {
-            let e = crate::i18n::pick(
-                format!("独占模式启动流失败: {e}"),
-                format!("Failed to start exclusive stream: {e}"),
-            );
-            let _ = tx.send(Err(e.clone()));
-            e
+            wasapi_err(
+                crate::i18n::pick("独占模式启动流失败", "Failed to start exclusive stream"),
+                e.as_ref(),
+            )
         })?;
-        // 初始化完成：立即回传结果（引擎据此决定独占或回退共享），随后进入喂采样循环
-        let _ = tx.send(Ok(()));
-        eprintln!(
-            "[wasapi] 独占播放：{}Hz × {}ch，{} 字节/帧，重采样比 {:.3}",
-            dev_rate, ch, blockalign, rate_ratio,
-        );
-
-        // step：每个输出帧消耗的输入帧数（速率比 × 倍速）
-        let speed = f32::from_bits(params.speed_bits.load(Ordering::Relaxed)).max(0.5);
-        let mut resampler = LinearResampler {
-            step: rate_ratio * speed as f64,
-            pos: 0.0,
-            prev: None,
-            cur: None,
-            done: false,
-        };
-
         // 独占事件驱动模式的标准喂采样循环：每次事件写满整个缓冲区，
         // 不查询 padding（部分驱动的独占 padding 语义不可靠，按空间写会
         // 超量喂入，表现为进度条倍速 + 采样乱码）。
@@ -565,33 +565,50 @@ where
                     e.as_ref(),
                 )
             })? as usize;
+        // 全部初始化（含 get_bufferframecount）完成后再回报 Ok(())
+        let _ = tx.send(Ok(()));
+        eprintln!(
+            "[wasapi] 独占播放：{}Hz × {}ch，{} 字节/帧，重采样比 {:.3}",
+            dev_rate, ch, blockalign, rate_ratio,
+        );
+
+        // step：每个输出帧消耗的输入帧数（速率比 × 倍速）
+        let speed = f32::from_bits(params.speed_bits.load(Ordering::Relaxed)).max(0.5);
+        let mut resampler = LinearResampler::new(rate_ratio * speed as f64, ch);
         let excl_ms = ((buffer_frames as u64) * 1000) / u64::from(dev_rate).max(1);
         params.output_latency_ms.store(excl_ms, Ordering::Relaxed);
         eprintln!("[wasapi] 独占缓冲 = {buffer_frames} 帧/周期（约 {excl_ms}ms）");
+        let buf_bytes = buffer_frames * blockalign;
+        let silence = vec![0u8; buf_bytes];
+        let mut bytes = Vec::with_capacity(buf_bytes);
         loop {
-            if stop.load(Ordering::Relaxed) {
+            if stop.load(Ordering::Acquire) {
                 break;
             }
             if h_event.wait_for_event(1000).is_err() {
                 break;
             }
-            if stop.load(Ordering::Relaxed) {
+            if stop.load(Ordering::Acquire) {
                 break;
             }
             if paused.load(Ordering::Relaxed) {
                 // 暂停：写静音帧，不消耗采样源（进度冻结）
-                let z = silence_bytes(buffer_frames, blockalign);
-                let _ = render.write_to_device(buffer_frames, blockalign, &z, Some(silent_flags()));
+                if render
+                    .write_to_device(buffer_frames, blockalign, &silence, Some(silent_flags()))
+                    .is_err()
+                {
+                    break;
+                }
                 continue;
             }
             let volume = f32::from_bits(params.volume_bits.load(Ordering::Relaxed));
-            let mut bytes = Vec::with_capacity(buffer_frames * blockalign);
+            bytes.clear();
             let mut written = 0usize;
             let mut ended = false;
             for _ in 0..buffer_frames {
-                match resampler.next_frame(&mut src, ch) {
+                match resampler.next_frame(&mut src) {
                     Some(frame) => {
-                        append_frame(&mut bytes, &frame, &fmt, volume);
+                        append_frame(&mut bytes, frame, &fmt, volume);
                         written += 1;
                     }
                     None => {
@@ -600,12 +617,18 @@ where
                     }
                 }
             }
-            // 源耗尽后余下缓冲填静音（保持缓冲完整），随后退出会话
+            // 源耗尽后余下缓冲填静音（保持缓冲完整），随后等最后硬件缓冲播完再停流
             if written < buffer_frames {
-                bytes.extend(silence_bytes(buffer_frames - written, blockalign));
+                bytes.resize(buf_bytes, 0);
             }
-            let _ = render.write_to_device(buffer_frames, blockalign, &bytes, None);
+            if render
+                .write_to_device(buffer_frames, blockalign, &bytes, None)
+                .is_err()
+            {
+                break;
+            }
             if ended {
+                let _ = h_event.wait_for_event(200);
                 audio_client.stop_stream().ok();
                 active.store(false, Ordering::Relaxed);
                 return Ok(());
@@ -734,5 +757,16 @@ mod tests {
             println!();
         }
         assert!(tested, "没有找到支持独占模式的设备（本机可能都不支持）");
+    }
+
+    #[test]
+    fn linear_resampler_monotonic_ramp() {
+        let mut r = LinearResampler::new(0.5, 1);
+        let mut src = [0.0f32, 10.0, 20.0, 30.0].into_iter();
+        let mut out = Vec::new();
+        while let Some(frame) = r.next_frame(&mut src) {
+            out.push(frame[0]);
+        }
+        assert_eq!(out, vec![0.0, 5.0, 10.0, 15.0, 20.0, 25.0]);
     }
 }

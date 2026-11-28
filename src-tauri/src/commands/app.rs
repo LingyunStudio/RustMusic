@@ -70,11 +70,27 @@ pub async fn exit_mini_mode(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 运行时放行 asset 协议路径：自定义皮肤图片可能在用户目录任意位置
+/// 运行时放行 asset 协议路径：自定义皮肤图片可能在用户目录任意位置；
+/// 仅允许真实存在的常规图片文件，防止放行任意敏感文件
 #[tauri::command]
 pub async fn asset_scope_allow(app: AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_file() {
+        return Err(crate::i18n::pick("文件不存在", "File does not exist").into());
+    }
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !matches!(
+        ext.as_str(),
+        "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif" | "svg"
+    ) {
+        return Err(crate::i18n::pick("仅允许放行图片文件", "Only image files are allowed").into());
+    }
     app.asset_protocol_scope()
-        .allow_file(path)
+        .allow_file(p)
         .map_err(|e| e.to_string())
 }
 
@@ -223,11 +239,15 @@ fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String,
         return Ok(dest.to_string_lossy().into_owned());
     }
 
-    let resp = ureq::get(&url)
+    let resp = crate::net::shared_agent()
+        .get(&url)
         .set("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
         .call()
-        .map_err(|e| crate::i18n::pick(format!("封面下载失败: {e}"), format!("Cover download failed: {e}")))?;
+        .map_err(|e| {
+            let msg = crate::net::sanitize_err(&e);
+            crate::i18n::pick(format!("封面下载失败: {msg}"), format!("Cover download failed: {msg}"))
+        })?;
     let mut buf = Vec::new();
     resp.into_reader()
         .take(8 * 1024 * 1024)
@@ -236,6 +256,17 @@ fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String,
     if buf.len() < 64 {
         return Err(crate::i18n::pick("封面内容为空", "Cover image is empty").into());
     }
+    // 先写临时文件再原子重命名，避免同一专辑多行并发下载把缓存文件写花；
+    // 叠加单调递增序号避免 Windows 低精度时钟下并发撞名
+    static COVER_TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = COVER_TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(
+        "{stem}.{}.{seq}.tmp",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
     // 自动裁剪非正方形补白边/扫描白边；无白边时零损耗直写原字节
     if let Ok(img) = image::load_from_memory(&buf) {
         let (trimmed, changed) = crate::library::trim_scan_white_border(img);
@@ -245,12 +276,22 @@ fn fetch_cover_task(app_data: std::path::PathBuf, url: String) -> Result<String,
             } else {
                 image::ImageFormat::Jpeg
             };
-            if trimmed.to_rgb8().save_with_format(&dest, fmt).is_ok() {
-                return Ok(dest.to_string_lossy().into_owned());
+            if trimmed.to_rgb8().save_with_format(&tmp, fmt).is_ok() {
+                if std::fs::rename(&tmp, &dest).is_ok() || dest.exists() {
+                    let _ = std::fs::remove_file(&tmp);
+                    return Ok(dest.to_string_lossy().into_owned());
+                }
             }
+            let _ = std::fs::remove_file(&tmp);
         }
     }
-    std::fs::write(&dest, &buf).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, &buf).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(&tmp, &dest) {
+        let _ = std::fs::remove_file(&tmp);
+        if !dest.exists() {
+            return Err(e.to_string());
+        }
+    }
     Ok(dest.to_string_lossy().into_owned())
 }
 
@@ -268,7 +309,8 @@ fn extract_cover_palette_task(url: String) -> Result<Vec<String>, String> {
     // 3~4MB，超过读取上限被截断后解码必然失败 → 取色静默失效。
     // 主动要一张 350px 小图，既小又完整。
     let url = if url.contains("music.126.net") && !url.contains("param=") {
-        format!("{url}?param=350y350")
+        let sep = if url.contains('?') { '&' } else { '?' };
+        format!("{url}{sep}param=350y350")
     } else {
         url
     };
@@ -342,8 +384,9 @@ fn extract_cover_palette_task(url: String) -> Result<Vec<String>, String> {
     let mut colors: Vec<(f64, f64, f64, f64)> = buckets.into_values().collect();
     colors.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
     let mut out = Vec::new();
-    for (r, g, b, _) in colors.iter().take(4) {
-        let (r, g, b) = (*r, *g, *b);
+    for &(r, g, b, w) in colors.iter().take(4) {
+        let inv = 1.0 / w.max(1e-6);
+        let (r, g, b) = ((r * inv).clamp(0.0, 1.0), (g * inv).clamp(0.0, 1.0), (b * inv).clamp(0.0, 1.0));
         let max = r.max(g).max(b);
         let min = r.min(g).min(b);
         let l = (max + min) / 2.0;
@@ -462,8 +505,12 @@ pub async fn desktop_lyrics_open(app: AppHandle) -> Result<(), String> {
         }
         eprintln!("[dlyrics] 检测到僵尸窗口，销毁后重建");
         let _ = w.destroy();
-        // 注销是异步的：稍等片刻避免立刻重建撞同名
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // 注销是异步的：稍等片刻避免立刻重建撞同名（放到阻塞池避免卡死 Tokio worker）
+        let _ = super::blocking(|| {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Ok::<_, String>(())
+        })
+        .await;
     }
     let url = {
         // dev：Vite 服务 desktop-lyrics.html；release：dist 内多页产物。

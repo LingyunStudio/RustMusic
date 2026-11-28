@@ -203,7 +203,9 @@ impl Engine {
             .as_ref()
             .map_or(false, |(p, _)| *p == info.path);
         if !keep_streaming {
-            *self.active_streaming.write() = None;
+            if let Some((_, old)) = self.active_streaming.write().take() {
+                old.cancel_readers();
+            }
         }
         if self.exclusive_enabled.load(Ordering::Relaxed) {
             match self.start_exclusive(&info, 0) {
@@ -271,7 +273,6 @@ impl Engine {
         // 仅调试构建打印诊断，release 下这两个值没有任何读者
         #[cfg(debug_assertions)]
         let (diag_sr, diag_ch) = (wrapped.sample_rate(), wrapped.channels());
-        self.pos_ms.store(0, Ordering::Relaxed);
         // 边下边播起播时元数据可能未带时长：用解码器上报的总时长兜底
         let dur_ms = if info.duration_ms > 0 {
             info.duration_ms
@@ -281,29 +282,30 @@ impl Engine {
         self.dur_ms.store(dur_ms, Ordering::Relaxed);
         // 换曲瞬间重新连接 Player 到 mixer，彻底隔离不同曲目/音质（如全景声 44.1k/48k 下混切到超清/母带 96k/192k）
         // 的采样率与声道上下文，避免 rodio 重采样器锁死在旧采样率；
-        // switching 置位避免 monitor 采样到 empty 误判"播完"
-        self.switching.store(true, Ordering::Relaxed);
+        // 先 pause 并预置音量/倍速再 append & swap，避免新歌以 100% 音量/1.0x 与旧歌瞬间重叠
+        self.switching.store(true, Ordering::Release);
         let new_sink = Player::connect_new(self.out.read().mixer());
+        new_sink.pause();
+        new_sink.set_volume(f32::from_bits(self.volume.load(Ordering::Relaxed)));
+        new_sink.set_speed(f32::from_bits(self.speed.load(Ordering::Relaxed)));
         new_sink.append(wrapped);
         {
             let mut sink = self.sink.write();
             sink.stop();
             *sink = new_sink;
         }
-        self.switching.store(false, Ordering::Relaxed);
-        sink_play_common(
-            &self.sink,
-            self.volume.load(Ordering::Relaxed),
-            self.speed.load(Ordering::Relaxed),
-        );
+        // 旧 sink 已停后再清零 pos_ms，避免旧 EqSource 最后一帧把 pos_ms 写回旧位置
+        self.pos_ms.store(0, Ordering::Relaxed);
         self.user_paused.store(false, Ordering::Relaxed);
         self.stopped.store(false, Ordering::Relaxed);
+        *self.current.write() = Some(info.clone());
+        self.sink.read().play();
+        self.switching.store(false, Ordering::Release);
         #[cfg(debug_assertions)]
         eprintln!(
             "[engine] started: kind={} path={} total_duration={:?} sr={} ch={}",
             info.kind, info.path, diag_dur, diag_sr, diag_ch,
         );
-        *self.current.write() = Some(info.clone());
         self.notify_smtc();
         let seq = self.play_seq.fetch_add(1, Ordering::Relaxed) + 1;
         let _ = self.app.emit(
@@ -403,11 +405,13 @@ impl Engine {
         self.stopped.store(true, Ordering::Relaxed);
         self.user_paused.store(false, Ordering::Relaxed);
         self.pos_ms.store(0, Ordering::Relaxed);
-        // 停播即解除流式下载关联（下载本身继续至完成，最终化 .part 缓存）
-        *self.active_streaming.write() = None;
+        // 停播即解除流式下载关联并唤醒阻塞中的旧读取器（下载本身继续至完成，最终化 .part 缓存）
+        if let Some((_, old)) = self.active_streaming.write().take() {
+            old.cancel_readers();
+        }
         if self.excl_active() {
             if let Some(ctl) = self.excl.read().as_ref() {
-                ctl.stop.store(true, Ordering::Relaxed);
+                ctl.stop.store(true, Ordering::Release);
                 ctl.active.store(false, Ordering::Relaxed);
             }
             self.notify_smtc();
@@ -522,6 +526,9 @@ impl Engine {
     // ---------- 音量 / 速度 / 均衡器 ----------
 
     pub fn set_volume(&self, v: f32) {
+        if !v.is_finite() {
+            return;
+        }
         let v = v.clamp(0.0, 1.0);
         self.volume.store(v.to_bits(), Ordering::Relaxed);
         self.sink.read().set_volume(v);
@@ -532,6 +539,9 @@ impl Engine {
     }
 
     pub fn set_speed(&self, v: f32) {
+        if !v.is_finite() {
+            return;
+        }
         let v = v.clamp(0.5, 2.0);
         self.speed.store(v.to_bits(), Ordering::Relaxed);
         // 独占模式：倍速通过重建会话（重采样比）应用，从当前进度续播
@@ -539,7 +549,9 @@ impl Engine {
             if let Some(info) = self.current.read().clone() {
                 let pos = self.pos_ms.load(Ordering::Relaxed);
                 let was_paused = self.user_paused.load(Ordering::Relaxed);
-                let _ = self.rebuild_exclusive_at(&info, pos, was_paused);
+                if let Err(e) = self.rebuild_exclusive_at(&info, pos, was_paused) {
+                    eprintln!("[engine] 独占模式切换倍速重建会话失败: {e}");
+                }
             }
             return;
         }
@@ -657,14 +669,6 @@ fn is_flac_container(path: &str) -> bool {
     let mut head = [0u8; 4];
     let n = f.read(&mut head).unwrap_or(0);
     n == 4 && head == *b"fLaC"
-}
-
-/// start() 尾部的公共播放准备（新 Sink 后设置音量/速度并开播）
-fn sink_play_common(sink: &RwLock<Player>, volume_bits: u32, speed_bits: u32) {
-    let s = sink.read();
-    s.set_volume(f32::from_bits(volume_bits));
-    s.set_speed(f32::from_bits(speed_bits));
-    s.play();
 }
 
 /// 按文件类型打开可播放采样源：MP4 容器（m4a/mp4、B 站 DASH 缓存）走

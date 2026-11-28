@@ -56,29 +56,47 @@ pub(crate) fn suspend_main_webview(app: &AppHandle) {
         }
         drop(st);
         let Some(win) = app.get_webview_window("main") else {
+            app.state::<AppState>()
+                .webview_suspended
+                .store(false, Ordering::SeqCst);
             return;
         };
-        let app_for_trim = app.clone();
+        let app_for_cb = app.clone();
         if let Err(e) = win.with_webview(move |webview| {
+            // 若闭包排队期间用户已快速恢复窗口，放弃本次挂起
+            if !app_for_cb
+                .try_state::<AppState>()
+                .map(|st| st.webview_suspended.load(Ordering::SeqCst))
+                .unwrap_or(false)
+            {
+                return;
+            }
             use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3;
             use windows::core::Interface as _;
             let controller = webview.controller();
             unsafe {
                 let Ok(core) = controller.CoreWebView2() else {
                     eprintln!("[webview] CoreWebView2() 失败");
+                    if let Some(st) = app_for_cb.try_state::<AppState>() {
+                        st.webview_suspended.store(false, Ordering::SeqCst);
+                    }
                     return;
                 };
                 let Ok(cwv3) = core.cast::<ICoreWebView2_3>() else {
                     eprintln!("[webview] cast ICoreWebView2_3 失败");
+                    if let Some(st) = app_for_cb.try_state::<AppState>() {
+                        st.webview_suspended.store(false, Ordering::SeqCst);
+                    }
                     return;
                 };
                 // IsVisible=false 是 TrySuspend 的前置条件
                 let _ = controller.SetIsVisible(false);
+                let app_for_done = app_for_cb.clone();
                 let handler =
                     webview2_com::TrySuspendCompletedHandler::create(Box::new(move |hr, ok| {
                         eprintln!("[webview] TrySuspend 完成 hr={hr:?} ok={ok:?}");
                         if ok {
-                            let app_trim = app_for_trim.clone();
+                            let app_trim = app_for_done.clone();
                             // 冻结后 Windows 仍惰性裁剪工作集（实测半分钟才落到底），
                             // 主动换出物理页让内存即刻回落；延迟后先复核仍处于挂起态再裁剪
                             std::thread::spawn(move || {
@@ -91,15 +109,31 @@ pub(crate) fn suspend_main_webview(app: &AppHandle) {
                                     trim_webview_working_sets();
                                 }
                             });
+                        } else {
+                            if let Some(st) = app_for_done.try_state::<AppState>() {
+                                st.webview_suspended.store(false, Ordering::SeqCst);
+                            }
+                            if let Some(win) = app_for_done.get_webview_window("main") {
+                                let _ = win.with_webview(|wv| {
+                                    let _ = wv.controller().SetIsVisible(true);
+                                });
+                            }
                         }
                         Ok(())
                     }));
                 if let Err(e) = cwv3.TrySuspend(&handler) {
                     eprintln!("[webview] 挂起失败: {e}");
+                    let _ = controller.SetIsVisible(true);
+                    if let Some(st) = app_for_cb.try_state::<AppState>() {
+                        st.webview_suspended.store(false, Ordering::SeqCst);
+                    }
                 }
             }
         }) {
             eprintln!("[webview] with_webview 失败: {e}");
+            app.state::<AppState>()
+                .webview_suspended
+                .store(false, Ordering::SeqCst);
         }
     }
     #[cfg(not(windows))]
@@ -135,8 +169,13 @@ fn trim_webview_working_sets() {
     unsafe {
         if Process32FirstW(snapshot, &mut entry).is_ok() {
             loop {
-                let name = String::from_utf16_lossy(&entry.szExeFile);
-                let name = name.trim_end_matches('\0');
+                // 必须按首个 NUL 截断：复用 entry 时短进程名后面会残留上一条长进程名的尾字节
+                let nul = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let name = String::from_utf16_lossy(&entry.szExeFile[..nul]);
                 if name.eq_ignore_ascii_case("msedgewebview2.exe") {
                     webview_procs.push((entry.th32ProcessID, entry.th32ParentProcessID));
                 }

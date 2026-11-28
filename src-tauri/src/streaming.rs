@@ -22,6 +22,8 @@ struct State {
     done: bool,
     /// 下载失败（读取端视为 EOF，播放自然结束）
     failed: bool,
+    /// 播放端已切歌或停止：立即唤醒并终止等待中的旧读取器，不阻塞音频线程
+    cancelled: bool,
 }
 
 /// 下载进度与终止状态的共享端。下载线程持有它推进进度；
@@ -45,6 +47,7 @@ impl StreamingDownload {
                 total: 0,
                 done: false,
                 failed: false,
+                cancelled: false,
             }),
             cv: Condvar::new(),
             part,
@@ -113,10 +116,26 @@ impl StreamingDownload {
         }
     }
 
+    /// 取消播放端等待：切歌或停播时立即唤醒阻塞在 `wait_for` 的音频/解码线程，
+    /// 让旧流以 EOF 退出（后台下载本身继续完成并落盘缓存）
+    pub fn cancel_readers(&self) {
+        let mut st = self.state.lock().unwrap();
+        if !st.cancelled {
+            st.cancelled = true;
+            self.cv.notify_all();
+        }
+    }
+
     /// 阻塞直到 `pos` 位置的数据可用（或下载终止）。供 `StreamingFile::read` 使用。
     fn wait_for(&self, pos: u64) -> io::Result<Frontier> {
         let mut st = self.state.lock().unwrap();
         loop {
+            if st.cancelled {
+                return Ok(Frontier {
+                    len: st.ready,
+                    eof: true,
+                });
+            }
             if st.failed {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
@@ -124,7 +143,8 @@ impl StreamingDownload {
                 ));
             }
             if st.done {
-                let len = if st.total > 0 { st.total } else { st.ready };
+                // 始终以实际已落盘字节 st.ready 为终点，防止服务端提前断开导致 ready < total 时死循环
+                let len = st.ready;
                 return Ok(Frontier {
                     len,
                     eof: pos >= len,
@@ -157,7 +177,8 @@ struct Frontier {
 /// 与 symphonia 的 MediaSource（供 symdec 直连源使用）。
 pub struct StreamingFile {
     shared: Arc<StreamingDownload>,
-    file: fs::File,
+    file: Option<fs::File>,
+    file_pos: u64,
     pos: u64,
 }
 
@@ -170,12 +191,19 @@ impl StreamingFile {
             Err(_) if shared.dest.exists() => (fs::File::open(&shared.dest)?, 0),
             Err(e) => return Err(e),
         };
-        Ok(Self { shared, file, pos })
+        Ok(Self {
+            shared,
+            file: Some(file),
+            file_pos: 0,
+            pos,
+        })
     }
 }
 
 impl Drop for StreamingFile {
     fn drop(&mut self) {
+        // 先显式释放文件句柄，再尝试重命名 .part → dest（Windows 上持有句柄时 rename 必失败）
+        self.file.take();
         // 下载完成但 .part 因播放器持有句柄而未能及时重命名：此处收尾。
         // dest 已存在则无需处理（幂等）。
         let (_, _, done, failed) = self.shared.snapshot();
@@ -198,16 +226,22 @@ impl Read for StreamingFile {
             }
             let want = (f.len - self.pos).min(buf.len() as u64) as usize;
             if want == 0 {
-                // 前沿恰好等于位置：等待新数据（wait_for 未阻塞是因为 done，
-                // 再循环一次让 EOF 分支处理）——done 时 len==pos 会走 eof，安全
                 continue;
             }
-            self.file.seek(SeekFrom::Start(self.pos))?;
-            let n = self.file.read(&mut buf[..want])?;
+            let file = self
+                .file
+                .as_mut()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "file closed"))?;
+            if self.file_pos != self.pos {
+                file.seek(SeekFrom::Start(self.pos))?;
+                self.file_pos = self.pos;
+            }
+            let n = file.read(&mut buf[..want])?;
             self.pos += n as u64;
-            if n == 0 && !f.eof {
-                // 理论不可达（want>0 且 read 范围在前沿内）；防御性避免死循环
-                continue;
+            self.file_pos += n as u64;
+            if n == 0 {
+                // 物理文件已达 EOF：不再继续自旋，按 EOF 退出
+                return Ok(0);
             }
             return Ok(n);
         }
@@ -216,23 +250,20 @@ impl Read for StreamingFile {
 
 impl Seek for StreamingFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let (ready, total, done, _) = self.shared.snapshot();
-        let base_end = |_cur: u64| -> u64 {
-            // End 以已知总长（或已就绪长度兜底）为基准
-            if total > 0 {
-                total
-            } else if done {
-                ready
-            } else {
-                ready
-            }
-        };
+        let (ready, total, _done, _) = self.shared.snapshot();
+        let base_end = if total > 0 { total } else { ready };
         let new_pos: i128 = match pos {
             SeekFrom::Start(n) => n as i128,
             SeekFrom::Current(d) => self.pos as i128 + d as i128,
-            SeekFrom::End(d) => base_end(self.pos) as i128 + d as i128,
+            SeekFrom::End(d) => base_end as i128 + d as i128,
         };
-        self.pos = new_pos.max(0) as u64;
+        if new_pos < 0 || new_pos > u64::MAX as i128 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid seek to a negative or overflowing position",
+            ));
+        }
+        self.pos = new_pos as u64;
         Ok(self.pos)
     }
 }

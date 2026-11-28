@@ -78,6 +78,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const playKugou = useStore((s) => s.playKugou);
   const playNext = useStore((s) => s.playNext);
   const addToQueue = useStore((s) => s.addToQueue);
+  const addManyToQueue = useStore((s) => s.addManyToQueue);
+  const qqHasMore = useStore((s) => s.qqHasMore);
+  const kugouHasMore = useStore((s) => s.kugouHasMore);
   const neteaseSearch = useStore((s) => s.neteaseSearch);
   const kugouSearch = useStore((s) => s.kugouSearch);
   const qqSearch = useStore((s) => s.qqSearch);
@@ -109,6 +112,13 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const setRec = (r: OnlineRecState | null) =>
     useStore.getState().setOnlineRec(source, r);
   const [recLoading, setRecLoading] = useState(false);
+  // 推荐/榜单异步请求代际号：切搜索、返回或卸载时递增，丢弃晚到的旧响应
+  const recGenRef = useRef(0);
+  useEffect(() => {
+    return () => {
+      recGenRef.current += 1;
+    };
+  }, []);
   const [toplists, setToplists] = useState<
     { id: number; name: string; cover: string }[]
   >([]);
@@ -258,10 +268,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
 
   const loadRandom = async () => {
     if (recLoading) return;
+    const gen = ++recGenRef.current;
     setRecLoading(true);
     try {
       if (source === "netease") {
         const r = await api.neteaseRandomPlaylist();
+        if (gen !== recGenRef.current) return;
         const next: OnlineRecState = {
           origin: "random",
           title: r.name,
@@ -274,6 +286,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         setRec(next);
       } else if (source === "qq") {
         const r = await api.qqRandomPlaylist();
+        if (gen !== recGenRef.current) return;
         const next: OnlineRecState = {
           origin: "random",
           title: r.name,
@@ -286,6 +299,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         setRec(next);
       } else {
         const r = await api.kugouRandomPlaylist();
+        if (gen !== recGenRef.current) return;
         const next: OnlineRecState = {
           origin: "random",
           title: r.name,
@@ -298,9 +312,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         setRec(next);
       }
     } catch (e) {
-      toast(String(e), "error");
+      if (gen === recGenRef.current) toast(String(e), "error");
     } finally {
-      setRecLoading(false);
+      if (gen === recGenRef.current) setRecLoading(false);
     }
   };
 
@@ -412,8 +426,10 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       return;
     }
     setRecLoading(true);
+    const gen = ++recGenRef.current;
     try {
       const r = await loader();
+      if (gen !== recGenRef.current) return;
       const next: OnlineRecState =
         kind === "daily"
           ? {
@@ -433,9 +449,9 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
       cacheRecSongs(next);
       setRec(next);
     } catch (e) {
-      toast(String(e), "error");
+      if (gen === recGenRef.current) toast(String(e), "error");
     } finally {
-      setRecLoading(false);
+      if (gen === recGenRef.current) setRecLoading(false);
     }
   };
 
@@ -566,25 +582,38 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   const goBack = () => {
     const prev = useStore.getState().popOnlineNav(source);
     if (!prev) return;
+    recGenRef.current += 1;
+    setRecLoading(false);
     setRec(prev.rec);
     setKw(prev.kw);
     setSel(new Set());
-    useStore.setState({
-      neteaseResults: prev.neteaseResults,
-      neteaseTotal: prev.neteaseTotal,
-      neteaseSearched: prev.neteaseSearched,
-      qqResults: prev.qqResults,
-      qqSearched: prev.qqSearched,
-      qqPage: prev.qqPage,
-      kugouResults: prev.kugouResults,
-      kugouSearched: prev.kugouSearched,
-      kugouPage: prev.kugouPage,
-    });
+    // 仅恢复当前 source 的搜索结果，避免覆盖其他音源 Tab 的较新状态
+    if (source === "netease") {
+      useStore.setState({
+        neteaseResults: prev.neteaseResults,
+        neteaseTotal: prev.neteaseTotal,
+        neteaseSearched: prev.neteaseSearched,
+      });
+    } else if (source === "qq") {
+      useStore.setState({
+        qqResults: prev.qqResults,
+        qqSearched: prev.qqSearched,
+        qqPage: prev.qqPage,
+      });
+    } else {
+      useStore.setState({
+        kugouResults: prev.kugouResults,
+        kugouSearched: prev.kugouSearched,
+        kugouPage: prev.kugouPage,
+      });
+    }
   };
 
   const submit = (query?: string) => {
     const q = (typeof query === "string" ? query : kw).trim();
     if (!q) return;
+    recGenRef.current += 1;
+    setRecLoading(false);
     pushNav();
     setRec(null);
     setSel(new Set());
@@ -613,7 +642,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     if (!tail) return;
     let expectedTail = String(tail.id);
     const tailKind = tail.kind;
-    const kwAtPlay = kw;
+    const kwAtPlay = useStore.getState().lastKw[source] || kw;
     const srcAtPlay = source;
     useStore.getState().setQueueExtender(async () => {
       const st = useStore.getState();
@@ -644,7 +673,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         return fresh.map((t) => ({ kind: "netease", id: t.id }) as QueueItem);
       }
       if (srcAtPlay === "qq") {
-        if (st.qqResults.length === 0 || st.qqResults.length !== 30 * st.qqPage) return null;
+        if (!st.qqHasMore) return null;
         const before = st.qqResults.length;
         await qqSearch(kwAtPlay, true);
         const fresh = useStore.getState().qqResults.slice(before);
@@ -652,7 +681,7 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
         expectedTail = String(fresh[fresh.length - 1].id);
         return fresh.map((t) => ({ kind: "qq", id: t.id }) as QueueItem);
       }
-      if (st.kugouResults.length === 0 || st.kugouResults.length !== 30 * st.kugouPage) return null;
+      if (!st.kugouHasMore) return null;
       const before = st.kugouResults.length;
       await kugouSearch(kwAtPlay, true);
       const fresh = useStore.getState().kugouResults.slice(before);
@@ -706,17 +735,19 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   });
 
   const playRow = (i: number) => {
-    registerQueueExtender();
     if (rec) {
       // 推荐态：队列 = 当前推荐列表（曲目信息已在加载时写入缓存）
       if (rec.netease) playNetease(rec.netease, i);
       else if (rec.qq) playQq(rec.qq, i);
       else if (rec.kugou) playKugou(rec.kugou, i);
+      registerQueueExtender();
       return;
     }
     if (source === "netease") playNetease(neteaseResults, i);
     else if (source === "kugou") playKugou(kugouResults, i);
     else playQq(qqResults, i);
+    // 必须在 playNetease/playQq/playKugou 替换队列（其会清空 queueExtender）之后注册
+    registerQueueExtender();
   };
 
   const menuAction = (row: OnlineRow, action: "play" | "next" | "queue") => {
@@ -772,14 +803,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
   }, [batchMode, rows]);
 
   const batchQueue = () => {
-    for (const row of selectedRows) menuAction(row, "queue");
-    toast(
-      tr(
-        `已把 ${selectedRows.length} 首加入队列`,
-        `Added ${selectedRows.length} ${selectedRows.length === 1 ? "track" : "tracks"} to queue`,
-      ),
-      "success",
+    const items: QueueItem[] = selectedRows.map((row) =>
+      row.kind === "netease"
+        ? { kind: "netease" as const, id: row.id as number }
+        : { kind: row.kind as "qq" | "kugou", id: row.id as string }
     );
+    addManyToQueue(items);
     setSel(new Set());
     setBatchMode(false);
   };
@@ -817,8 +846,8 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
     (source === "netease"
       ? rows.length < neteaseTotal
       : source === "kugou"
-        ? rows.length > 0 && rows.length === 30 * kugouPage
-        : rows.length > 0 && rows.length === 30 * qqPage);
+        ? kugouHasMore
+        : qqHasMore);
 
   const headerContent = (
     <div className="flex items-end justify-between gap-5">
@@ -1340,13 +1369,12 @@ export default function OnlineLibraryView({ source }: { source: Source }) {
                 <button
                   className="btn-secondary !py-1.5 !px-4"
                   disabled={searching}
-                  onClick={() =>
-                    source === "netease"
-                      ? neteaseSearch(kw, true)
-                      : source === "kugou"
-                        ? kugouSearch(kw, true)
-                        : qqSearch(kw, true)
-                  }
+                  onClick={() => {
+                    const q = useStore.getState().lastKw[source] || kw;
+                    if (source === "netease") neteaseSearch(q, true);
+                    else if (source === "kugou") kugouSearch(q, true);
+                    else qqSearch(q, true);
+                  }}
                 >
                   {searching ? <Loader2 size={13} className="animate-spin" /> : null}
                   {tr("加载更多", "Load More")}

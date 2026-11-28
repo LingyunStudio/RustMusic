@@ -55,14 +55,14 @@ fn save_dir(state: &State<AppState>) -> std::path::PathBuf {
 fn sanitize_filename(s: &str) -> String {
     s.chars()
         .map(|c| {
-            if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
                 ' '
             } else {
                 c
             }
         })
         .collect::<String>()
-        .trim()
+        .trim_matches(|c: char| c.is_whitespace() || c == '.')
         .to_string()
 }
 
@@ -230,6 +230,7 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
         )
     })?;
     let artist = sanitize_filename(&req.artist);
+    let clean_title = sanitize_filename(&title);
     let stem = format!(
         "{} - {}",
         if artist.is_empty() {
@@ -237,15 +238,33 @@ fn download_online_task(app: &AppHandle, req: OnlineSaveReq) -> Result<serde_jso
         } else {
             &artist
         },
-        sanitize_filename(&title),
+        if clean_title.is_empty() {
+            "Untitled"
+        } else {
+            &clean_title
+        },
     );
-    let initial_name = if ext == "auto" {
+    // 扩展名白名单校验：防止上游异常 URL 混入路径分隔符导致目录穿越或写入失败
+    let safe_ext = if ext == "auto" {
+        "auto".to_string()
+    } else {
+        let low = ext.trim().to_ascii_lowercase();
+        if matches!(
+            low.as_str(),
+            "mp3" | "flac" | "m4a" | "wav" | "ogg" | "aac" | "opus" | "alac" | "aiff" | "wma"
+        ) {
+            low
+        } else {
+            "mp3".to_string()
+        }
+    };
+    let initial_name = if safe_ext == "auto" {
         format!("{stem}.bin")
     } else {
-        format!("{stem}.{ext}")
+        format!("{stem}.{safe_ext}")
     };
     let dest = dir.join(&initial_name);
-    if ext != "auto" && dest.exists() {
+    if safe_ext != "auto" && dest.exists() {
         return Err(crate::i18n::pick(
             format!("保存目录已存在同名文件：{initial_name}（如需重新下载请先删除旧文件）"),
             format!("File already exists: {initial_name} (delete it first to re-download)"),
@@ -377,19 +396,27 @@ fn download_to_dest(
         }
         return Err(e);
     }
+    let finish_err = |msg: String| -> Result<String, String> {
+        if emitted {
+            let _ = app.emit("download://progress", json!({ "url": &title, "done": true }));
+        }
+        Err(msg)
+    };
     // 完整性校验：长度不符（连接中途断开被当成 EOF、超上限被截断）不能当成功
     if total > 0 && received != total {
-        return Err(crate::i18n::pick(
+        return finish_err(crate::i18n::pick(
             format!("下载不完整（{received}/{total} 字节），已放弃"),
             format!("Incomplete download ({received}/{total} bytes), aborted"),
         ));
     }
     if received == MAX_DOWNLOAD && (total == 0 || total > received) {
-        return Err(crate::i18n::pick(
-            "文件超过 512MB 下载上限，已放弃",
-            "File exceeds 512 MB download limit, aborted",
-        )
-        .into());
+        return finish_err(
+            crate::i18n::pick(
+                "文件超过 512MB 下载上限，已放弃",
+                "File exceeds 512 MB download limit, aborted",
+            )
+            .into(),
+        );
     }
     let final_dest = if auto_ext {
         let detected = sniff_audio_ext(part);
@@ -399,7 +426,7 @@ fn download_to_dest(
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            return Err(crate::i18n::pick(
+            return finish_err(crate::i18n::pick(
                 format!("保存目录已存在同名文件：{fname}（如需重新下载请先删除旧文件）"),
                 format!("File already exists: {fname} (delete it first to re-download)"),
             ));
@@ -408,12 +435,12 @@ fn download_to_dest(
     } else {
         dest.to_path_buf()
     };
-    std::fs::rename(part, &final_dest).map_err(|e| {
-        crate::i18n::pick(
+    if let Err(e) = std::fs::rename(part, &final_dest) {
+        return finish_err(crate::i18n::pick(
             format!("保存文件失败: {e}"),
             format!("Failed to save file: {e}"),
-        )
-    })?;
+        ));
+    }
     let _ = app.emit(
         "download://progress",
         json!({ "url": &title, "received": received, "total": if total == 0 { received } else { total }, "pct": 100, "done": true }),
@@ -466,6 +493,19 @@ fn download_to_dest(
     {
         let conn = state.db.lock();
         db::upsert_track(&conn, &track);
+        // 先确保 online_tracks 存在该记录（从搜索页直接下载从未播放/收藏的曲目时也能记入下载历史）
+        db::upsert_online_track(
+            &conn,
+            &req.kind,
+            &req.id,
+            title,
+            &req.artist,
+            &req.album,
+            &req.cover_url,
+            req.duration_ms as i64,
+            &req.media_mid,
+            false,
+        );
         db::mark_online_downloaded(&conn, &req.kind, &req.id);
         let norm_dir = crate::library::norm_path(dir_of(&final_dest));
         let _ = db::add_folder(&conn, &norm_dir);
@@ -605,7 +645,8 @@ fn http_get_for(kind: &str, url: &str) -> Result<(u64, impl std::io::Read), Stri
             .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
     }
     let resp = req.call().map_err(|e| {
-        crate::i18n::pick(format!("下载失败: {e}"), format!("Download failed: {e}"))
+        let msg = crate::net::sanitize_err(&e);
+        crate::i18n::pick(format!("下载失败: {msg}"), format!("Download failed: {msg}"))
     })?;
     let total: u64 = resp
         .header("content-length")
@@ -654,7 +695,13 @@ fn write_tags(
                     .call()
                 {
                     let mut data = Vec::new();
-                    if resp.into_reader().read_to_end(&mut data).is_ok() && !data.is_empty() {
+                    if resp
+                        .into_reader()
+                        .take(8 * 1024 * 1024)
+                        .read_to_end(&mut data)
+                        .is_ok()
+                        && !data.is_empty()
+                    {
                         let mime = if cover_url.contains(".png") {
                             lofty::picture::MimeType::Png
                         } else {

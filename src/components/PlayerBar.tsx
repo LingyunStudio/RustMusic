@@ -77,9 +77,12 @@ function TrackTitleLyric() {
       const e2 = lyricWrapRef.current;
       if (e2) setLyricOverflow(e2.scrollWidth > e2.clientWidth + 1);
     };
-    requestAnimationFrame(measure);
+    const raf = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+    };
   }, [overflowText]);
 
   if (!current) return null;
@@ -153,7 +156,7 @@ function Playhead({ fallbackTotal }: { fallbackTotal: number }) {
         onPointerLeave={() => setHoverRatio(null)}
       >
         <Slider
-          value={pos}
+          value={shown}
           max={total || 1}
           onChange={(v) => {
             if (dragVal == null) {
@@ -282,8 +285,16 @@ function VolumePopover({
             if (e.buttons !== 1) return;
             onPointer(e);
           }}
-          onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
-          onPointerCancel={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
+          onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+          }}
+          onPointerCancel={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
+          }}
         >
           <div
             className={`absolute ${
@@ -508,7 +519,7 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
     <div
       className={`anim-bar absolute bottom-0 right-0 z-50 ${
         isLiquid
-          ? `pl-3 pr-2 pb-2 pt-1 ${centered ? "left-0" : "left-[250px]"}`
+          ? `pl-5 pr-4 pb-3 pt-1 ${centered ? "left-0" : "left-[250px]"}`
           : `px-6 pb-4 pt-1 ${centered ? "left-0" : "left-[236px]"}`
       }`}
     >
@@ -540,8 +551,8 @@ export default function PlayerBar({ centered = false }: { centered?: boolean }) 
                 nowPlayingOpen ? "opacity-80 hover:opacity-100" : ""
               }`
             : isLiquid
-            ? `h-[70px] rounded-2xl flex items-center pl-5 pr-5 gap-5 transition-all duration-300 liquid-dock relative z-10 ${
-                nowPlayingOpen ? "opacity-90 hover:opacity-100" : ""
+            ? `h-[68px] rounded-[26px] flex items-center pl-5 pr-5 gap-5 transition-all duration-300 liquid-dock relative z-10 ${
+                nowPlayingOpen ? "opacity-92 hover:opacity-100" : ""
               }`
             : `h-[64px] rounded-[18px] flex items-center pl-5 pr-6 gap-5 transition-opacity duration-300 ${
                 nowPlayingOpen ? "opacity-80 hover:opacity-100" : ""

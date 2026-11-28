@@ -119,6 +119,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
   const downloadOnline = useStore((s) => s.downloadOnline);
   const playNext = useStore((s) => s.playNext);
   const addToQueue = useStore((s) => s.addToQueue);
+  const addManyToQueue = useStore((s) => s.addManyToQueue);
   const deletePlaylist = useStore((s) => s.deletePlaylist);
   const current = useStore((s) => s.current);
   const savedOnline = useStore((s) => s.savedOnline);
@@ -187,11 +188,18 @@ export default function PlaylistDetail({ id }: { id: number }) {
     setSel(new Set());
   }, [id]);
 
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 180);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const tracksById = useMemo(() => new Map(tracks.map((t) => [t.id, t])), [tracks]);
+
   const list = useMemo<DetailRow[]>(() => {
     if (!pl) return [];
-    const byId = new Map(tracks.map((t) => [t.id, t]));
     return pl.entries
-      .filter((e) => matchSearchEntry(e, search))
+      .filter((e) => matchSearchEntry(e, debouncedSearch))
       .map((e): DetailRow => {
         const base = {
           entry: e,
@@ -202,7 +210,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           durationMs: e.duration * 1000,
         };
         if (e.kind === "local") {
-          const t = e.trackId != null ? byId.get(e.trackId) : undefined;
+          const t = e.trackId != null ? tracksById.get(e.trackId) : undefined;
           return {
             ...base,
             kind: "track",
@@ -254,7 +262,7 @@ export default function PlaylistDetail({ id }: { id: number }) {
           liked: !!savedOnline[`qq-${e.onlineId}`],
         };
       });
-  }, [pl, tracks, search, savedOnline]);
+  }, [pl, tracksById, debouncedSearch, savedOnline]);
 
   const toggleSel = (rowid: number) => {
     setSel((prev) => {
@@ -293,17 +301,11 @@ export default function PlaylistDetail({ id }: { id: number }) {
   };
 
   const batchAddToQueue = () => {
-    const selectedRows = list.filter((r) => sel.has(r.entry.rowid));
-    for (const r of selectedRows) {
-      const item = entryToQueueItem(r.entry);
-      if (item) addToQueue(item);
-    }
-    toast(
-      tr(
-        `已将 ${selectedRows.length} 首歌曲加入播放队列`,
-        `Added ${selectedRows.length} ${selectedRows.length === 1 ? "track" : "tracks"} to queue`
-      )
-    );
+    const items = list
+      .filter((r) => sel.has(r.entry.rowid))
+      .map((r) => entryToQueueItem(r.entry))
+      .filter((x): x is NonNullable<typeof x> => x != null);
+    addManyToQueue(items);
   };
 
   const handleBatchRemove = async () => {
@@ -656,7 +658,9 @@ export default function PlaylistDetail({ id }: { id: number }) {
               <div
                 ref={win.containerRef}
                 onScroll={win.onScroll}
-                className="flex-1 min-h-0 overflow-y-auto px-2 pt-1.5 pb-4"
+                className={`flex-1 min-h-0 overflow-y-auto px-2 pt-1.5 ${
+                  uiTheme === "liquid" ? "pb-[96px]" : "pb-4"
+                }`}
               >
                 {/* 虚拟窗口占位（data-drag-skip：不参与长按拖拽的行枚举） */}
                 <div
